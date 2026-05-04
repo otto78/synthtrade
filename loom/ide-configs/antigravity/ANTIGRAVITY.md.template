@@ -1,0 +1,53 @@
+# loom Rules — Framework Configuration
+
+> Leggi sempre `AGENT.md` all'inizio di ogni sessione.
+> Questo file contiene istruzioni universali per l'agente loom.
+
+---
+
+## 🚀 Setup Automatico
+
+**Quando l'utente dice:**
+- "read loom"
+- "setup loom"
+- "configura il framework"
+
+**Tu esegui automaticamente:**
+```bash
+python loom/scripts/read_loom.py
+```
+
+---
+
+## 💬 Comandi Naturali
+
+| Utente dice | Tu esegui |
+|-------------|----------|
+| "start task TASK-001 'feature X'" | `python loom/scripts/task.py start TASK-001 "feature X"` |
+| "list tasks" | `python loom/scripts/task.py list` |
+| "complete task TASK-001" | `python loom/scripts/task.py complete TASK-001 "done"` |
+| "run tests" | `python loom/scripts/task_tdd.py test` |
+| "update task status TASK-001 Done" | `python loom/execution/task_status.py --action set-status --task-id TASK-001 --status "Done"` |
+| "check for loom updates" | `python loom/scripts/check_updates.py` |
+| "update loom" | `python loom/scripts/check_updates.py --update` |
+| "list plugins" | `python loom/scripts/plugins.py list` |
+| "add plugin from URL" | `python loom/scripts/plugins.py add --source <url>` |
+
+---
+
+## 🏗️ Architettura DOE
+
+**D** — **Directives**: Leggi `loom/directives/*.md` per le regole.
+**O** — **Orchestration**: Tu (l'AI) pianifichi e coordini.
+**E** — **Execution**: Usa gli script in `loom/scripts/` e `loom/execution/`.
+
+---
+
+##  Fonte di Verità
+**File principale:** `AGENT.md` (nella root del progetto).
+
+1. Leggi `AGENT.md` per il contesto.
+2. Leggi `docs/TASKS.md` per lo stato.
+3. Segui le direttive DOE.
+
+**Sii loom: Leggero, potente, deterministico.**

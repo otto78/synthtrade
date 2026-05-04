@@ -1,0 +1,229 @@
+# AGENT.md — {PROJECT_NAME}
+# Source of Truth / Fonte di Verità
+
+> This file is read by all AI agents (Claude, Cursor, Windsurf, loom, VS Code, GitHub Copilot).
+> Do not duplicate these instructions in other files — they all reference here.
+> Questo file è letto da tutti gli agenti AI. Non duplicare queste istruzioni in altri file.
+
+---
+
+## What is {PROJECT_NAME} / Cos'è {PROJECT_NAME}
+
+{Brief description of your project — what problem it solves, who uses it, and why it matters.}
+{Breve descrizione del progetto — quale problema risolve, chi lo usa, perché è importante.}
+
+**Stack**: {Language / Framework / Database / Hosting}  
+**Principle**: {Your core architectural principle — e.g., "Business logic in services, not controllers"}
+{Il tuo principio architetturale — es: "Logica di business nei servizi, non nei controller"}
+
+---
+
+## Tech Stack / Stack Tecnologico
+
+### Backend / Frontend / Core
+- **Language**: {e.g., Python 3.11, TypeScript 5.0, Rust}
+- **Framework**: {e.g., FastAPI, React, Express}
+- **Database**: {e.g., PostgreSQL, MongoDB, SQLite}
+- **Auth**: {e.g., JWT, OAuth2, Session-based}
+- **Validation**: {e.g., Pydantic, Zod, Joi}
+
+### Testing
+- **Framework**: {e.g., pytest, Jest, vitest}
+- **Coverage**: {Aim for X%}
+
+### Infrastructure
+- **Hosting**: {e.g., Render, Vercel, AWS}
+- **CI/CD**: {e.g., GitHub Actions, GitLab CI}
+- **Secrets**: `.env` (never commit / mai committare)
+
+### AI Layer (Optional / Opzionale)
+- **Orchestration**: {e.g., LangGraph, custom orchestrator}
+- **LLM Gateway**: {e.g., LiteLLM, direct API}
+- **STT**: {e.g., Whisper, self-hosted}
+- **Browser Automation**: {e.g., Playwright, Selenium}
+- **MCP**: {Model Context Protocol configuration}
+
+### Channels / Canali (Optional / Opzionale)
+- **Primary**: {e.g., WhatsApp, Telegram, Web}
+- **Secondary**: {e.g., Mobile App, Email}
+
+### Extended Infrastructure / Infrastruttura Estesa
+- **Container**: {e.g., Docker, Kubernetes}
+- **Monitoring**: {e.g., Grafana, Prometheus}
+- **GPU**: {e.g., RunPod, Lambda Labs}
+
+---
+
+## Project Structure / Struttura Progetto
+
+```
+{project-name}/
+├── AGENT.md                    ← this file (source of truth / fonte di verità)
+├── PROJECT.md                  ← project description / descrizione progetto
+├── docs/
+│   ├── TASKS.md                ← task tracking / tracciamento task
+│   ├── BACKLOG.md              ← future ideas / idee future
+│   ├── STORY.md                ← project history / storia progetto
+│   ├── CHANGELOG.md            ← version changelog / changelog versioni
+│   └── HANDOFF.md              ← agent handoff notes / note passaggio agente
+│
+├── src/  # or /app, /lib, etc.
+│   ├── main.{ext}              ← app entry point / punto ingresso
+│   └── ...
+│
+├── tests/                      ← test files / file di test
+├── loom/                       ← loom framework
+└── .env                        ← secrets (never commit / mai committare)
+```
+
+---
+
+## Framework Operativo: Loom 🧵
+
+Questo progetto utilizza **[Loom Framework](https://github.com/otto78/loom-framework)** per la gestione operativa.
+
+Loom fornisce:
+- Task management automatizzato
+- TDD workflow integrato
+- Supporto multi-IDE
+- Comandi in linguaggio naturale
+
+**Configurazione**: Vedi `AGENT.md` (questo file) e la cartella `loom/`
+
+---
+
+## DOE Architecture / Architettura DOE
+
+### Level 1 — Directives (`loom/directives/`)
+SOPs for each domain: how to add features, coding standards, conventions.
+SOP per ogni dominio: come aggiungere feature, standard di codice, convenzioni.
+
+### Level 2 — Orchestration (this agent)
+Read directives → choose right approach → call execution scripts → handle errors → update TASKS.md.
+Legge direttive → sceglie approccio → chiama script esecuzione → gestisce errori → aggiorna TASKS.md.
+
+### Level 3 — Execution (`loom/execution/`)
+Deterministic scripts for: git commits, task management, deployments.
+Script deterministici per: commit git, gestione task, deploy.
+
+---
+
+## Agent Operating Principles / Principi Operativi Agente
+
+### 1. {Your core principle / Il tuo principio core}
+```
+{Example: Routes thin, Services fat / Esempio: Route leggere, Servizi pesanti}
+```
+
+### 2. Always write tests for critical features / Sempre test per feature critiche
+```
+"start TDD task TASK-XXX 'description'"
+```
+
+### 3. Use loom scripts for task management / Usa script loom per task
+```bash
+python loom/scripts/task.py start TASK-XXX "Description"
+python loom/scripts/task.py complete TASK-XXX "Done" --bump minor
+python loom/scripts/task.py list
+```
+
+### 4. Update task status programmatically / Aggiorna stato task via script
+```bash
+python loom/execution/task_status.py --action set-status --task-id TASK-XXX --status "Done"
+python loom/execution/task_status.py --action list
+python loom/execution/task_status.py --action get --task-id TASK-XXX
+```
+**You MUST update task status** after completing or starting a task. / **DEVI aggiornare lo stato dei task** dopo aver completato o avviato un task.
+
+### 5. Check for framework updates / Controlla aggiornamenti framework
+```bash
+python loom/scripts/check_updates.py
+python loom/scripts/check_updates.py --update
+```
+Run this at session start to inform the user if a new version is available. / Esegui all'inizio della sessione per informare l'utente se c'e una nuova versione.
+
+### 6. Manage custom directive plugins / Gestisci plugin direttive custom
+```bash
+python loom/scripts/plugins.py list
+python loom/scripts/plugins.py add --source https://github.com/user/directives
+python loom/scripts/plugins.py remove --name directives
+```
+
+### 7. Commit only worked files / Committa solo file modificati
+```bash
+python loom/execution/git_commit.py --files "file1,file2" --message "feat: description [TASK-XXX]"
+```
+
+### 8. Always update TASKS.md before ending / Aggiorna sempre TASKS.md prima di terminare
+
+### 9. Ask before irreversible operations / Chiedi prima di operazioni irreversibili
+
+### 10. Versioning and Changelog / Versioning e Changelog (Mandatorio)
+
+Ogni modifica che altera il comportamento del sistema deve:
+1. Incrementare la versione semantica (es: `version` in `pyproject.toml`)
+2. Aggiungere entry in `directives/changelog.md` con messaggio per l'utente
+3. Questo garantisce che gli utenti ricevano notifiche delle nuove capacità
+
+### 11. Commit and Push after every fix / Commit e Push dopo ogni fix
+
+Dopo ogni modifica richiesta dall'utente:
+1. **Commit selettivo**: `git add <file1> <file2>` — SOLO file modificati direttamente
+2. Commit con messaggio coerente: `git commit -m "feat: descrizione [TASK-XXX]"`
+3. Push sul branch remoto
+
+**IMPORTANTE**: In ambiente concorrente, NON usare `git add -A` o `git add .` per evitare di committare file incompleti di altri agenti.
+
+Prima del push, aggiorna SEMPRE:
+- `docs/STORY.md` — versione, fix, evoluzioni
+- `docs/TASKS.md` — stato lavoro
+
+### 12. DB ↔ Local Files Alignment / Allineamento DB ↔ File Locali (Mandatorio)
+
+Se una direttiva o configurazione è usata sia da file locali (`directives/*.md`) sia dal database (`agent_prompts`):
+1. Aggiorna il file locale richiesto
+2. Verifica lo stato corrente su DB
+3. Applica la sincronizzazione su DB nella stessa sessione
+4. Verifica il risultato (versione, contenuti)
+
+---
+
+## Project-Specific Rules / Regole Specifiche Progetto
+
+### {Domain 1 — e.g., API Design / Design API}
+- {Rule 1}
+- {Rule 2}
+
+### {Domain 2 — e.g., Database}
+- {Rule 1}
+- {Rule 2}
+
+### {Domain 3 — e.g., Testing}
+- {Rule 1}
+- {Rule 2}
+
+---
+
+## File Organization / Organizzazione File
+
+- `.tmp/` — file intermedi temporanei, rigenerabili. **Mai committare.**
+- `execution/` — script Python deterministici (i tool)
+- `directives/` — SOP in Markdown (le istruzioni operative)
+- `.env` — variabili d'ambiente e chiavi API (**mai committare**)
+- `docs/` — documentazione progetto (TASKS.md, STORY.md, etc.)
+- `loom/` — framework Loom (non modificare)
+- `AGENT.md` — configurazione progetto (questo file)
+
+---
+
+## Current Status / Stato Attuale
+
+Read `docs/TASKS.md` for active tasks. / Leggi `docs/TASKS.md` per task attivi.  
+Read `docs/STORY.md` for project history. / Leggi `docs/STORY.md` per storia progetto.  
+Read `docs/HANDOFF.md` for last session notes. / Leggi `docs/HANDOFF.md` per note ultima sessione.
+
+---
+
+**Version**: {X.Y.Z}  
+**Last updated**: {YYYY-MM-DD}  
+**Framework**: loom v1.0

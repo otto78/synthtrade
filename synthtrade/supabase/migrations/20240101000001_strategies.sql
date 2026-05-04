@@ -1,0 +1,23 @@
+CREATE TABLE strategies (
+  id            TEXT PRIMARY KEY,
+  title         TEXT NOT NULL,
+  template      TEXT NOT NULL,
+  pair          TEXT NOT NULL DEFAULT 'BTC/USDT',
+  timeframe     TEXT NOT NULL DEFAULT '5m',
+  params        JSONB NOT NULL,
+  rules         JSONB NOT NULL,
+  risk          JSONB NOT NULL,
+  targets       JSONB NOT NULL,
+  backtest      JSONB,
+  equity_curve  FLOAT[] DEFAULT '{}',
+  score         FLOAT,
+  ai_score      FLOAT,
+  ai_risk       TEXT,
+  ai_note       TEXT,
+  ai_strengths  TEXT[],
+  ai_warnings   TEXT[],
+  status        TEXT NOT NULL DEFAULT 'PENDING',
+  version       INT  NOT NULL DEFAULT 1,
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now()
+);

@@ -1,0 +1,205 @@
+# [NOME PROGETTO / PROJECT NAME]
+
+> **IT**: Sostituisci tutti i campi tra `[...]` con i dettagli del tuo progetto.  
+> **EN**: Replace all fields in `[...]` with your project's details.  
+> **IMPORTANT**: This file is the FOUNDATION for LOOM. Be specific and clear!
+
+---
+
+## Goal / Obiettivo
+
+**IT**: Descrivi cosa questo progetto cerca di ottenere. 2-3 frasi chiare.  
+**EN**: Describe what this project is trying to achieve. 2-3 clear sentences.
+
+**Example / Esempio**: "Una API REST per gestire task personali e di team, con autenticazione JWT e notifiche via email. Supporta real-time collaboration e export PDF."
+
+[Descrizione del tuo progetto qui]
+
+---
+
+## Stack / Tecnologie
+
+> **IT**: Specifica solo ciò che usi realmente. Rimuovi le righe non applicabili.  
+> **EN**: Specify only what you actually use. Remove non-applicable lines.
+
+- **Language/Backend**: [es: Python 3.11 / Node.js 20 / Go 1.21]
+- **Framework**: [es: FastAPI / Express / Gin]
+- **Frontend**: [es: React 18 / Next.js 14 / Vue 3 — oppure: N/A]
+- **UI/Styling**: [es: Tailwind CSS / Material Design / Bootstrap]
+- **Database**: [es: PostgreSQL / MongoDB / SQLite]
+- **ORM/Client**: [es: SQLAlchemy / Prisma / no-orm]
+- **Auth**: [es: JWT / OAuth2 / Supabase Auth / API Keys]
+- **Hosting**: [es: Render.com / Vercel / AWS / Docker]
+- **CI/CD**: [es: GitHub Actions / GitLab CI / Jenkins]
+- **Testing**: [es: pytest / Jest / Vitest]
+
+**Example / Esempio**:
+```
+- Language: Python 3.11
+- Framework: FastAPI
+- Database: PostgreSQL 15 (via asyncpg + SQLAlchemy v2)
+- Auth: JWT (python-jose)
+- Hosting: Render.com
+- CI/CD: GitHub Actions
+- Testing: pytest + httpx
+```
+
+---
+
+## Architecture / Architettura
+
+> **IT**: Descrive le scelte architetturali chiave che l'agente deve rispettare. Queste sono REGOLE di design.  
+> **EN**: Describe key architectural decisions the agent must respect. These are DESIGN RULES.
+
+- [es: Stateless REST API — nessun frontend, solo JSON]
+- [es: Business logic ONLY in service layer, never in routes]
+- [es: Models → Services → Routes pattern (layered architecture)]
+- [es: Async throughout — sempre asyncpg, mai SQLAlchemy sync]
+- [es: Monorepo con packages separati per api/worker/shared]
+- [es: Microservices: API gateway + 3 independent services]
+- [es: SPA frontend, API is stateless REST]
+
+**Example / Esempio**:
+```
+- Stateless REST API (no frontend)
+- Business logic ONLY in service layer
+- Async/await throughout (FastAPI + asyncpg)
+- Pydantic v2 for all validation
+- Models → Services → Routes pattern
+```
+
+---
+
+## Rules / Regole (MUST FOLLOW)
+
+> **IT**: Regole che l'agente DEVE seguire SEMPRE. Sii specifico — non generico!  
+> **EN**: Rules the agent MUST ALWAYS follow. Be specific — not generic!
+
+### Code Rules
+- [es: Ogni endpoint deve avere un test corrispondente]
+- [es: NO direct DB queries in routes — sempre tramite service]
+- [es: ALL functions devono avere docstrings con esempi]
+- [es: Type hints su TUTTI i parametri e return types]
+- [es: Nessun file hardcodato — sempre config/env vars]
+
+### Git Rules
+- [es: Conventional commits: feat/fix/docs/refactor/test: description [TASK-XXX]]
+- [es: NEVER committare .env, secrets, o credentials]
+- [es: Use `git add <file>` — NEVER `git add -A`]
+- [es: Squash merges su feature branches]
+- [es: Tags for versions: v1.0.0, v1.0.1, etc]
+
+### Testing Rules
+- [es: Minimum 80% code coverage]
+- [es: Test ALL edge cases, not just happy paths]
+- [es: Tests must be independent (no shared state)]
+
+### Database Rules
+- [es: Always use migrations (Alembic/Prisma)]
+- [es: NO direct SQL — sempre via ORM]
+- [es: Add indexes for query filters]
+
+**Example / Esempio**:
+```
+✓ Every endpoint MUST have a test
+✓ NO direct DB queries in routes (use services)
+✓ ALL functions MUST have docstrings
+✓ Commit format: feat/fix/docs: description [TASK-XXX]
+✓ NEVER use git add -A (use selective commits)
+✓ NEVER commit .env or secrets
+✓ Type hints required on all public functions
+```
+
+---
+
+## Notes / Note (Project-Specific Context)
+
+> **IT**: Contesto specifico del progetto — vincoli, decisioni passate, gotchas, cose da NON fare.  
+> **EN**: Project-specific context — constraints, past decisions, gotchas, things NOT to do.
+
+### Performance Constraints
+- [es: API p95 response time must be < 200ms]
+- [es: DB has 50M records — avoid unindexed queries on user_id]
+- [es: Implement caching for frequently-accessed data]
+
+### Integration Notes
+- [es: Stripe webhook integration — test with stripe-cli locally]
+- [es: Third-party API rate limits: 100 req/min]
+
+### Past Decisions (Why we chose this)
+- [es: Used FastAPI instead of Django because: async-first, lightweight, fast]
+- [es: PostgreSQL instead of MongoDB because: relational model, ACID guarantees]
+
+### Things NOT to do (Common mistakes to avoid)
+- [es: DON'T use globals for state — always inject dependencies]
+- [es: DON'T query DB in list comprehensions — always batch queries]
+- [es: DON'T modify shared state in async functions]
+
+**Example / Esempio**:
+```
+- DB has 2M user records: avoid unindexed queries on user_id
+- Stripe webhooks require stripe-cli for local testing
+- API versioning: all endpoints start with /api/v1/
+- CORS enabled only for localhost:3000 and production domain
+- NEVER hardcode credentials (use .env)
+```
+
+---
+
+## Optional Sections (Add if applicable)
+
+### Security Requirements / Sicurezza
+- Password minimum 12 chars, 3 character types
+- Rate limiting: 100 requests/minute per IP
+- HTTPS only in production
+- CORS whitelist: specific domains only
+
+### Performance / Performance
+- Cache TTL: 5 minutes
+- Max page size: 100 items
+- Connection pool size: 20
+
+### Dependencies / Dipendenze
+- Lock ALL versions in requirements.txt / package-lock.json
+- NO major version bumps without approval
+- Monthly security audits
+
+---
+
+## Quick Commands / Comandi Rapidi
+
+> **IT**: Dopo aver creato questo file, di' al tuo agente AI:  
+> **EN**: After creating this file, tell your AI agent:
+
+```bash
+"read loom"                    → Auto-configure everything
+"leggi loom"                   → Stessa cosa in italiano
+
+"start task TASK-001 'implement user registration'"
+"list tasks"                   → Show active tasks
+"complete task TASK-001"       → Mark task done
+"run tests"                    → Execute test suite
+```
+
+---
+
+## 📖 Help: Writing a Good PROJECT.md
+
+✅ **Good**:
+- Specific versions ("Python 3.11", not just "Python")
+- Architectural decisions are clear and actionable
+- Rules are MUST-FOLLOW (not suggestions)
+- Constraints are documented (DB size, rate limits)
+- Examples provided
+
+❌ **Avoid**:
+- Generic descriptions ("a web app")
+- Vague rules ("follow best practices")
+- Missing versions
+- No constraints mentioned
+
+📝 **Target**: 50-80 lines, crystal clear
+
+---
+
+**Once you've created this file, tell your AI agent: "read loom"** 🧵

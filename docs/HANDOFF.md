@@ -4,68 +4,82 @@
 
 ## 🔄 Ultimo Handoff
 
-### Da: Amazon Q → A: prossimo agente / sessione
+### Da: Amazon Q → A: prossima sessione
 
 **Data:** 2025-01-15
 
-**Contesto:** Fase 0 completata. Il backend FastAPI è bootstrappato, il test `/health` è verde, le migration SQL sono pronte.
+**Contesto:** Fase 0 completata + `indicators.py` (Fase 1) completato. Repo Git inizializzata con primo commit `9508d8c`.
 
 ---
 
 ### 📊 Stato Attuale
 
-**Fase corrente:** Fase 1 — Core Engine (da iniziare)
+**Fase corrente:** Fase 1 — Core Engine (in corso)
 
-**Prossimo task:** `indicators.py` — TDD su EMA, RSI, Bollinger + signal functions
+**Completato oggi:**
+- ✅ Fase 0 intera (monorepo, FastAPI, Supabase migrations, Docker)
+- ✅ `indicators.py` — EMA, RSI, Bollinger + 3 signal functions (17/17 test verdi)
 
-**Ultimo test:** `tests/test_main.py::test_health` — ✅ PASSED
+**Prossimo task:** `strategy_generator.py` — TDD prodotto cartesiano parametri
+
+**Ultimo commit:** `9508d8c` — "feat: Fase 0 completa + indicators.py (Fase 1 iniziata)"
+
+**Test totali:** 18 (1 health + 17 indicators) — tutti ✅
 
 **Virtualenv:** `.venv/` nella root del workspace (Python 3.12)
 
 ---
 
-### 📁 File Creati in Fase 0
+### 📁 File rilevanti Fase 1 (in corso)
 
 ```
-.gitignore
-README.md
-docker-compose.yml
-docs/TASKS.md, STORY.md, CHANGELOG.md, BACKLOG.md, HANDOFF.md
-synthtrade/backend/
-  app/main.py, config.py
-  app/db/supabase_client.py
-  tests/conftest.py, test_main.py
-  requirements.txt, pytest.ini, .env.example, Dockerfile
-synthtrade/supabase/
-  migrations/ (4 SQL)
-  seed.sql
+synthtrade/backend/app/core/indicators.py        ✅ completo
+synthtrade/backend/tests/unit/test_indicators.py ✅ 17 test
+```
+
+**Da creare:**
+```
+synthtrade/backend/app/core/strategy_generator.py
+synthtrade/backend/app/core/backtester.py
+synthtrade/backend/app/core/ranker.py
+synthtrade/backend/app/core/market_data.py
+synthtrade/backend/app/core/run_pipeline.py
+synthtrade/backend/tests/unit/test_generator.py
+synthtrade/backend/tests/unit/test_backtester.py
+synthtrade/backend/tests/unit/test_ranker.py
+synthtrade/backend/tests/unit/test_market_data.py
+synthtrade/backend/tests/integration/test_pipeline.py
 ```
 
 ---
 
 ### 🎯 Prossimi Step
 
-1. **Fase 1 — `indicators.py`**
-   - Scrivere `tests/unit/test_indicators.py` (🔴 Red)
-   - Implementare `app/core/indicators.py` (🟢 Green)
-   - Test: EMA, RSI, Bollinger, signal functions, no look-ahead
+1. **`strategy_generator.py`** — TDD
+   - Test: ≥200 varianti, ID deterministico, no duplicati su 500
+   - Implementare con prodotto cartesiano `TEMPLATES`
 
-2. **Fase 1 — `strategy_generator.py`**
-   - Test: almeno 200 varianti, ID deterministico, no duplicati
-   - Implementare `app/core/strategy_generator.py`
-
-3. **Fase 1 — `backtester.py`**
+2. **`backtester.py`** — TDD
    - Test: PnL corretto, fee applicate, equity_curve lunghezza, no look-ahead
-   - Implementare `app/core/backtester.py`
+   - Implementare con fee 0.1% + slippage 0.07%
+
+3. **`ranker.py`** — TDD
+   - Test: filtri hard (min_trades, max_drawdown, min_sharpe, min_pnl)
+   - Implementare score composito
+
+4. **`market_data.py`** — TDD con mock Supabase + mock Binance
+
+5. **`run_pipeline.py`** — integration test
 
 ---
 
 ### 📝 Note Importanti
 
-- Eseguire i test con: `set PYTHONPATH=synthtrade\backend && .venv\Scripts\pytest`
-- Il file `.env` non esiste ancora — copiare da `.env.example` e compilare
-- Supabase locale non ancora avviato — serve `supabase start` in `synthtrade/supabase/`
-- `PAPER_TRADING=true` è il default — non modificare fino alla Fase 6
+- Comando test: `set PYTHONPATH=synthtrade\backend && .venv\Scripts\pytest`
+- `.env` non esiste — copiare da `.env.example` e compilare prima di avviare il server
+- Supabase locale non avviato — serve `supabase start` in `synthtrade/supabase/`
+- `PAPER_TRADING=true` default — non toccare fino alla Fase 6
+- Fix RSI già applicato: `loss=0` → RSI=100 (non NaN)
 
 ---
 

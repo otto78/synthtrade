@@ -65,10 +65,10 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ### Progresso Generale
 
-- **Fase completata:** 0 / 6
-- **Task completati:** 14 (Fase 0 intera)
-- **Test passati:** 1 (`test_health`)
-- **Test coverage:** ~5%
+- **Fase completata:** 0 / 6 (Fase 1 in corso)
+- **Task completati:** 17 (Fase 0 intera + indicators)
+- **Test passati:** 18 (1 health + 17 indicators)
+- **Test coverage:** ~15%
 
 ---
 

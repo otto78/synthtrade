@@ -10,7 +10,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- Fase 2: Auth JWT, Strategies API, Dashboard API, Logs API, WebSocket
+- Fase 2: Strategies API, Dashboard API, Logs API, WebSocket
+
+---
+
+## [0.2.0] — 2025-01-16
+
+### Added
+- `app/core/auth_utils.py`: `create_access_token`, `verify_token` via python-jose
+- `app/dependencies.py`: `get_current_user` con HTTPBearer (auto_error=False → 401)
+- `app/api/auth.py`: `POST /auth/login` con password da env
+- `app/api/strategies.py`: stub protetto con approve/reject
+- `tests/integration/test_api_auth.py`: 7 test (login, token scaduto, route protette)
 
 ---
 

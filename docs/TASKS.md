@@ -68,10 +68,10 @@
 ## 🟠 Fase 2 — Backend API
 
 ### Auth
-- [ ] 🔴 Test `test_api_auth.py`
-- [ ] 🟢 Implementare `api/auth.py` + JWT
-- [ ] 🟢 Implementare `dependencies.py` → `get_current_user`
-- [ ] 🔵 Refactor: `core/auth_utils.py`
+- [x] 🔴 Test `test_api_auth.py` ✅ 7 test
+- [x] 🟢 Implementare `api/auth.py` + JWT ✅
+- [x] 🟢 Implementare `dependencies.py` → `get_current_user` ✅
+- [x] 🔵 Refactor: `core/auth_utils.py` ✅
 
 ### Strategies API
 - [ ] 🔴 Test `test_api_strategies.py`

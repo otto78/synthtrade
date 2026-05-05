@@ -14,18 +14,25 @@
 
 ### 📊 Stato Attuale
 
-**Fase corrente:** Fase 3 — Frontend Angular (da iniziare)
+**Fase corrente:** Fase 3 — Frontend Angular (in corso, 3.3 completata)
 
 **Completato:**
 - ✅ Fase 0 — Setup & Infrastruttura
-- ✅ Fase 1 — Core Engine (indicators, generator, backtester, ranker, market_data, pipeline)
-- ✅ Fase 2 — Backend API (auth JWT, strategies, dashboard, logs, WebSocket)
+- ✅ Fase 1 — Core Engine
+- ✅ Fase 2 — Backend API
+- ✅ 3.0 Bootstrap (Angular, Jest, proxy, environments, eslint, prettier, coverage)
+- ✅ 3.1 Design Tokens (variables, mixins, reset, animations, theme-dark)
+- ✅ 3.2 Modelli TypeScript (user, strategy, trade, dashboard, log, ws-message)
+- ✅ 3.3 Interceptors & Guards (auth, error, authGuard, noAuthGuard) — 10 test
 
-**Prossimo task:** 3.0 Bootstrap — `ng new synthtrade-ui --style=scss --routing --standalone`
+**In corso:** 3.4 Services (TokenStorage, Auth, Strategy, Dashboard, Log, WebSocket)
 
-**Ultimo commit:** `c382f00` — direttive frontend LOOM
-
-**Test backend:** 114/114 ✅
+**Fase 4 dettagliata:** lista task completa aggiunta in TASKS.md (4.0→4.6)
+- Struttura: `backend/app/execution/` + `backend/app/scheduler/`
+- Nuovi schemi: `Signal`, `OrderRequest`, `OrderResult`, `RiskCheckResult`, `PositionSnapshot`
+- `SignalResolverProtocol` pluggabile via `importlib`
+- Scheduler APScheduler con job: pipeline, monitor_positions, heartbeat
+- 4 integration test scenari: pipeline completa, stop loss, risk reject, drawdown
 
 ---
 

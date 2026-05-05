@@ -1406,23 +1406,54 @@ def build_market_context(ohlcv_df) -> dict:
 
 ---
 
-### 🔴 Fase 4 — Execution Engine (3–4 giorni)
+### 🔴 Fase 4 — Execution Engine (4–5 giorni)
 
-- [ ] 🔴 **Test `test_risk_manager.py`:**
-  - `check()` → `False` se balance < 10
-  - `check()` → `False` se daily_pnl < -max_daily_loss (mock Supabase)
-  - `check()` → `False` se open_trades >= max (mock Supabase)
-  - `check()` → `True` in condizioni normali
-  - `compute_size()` → non supera `max_position_eur`
-- [ ] 🟢 Implementare `risk_manager.py`
-- [ ] 🔴 **Test `test_execution_engine.py`:**
-  - Con `PAPER_TRADING=true`: nessun ordine Binance, log creato in Supabase
-  - Segnale `0`: nessun ordine, nessun log
-  - Risk check fallisce: log `BLOCK` creato, nessun ordine
-  - Nessuna strategia ACTIVE: tick skippato silenziosamente
-- [ ] 🟢 Implementare `execution_engine.py`
-- [ ] 🟢 Integrare APScheduler in `scheduler/jobs.py` (5min + daily 3:00 UTC)
-- [ ] 🔵 Refactor: estrarre `_compute_signal` in `SignalResolver` pluggabile
+> Struttura: `backend/app/execution/` + `backend/app/scheduler/`
+
+#### 4.0 Modelli & Configurazione
+- Nuovi campi `config.py`: `MAX_CONCURRENT_POSITIONS`, `MAX_EXPOSURE_PER_SYMBOL_PCT`, `MAX_DRAWDOWN_PCT`, `DEFAULT_POSITION_SIZE_PCT`, `DEFAULT_STOP_LOSS_PCT`, `DEFAULT_TAKE_PROFIT_PCT`, `SCHEDULER_PIPELINE_INTERVAL_MIN`
+- `execution/schemas.py`: `Signal`, `OrderRequest`, `OrderResult`, `RiskCheckResult`, `PositionSnapshot`
+
+#### 4.1 RiskManager
+- `calculate_position_size()` basata su `DEFAULT_POSITION_SIZE_PCT` del balance
+- `check_max_positions()` → `RiskCheckResult(approved=False)` se ≥ `MAX_CONCURRENT_POSITIONS`
+- `check_drawdown()` → `approved=False` se drawdown > `MAX_DRAWDOWN_PCT`
+- `calculate_stop_loss_price()` / `calculate_take_profit_price()` per LONG e SHORT
+- `validate_signal()` aggrega tutti i check con `reason` descrittiva
+- `RiskConfig` dataclass iniettabile nei test
+
+#### 4.2 OrderTracker
+- `open_position()` persiste su Supabase con stato `OPEN`
+- `close_position()` aggiorna con `closed_at`, `exit_price`, `pnl`, stato `CLOSED`
+- `get_open_positions(symbol=None)` con filtro opzionale per symbol
+- `update_unrealized_pnl(order_id, current_price)` per LONG e SHORT
+
+#### 4.3 SignalResolver
+- `SignalResolverProtocol` (Protocol class) + `DefaultSignalResolver`
+- Filtra per `strength ≥ threshold`, deduplicazione per symbol (max strength)
+- Filtra signal con strategia già in posizione aperta
+- Pluggabile via `config.py` con `importlib`
+
+#### 4.4 ExecutionEngine
+- `process_signal()`: valida → costruisce `OrderRequest` → piazza ordine → traccia
+- `check_exit_conditions(position, current_price)` → `True` se SL o TP raggiunto
+- `close_position_if_needed()` → chiama exchange + OrderTracker
+- Eccezioni exchange catturate e loggata senza crash
+- `SignalResolver` iniettato nel costruttore
+
+#### 4.5 Scheduler (APScheduler AsyncIOScheduler)
+- `run_pipeline_job` → chiama `run_pipeline()` + log
+- `monitor_positions_job` → `close_position_if_needed()` per ogni posizione aperta
+- `heartbeat_job` → WS broadcast `heartbeat` con timestamp e stato
+- `GET /api/scheduler/status` → job attivi con next run time
+- Registrato nel lifespan di `main.py`
+- Intervalli configurabili da `Settings`
+
+#### 4.6 Integration Tests
+- Pipeline completa: Signal → trade aperto su Supabase
+- Scenario stop loss: posizione aperta → SL raggiunto → chiusura automatica
+- Scenario risk reject: portfolio al limite → nessun ordine → log con reason
+- Scenario drawdown: drawdown oltre soglia → tutti i signal rigettati
 
 ---
 

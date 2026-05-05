@@ -50,8 +50,12 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - [ ] Tutte le pagine (Login, Dashboard, Strategies, ActiveTrade, Logs)
 
 ### v0.5.0 — Execution Engine + AI
-- [ ] `risk_manager.py`
-- [ ] `execution_engine.py` con APScheduler
+- [ ] `execution/schemas.py` (Signal, OrderRequest, OrderResult, RiskCheckResult, PositionSnapshot)
+- [ ] `execution/risk_manager.py` (RiskConfig, validate_signal, SL/TP calc)
+- [ ] `execution/order_tracker.py` (open/close/get positions, unrealized P&L)
+- [ ] `execution/signal_resolver.py` (SignalResolverProtocol + DefaultSignalResolver)
+- [ ] `execution/execution_engine.py` (process_signal, check_exit_conditions)
+- [ ] `scheduler/jobs.py` (APScheduler: pipeline, monitor, heartbeat)
 - [ ] `ai_evaluator.py` cascade OpenRouter
 
 ### v1.0.0 — Hardening & Deploy

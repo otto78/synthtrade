@@ -13,6 +13,7 @@ Idee, feature future e miglioramenti non ancora strutturati come task.
 **Requisiti da chiarire:**
 - [ ] Gestione errori ordini parzialmente eseguiti
 - [ ] Riconciliazione posizioni aperte al restart
+- [ ] `OrderTracker` già pronto dalla Fase 4 — collegare a exchange reale
 **Dipendenze:** Fase 6 hardening completata, smoke test superati
 
 ### [IDEA-002] — Multi-pair support

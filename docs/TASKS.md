@@ -219,57 +219,33 @@
 > Struttura: `synthtrade/backend/app/execution/` + `synthtrade/backend/app/scheduler/`
 
 ### 4.0 Modelli & Configurazione
-- [ ] Aggiungere in `config.py`: `MAX_CONCURRENT_POSITIONS`, `MAX_EXPOSURE_PER_SYMBOL_PCT`, `MAX_DRAWDOWN_PCT`, `DEFAULT_POSITION_SIZE_PCT`, `DEFAULT_STOP_LOSS_PCT`, `DEFAULT_TAKE_PROFIT_PCT`, `SCHEDULER_PIPELINE_INTERVAL_MIN`
-- [ ] Creare `execution/schemas.py`: `Signal`, `OrderRequest`, `OrderResult`, `RiskCheckResult`, `PositionSnapshot`
+- [x] Aggiungere in `config.py`: `MAX_CONCURRENT_POSITIONS`, `MAX_EXPOSURE_PER_SYMBOL_PCT`, `MAX_DRAWDOWN_PCT`, `DEFAULT_POSITION_SIZE_PCT`, `DEFAULT_STOP_LOSS_PCT`, `DEFAULT_TAKE_PROFIT_PCT`, `SCHEDULER_PIPELINE_INTERVAL_MIN` ✅
+- [x] Creare `execution/schemas.py`: `Signal`, `OrderRequest`, `OrderResult`, `RiskCheckResult`, `PositionSnapshot` ✅
 
 ### 4.1 RiskManager
-- [ ] 🔴 Test `test_risk_manager.py` → `calculate_position_size()` basata su `DEFAULT_POSITION_SIZE_PCT`
-- [ ] 🔴 Test → non supera `MAX_EXPOSURE_PER_SYMBOL_PCT`
-- [ ] 🔴 Test → `check_max_positions()` → `approved=False` se ≥ `MAX_CONCURRENT_POSITIONS`
-- [ ] 🔴 Test → `check_max_positions()` → `approved=True` se sotto limite
-- [ ] 🔴 Test → `check_drawdown()` → `approved=False` se drawdown > `MAX_DRAWDOWN_PCT`
-- [ ] 🔴 Test → `calculate_stop_loss_price()` e `calculate_take_profit_price()` per LONG e SHORT
-- [ ] 🔴 Test → `validate_signal()` aggrega tutti i check con `reason` descrittiva
-- [ ] 🟢 Implementare `execution/risk_manager.py`
+- [x] 🔴 Test `test_risk_manager.py` ✅ 13 test
+- [x] 🟢 Implementare `execution/risk_manager.py` ✅
 - [ ] 🔵 Refactor: `RiskConfig` dataclass iniettabile nei test
 
 ### 4.2 OrderTracker
-- [ ] 🔴 Test `test_order_tracker.py` → `open_position()` persiste su Supabase con stato `OPEN`
-- [ ] 🔴 Test → `close_position()` aggiorna con `closed_at`, `exit_price`, `pnl`, stato `CLOSED`
-- [ ] 🔴 Test → `get_open_positions()` restituisce solo trade `OPEN`
-- [ ] 🔴 Test → `get_open_positions(symbol=...)` filtra per symbol
-- [ ] 🔴 Test → `update_unrealized_pnl()` calcola P&L per LONG e SHORT
-- [ ] 🟢 Implementare `execution/order_tracker.py`
+- [x] 🔴 Test `test_order_tracker.py` ✅ 7 test
+- [x] 🟢 Implementare `execution/order_tracker.py` ✅
 
 ### 4.3 SignalResolver
-- [ ] 🔴 Test `test_signal_resolver.py` → `resolve()` filtra per `strength ≥ threshold`
-- [ ] 🔴 Test → per stesso symbol, restituisce solo signal con strength maggiore
-- [ ] 🔴 Test → filtra signal con strategia già in posizione aperta
-- [ ] 🔴 Test → lista vuota se nessun signal supera i filtri
-- [ ] 🟢 Implementare `execution/signal_resolver.py` con `SignalResolverProtocol` + `DefaultSignalResolver`
+- [x] 🔴 Test `test_signal_resolver.py` ✅ 5 test
+- [x] 🟢 Implementare `execution/signal_resolver.py` con `SignalResolverProtocol` + `DefaultSignalResolver` ✅
 - [ ] 🔵 Refactor: pluggabile via `config.py` con `importlib`
 
 ### 4.4 ExecutionEngine
-- [ ] 🔴 Test `test_execution_engine.py` → `process_signal()` chiama `RiskManager.validate_signal()`
-- [ ] 🔴 Test → `approved=False` → nessun ordine, log su Supabase
-- [ ] 🔴 Test → approvato → costruisce `OrderRequest` con SL/TP da RiskManager
-- [ ] 🔴 Test → chiama `exchange.place_order()` con `OrderRequest` corretto
-- [ ] 🔴 Test → `FILLED` → chiama `OrderTracker.open_position()` + log
-- [ ] 🔴 Test → `REJECTED`/`ERROR` → log senza aprire posizioni
-- [ ] 🔴 Test → `check_exit_conditions()` → `True` se prezzo raggiunge SL o TP
-- [ ] 🔴 Test → `close_position_if_needed()` chiama `exchange.close_order()` + `OrderTracker.close_position()`
-- [ ] 🔴 Test → eccezione exchange catturata e loggata senza crash
-- [ ] 🟢 Implementare `execution/execution_engine.py`
+- [x] 🔴 Test `test_execution_engine.py` ✅ 11 test
+- [x] 🟢 Implementare `execution/execution_engine.py` ✅
 - [ ] 🔵 Refactor: `SignalResolver` iniettato nel costruttore
 
 ### 4.5 Scheduler
-- [ ] 🔴 Test `test_scheduler.py` → `run_pipeline_job` chiama `run_pipeline()` + log
-- [ ] 🔴 Test → `monitor_positions_job` chiama `close_position_if_needed()` per ogni posizione
-- [ ] 🔴 Test → `heartbeat_job` invia WS `heartbeat` con timestamp e stato
-- [ ] 🔴 Test → eccezione in job catturata senza fermare lo scheduler
-- [ ] 🟢 Implementare `scheduler/jobs.py` con `AsyncIOScheduler`
-- [ ] 🟢 Aggiungere `GET /api/scheduler/status`
-- [ ] 🟢 Registrare scheduler nel lifespan di `main.py`
+- [x] 🔴 Test `test_scheduler.py` ✅ 4 test
+- [x] 🟢 Implementare `scheduler/jobs.py` con `AsyncIOScheduler` ✅
+- [x] 🟢 Aggiungere `GET /api/scheduler/status` ✅
+- [x] 🟢 Registrare scheduler nel lifespan di `main.py` ✅
 - [ ] 🔵 Refactor: intervalli configurabili da `Settings`
 
 ### 4.6 Integration Tests

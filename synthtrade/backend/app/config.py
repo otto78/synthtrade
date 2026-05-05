@@ -31,6 +31,15 @@ class Settings(BaseSettings):
     MAX_DAILY_LOSS_EUR: float = 15.0
     PAPER_TRADING: bool = True
 
+    # Execution Engine (Fase 4)
+    MAX_CONCURRENT_POSITIONS: int = 1
+    MAX_EXPOSURE_PER_SYMBOL_PCT: float = 0.10
+    MAX_DRAWDOWN_PCT: float = 15.0
+    DEFAULT_POSITION_SIZE_PCT: float = 0.05
+    DEFAULT_STOP_LOSS_PCT: float = 0.02
+    DEFAULT_TAKE_PROFIT_PCT: float = 0.04
+    SCHEDULER_PIPELINE_INTERVAL_MIN: int = 60
+
     # Backend
     BACKEND_HOST: str = "0.0.0.0"
     BACKEND_PORT: int = 8000

@@ -34,7 +34,15 @@
 - Scheduler APScheduler con job: pipeline, monitor_positions, heartbeat
 - 4 integration test scenari: pipeline completa, stop loss, risk reject, drawdown
 
-**Fase 5 dettagliata:** lista task completa aggiunta in TASKS.md (5.0→5.9)
+**Fase 6 dettagliata:** lista task completa aggiunta in TASKS.md (6.0→6.9)
+- Architettura: Supabase Cloud + VPS Linux + Docker + Nginx + HTTPS
+- Docker multi-stage: backend python:3.12-slim, frontend node:20-alpine + nginx:alpine
+- Nginx: reverse proxy, WebSocket upgrade, security headers, rate limiting login
+- Certbot/Let's Encrypt con rinnovo automatico senza downtime
+- Logging strutturato JSON con `request_id` middleware
+- Error handling globale con eccezioni custom
+- `scripts/deploy.sh` + `scripts/rollback.sh` + `scripts/smoke_test.sh`
+- Checklist pre-go-live: RLS, CORS, no hardcoded secrets, bundle size
 - Struttura: `backend/app/ai/` con 7 moduli
 - `EvalResult` con verdict PROMOTE/HOLD/DEMOTE, score, confidence, model_used
 - `ModelClient` con retry backoff + fallback primario/secondario

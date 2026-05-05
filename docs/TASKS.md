@@ -368,10 +368,109 @@
 
 ## ⚫ Fase 6 — Hardening & Deploy
 
-- [ ] Error handling globale
-- [ ] Logging strutturato JSON
-- [ ] Dockerfile multi-stage ottimizzato
-- [ ] Nginx + HTTPS
-- [ ] Supabase RLS su tutte le tabelle
-- [ ] Supabase Realtime su `operation_logs`
-- [ ] Smoke test post-deploy
+> Architettura target: **Supabase Cloud** + **VPS Linux** con Docker + Nginx + HTTPS.
+
+### 6.0 Supabase — Produzione
+- [ ] Creare progetto Supabase Cloud (region EU)
+- [ ] Eseguire 4 migration SQL + seed.sql
+- [ ] Verificare schema tabelle
+- [ ] Copiare `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+
+#### RLS
+- [ ] Abilitare RLS su `strategies`, `trades`, `operation_logs`, `ohlcv_cache`
+- [ ] Policy `SELECT/INSERT/UPDATE/DELETE` solo per `auth.uid() = user_id`
+- [ ] Testare policy con `SET LOCAL role = anon`
+
+#### Realtime
+- [ ] Abilitare Realtime su `operation_logs`
+- [ ] Verificare eventi `INSERT` trasmessi correttamente
+
+#### Auth
+- [ ] Disabilitare registrazione pubblica
+- [ ] Creare utente admin manualmente
+- [ ] Configurare JWT expiry in linea con backend
+
+### 6.1 Docker — Hardening Immagini
+
+#### Backend multi-stage
+- [ ] Stage `builder`: `python:3.12-slim`, virtualenv isolato
+- [ ] Stage `runtime`: immagine pulita, solo virtualenv + codice
+- [ ] Utente non-root `appuser`
+- [ ] Nessun `pip`, `gcc`, cache `apt`, `.pyc` nell'immagine finale
+- [ ] `HEALTHCHECK`: `curl -f http://localhost:8000/health || exit 1`
+- [ ] `.dockerignore`: `__pycache__`, `*.pyc`, `.env`, `tests/`, `.git/`
+
+#### Frontend multi-stage
+- [ ] Stage `builder`: `node:20-alpine`, `npm ci` + `ng build --configuration production`
+- [ ] Stage `runtime`: `nginx:alpine`, solo `dist/`
+- [ ] `nginx.conf`: SPA fallback, cache headers, gzip
+
+### 6.2 docker-compose Produzione
+- [ ] `docker-compose.prod.yml`: backend + frontend + nginx, nessun port binding diretto
+- [ ] Network `internal` bridge isolata
+- [ ] Volume named per certificati SSL (`certbot_certs`)
+- [ ] Logging `json-file` con `max-size: 10m`, `max-file: 3`
+- [ ] `.env.prod.example` con tutti i nomi variabili (senza valori)
+
+### 6.3 Nginx — Reverse Proxy & HTTPS
+- [ ] Redirect 301 HTTP → HTTPS
+- [ ] `location /api/` → proxy_pass `backend:8000`
+- [ ] `location /ws/` → proxy_pass con upgrade WebSocket
+- [ ] `location /` → proxy_pass `frontend:80`
+- [ ] Headers sicurezza: `X-Frame-Options`, `X-Content-Type-Options`, `HSTS`, `CSP`
+- [ ] Rate limiting su `/api/auth/` (5 req/min per IP)
+- [ ] `ssl-params.conf` con TLS 1.2+, no SSLv3
+
+#### Certbot / Let's Encrypt
+- [ ] Servizio `certbot` in `docker-compose.prod.yml`
+- [ ] `scripts/init-letsencrypt.sh` (staging → production)
+- [ ] `scripts/renew-certs.sh` (nginx reload, no downtime)
+
+### 6.4 VPS — Provisioning
+- [ ] `[provider]` VPS: Ubuntu 24.04 LTS, 2 vCPU / 4 GB RAM / 40 GB SSD
+- [ ] `[provider]` SSH key, firewall porte 22/80/443, DNS record A
+- [ ] Utente non-root `deploy` con sudo
+- [ ] Disabilitare login SSH root
+- [ ] UFW: `allow 22,80,443/tcp`
+- [ ] Installare Docker + Docker Compose plugin
+- [ ] `unattended-upgrades` per aggiornamenti sicurezza automatici
+
+### 6.5 Logging Strutturato
+- [ ] Installare `python-json-logger`
+- [ ] `core/logging.py` con `setup_logging()` e `JsonFormatter`
+- [ ] Chiamare `setup_logging()` nel lifespan di `main.py`
+- [ ] Sostituire tutti i `print()` con `logger = logging.getLogger(__name__)`
+- [ ] Middleware FastAPI con `request_id` (UUID) in ogni log
+
+### 6.6 Error Handling Globale
+- [ ] `core/exceptions.py`: `SynthTradeError`, `RiskViolationError`, `ModelUnavailableError`, `OrderExecutionError`
+- [ ] Handler globale `Exception` → `{"error": "internal_server_error", "request_id": "..."}`
+- [ ] Handler `HTTPException` con `request_id`
+- [ ] Handler `RequestValidationError` con errori Pydantic leggibili
+- [ ] Nessun stack trace esposto in produzione
+
+### 6.7 Deploy & Script di Rilascio
+- [ ] `scripts/deploy.sh`: git pull → build → up -d → image prune
+- [ ] `scripts/rollback.sh`: riavvia immagine tag precedente
+- [ ] Cron job rinnovo SSL: `0 3 * * *`
+- [ ] Backup DB: verificare retention Supabase Cloud
+
+### 6.8 Smoke Test Post-Deploy
+- [ ] `scripts/smoke_test.sh`:
+  - `GET /health` → 200 `{"status": "ok"}`
+  - `POST /api/auth/login` → JWT token
+  - `GET /api/strategies` con token → 200
+  - `GET /api/dashboard/stats` con token → 200
+  - WebSocket `wss://` → heartbeat ricevuto
+  - Certificato SSL valido
+- [ ] `smoke_test.sh` integrato in `deploy.sh` con rollback automatico su fallimento
+
+### 6.9 Checklist Pre-Go-Live
+- [ ] Nessuna variabile `.env` hardcodata (`grep -r "SECRET\|PASSWORD\|API_KEY"`)
+- [ ] `DEBUG=False`, `ENVIRONMENT=production`
+- [ ] CORS: `allow_origins` lista esplicita, no `*`
+- [ ] Tutte le tabelle Supabase con RLS abilitato
+- [ ] Nessun endpoint pubblico senza autenticazione
+- [ ] `ng build --configuration production` senza warning critici
+- [ ] `docker compose -f docker-compose.prod.yml config` senza errori
+- [ ] Smoke test completato con tutti i check verdi

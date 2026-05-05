@@ -70,9 +70,16 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - [ ] Broadcast WS `eval_complete`
 
 ### v1.0.0 — Hardening & Deploy
-- [ ] Supabase RLS
-- [ ] Nginx + HTTPS
-- [ ] Smoke test post-deploy
+- [ ] Supabase Cloud: RLS, Realtime, Auth
+- [ ] Docker multi-stage: backend (python:3.12-slim) + frontend (node:20-alpine + nginx:alpine)
+- [ ] docker-compose.prod.yml con network interna, logging json-file
+- [ ] Nginx: reverse proxy, HTTPS, WebSocket upgrade, security headers, rate limiting
+- [ ] Certbot / Let's Encrypt con rinnovo automatico
+- [ ] VPS Ubuntu 24.04: utente non-root, UFW, Docker, unattended-upgrades
+- [ ] Logging strutturato JSON con python-json-logger + request_id middleware
+- [ ] Error handling globale con eccezioni custom e handler FastAPI
+- [ ] scripts/deploy.sh + scripts/rollback.sh + scripts/smoke_test.sh
+- [ ] Checklist pre-go-live (CORS, RLS, no hardcoded secrets, bundle size)
 
 ---
 

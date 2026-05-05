@@ -3,8 +3,7 @@
   "compilerOptions": {
     "outDir": "./out-tsc/spec",
     "types": ["jest", "@testing-library/jest-dom"],
-    "esModuleInterop": true,
-    "emitDecoratorMetadata": true
+    "esModuleInterop": true
   },
   "include": ["src/**/*.spec.ts", "src/**/*.d.ts", "setup-jest.ts"]
 }

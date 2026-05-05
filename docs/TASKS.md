@@ -54,8 +54,8 @@
 - [ ] 🔵 Refactor: `RankConfig` da `.env`
 
 ### Market Data + Cache Supabase
-- [ ] 🔴 Test `test_market_data.py`
-- [ ] 🟢 Implementare `market_data.py`
+- [x] 🔴 Test `test_market_data.py` ✅ 7 test
+- [x] 🟢 Implementare `market_data.py` ✅
 - [ ] 🔵 Refactor: separare `exchange.py`
 
 ### Pipeline Batch

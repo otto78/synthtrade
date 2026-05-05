@@ -33,11 +33,11 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 ## 🎯 Roadmap
 
 ### v0.2.0 — Core Engine
-- [ ] `indicators.py` (EMA, RSI, Bollinger + signal functions)
-- [ ] `strategy_generator.py` (prodotto cartesiano parametri)
-- [ ] `backtester.py` (simulazione OHLCV con fee/slippage)
-- [ ] `ranker.py` (score composito con filtri hard)
-- [ ] `market_data.py` (fetch Binance + cache Supabase)
+- [x] `indicators.py` (EMA, RSI, Bollinger + signal functions)
+- [x] `strategy_generator.py` (prodotto cartesiano parametri)
+- [x] `backtester.py` (simulazione OHLCV con fee/slippage)
+- [x] `ranker.py` (score composito con filtri hard)
+- [x] `market_data.py` (fetch Binance + cache Supabase)
 - [ ] `run_pipeline.py` (pipeline batch completa)
 
 ### v0.3.0 — Backend API
@@ -66,9 +66,9 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 ### Progresso Generale
 
 - **Fase completata:** 0 / 6 (Fase 1 in corso)
-- **Task completati:** 17 (Fase 0 intera + indicators)
-- **Test passati:** 18 (1 health + 17 indicators)
-- **Test coverage:** ~15%
+- **Task completati:** 21 (Fase 0 + indicators + generator + backtester + market_data)
+- **Test passati:** 62
+- **Test coverage:** ~40%
 
 ---
 

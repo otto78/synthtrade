@@ -10,7 +10,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- Fase 1: `market_data.py`, `run_pipeline.py`
+- Fase 1: `run_pipeline.py`
+
+---
+
+## [0.1.5] — 2025-01-16
+
+### Added
+- `app/core/market_data.py`: fetch OHLCV Binance con cache Supabase, fetch solo delta mancante
+- `get_current_price()` per prezzo live
+- `tests/unit/test_market_data.py`: 7 test con mock Supabase e Binance
 
 ---
 

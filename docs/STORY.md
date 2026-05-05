@@ -57,13 +57,15 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - [x] 3.7 Routing (lazy loading, authGuard, noAuthGuard, redirect)
 - [x] 3.8 Pagine (Login, Dashboard, Strategies, ActiveTrade, Logs)
 
-### v0.5.0 — Execution Engine + AI
-- [ ] `execution/schemas.py` (Signal, OrderRequest, OrderResult, RiskCheckResult, PositionSnapshot)
-- [ ] `execution/risk_manager.py` (RiskConfig, validate_signal, SL/TP calc)
-- [ ] `execution/order_tracker.py` (open/close/get positions, unrealized P&L)
-- [ ] `execution/signal_resolver.py` (SignalResolverProtocol + DefaultSignalResolver)
-- [ ] `execution/execution_engine.py` (process_signal, check_exit_conditions)
-- [ ] `scheduler/jobs.py` (APScheduler: pipeline, monitor, heartbeat)
+### v0.5.0 — Execution Engine + AI ✅ (parziale)
+- [x] `execution/schemas.py` (Signal, OrderRequest, OrderResult, RiskCheckResult, PositionSnapshot)
+- [x] `execution/risk_manager.py` (RiskConfig, validate_signal, SL/TP calc) — 13 test
+- [x] `execution/order_tracker.py` (open/close/get positions, unrealized P&L) — 7 test
+- [x] `execution/signal_resolver.py` (SignalResolverProtocol + DefaultSignalResolver) — 5 test
+- [x] `execution/execution_engine.py` (process_signal, check_exit_conditions) — 11 test
+- [x] `scheduler/jobs.py` (APScheduler: pipeline, monitor, heartbeat) — 4 test
+- [ ] 4.6 Integration Tests (pipeline completa, stop loss, risk reject, drawdown)
+- [ ] Fase 5 AI Evaluator
 
 ### v0.6.0 — AI Evaluator
 - [ ] `ai/schemas.py` (MarketContext, StrategyContext, EvalPromptInput, EvalResult, ModelResponse)
@@ -95,18 +97,18 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ### Progresso Generale
 
-- **Task completati:** 113 (Fase 0+1+2+3 completa)
-- **Test passati:** 114 backend + 116 frontend = 230 totali
+- **Task completati:** 153 (Fase 0+1+2+3+4.0–4.5)
+- **Test passati:** 154 backend + 116 frontend = 270 totali
 - **Test coverage:** ~80% backend, ~85% frontend core/shared
 
 ---
 
 ## 📝 Decisioni Architetturali
 
-**2025-01-17 — Routing con AppShell come layout wrapper**
-- Problema: tutte le route protette devono condividere Sidebar + Topbar
-- Soluzione: `AppShellComponent` come componente padre nel tree di routing, con `canActivate: [authGuard]` sul gruppo
-- Beneficio: un solo punto di controllo auth, layout condiviso senza duplicazione
+**2026-05-05 — ExecutionEngine con dipendenze iniettate**
+- Problema: testare l’engine senza exchange reale
+- Soluzione: `RiskManager`, `OrderTracker`, `exchange` tutti iniettati nel costruttore
+- Beneficio: mock completi nei test, zero chiamate reali
 
 ---
 

@@ -10,7 +10,52 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- Fase 4: risk_manager.py, execution_engine.py, APScheduler
+- Fase 5: AI Evaluator (context_builder, prompt_builder, model_client, eval_parser, cache, evaluator)
+
+---
+
+## [0.4.5] — 2026-05-05
+
+### Added
+- `scheduler/jobs.py`: `run_pipeline_job`, `monitor_positions_job`, `heartbeat_job` con `AsyncIOScheduler` — 4 test
+- `GET /api/scheduler/status`: lista job attivi e stato scheduler
+- Scheduler registrato nel lifespan di `main.py`
+
+---
+
+## [0.4.4] — 2026-05-05
+
+### Added
+- `execution/execution_engine.py`: `process_signal`, `check_exit_conditions`, `close_position_if_needed`, gestione eccezioni exchange — 11 test
+
+---
+
+## [0.4.3] — 2026-05-05
+
+### Added
+- `execution/signal_resolver.py`: `SignalResolverProtocol` + `DefaultSignalResolver` (threshold filter, best-per-symbol, open position filter) — 5 test
+
+---
+
+## [0.4.2] — 2026-05-05
+
+### Added
+- `execution/order_tracker.py`: `open_position`, `close_position`, `get_open_positions`, `update_unrealized_pnl` — 7 test
+
+---
+
+## [0.4.1] — 2026-05-05
+
+### Added
+- `execution/risk_manager.py`: `RiskConfig` dataclass, `calculate_position_size`, `check_max_positions`, `check_drawdown`, `calculate_stop_loss_price`, `calculate_take_profit_price`, `validate_signal` — 13 test
+
+---
+
+## [0.4.0] — 2026-05-05
+
+### Added
+- `execution/schemas.py`: `Signal`, `OrderRequest`, `OrderResult`, `RiskCheckResult`, `PositionSnapshot`
+- `config.py`: `MAX_CONCURRENT_POSITIONS`, `MAX_EXPOSURE_PER_SYMBOL_PCT`, `MAX_DRAWDOWN_PCT`, `DEFAULT_POSITION_SIZE_PCT`, `DEFAULT_STOP_LOSS_PCT`, `DEFAULT_TAKE_PROFIT_PCT`, `SCHEDULER_PIPELINE_INTERVAL_MIN`
 
 ---
 

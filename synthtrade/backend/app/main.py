@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.api import auth, strategies, dashboard
+from app.api import auth, strategies, dashboard, logs
 
 
 @asynccontextmanager
@@ -23,6 +23,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(strategies.router)
 app.include_router(dashboard.router)
+app.include_router(logs.router)
 
 
 @app.get("/health")

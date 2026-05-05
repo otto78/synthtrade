@@ -84,8 +84,8 @@
 - [ ] 🔵 Refactor: cache balance 30s
 
 ### Logs API
-- [ ] 🔴 Test `test_api_logs.py`
-- [ ] 🟢 Implementare `api/logs.py`
+- [x] 🔴 Test `test_api_logs.py` ✅ 12 test
+- [x] 🟢 Implementare `api/logs.py` ✅
 - [ ] 🔵 Refactor: filtri aggiuntivi
 
 ### WebSocket

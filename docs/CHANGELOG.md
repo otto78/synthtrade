@@ -10,7 +10,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- Fase 2: Logs API, WebSocket
+- Fase 2: WebSocket
+
+---
+
+## [0.2.3] — 2025-01-16
+
+### Added
+- `api/logs.py`: GET /logs (paginato, filtri action/strategy_id) + GET /logs/export (CSV)
+- `tests/integration/test_api_logs.py`: 12 test
 
 ---
 

@@ -41,9 +41,9 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - [x] `run_pipeline.py` (pipeline batch completa)
 
 ### v0.3.0 — Backend API
-- [ ] Auth JWT
-- [ ] API strategies, dashboard, logs
-- [ ] WebSocket live feed
+- [x] Auth JWT
+- [x] API strategies, dashboard, logs
+- [x] WebSocket live feed
 
 ### v0.4.0 — Frontend Angular
 - [ ] Dark terminal UI completa
@@ -65,10 +65,10 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ### Progresso Generale
 
-- **Fase completata:** 1 / 6 ✅ (Fase 2 in corso)
-- **Task completati:** 39 (Fase 0 + Fase 1 + Auth + Strategies + Dashboard + Logs API)
-- **Test passati:** 108
-- **Test coverage:** ~75%
+- **Fase completata:** 2 / 6 ✅ (Fase 4 in corso)
+- **Task completati:** 43 (Fase 0 + Fase 1 + Fase 2 completa)
+- **Test passati:** 114
+- **Test coverage:** ~80%
 
 ---
 

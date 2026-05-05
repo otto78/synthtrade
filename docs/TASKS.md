@@ -89,9 +89,9 @@
 - [ ] 🔵 Refactor: filtri aggiuntivi
 
 ### WebSocket
-- [ ] 🔴 Test `test_ws.py`
-- [ ] 🟢 Implementare `api/ws.py`
-- [ ] 🔵 Refactor: broadcast per tipo
+- [x] 🔴 Test `test_ws.py` ✅ 6 test
+- [x] 🟢 Implementare `api/ws.py` ✅
+- [x] 🔵 Refactor: broadcast per tipo ✅
 
 ---
 

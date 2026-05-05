@@ -10,7 +10,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- Fase 2: WebSocket
+- Fase 4: risk_manager.py, execution_engine.py, APScheduler
+
+---
+
+## [0.2.4] — 2025-01-16
+
+### Added
+- `api/ws.py`: WebSocket /ws con auth via query param, ping iniziale, broadcast per tipo (price, engine_status)
+- `ConnectionManager`: connect/disconnect/broadcast
+- `tests/integration/test_ws.py`: 6 test (auth, ping, broadcast, manager unit)
 
 ---
 

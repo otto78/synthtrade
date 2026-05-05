@@ -10,7 +10,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- Fase 1: `strategy_generator.py`, `backtester.py`, `ranker.py`, `market_data.py`
+- Fase 1: `backtester.py`, `ranker.py`, `market_data.py`
+
+---
+
+## [0.1.2] — 2025-01-16
+
+### Added
+- `app/core/strategy_generator.py`: prodotto cartesiano parametri, 3 template (trend_ema, mean_reversion_rsi, breakout_bb)
+- `StrategyParams` dataclass frozen con hash per ID deterministico
+- `build_strategy_id()`: ID univoco da hash parametri
+- `tests/unit/test_generator.py`: 8 test (>200 varianti, no duplicati, ID deterministico)
 
 ---
 

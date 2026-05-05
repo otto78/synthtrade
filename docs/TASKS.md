@@ -39,8 +39,8 @@
 - [x] 🔵 Refactor: costante `LOOKBACK_PERIODS` ✅
 
 ### Strategy Generator
-- [ ] 🔴 Test `test_generator.py`
-- [ ] 🟢 Implementare `strategy_generator.py`
+- [x] 🔴 Test `test_generator.py` ✅ 8 test
+- [x] 🟢 Implementare `strategy_generator.py` ✅
 - [ ] 🔵 Refactor: `TEMPLATES` configurabile via JSON
 
 ### Backtester

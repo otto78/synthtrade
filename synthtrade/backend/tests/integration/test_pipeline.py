@@ -23,7 +23,8 @@ def test_pipeline_saves_only_scored_strategies():
          patch("app.core.run_pipeline.get_supabase", return_value=mock_db):
 
         from app.core.run_pipeline import run_pipeline
-        saved = run_pipeline(pairs=["BTC/USDT"], timeframes=["5m"])
+        import asyncio
+        saved = asyncio.run(run_pipeline(pairs=["BTC/USDT"], timeframes=["5m"], ai_eval=False))
 
     assert isinstance(saved, int)
     assert saved >= 0
@@ -37,7 +38,8 @@ def test_pipeline_returns_count_of_saved_strategies():
          patch("app.core.run_pipeline.get_supabase", return_value=mock_db):
 
         from app.core.run_pipeline import run_pipeline
-        count = run_pipeline(pairs=["BTC/USDT"], timeframes=["5m"])
+        import asyncio
+        count = asyncio.run(run_pipeline(pairs=["BTC/USDT"], timeframes=["5m"], ai_eval=False))
 
     assert count >= 0
 
@@ -50,7 +52,8 @@ def test_pipeline_upserts_to_supabase_when_strategies_found():
          patch("app.core.run_pipeline.get_supabase", return_value=mock_db):
 
         from app.core.run_pipeline import run_pipeline
-        count = run_pipeline(pairs=["BTC/USDT"], timeframes=["5m"])
+        import asyncio
+        count = asyncio.run(run_pipeline(pairs=["BTC/USDT"], timeframes=["5m"], ai_eval=False))
 
     if count > 0:
         mock_db.table.return_value.upsert.assert_called()
@@ -65,8 +68,9 @@ def test_pipeline_no_error_on_50_strategies():
          patch("app.core.run_pipeline.get_supabase", return_value=mock_db):
 
         from app.core.run_pipeline import run_pipeline
+        import asyncio
         try:
-            run_pipeline(pairs=["BTC/USDT"], timeframes=["5m"])
+            asyncio.run(run_pipeline(pairs=["BTC/USDT"], timeframes=["5m"], ai_eval=False))
         except Exception as e:
             pytest.fail(f"Pipeline ha sollevato un'eccezione: {e}")
 
@@ -89,7 +93,8 @@ def test_pipeline_skips_strategy_on_exception():
          patch("app.core.run_pipeline.run_backtest", side_effect=flaky_backtest):
 
         from app.core.run_pipeline import run_pipeline
+        import asyncio
         try:
-            run_pipeline(pairs=["BTC/USDT"], timeframes=["5m"])
+            asyncio.run(run_pipeline(pairs=["BTC/USDT"], timeframes=["5m"], ai_eval=False))
         except Exception as e:
             pytest.fail(f"Pipeline non deve propagare eccezioni singole: {e}")

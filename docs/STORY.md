@@ -67,17 +67,17 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - [x] 4.6 Integration Tests (pipeline completa, stop loss, risk reject, drawdown) + `api/trades.py`
 - [ ] Fase 5 AI Evaluator
 
-### v0.6.0 — AI Evaluator
-- [ ] `ai/schemas.py` (MarketContext, StrategyContext, EvalPromptInput, EvalResult, ModelResponse)
-- [ ] `ai/context_builder.py` (build_market_context, detect_market_regime)
-- [ ] `ai/prompt_builder.py` (build_prompt, build_system_prompt, token budget)
-- [ ] `ai/model_client.py` (httpx, retry backoff, fallback, custom errors)
-- [ ] `ai/eval_parser.py` (parse_eval_result, EvalParseError, markdown strip)
-- [ ] `ai/cache.py` (get_cached_eval, save_eval, TTL Supabase)
-- [ ] `ai/evaluator.py` (evaluate_strategy, evaluate_all con Semaphore)
-- [ ] `api/eval.py` (GET eval, POST refresh, BackgroundTasks)
-- [ ] Integrazione in `run_pipeline.py` (PROMOTE/DEMOTE/HOLD logic)
-- [ ] Broadcast WS `eval_complete`
+### v0.6.0 — AI Evaluator ✅
+- [x] `ai/schemas.py` (MarketContext, StrategyContext, EvalPromptInput, EvalResult, ModelResponse)
+- [x] `ai/context_builder.py` (build_market_context, detect_market_regime) — 7 test
+- [x] `ai/prompt_builder.py` (build_prompt, build_system_prompt, token budget) — 6 test
+- [x] `ai/model_client.py` (httpx, cascade, retry backoff, fallback, custom errors) — 7 test
+- [x] `ai/eval_parser.py` (parse_eval_result, EvalParseError, markdown strip) — 8 test
+- [x] `ai/cache.py` (get_cached_eval, save_eval, TTL Supabase) — 4 test
+- [x] `ai/evaluator.py` (evaluate_strategy, evaluate_all con Semaphore) — 7 test
+- [x] `api/eval.py` (GET eval, POST refresh, BackgroundTasks) — 4 test
+- [x] Integrazione in `run_pipeline.py` (PROMOTE/DEMOTE/HOLD logic) — 4 test
+- [x] Integration tests (happy path, fallback, cache hit, JSON malformato, all models down) — 5 test
 
 ### v1.0.0 — Hardening & Deploy
 - [ ] Supabase Cloud: RLS, Realtime, Auth
@@ -97,8 +97,8 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ### Progresso Generale
 
-- **Task completati:** 162 (Fase 0+1+2+3+4 completa)
-- **Test passati:** 163 backend + 116 frontend = 279 totali
+- **Task completati:** 213 (Fase 0–5 complete)
+- **Test passati:** 214 backend + 116 frontend = 330 totali
 - **Test coverage:** ~80% backend, ~85% frontend core/shared
 
 ---

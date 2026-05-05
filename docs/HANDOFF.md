@@ -14,22 +14,23 @@
 
 ### 📊 Stato Attuale
 
-**Fase corrente:** Fase 5 — AI Evaluator
+**Fase corrente:** Fase 6 — Hardening & Deploy
 
 **Completato:**
 - ✅ Fase 0 — Setup & Infrastruttura
 - ✅ Fase 1 — Core Engine
 - ✅ Fase 2 — Backend API
 - ✅ Fase 3 — Frontend Angular (116 test)
-- ✅ **Fase 4 — Execution Engine** (49 test)
-  - 4.0 Config + Schemas
-  - 4.1 RiskManager (13) · 4.2 OrderTracker (7) · 4.3 SignalResolver (5)
-  - 4.4 ExecutionEngine (11) · 4.5 Scheduler (4)
-  - 4.6 Integration Tests (4) + `GET /api/trades` + `GET /api/trades/open` (5)
+- ✅ Fase 4 — Execution Engine (49 test)
+- ✅ **Fase 5 — AI Evaluator** (51 test)
+  - 5.0 Config + Schemas
+  - 5.1 ContextBuilder (7) · 5.2 PromptBuilder (6) · 5.3 ModelClient (7)
+  - 5.4 EvalParser (8) · 5.5 EvalCache (4) · 5.6 Evaluator (7)
+  - 5.7 API eval endpoint (4) · 5.8 Pipeline AI (4) · 5.9 Integration (5)
 
-**Totale test:** 163 backend + 116 frontend = 279
+**Totale test:** 214 backend + 116 frontend = 330
 
-**In corso:** 5.0 AI Evaluator — Config & Schemas
+**In corso:** Fase 6 — Hardening & Deploy
 
 **Fase 4 dettagliata:** lista task completa aggiunta in TASKS.md (4.0→4.6)
 - Struttura: `backend/app/execution/` + `backend/app/scheduler/`

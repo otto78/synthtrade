@@ -10,7 +10,80 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- Fase 5: AI Evaluator (context_builder, prompt_builder, model_client, eval_parser, cache, evaluator)
+- Fase 6: Hardening & Deploy
+
+---
+
+## [0.5.9] — 2026-05-05
+
+### Added
+- `tests/integration/test_ai_integration.py`: 5 scenari (happy path, fallback, cache hit, JSON malformato, all models down)
+- `tests/integration/test_pipeline_ai.py`: 4 test pipeline con AI (evaluate_all, demote, errori non bloccanti, skip)
+
+---
+
+## [0.5.8] — 2026-05-05
+
+### Added
+- `core/run_pipeline.py`: aggiornato ad `async`, passo AI Evaluator su top-N strategie, DEMOTE → REJECTED
+- `build_evaluator()` factory function
+
+---
+
+## [0.5.7] — 2026-05-05
+
+### Added
+- `api/eval.py`: `GET /api/strategies/:id/eval` (cache o 202), `POST /api/strategies/:id/eval/refresh` (BackgroundTasks) — 4 test
+
+---
+
+## [0.5.6] — 2026-05-05
+
+### Added
+- `ai/evaluator.py`: `evaluate_strategy()` (context+prompt+model+parse+cache), `evaluate_all()` con `asyncio.Semaphore` — 7 test
+
+---
+
+## [0.5.5] — 2026-05-05
+
+### Added
+- `ai/cache.py`: `EvalCache` con TTL, `get_cached_eval()`, `save_eval()` upsert Supabase — 4 test
+
+---
+
+## [0.5.4] — 2026-05-05
+
+### Added
+- `ai/eval_parser.py`: `parse_eval_result()`, estrazione JSON da markdown, clamp score, `EvalParseError` — 8 test
+
+---
+
+## [0.5.3] — 2026-05-05
+
+### Added
+- `ai/model_client.py`: cascade OpenRouter, retry backoff esponenziale 429/503, `ModelTimeoutError`, `AllModelsUnavailableError` — 7 test
+
+---
+
+## [0.5.2] — 2026-05-05
+
+### Added
+- `ai/prompt_builder.py`: `build_prompt()` con metriche e istruzioni JSON, `build_system_prompt()`, truncate — 6 test
+
+---
+
+## [0.5.1] — 2026-05-05
+
+### Added
+- `ai/context_builder.py`: `build_ohlcv_summary()`, `detect_market_regime()` (trending/volatile/ranging), `build_market_context()` — 7 test
+
+---
+
+## [0.5.0] — 2026-05-05
+
+### Added
+- `ai/schemas.py`: `OhlcvSummary`, `MarketContext`, `StrategyContext`, `EvalPromptInput`, `EvalResult`, `ModelResponse`
+- `config.py`: `AI_API_KEY`, `AI_API_BASE_URL`, `AI_CASCADE_MODELS`, `AI_FALLBACK_MODEL`, `AI_MAX_TOKENS`, `AI_TEMPERATURE`, `AI_TIMEOUT_SECONDS`, `AI_MAX_RETRIES`, `AI_BACKOFF_BASE`, `AI_EVAL_CACHE_TTL_MINUTES`, `PIPELINE_AI_EVAL_TOP_N`, `MAX_CONCURRENT_EVALS`
 
 ---
 

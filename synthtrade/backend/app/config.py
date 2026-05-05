@@ -24,6 +24,24 @@ class Settings(BaseSettings):
     AI_CASCADE_TIMEOUT: float = 12.0
     AI_CASCADE_MAX_RETRIES: int = 2
 
+    # AI Evaluator (Fase 5)
+    AI_API_KEY: str = ""
+    AI_API_BASE_URL: str = "https://openrouter.ai/api/v1"
+    AI_CASCADE_MODELS: str = "google/gemini-2.0-flash-exp:free,meta-llama/llama-3.1-8b-instruct:free,mistralai/mistral-7b-instruct:free"
+    AI_FALLBACK_MODEL: str = "anthropic/claude-haiku-4"
+    AI_MAX_TOKENS: int = 1024
+    AI_TEMPERATURE: float = 0.2
+    AI_TIMEOUT_SECONDS: float = 30.0
+    AI_MAX_RETRIES: int = 3
+    AI_BACKOFF_BASE: float = 2.0
+    AI_EVAL_CACHE_TTL_MINUTES: int = 60
+    PIPELINE_AI_EVAL_TOP_N: int = 10
+    MAX_CONCURRENT_EVALS: int = 3
+
+    @property
+    def ai_cascade_models_list(self) -> list[str]:
+        return [m.strip() for m in self.AI_CASCADE_MODELS.split(",") if m.strip()]
+
     # Engine
     EXECUTION_INTERVAL_SECONDS: int = 300
     DAILY_REGEN_HOUR: int = 3

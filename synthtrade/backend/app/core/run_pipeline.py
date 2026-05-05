@@ -5,6 +5,7 @@ from app.core.backtester import run_backtest
 from app.core.ranker import compute_score
 from app.core.market_data import fetch_ohlcv
 from app.db.supabase_client import get_supabase
+from app.config import settings
 
 logger = logging.getLogger("synthtrade.pipeline")
 
@@ -17,14 +18,32 @@ SIGNAL_MAP = {
 }
 
 
-def run_pipeline(
+def build_evaluator():
+    from app.ai.model_client import ModelClient
+    from app.ai.evaluator import Evaluator
+    from app.ai.cache import EvalCache
+    client = ModelClient(
+        api_key=settings.AI_API_KEY,
+        api_base_url=settings.AI_API_BASE_URL,
+        cascade_models=settings.ai_cascade_models_list,
+        fallback_model=settings.AI_FALLBACK_MODEL,
+        timeout=settings.AI_TIMEOUT_SECONDS,
+        max_retries=settings.AI_MAX_RETRIES,
+        backoff_base=settings.AI_BACKOFF_BASE,
+    )
+    cache = EvalCache(ttl_minutes=settings.AI_EVAL_CACHE_TTL_MINUTES)
+    return Evaluator(model_client=client, cache=cache)
+
+
+async def run_pipeline(
     pairs: list[str] = ["BTC/USDT"],
     timeframes: list[str] = ["5m", "15m"],
     days: int = 180,
+    ai_eval: bool = True,
 ) -> int:
     db = get_supabase()
     saved = 0
-
+    saved_strategies = []
     ohlcv_cache: dict[tuple, object] = {}
 
     for strategy in generate_all_variants(pairs=pairs, timeframes=timeframes):
@@ -64,11 +83,35 @@ def run_pipeline(
                 "status": "PENDING",
             }
             db.table("strategies").upsert(row).execute()
+            saved_strategies.append(row)
             saved += 1
 
         except Exception as e:
             logger.warning(f"Strategia {strategy} saltata: {e}")
             continue
+
+    # Passo AI Evaluator sulle top-N strategie
+    if ai_eval and saved_strategies:
+        top_n = settings.PIPELINE_AI_EVAL_TOP_N
+        top = sorted(saved_strategies, key=lambda s: s["score"], reverse=True)[:top_n]
+        try:
+            evaluator = build_evaluator()
+            # Usa l'ohlcv del primo pair/timeframe disponibile
+            first_key = next(iter(ohlcv_cache))
+            ohlcv = ohlcv_cache[first_key]
+            eval_results = await evaluator.evaluate_all(top, ohlcv,
+                                                         max_concurrent=settings.MAX_CONCURRENT_EVALS)
+            for eval_result in eval_results:
+                if eval_result is None:
+                    continue
+                if eval_result.verdict == "DEMOTE":
+                    db.table("strategies").update({"status": "REJECTED"}).eq(
+                        "id", eval_result.strategy_id).execute()
+                    logger.info(f"Strategy {eval_result.strategy_id} DEMOTED → REJECTED")
+                elif eval_result.verdict == "PROMOTE":
+                    logger.info(f"Strategy {eval_result.strategy_id} PROMOTED score={eval_result.score:.3f}")
+        except Exception as e:
+            logger.error(f"AI eval step failed (pipeline continues): {e}")
 
     logger.info(f"Pipeline completata: {saved} strategie salvate")
     return saved

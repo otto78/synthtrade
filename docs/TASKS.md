@@ -74,8 +74,8 @@
 - [x] 🔵 Refactor: `core/auth_utils.py` ✅
 
 ### Strategies API
-- [ ] 🔴 Test `test_api_strategies.py`
-- [ ] 🟢 Implementare `api/strategies.py`
+- [x] 🔴 Test `test_api_strategies.py` ✅ 12 test
+- [x] 🟢 Implementare `api/strategies.py` ✅
 - [ ] 🔵 Refactor: `StrategyRepository`
 
 ### Dashboard API

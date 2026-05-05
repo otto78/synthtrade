@@ -10,7 +10,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- Fase 2: Strategies API, Dashboard API, Logs API, WebSocket
+- Fase 2: Dashboard API, Logs API, WebSocket
+
+---
+
+## [0.2.1] — 2025-01-16
+
+### Added
+- `api/strategies.py`: GET list/detail, POST approve/reject con mock Supabase
+- `tests/integration/test_api_strategies.py`: 12 test (list, filter, detail, approve, reject, 404, 409, auth)
 
 ---
 

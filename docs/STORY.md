@@ -66,9 +66,9 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 ### Progresso Generale
 
 - **Fase completata:** 1 / 6 ✅ (Fase 2 in corso)
-- **Task completati:** 30 (Fase 0 + Fase 1 + Auth)
-- **Test passati:** 74
-- **Test coverage:** ~60%
+- **Task completati:** 33 (Fase 0 + Fase 1 + Auth + Strategies API)
+- **Test passati:** 86
+- **Test coverage:** ~65%
 
 ---
 

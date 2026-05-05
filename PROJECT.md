@@ -1457,11 +1457,54 @@ def build_market_context(ohlcv_df) -> dict:
 
 ---
 
-### 🟣 Fase 5 — AI Evaluator con Cascade OpenRouter (3–4 giorni)
+### 🟣 Fase 5 — AI Evaluator (4–5 giorni)
 
-#### Config & modello dati
-- [ ] Aggiornare `config.py`: aggiungere `OPENROUTER_API_KEY`, `AI_CASCADE_TIMEOUT`, `AI_CASCADE_MAX_RETRIES`, lista `CASCADE_MODELS` da `.env`
-- [ ] Creare schema Pydantic `EvalResult` con validatori su `score` (range 0–1) e `risk` (enum)
+> Struttura: `backend/app/ai/` con `schemas.py`, `context_builder.py`, `prompt_builder.py`, `model_client.py`, `eval_parser.py`, `cache.py`, `evaluator.py`
+
+#### 5.0 Config & Schemas
+- Nuovi campi `config.py`: `AI_PRIMARY_MODEL`, `AI_FALLBACK_MODEL`, `AI_API_KEY`, `AI_API_BASE_URL`, `AI_MAX_TOKENS`, `AI_TEMPERATURE`, `AI_TIMEOUT_SECONDS`, `AI_MAX_RETRIES`, `AI_BACKOFF_BASE`, `AI_EVAL_CACHE_TTL_MINUTES`, `PIPELINE_AI_EVAL_TOP_N`, `MAX_CONCURRENT_EVALS`
+- `ai/schemas.py`: `MarketContext`, `StrategyContext`, `EvalPromptInput`, `EvalResult` (score 0–1, verdict PROMOTE/HOLD/DEMOTE, reasoning, confidence, model_used, tokens), `ModelResponse`
+
+#### 5.1 MarketContext Builder
+- `build_ohlcv_summary()` aggrega N candles in statistiche
+- `detect_market_regime()` → `trending`/`volatile`/`ranging` via ADX/ATR
+- `build_market_context()` compone `MarketContext` da Supabase con cache
+- `MarketRegimeDetector` con soglie configurabili
+
+#### 5.2 Prompt Builder
+- `build_prompt(input: EvalPromptInput)` con token budget
+- `build_system_prompt()` con ruolo analista quantitativo
+- Template `.jinja2` separato da logica
+
+#### 5.3 Model Client
+- `_call_model()` con `httpx.AsyncClient`, headers Bearer, body corretto
+- Retry con backoff esponenziale (`AI_BACKOFF_BASE ** attempt`) su 429/503
+- `ModelClientError`, `ModelTimeoutError`, `AllModelsUnavailableError`
+- `_call_model_with_fallback()`: primario → fallback
+- `@async_retry` decorator in `ai/retry.py`
+
+#### 5.4 EvalResult Parser
+- `parse_eval_result()`: JSON da markdown, clamp score, validazione verdict
+- `EvalParseError` con messaggio descrittivo
+
+#### 5.5 EvalCache
+- `get_cached_eval(strategy_id)` con TTL da `AI_EVAL_CACHE_TTL_MINUTES`
+- `save_eval(result)` upsert su Supabase
+
+#### 5.6 Evaluator
+- `evaluate_strategy(strategy_id)`: context → prompt → modello → parse → cache
+- `evaluate_all(strategy_ids)` con `asyncio.Semaphore(MAX_CONCURRENT_EVALS)`
+- Errori AI loggati su Supabase, non propagati
+
+#### 5.7 API
+- `GET /api/strategies/:id/eval` → cache o `202 Accepted` + BackgroundTask
+- `POST /api/strategies/:id/eval/refresh` → forza nuova valutazione
+
+#### 5.8 Integrazione Pipeline
+- `run_pipeline()` chiama `evaluate_all()` sulle top-N strategie
+- `PROMOTE` + score ≥ soglia → candidata ExecutionEngine
+- `DEMOTE` → disattivazione automatica
+- Broadcast WS `eval_complete` con `strategy_id`, `verdict`, `score`
 
 #### TDD — `_call_model` (unit, singolo tier)
 - [ ] 🔴 **Test `test_ai_evaluator.py::test_call_model_success`:**

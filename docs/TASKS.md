@@ -282,18 +282,87 @@
 
 ## 🟣 Fase 5 — AI Evaluator
 
-- [ ] Config cascade in `config.py`
-- [ ] Schema `EvalResult` Pydantic
-- [ ] 🔴 Test `_call_model` (unit)
-- [ ] 🟢 Implementare `_call_model()`
-- [ ] 🔴 Test `evaluate_strategy` (cascade)
-- [ ] 🟢 Implementare `evaluate_strategy()`
-- [ ] 🔴 Test `EvalResult` validation
-- [ ] 🔴 Test `build_market_context`
-- [ ] 🟢 Implementare `build_market_context()`
-- [ ] 🔴 Test pipeline AI integration
-- [ ] 🟢 Integrare in `run_pipeline.py`
-- [ ] 🔵 Refactor: backoff esponenziale
+> Struttura: `synthtrade/backend/app/ai/` con `schemas.py`, `context_builder.py`, `prompt_builder.py`, `model_client.py`, `eval_parser.py`, `cache.py`, `evaluator.py`
+
+### 5.0 Config & Schemas
+- [ ] Aggiungere in `config.py`: `AI_PRIMARY_PROVIDER`, `AI_PRIMARY_MODEL`, `AI_FALLBACK_PROVIDER`, `AI_FALLBACK_MODEL`, `AI_API_KEY`, `AI_API_BASE_URL`, `AI_MAX_TOKENS`, `AI_TEMPERATURE`, `AI_TIMEOUT_SECONDS`, `AI_MAX_RETRIES`, `AI_BACKOFF_BASE`, `AI_EVAL_CACHE_TTL_MINUTES`
+- [ ] Creare `ai/schemas.py`: `MarketContext`, `StrategyContext`, `EvalPromptInput`, `EvalResult` (score, verdict, reasoning, confidence, model_used, tokens), `ModelResponse`
+
+### 5.1 MarketContext Builder
+- [ ] 🔴 Test `test_context_builder.py` → `build_ohlcv_summary()` aggrega N candles in statistiche
+- [ ] 🔴 Test → `ValueError` se candles vuoti o sotto il minimo
+- [ ] 🔴 Test → `detect_market_regime()` → `trending`/`volatile`/`ranging` in base ad ADX/ATR
+- [ ] 🔴 Test → `build_market_context()` compone `MarketContext` completo da Supabase
+- [ ] 🔴 Test → usa cache Supabase se disponibile e non scaduta
+- [ ] 🟢 Implementare `ai/context_builder.py`
+- [ ] 🔵 Refactor: `MarketRegimeDetector` con soglie configurabili da `Settings`
+
+### 5.2 Prompt Builder
+- [ ] 🔴 Test `test_prompt_builder.py` → `build_prompt()` include symbol, timeframe, metriche, indicatori
+- [ ] 🔴 Test → include istruzioni JSON con campi `EvalResult`
+- [ ] 🔴 Test → tronca se supera token budget (`AI_MAX_TOKENS`)
+- [ ] 🔴 Test → `build_system_prompt()` restituisce ruolo analista quantitativo
+- [ ] 🟢 Implementare `ai/prompt_builder.py`
+- [ ] 🔵 Refactor: template `.jinja2` separato da logica
+
+### 5.3 Model Client
+- [ ] 🔴 Test `test_model_client.py` → `_call_model()` POST corretto con headers e body
+- [ ] 🔴 Test → restituisce `ModelResponse` con content e token usage
+- [ ] 🔴 Test → retry con backoff esponenziale su 429/503 fino a `AI_MAX_RETRIES`
+- [ ] 🔴 Test → esauriti retry → `ModelClientError`
+- [ ] 🔴 Test → timeout → `ModelTimeoutError`
+- [ ] 🔴 Test → `_call_model_with_fallback()` tenta primario poi fallback
+- [ ] 🔴 Test → entrambi falliscono → `AllModelsUnavailableError`
+- [ ] 🟢 Implementare `ai/model_client.py` con `httpx.AsyncClient`
+- [ ] 🔵 Refactor: `@async_retry` decorator in `ai/retry.py`
+
+### 5.4 EvalResult Parser & Validator
+- [ ] 🔴 Test `test_eval_parser.py` → `parse_eval_result()` deserializza JSON in `EvalResult`
+- [ ] 🔴 Test → estrae JSON da blocchi markdown ` ```json ... ``` `
+- [ ] 🔴 Test → `score` fuori [0,1] viene clampato con warning
+- [ ] 🔴 Test → `verdict` non valido → `EvalParseError`
+- [ ] 🔴 Test → `reasoning` mancante/vuoto → `EvalParseError`
+- [ ] 🔴 Test → JSON malformato → `EvalParseError` (non `JSONDecodeError` nuda)
+- [ ] 🟢 Implementare `ai/eval_parser.py`
+
+### 5.5 EvalCache
+- [ ] 🔴 Test `test_eval_cache.py` → `get_cached_eval()` restituisce `EvalResult` se non scaduto
+- [ ] 🔴 Test → `None` se assente o oltre `AI_EVAL_CACHE_TTL_MINUTES`
+- [ ] 🔴 Test → `save_eval()` upsert su Supabase per `strategy_id`
+- [ ] 🟢 Implementare `ai/cache.py`
+
+### 5.6 Evaluator (orchestratore)
+- [ ] 🔴 Test `test_evaluator.py` → `evaluate_strategy()` chiama context builder + prompt builder + modello
+- [ ] 🔴 Test → cache hit → restituisce senza chiamare il modello
+- [ ] 🔴 Test → chiama `_call_model_with_fallback()` poi `parse_eval_result()`
+- [ ] 🔴 Test → persiste via `EvalCache.save_eval()` dopo parsing riuscito
+- [ ] 🔴 Test → `EvalParseError` → logga su Supabase, restituisce `None`
+- [ ] 🔴 Test → `AllModelsUnavailableError` → logga su Supabase, restituisce `None`
+- [ ] 🔴 Test → `evaluate_all()` con `asyncio.Semaphore` per concorrenza limitata
+- [ ] 🟢 Implementare `ai/evaluator.py`
+- [ ] 🔵 Refactor: `MAX_CONCURRENT_EVALS` da `Settings`
+
+### 5.7 API Endpoint
+- [ ] 🔴 Test `test_api_eval.py` → `GET /api/strategies/:id/eval` restituisce cache se presente
+- [ ] 🔴 Test → se non in cache → `BackgroundTasks` + `202 Accepted`
+- [ ] 🔴 Test → `POST /api/strategies/:id/eval/refresh` forza nuova valutazione
+- [ ] 🔴 Test → endpoint protetti → 401 senza token
+- [ ] 🟢 Implementare `api/eval.py` + registrare in `main.py`
+
+### 5.8 Integrazione in Pipeline
+- [ ] 🔴 Test `test_pipeline_ai.py` → `run_pipeline()` chiama `evaluate_all()` sulle top-N strategie
+- [ ] 🔴 Test → `verdict=DEMOTE` → strategia disattivata automaticamente
+- [ ] 🔴 Test → `verdict=PROMOTE` + `score ≥ soglia` → candidata per `ExecutionEngine`
+- [ ] 🔴 Test → errori AI non bloccano la pipeline
+- [ ] 🟢 Aggiornare `run_pipeline.py` con passo AI Evaluator
+- [ ] 🟢 Broadcast WS `eval_complete` con `strategy_id`, `verdict`, `score`
+
+### 5.9 Integration Tests
+- [ ] 🔴 Test `test_ai_integration.py` → happy path: buone metriche → `PROMOTE` score ≥ 0.7
+- [ ] 🔴 Test → fallback: primario timeout → fallback risponde → `model_used=fallback`
+- [ ] 🔴 Test → cache hit: seconda chiamata entro TTL non chiama il modello
+- [ ] 🔴 Test → JSON malformato → `EvalParseError` loggato → pipeline non interrotta
+- [ ] 🔴 Test → tutti i modelli down → `AllModelsUnavailableError` → `run_pipeline()` completa senza eval
 
 ---
 

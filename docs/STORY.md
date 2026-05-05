@@ -56,7 +56,18 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - [ ] `execution/signal_resolver.py` (SignalResolverProtocol + DefaultSignalResolver)
 - [ ] `execution/execution_engine.py` (process_signal, check_exit_conditions)
 - [ ] `scheduler/jobs.py` (APScheduler: pipeline, monitor, heartbeat)
-- [ ] `ai_evaluator.py` cascade OpenRouter
+
+### v0.6.0 — AI Evaluator
+- [ ] `ai/schemas.py` (MarketContext, StrategyContext, EvalPromptInput, EvalResult, ModelResponse)
+- [ ] `ai/context_builder.py` (build_market_context, detect_market_regime)
+- [ ] `ai/prompt_builder.py` (build_prompt, build_system_prompt, token budget)
+- [ ] `ai/model_client.py` (httpx, retry backoff, fallback, custom errors)
+- [ ] `ai/eval_parser.py` (parse_eval_result, EvalParseError, markdown strip)
+- [ ] `ai/cache.py` (get_cached_eval, save_eval, TTL Supabase)
+- [ ] `ai/evaluator.py` (evaluate_strategy, evaluate_all con Semaphore)
+- [ ] `api/eval.py` (GET eval, POST refresh, BackgroundTasks)
+- [ ] Integrazione in `run_pipeline.py` (PROMOTE/DEMOTE/HOLD logic)
+- [ ] Broadcast WS `eval_complete`
 
 ### v1.0.0 — Hardening & Deploy
 - [ ] Supabase RLS

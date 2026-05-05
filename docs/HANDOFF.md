@@ -34,6 +34,14 @@
 - Scheduler APScheduler con job: pipeline, monitor_positions, heartbeat
 - 4 integration test scenari: pipeline completa, stop loss, risk reject, drawdown
 
+**Fase 5 dettagliata:** lista task completa aggiunta in TASKS.md (5.0→5.9)
+- Struttura: `backend/app/ai/` con 7 moduli
+- `EvalResult` con verdict PROMOTE/HOLD/DEMOTE, score, confidence, model_used
+- `ModelClient` con retry backoff + fallback primario/secondario
+- `EvalCache` su Supabase con TTL configurabile
+- `evaluate_all()` con `asyncio.Semaphore` per concorrenza limitata
+- Broadcast WS `eval_complete` + integrazione in `run_pipeline()`
+
 ---
 
 ### 📁 Direttive LOOM da leggere prima di iniziare la Fase 3

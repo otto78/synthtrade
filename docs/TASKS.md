@@ -249,10 +249,11 @@
 - [ ] 🔵 Refactor: intervalli configurabili da `Settings`
 
 ### 4.6 Integration Tests
-- [ ] 🔴 Test `test_execution_integration.py` → pipeline completa: Signal → trade aperto su Supabase
-- [ ] 🔴 Test → scenario stop loss: posizione aperta → SL raggiunto → posizione chiusa
-- [ ] 🔴 Test → scenario risk reject: portfolio al limite → nessun ordine → log con reason
-- [ ] 🔴 Test → scenario drawdown: drawdown oltre soglia → tutti i signal rigettati
+- [x] 🔴 Test `test_execution_integration.py` → pipeline completa: Signal → trade aperto su Supabase ✅
+- [x] 🔴 Test → scenario stop loss: posizione aperta → SL raggiunto → posizione chiusa ✅
+- [x] 🔴 Test → scenario risk reject: portfolio al limite → nessun ordine → log con reason ✅
+- [x] 🔴 Test → scenario drawdown: drawdown oltre soglia → tutti i signal rigettati ✅
+- [x] 🟢 `api/trades.py`: `GET /api/trades`, `GET /api/trades/open` ✅ 5 test
 
 ---
 

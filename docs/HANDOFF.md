@@ -14,23 +14,22 @@
 
 ### 📊 Stato Attuale
 
-**Fase corrente:** Fase 4 — Execution Engine (4.0–4.5 completati, 4.6 integration tests da fare)
+**Fase corrente:** Fase 5 — AI Evaluator
 
 **Completato:**
 - ✅ Fase 0 — Setup & Infrastruttura
 - ✅ Fase 1 — Core Engine
 - ✅ Fase 2 — Backend API
 - ✅ Fase 3 — Frontend Angular (116 test)
-- ✅ 4.0 Config + Schemas (Signal, OrderRequest, OrderResult, RiskCheckResult, PositionSnapshot)
-- ✅ 4.1 RiskManager (13 test)
-- ✅ 4.2 OrderTracker (7 test)
-- ✅ 4.3 SignalResolver (5 test)
-- ✅ 4.4 ExecutionEngine (11 test)
-- ✅ 4.5 Scheduler (4 test) + GET /api/scheduler/status + lifespan
+- ✅ **Fase 4 — Execution Engine** (49 test)
+  - 4.0 Config + Schemas
+  - 4.1 RiskManager (13) · 4.2 OrderTracker (7) · 4.3 SignalResolver (5)
+  - 4.4 ExecutionEngine (11) · 4.5 Scheduler (4)
+  - 4.6 Integration Tests (4) + `GET /api/trades` + `GET /api/trades/open` (5)
 
-**Totale test:** 154 backend + 116 frontend = 270
+**Totale test:** 163 backend + 116 frontend = 279
 
-**In corso:** 4.6 Integration Tests (pipeline completa, stop loss, risk reject, drawdown)
+**In corso:** 5.0 AI Evaluator — Config & Schemas
 
 **Fase 4 dettagliata:** lista task completa aggiunta in TASKS.md (4.0→4.6)
 - Struttura: `backend/app/execution/` + `backend/app/scheduler/`

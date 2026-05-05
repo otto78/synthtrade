@@ -14,6 +14,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.6] — 2026-05-05
+
+### Added
+- `tests/integration/test_execution_integration.py`: 4 scenari (pipeline completa, stop loss, risk reject, drawdown)
+- `api/trades.py`: `GET /api/trades` (con filtro status), `GET /api/trades/open` — 5 test
+- Registrato `trades.router` in `main.py`
+
+---
+
 ## [0.4.5] — 2026-05-05
 
 ### Added

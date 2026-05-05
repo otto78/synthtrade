@@ -64,7 +64,7 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - [x] `execution/signal_resolver.py` (SignalResolverProtocol + DefaultSignalResolver) — 5 test
 - [x] `execution/execution_engine.py` (process_signal, check_exit_conditions) — 11 test
 - [x] `scheduler/jobs.py` (APScheduler: pipeline, monitor, heartbeat) — 4 test
-- [ ] 4.6 Integration Tests (pipeline completa, stop loss, risk reject, drawdown)
+- [x] 4.6 Integration Tests (pipeline completa, stop loss, risk reject, drawdown) + `api/trades.py`
 - [ ] Fase 5 AI Evaluator
 
 ### v0.6.0 — AI Evaluator
@@ -97,8 +97,8 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ### Progresso Generale
 
-- **Task completati:** 153 (Fase 0+1+2+3+4.0–4.5)
-- **Test passati:** 154 backend + 116 frontend = 270 totali
+- **Task completati:** 162 (Fase 0+1+2+3+4 completa)
+- **Test passati:** 163 backend + 116 frontend = 279 totali
 - **Test coverage:** ~80% backend, ~85% frontend core/shared
 
 ---

@@ -38,7 +38,7 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - [x] `backtester.py` (simulazione OHLCV con fee/slippage)
 - [x] `ranker.py` (score composito con filtri hard)
 - [x] `market_data.py` (fetch Binance + cache Supabase)
-- [ ] `run_pipeline.py` (pipeline batch completa)
+- [x] `run_pipeline.py` (pipeline batch completa)
 
 ### v0.3.0 — Backend API
 - [ ] Auth JWT
@@ -65,10 +65,10 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ### Progresso Generale
 
-- **Fase completata:** 0 / 6 (Fase 1 in corso)
-- **Task completati:** 21 (Fase 0 + indicators + generator + backtester + market_data)
-- **Test passati:** 62
-- **Test coverage:** ~40%
+- **Fase completata:** 1 / 6 ✅ (Fase 2 in corso)
+- **Task completati:** 26 (Fase 0 + Fase 1 completa)
+- **Test passati:** 67
+- **Test coverage:** ~55%
 
 ---
 

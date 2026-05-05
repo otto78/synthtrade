@@ -10,7 +10,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- Fase 1: `run_pipeline.py`
+- Fase 2: Auth JWT, Strategies API, Dashboard API, Logs API, WebSocket
+
+---
+
+## [0.1.6] — 2025-01-16
+
+### Added
+- `app/core/run_pipeline.py`: pipeline batch completa (genera → backtest → rank → upsert Supabase)
+- Cache OHLCV in-memory per evitare fetch ripetuti nella stessa pipeline run
+- Gestione eccezioni per strategia: errori singoli non bloccano la pipeline
+- `tests/integration/test_pipeline.py`: 5 test integration
 
 ---
 

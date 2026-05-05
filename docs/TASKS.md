@@ -59,8 +59,8 @@
 - [ ] 🔵 Refactor: separare `exchange.py`
 
 ### Pipeline Batch
-- [ ] 🔴 Test `test_pipeline.py` (integration)
-- [ ] 🟢 Implementare `run_pipeline.py`
+- [x] 🔴 Test `test_pipeline.py` (integration) ✅ 5 test
+- [x] 🟢 Implementare `run_pipeline.py` ✅
 - [ ] 🔵 Refactor: progress logging + gestione eccezioni
 
 ---

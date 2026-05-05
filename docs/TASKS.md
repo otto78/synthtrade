@@ -124,14 +124,14 @@
 - [x] `core/models/ws-message.model.ts` → `WsMessage<T>`, `WsMessageType` (enum)
 
 ### 3.3 Interceptors & Guards
-- [ ] 🔴 Test `auth.interceptor.spec.ts`
-- [ ] 🟢 Implementare `core/interceptors/auth.interceptor.ts`
-- [ ] 🔴 Test `error.interceptor.spec.ts`
-- [ ] 🟢 Implementare `core/interceptors/error.interceptor.ts`
-- [ ] 🔴 Test `auth.guard.spec.ts`
-- [ ] 🟢 Implementare `core/guards/auth.guard.ts`
-- [ ] 🔴 Test `no-auth.guard.spec.ts`
-- [ ] 🟢 Implementare `core/guards/no-auth.guard.ts`
+- [x] 🔴 Test `auth.interceptor.spec.ts` ✅ 2 test
+- [x] 🟢 Implementare `core/interceptors/auth.interceptor.ts` ✅
+- [x] 🔴 Test `error.interceptor.spec.ts` ✅ 3 test
+- [x] 🟢 Implementare `core/interceptors/error.interceptor.ts` ✅
+- [x] 🔴 Test `auth.guard.spec.ts` ✅ 3 test
+- [x] 🟢 Implementare `core/guards/auth.guard.ts` ✅
+- [x] 🔴 Test `no-auth.guard.spec.ts` ✅ 2 test
+- [x] 🟢 Implementare `core/guards/no-auth.guard.ts` ✅
 
 ### 3.4 Services
 - [ ] 🔴 Test `token-storage.service.spec.ts` (setTokens, getAccessToken, clear, isTokenExpired)

@@ -104,8 +104,8 @@
 - [x] Configurare `environment.ts` / `environment.prod.ts` con `apiUrl`, `wsUrl`, `supabaseUrl`, `supabaseAnonKey`
 - [x] Configurare `proxy.conf.json` per dev: `/api → localhost:8000`, `/ws → localhost:8000`
 - [x] Aggiungere script npm: `start:proxy`, `test:watch`, `test:ci`, `test:coverage`
-- [ ] Installare e configurare `eslint` + `prettier` con regole Angular
-- [ ] Configurare `jest --coverage` con soglia minima 80% su `core/` e `shared/`
+- [x] Installare e configurare `eslint` + `prettier` con regole Angular
+- [x] Configurare `jest --coverage` con soglia minima 80% su `core/` e `shared/`
 
 ### 3.1 Design Tokens & Tema
 - [x] Creare `src/styles/_variables.scss`

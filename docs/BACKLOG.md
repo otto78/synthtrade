@@ -61,4 +61,4 @@ Idee, feature future e miglioramenti non ancora strutturati come task.
 
 ---
 
-**Ultima modifica:** 2025-01-15 — Amazon Q
+**Ultima modifica:** 2025-01-17 — Amazon Q

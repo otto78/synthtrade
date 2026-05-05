@@ -45,9 +45,17 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - [x] API strategies, dashboard, logs
 - [x] WebSocket live feed
 
-### v0.4.0 — Frontend Angular
-- [ ] Dark terminal UI completa
-- [ ] Tutte le pagine (Login, Dashboard, Strategies, ActiveTrade, Logs)
+### v0.4.0 — Frontend Angular ✅
+- [x] Dark terminal UI completa
+- [x] 3.0 Bootstrap (Angular, Jest, proxy, environments, eslint, prettier)
+- [x] 3.1 Design Tokens (_variables, _mixins, _reset, _animations, theme-dark)
+- [x] 3.2 Modelli TypeScript (user, strategy, trade, dashboard, log, ws-message)
+- [x] 3.3 Interceptors & Guards (auth, error, authGuard, noAuthGuard)
+- [x] 3.4 Services (TokenStorage, Auth, Strategy, Dashboard, Log, WebSocket)
+- [x] 3.5 Shared Components & Pipes (StatCard, BadgeStatus, PriceTicker, ConfirmDialog, EmptyState, RelativeTime, FormatNumber, SignedNumber)
+- [x] 3.6 Layout Shell (Sidebar, Topbar, AppShell)
+- [x] 3.7 Routing (lazy loading, authGuard, noAuthGuard, redirect)
+- [x] 3.8 Pagine (Login, Dashboard, Strategies, ActiveTrade, Logs)
 
 ### v0.5.0 — Execution Engine + AI
 - [ ] `execution/schemas.py` (Signal, OrderRequest, OrderResult, RiskCheckResult, PositionSnapshot)
@@ -87,9 +95,18 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ### Progresso Generale
 
-- **Task completati:** 71 (Fase 0+1+2 + 3.0/3.1/3.2/3.3/3.4)
-- **Test passati:** 114 backend + 45 frontend
-- **Test coverage:** ~80% backend
+- **Task completati:** 113 (Fase 0+1+2+3 completa)
+- **Test passati:** 114 backend + 116 frontend = 230 totali
+- **Test coverage:** ~80% backend, ~85% frontend core/shared
+
+---
+
+## 📝 Decisioni Architetturali
+
+**2025-01-17 — Routing con AppShell come layout wrapper**
+- Problema: tutte le route protette devono condividere Sidebar + Topbar
+- Soluzione: `AppShellComponent` come componente padre nel tree di routing, con `canActivate: [authGuard]` sul gruppo
+- Beneficio: un solo punto di controllo auth, layout condiviso senza duplicazione
 
 ---
 
@@ -111,4 +128,4 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
 
-**Ultima modifica:** 2025-01-15 — Amazon Q
+**Ultima modifica:** 2025-01-17 — Amazon Q

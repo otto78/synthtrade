@@ -14,18 +14,28 @@
 
 ### 📊 Stato Attuale
 
-**Fase corrente:** Fase 3 — Frontend Angular (in corso, 3.3 completata)
+**Fase corrente:** Fase 4 — Execution Engine
 
 **Completato:**
 - ✅ Fase 0 — Setup & Infrastruttura
 - ✅ Fase 1 — Core Engine
 - ✅ Fase 2 — Backend API
-- ✅ 3.0 Bootstrap (Angular, Jest, proxy, environments, eslint, prettier, coverage)
-- ✅ 3.1 Design Tokens (variables, mixins, reset, animations, theme-dark)
-- ✅ 3.2 Modelli TypeScript (user, strategy, trade, dashboard, log, ws-message)
-- ✅ 3.3 Interceptors & Guards (auth, error, authGuard, noAuthGuard) — 10 test
+- ✅ **Fase 3 — Frontend Angular** (116 test, 26 suite)
+  - 3.0 Bootstrap · 3.1 Design Tokens · 3.2 Modelli
+  - 3.3 Interceptors & Guards · 3.4 Services
+  - 3.5 Shared Components & Pipes · 3.6 Layout Shell
+  - 3.7 Routing · 3.8 Pagine (Login, Dashboard, Strategies, ActiveTrade, Logs)
 
-**In corso:** 3.4 Services (TokenStorage, Auth, Strategy, Dashboard, Log, WebSocket)
+**In corso:** 4.0 Execution Engine — Modelli & Configurazione
+
+**Prossimi step (in ordine):**
+1. 4.0 Config + `execution/schemas.py`
+2. 4.1 RiskManager (TDD)
+3. 4.2 OrderTracker (TDD)
+4. 4.3 SignalResolver (TDD)
+5. 4.4 ExecutionEngine (TDD)
+6. 4.5 Scheduler (TDD)
+7. 4.6 Integration Tests
 
 **Fase 4 dettagliata:** lista task completa aggiunta in TASKS.md (4.0→4.6)
 - Struttura: `backend/app/execution/` + `backend/app/scheduler/`

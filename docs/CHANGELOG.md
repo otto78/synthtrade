@@ -14,6 +14,48 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.8] — 2025-01-17
+
+### Added
+- `pages/login/login.page.ts`: ReactiveForm, spinner, error 401, redirect `/dashboard` — 7 test
+- `pages/dashboard/dashboard.page.ts`: 4 StatCard, WS `stats_update`, skeleton loading — 4 test
+- `pages/strategies/strategies.page.ts`: lista, filtro tab ALL/ACTIVE/PENDING, approve, confirm+reject, empty state — 5 test
+- `pages/active-trade/active-trade.page.ts`: WS `price_update`, P&L classi positive/negative, empty state — 5 test
+- `pages/logs/logs.page.ts`: filtro level, paginazione offset 50, WS `new_log` prepend — 5 test
+
+---
+
+## [0.3.7] — 2025-01-17
+
+### Added
+- `app.routes.ts`: lazy loading con `loadComponent`, `AppShellComponent` come layout wrapper, `authGuard`/`noAuthGuard`, redirect `**` → `dashboard` — 6 test
+- Placeholder page components per tutte le 5 route
+
+---
+
+## [0.3.6] — 2025-01-17
+
+### Added
+- `layout/sidebar/sidebar.component.ts`: 4 nav items, toggle collapsed con `signal()`, classe `sidebar--collapsed` — 4 test
+- `layout/topbar/topbar.component.ts`: username da `AuthService.currentUser$`, bottone logout — 2 test
+- `layout/app-shell/app-shell.component.ts`: shell flex Sidebar + Topbar + `<router-outlet>`
+
+---
+
+## [0.3.5] — 2025-01-17
+
+### Added
+- `shared/components/stat-card/`: label, value, delta opzionale, skeleton loading — 4 test
+- `shared/components/badge-status/`: classi CSS `badge--active/pending/rejected` via `computed()` — 6 test
+- `shared/components/price-ticker/`: flash-up/flash-down su cambio prezzo, rimozione classe su `animationend` — 4 test
+- `shared/components/confirm-dialog/`: output `confirmed`/`cancelled`, listener `Escape` via `@HostListener` — 5 test
+- `shared/components/empty-state/`: componente semplice
+- `shared/pipes/relative-time.pipe.ts`: `pure: false`, formatta in s/m/h/d ago — 5 test
+- `shared/pipes/format-number.pipe.ts`: suffissi K/M — 5 test
+- `shared/pipes/signed-number.pipe.ts`: prefisso `+` per positivi — 4 test
+
+---
+
 ## [0.2.4] — 2025-01-16
 
 ### Added

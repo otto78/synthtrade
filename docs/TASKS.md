@@ -150,60 +150,60 @@
 - [x] 🔵 Refactor: `on<T>(type)` helper tipizzato ✅
 
 ### 3.5 Shared — Componenti Atomici
-- [ ] 🔴 Test `stat-card.component.spec.ts` (label, value, delta, skeleton)
-- [ ] 🟢 Implementare `shared/components/stat-card/`
-- [ ] 🔴 Test `badge-status.component.spec.ts` (testo e classe CSS per ogni status)
-- [ ] 🟢 Implementare `shared/components/badge-status/`
-- [ ] 🔴 Test `price-ticker.component.spec.ts` (decimali, flash-up, flash-down, rimozione classe)
-- [ ] 🟢 Implementare `shared/components/price-ticker/`
-- [ ] 🔴 Test `confirm-dialog.component.spec.ts` (confirmed, cancelled, Escape)
-- [ ] 🟢 Implementare `shared/components/confirm-dialog/`
-- [ ] 🟢 Implementare `shared/components/empty-state/`
-- [ ] 🔴 Test `relative-time.pipe.spec.ts`
-- [ ] 🟢 Implementare `shared/pipes/relative-time.pipe.ts`
-- [ ] 🔴 Test `format-number.pipe.spec.ts` (K/M suffisso)
-- [ ] 🟢 Implementare `shared/pipes/format-number.pipe.ts`
-- [ ] 🔴 Test `signed-number.pipe.spec.ts`
-- [ ] 🟢 Implementare `shared/pipes/signed-number.pipe.ts`
+- [x] 🔴 Test `stat-card.component.spec.ts` (label, value, delta, skeleton) ✅ 4 test
+- [x] 🟢 Implementare `shared/components/stat-card/` ✅
+- [x] 🔴 Test `badge-status.component.spec.ts` (testo e classe CSS per ogni status) ✅ 6 test
+- [x] 🟢 Implementare `shared/components/badge-status/` ✅
+- [x] 🔴 Test `price-ticker.component.spec.ts` (decimali, flash-up, flash-down, rimozione classe) ✅ 4 test
+- [x] 🟢 Implementare `shared/components/price-ticker/` ✅
+- [x] 🔴 Test `confirm-dialog.component.spec.ts` (confirmed, cancelled, Escape) ✅ 5 test
+- [x] 🟢 Implementare `shared/components/confirm-dialog/` ✅
+- [x] 🟢 Implementare `shared/components/empty-state/` ✅
+- [x] 🔴 Test `relative-time.pipe.spec.ts` ✅ 5 test
+- [x] 🟢 Implementare `shared/pipes/relative-time.pipe.ts` ✅
+- [x] 🔴 Test `format-number.pipe.spec.ts` (K/M suffisso) ✅ 5 test
+- [x] 🟢 Implementare `shared/pipes/format-number.pipe.ts` ✅
+- [x] 🔴 Test `signed-number.pipe.spec.ts` ✅ 4 test
+- [x] 🟢 Implementare `shared/pipes/signed-number.pipe.ts` ✅
 
 ### 3.6 Layout Shell
-- [ ] 🔴 Test `sidebar.component.spec.ts` (voce attiva, toggle collapsed)
-- [ ] 🟢 Implementare `layout/sidebar/` (Dashboard, Strategies, Active Trade, Logs)
-- [ ] 🔴 Test `topbar.component.spec.ts` (username, logout)
-- [ ] 🟢 Implementare `layout/topbar/`
-- [ ] 🟢 Implementare `layout/app-shell/`
+- [x] 🔴 Test `sidebar.component.spec.ts` (voce attiva, toggle collapsed) ✅ 4 test
+- [x] 🟢 Implementare `layout/sidebar/` (Dashboard, Strategies, Active Trade, Logs) ✅
+- [x] 🔴 Test `topbar.component.spec.ts` (username, logout) ✅ 2 test
+- [x] 🟢 Implementare `layout/topbar/` ✅
+- [x] 🟢 Implementare `layout/app-shell/` ✅
 - [ ] 🔵 Refactor: stato collapsed persistito in localStorage
 
 ### 3.7 Routing
-- [ ] Creare `app.routes.ts` con lazy loading (login, dashboard, strategies, active-trade, logs)
-- [ ] 🔴 Test routing: `''` → `/dashboard`, `**` → `/dashboard`
-- [ ] 🔴 Test: `authGuard` redirige a `/login` senza token
+- [x] Creare `app.routes.ts` con lazy loading (login, dashboard, strategies, active-trade, logs) ✅
+- [x] 🔴 Test routing: `''` → `/login` senza token, `''` → `/dashboard` con token ✅ 6 test
+- [x] 🔴 Test: `authGuard` redirige a `/login` senza token ✅
 
 ### 3.8 Pagine
 
 #### LoginPage
-- [ ] 🔴 Test `login.component.spec.ts` (form invalido, submit, 401, redirect, spinner)
-- [ ] 🟢 Implementare `pages/login/login.component.ts`
+- [x] 🔴 Test `login.component.spec.ts` (form invalido, submit, 401, redirect, spinner) ✅ 7 test
+- [x] 🟢 Implementare `pages/login/login.page.ts` ✅
 - [ ] 🔵 Refactor: estrarre `LoginFormComponent`
 
 #### DashboardPage
-- [ ] 🔴 Test `dashboard.component.spec.ts` (getStats, 4 StatCard, WS stats_update, PipelineStatus)
-- [ ] 🟢 Implementare `pages/dashboard/dashboard.component.ts`
+- [x] 🔴 Test `dashboard.component.spec.ts` (getStats, 4 StatCard, WS stats_update, loading) ✅ 4 test
+- [x] 🟢 Implementare `pages/dashboard/dashboard.page.ts` ✅
 - [ ] 🟢 Aggiungere grafico balance history
 - [ ] 🔵 Refactor: `DashboardStore` con Angular Signals
 
 #### StrategiesPage
-- [ ] 🔴 Test `strategies.component.spec.ts` (list, activate, delete+confirm, filtro, empty state)
-- [ ] 🟢 Implementare `pages/strategies/strategies.component.ts`
+- [x] 🔴 Test `strategies.component.spec.ts` (list, activate, delete+confirm, filtro, empty state) ✅ 5 test
+- [x] 🟢 Implementare `pages/strategies/strategies.page.ts` ✅
 - [ ] 🔵 Refactor: `StrategyListComponent` + `StrategyRowComponent`
 
 #### ActiveTradePage
-- [ ] 🔴 Test `active-trade.component.spec.ts` (empty state, render trade, WS price_update, P&L classi)
-- [ ] 🟢 Implementare `pages/active-trade/active-trade.component.ts`
+- [x] 🔴 Test `active-trade.component.spec.ts` (empty state, render trade, WS price_update, P&L classi) ✅ 5 test
+- [x] 🟢 Implementare `pages/active-trade/active-trade.page.ts` ✅
 
 #### LogsPage
-- [ ] 🔴 Test `logs.component.spec.ts` (getLogs, filtro level, paginazione, riga, WS new_log)
-- [ ] 🟢 Implementare `pages/logs/logs.component.ts`
+- [x] 🔴 Test `logs.component.spec.ts` (getLogs, filtro level, paginazione, riga, WS new_log) ✅ 5 test
+- [x] 🟢 Implementare `pages/logs/logs.page.ts` ✅
 - [ ] 🔵 Refactor: `LogFiltersComponent` + query params sync
 
 ### 3.9 E2E

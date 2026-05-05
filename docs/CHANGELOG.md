@@ -10,7 +10,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- Fase 1: `backtester.py`, `ranker.py`, `market_data.py`
+- Fase 1: `ranker.py`, `market_data.py`, `run_pipeline.py`
+
+---
+
+## [0.1.3] — 2025-01-16
+
+### Added
+- `app/core/backtester.py`: simulazione OHLCV con fee 0.1% e slippage 0.07%
+- Chiusura automatica posizione aperta a fine serie
+- `tests/unit/test_backtester.py`: 14 test (PnL, fee, equity_curve, no look-ahead)
+
+### Fixed
+- PnL calcolato correttamente anche su posizioni mai chiuse da segnale esplicito
 
 ---
 

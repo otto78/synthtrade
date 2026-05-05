@@ -44,8 +44,8 @@
 - [ ] 🔵 Refactor: `TEMPLATES` configurabile via JSON
 
 ### Backtester
-- [ ] 🔴 Test `test_backtester.py`
-- [ ] 🟢 Implementare `backtester.py`
+- [x] 🔴 Test `test_backtester.py` ✅ 14 test
+- [x] 🟢 Implementare `backtester.py` ✅
 - [ ] 🔵 Refactor: `StopLossManager` separato
 
 ### Ranker

@@ -65,10 +65,9 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ### Progresso Generale
 
-- **Fase completata:** 2 / 6 ✅ (Fase 4 in corso)
-- **Task completati:** 43 (Fase 0 + Fase 1 + Fase 2 completa)
-- **Test passati:** 114
-- **Test coverage:** ~80%
+- **Task completati:** 50 (Fase 0 + Fase 1 + Fase 2 + Fase 3 bootstrap/tokens/modelli)
+- **Test passati:** 114 backend
+- **Test coverage:** ~80% backend
 
 ---
 

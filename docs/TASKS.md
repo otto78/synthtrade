@@ -98,30 +98,30 @@
 ## 🟢 Fase 3 — Frontend Angular
 
 ### 3.0 Bootstrap & Configurazione
-- [ ] Creare Angular app: `ng new synthtrade-ui --style=scss --routing --standalone`
-- [ ] Rimuovere Karma/Jasmine, installare `jest-preset-angular`, creare `jest.config.ts` e `setup-jest.ts`
-- [ ] Creare `tsconfig.spec.json` per Jest
-- [ ] Configurare `environment.ts` / `environment.prod.ts` con `apiUrl`, `wsUrl`, `supabaseUrl`, `supabaseAnonKey`
-- [ ] Configurare `proxy.conf.json` per dev: `/api → localhost:8000`, `/ws → localhost:8000`
-- [ ] Aggiungere script npm: `start:proxy`, `test:watch`, `test:ci`, `test:coverage`
+- [x] Creare Angular app: `ng new synthtrade-ui --style=scss --routing --standalone`
+- [x] Rimuovere Karma/Jasmine, installare `jest-preset-angular`, creare `jest.config.ts` e `setup-jest.ts`
+- [x] Creare `tsconfig.spec.json` per Jest
+- [x] Configurare `environment.ts` / `environment.prod.ts` con `apiUrl`, `wsUrl`, `supabaseUrl`, `supabaseAnonKey`
+- [x] Configurare `proxy.conf.json` per dev: `/api → localhost:8000`, `/ws → localhost:8000`
+- [x] Aggiungere script npm: `start:proxy`, `test:watch`, `test:ci`, `test:coverage`
 - [ ] Installare e configurare `eslint` + `prettier` con regole Angular
 - [ ] Configurare `jest --coverage` con soglia minima 80% su `core/` e `shared/`
 
 ### 3.1 Design Tokens & Tema
-- [ ] Creare `src/styles/_variables.scss`
-- [ ] Creare `src/styles/_mixins.scss`
-- [ ] Creare `src/styles/_reset.scss`
-- [ ] Creare `src/styles/_animations.scss`
-- [ ] Creare `src/styles/theme-dark.scss`
-- [ ] Importare tutto in `styles.scss`
+- [x] Creare `src/styles/_variables.scss`
+- [x] Creare `src/styles/_mixins.scss`
+- [x] Creare `src/styles/_reset.scss`
+- [x] Creare `src/styles/_animations.scss`
+- [x] Creare `src/styles/theme-dark.scss`
+- [x] Importare tutto in `styles.scss`
 
 ### 3.2 Modelli & Interfacce
-- [ ] `core/models/user.model.ts` → `User`, `AuthTokens`, `JwtPayload`
-- [ ] `core/models/strategy.model.ts` → `Strategy`, `StrategyStatus`, `StrategyCreateDto`, `StrategyMetrics`
-- [ ] `core/models/trade.model.ts` → `Trade`, `TradeDirection`, `TradeStatus`
-- [ ] `core/models/dashboard.model.ts` → `DashboardStats`, `BalanceSnapshot`, `PipelineStatus`
-- [ ] `core/models/log.model.ts` → `OperationLog`, `LogLevel`, `LogFilters`, `PaginatedLogs`
-- [ ] `core/models/ws-message.model.ts` → `WsMessage<T>`, `WsMessageType` (enum)
+- [x] `core/models/user.model.ts` → `User`, `AuthTokens`, `JwtPayload`
+- [x] `core/models/strategy.model.ts` → `Strategy`, `StrategyStatus`, `StrategyCreateDto`, `StrategyMetrics`
+- [x] `core/models/trade.model.ts` → `Trade`, `TradeDirection`, `TradeStatus`
+- [x] `core/models/dashboard.model.ts` → `DashboardStats`, `BalanceSnapshot`, `PipelineStatus`
+- [x] `core/models/log.model.ts` → `OperationLog`, `LogLevel`, `LogFilters`, `PaginatedLogs`
+- [x] `core/models/ws-message.model.ts` → `WsMessage<T>`, `WsMessageType` (enum)
 
 ### 3.3 Interceptors & Guards
 - [ ] 🔴 Test `auth.interceptor.spec.ts`

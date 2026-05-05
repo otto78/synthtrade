@@ -1,0 +1,70 @@
+// Utility classes globali tema dark
+
+.text-primary   { color: var(--text-primary); }
+.text-secondary { color: var(--text-secondary); }
+.text-muted     { color: var(--text-muted); }
+.text-buy       { color: var(--color-buy); }
+.text-sell      { color: var(--color-sell); }
+.text-warn      { color: var(--color-warn); }
+.text-mono      { font-family: $font-mono; }
+
+.bg-surface   { background: var(--bg-surface); }
+.bg-elevated  { background: var(--bg-elevated); }
+
+.border-default { border: 1px solid var(--border-default); }
+
+.btn-primary {
+  background: var(--accent-primary);
+  color: #000;
+  font-weight: 600;
+  padding: $space-2 $space-4;
+  border-radius: $radius-sm;
+  font-family: $font-body;
+  transition: opacity 0.2s;
+  &:hover { opacity: 0.85; }
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
+}
+
+.btn-danger {
+  background: var(--color-sell);
+  color: #fff;
+  font-weight: 600;
+  padding: $space-2 $space-4;
+  border-radius: $radius-sm;
+  transition: opacity 0.2s;
+  &:hover { opacity: 0.85; }
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  padding: $space-2 $space-4;
+  border-radius: $radius-sm;
+  border: 1px solid var(--border-default);
+  transition: border-color 0.2s;
+  &:hover { border-color: var(--text-secondary); }
+}
+
+.terminal-surface {
+  position: relative;
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg, transparent 0px, transparent 2px,
+      rgba(255, 255, 255, 0.012) 2px, rgba(255, 255, 255, 0.012) 4px
+    );
+    pointer-events: none;
+    border-radius: inherit;
+  }
+}
+
+.empty-state {
+  @include flex-center;
+  flex-direction: column;
+  gap: $space-2;
+  padding: $space-12;
+  color: var(--text-muted);
+  font-size: 13px;
+}

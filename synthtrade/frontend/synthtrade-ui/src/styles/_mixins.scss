@@ -1,0 +1,28 @@
+// ── Breakpoints ───────────────────────────────────────────────────────
+@mixin md { @media (min-width: 768px) { @content; } }
+@mixin lg { @media (min-width: 1024px) { @content; } }
+@mixin xl { @media (min-width: 1280px) { @content; } }
+
+// ── Layout helpers ────────────────────────────────────────────────────
+@mixin flex-center { display: flex; align-items: center; justify-content: center; }
+@mixin flex-between { display: flex; align-items: center; justify-content: space-between; }
+@mixin flex-col { display: flex; flex-direction: column; }
+
+// ── Text ──────────────────────────────────────────────────────────────
+@mixin text-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@mixin mono { font-family: $font-mono; }
+
+// ── Card ──────────────────────────────────────────────────────────────
+@mixin card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: $radius-md;
+  padding: $space-4;
+}
+
+// ── Scrollbar ─────────────────────────────────────────────────────────
+@mixin custom-scrollbar {
+  &::-webkit-scrollbar { width: 4px; }
+  &::-webkit-scrollbar-track { background: var(--bg-base); }
+  &::-webkit-scrollbar-thumb { background: var(--bg-elevated); border-radius: 2px; }
+}

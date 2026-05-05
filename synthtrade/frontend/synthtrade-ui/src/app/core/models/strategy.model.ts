@@ -1,0 +1,36 @@
+export type StrategyStatus = 'PENDING' | 'APPROVED' | 'ACTIVE' | 'REJECTED' | 'EXPIRED';
+
+export interface StrategyMetrics {
+  pnl_pct: number;
+  win_rate: number;
+  sharpe: number;
+  max_drawdown_pct: number;
+  num_trades: number;
+}
+
+export interface Strategy {
+  id: string;
+  title: string;
+  template: string;
+  pair: string;
+  timeframe: string;
+  params: Record<string, number>;
+  score: number | null;
+  ai_score: number | null;
+  ai_risk: 'LOW' | 'MEDIUM' | 'HIGH' | null;
+  ai_note: string | null;
+  ai_strengths: string[];
+  ai_warnings: string[];
+  status: StrategyStatus;
+  backtest: StrategyMetrics | null;
+  equity_curve: number[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StrategyCreateDto {
+  template: string;
+  pair: string;
+  timeframe: string;
+  params: Record<string, number>;
+}

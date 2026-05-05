@@ -134,20 +134,20 @@
 - [x] 🟢 Implementare `core/guards/no-auth.guard.ts` ✅
 
 ### 3.4 Services
-- [ ] 🔴 Test `token-storage.service.spec.ts` (setTokens, getAccessToken, clear, isTokenExpired)
-- [ ] 🟢 Implementare `core/services/token-storage.service.ts`
-- [ ] 🔴 Test `auth.service.spec.ts` (login, logout, refreshToken, isAuthenticated)
-- [ ] 🟢 Implementare `core/services/auth.service.ts`
-- [ ] 🔴 Test `strategy.service.spec.ts` (getStrategies, getStrategy, activate, deactivate, delete)
-- [ ] 🟢 Implementare `core/services/strategy.service.ts`
-- [ ] 🔴 Test `dashboard.service.spec.ts` (getStats, getBalanceHistory, getPipelineStatus, cache 30s)
-- [ ] 🟢 Implementare `core/services/dashboard.service.ts`
+- [x] 🔴 Test `token-storage.service.spec.ts` ✅ 7 test
+- [x] 🟢 Implementare `core/services/token-storage.service.ts` ✅
+- [x] 🔴 Test `auth.service.spec.ts` ✅ 7 test
+- [x] 🟢 Implementare `core/services/auth.service.ts` ✅
+- [x] 🔴 Test `strategy.service.spec.ts` ✅ 5 test
+- [x] 🟢 Implementare `core/services/strategy.service.ts` ✅
+- [x] 🔴 Test `dashboard.service.spec.ts` ✅ 4 test (incl. cache 30s)
+- [x] 🟢 Implementare `core/services/dashboard.service.ts` ✅
 - [ ] 🔵 Refactor: cache con `shareReplay(1)` + invalidazione dopo 30s
-- [ ] 🔴 Test `log.service.spec.ts` (getLogs con filtri e paginazione)
-- [ ] 🟢 Implementare `core/services/log.service.ts`
-- [ ] 🔴 Test `ws.service.spec.ts` (connect, messages$, disconnect, reconnect backoff)
-- [ ] 🟢 Implementare `core/services/ws.service.ts`
-- [ ] 🔵 Refactor: `on<T>(type)` helper tipizzato
+- [x] 🔴 Test `log.service.spec.ts` ✅ 5 test
+- [x] 🟢 Implementare `core/services/log.service.ts` ✅
+- [x] 🔴 Test `ws.service.spec.ts` ✅ 5 test
+- [x] 🟢 Implementare `core/services/ws.service.ts` ✅
+- [x] 🔵 Refactor: `on<T>(type)` helper tipizzato ✅
 
 ### 3.5 Shared — Componenti Atomici
 - [ ] 🔴 Test `stat-card.component.spec.ts` (label, value, delta, skeleton)

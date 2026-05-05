@@ -87,8 +87,8 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ### Progresso Generale
 
-- **Task completati:** 58 (Fase 0+1+2 + 3.0/3.1/3.2/3.3)
-- **Test passati:** 114 backend + 10 frontend
+- **Task completati:** 71 (Fase 0+1+2 + 3.0/3.1/3.2/3.3/3.4)
+- **Test passati:** 114 backend + 45 frontend
 - **Test coverage:** ~80% backend
 
 ---

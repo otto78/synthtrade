@@ -49,8 +49,8 @@
 - [ ] 🔵 Refactor: `StopLossManager` separato
 
 ### Ranker
-- [ ] 🔴 Test `test_ranker.py`
-- [ ] 🟢 Implementare `ranker.py`
+- [x] 🔴 Test `test_ranker.py` ✅ 15 test
+- [x] 🟢 Implementare `ranker.py` ✅
 - [ ] 🔵 Refactor: `RankConfig` da `.env`
 
 ### Market Data + Cache Supabase

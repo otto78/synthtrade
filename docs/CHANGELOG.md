@@ -10,7 +10,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- Fase 1: `ranker.py`, `market_data.py`, `run_pipeline.py`
+- Fase 1: `market_data.py`, `run_pipeline.py`
+
+---
+
+## [0.1.4] — 2025-01-16
+
+### Added
+- `app/core/ranker.py`: filtri hard (min_trades, max_drawdown, min_sharpe, min_pnl) + score composito
+- `RankConfig` dataclass con pesi configurabili
+- `tests/unit/test_ranker.py`: 15 test (filtri, score range, ordinamento, config custom)
 
 ---
 

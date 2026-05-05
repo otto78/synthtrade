@@ -51,6 +51,10 @@ def generate_all_variants(
             )
 
 
+import hashlib
+
+
 def build_strategy_id(s: StrategyParams) -> str:
     key = f"{s.template}_{s.pair}_{s.timeframe}_{tuple(sorted(s.params.items()))}"
-    return f"{s.template[:4]}_{abs(hash(key)) % 100000:05d}"
+    digest = hashlib.md5(key.encode()).hexdigest()[:8]
+    return f"{s.template[:4]}_{digest}"

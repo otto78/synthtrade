@@ -79,8 +79,8 @@
 - [ ] 🔵 Refactor: `StrategyRepository`
 
 ### Dashboard API
-- [ ] 🔴 Test `test_api_dashboard.py`
-- [ ] 🟢 Implementare `api/dashboard.py`
+- [x] 🔴 Test `test_api_dashboard.py` ✅ 10 test
+- [x] 🟢 Implementare `api/dashboard.py` ✅
 - [ ] 🔵 Refactor: cache balance 30s
 
 ### Logs API

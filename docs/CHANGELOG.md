@@ -10,7 +10,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- Fase 2: Dashboard API, Logs API, WebSocket
+- Fase 2: Logs API, WebSocket
+
+---
+
+## [0.2.2] — 2025-01-16
+
+### Added
+- `api/dashboard.py`: GET /dashboard (balance, pnl_today, active_strategy, engine_status)
+- `api/dashboard.py`: GET /dashboard/equity-history (lista ts+value ordinata)
+- `tests/integration/test_api_dashboard.py`: 10 test
+
+### Fixed
+- `build_strategy_id` ora usa `hashlib.md5` invece di `hash()` — ID stabili indipendentemente dal seed Python
 
 ---
 

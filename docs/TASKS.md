@@ -97,12 +97,120 @@
 
 ## 🟢 Fase 3 — Frontend Angular
 
-- [ ] Bootstrap Angular app con Jest
-- [ ] Design tokens `_variables.scss`
-- [ ] Core services (Auth, Strategy, Dashboard, Log, WS)
-- [ ] Componenti shared (StatCard, BadgeStatus, PriceTicker, pipes)
-- [ ] Layout (Sidebar, Topbar, AppShell)
-- [ ] Pagine: Login, Dashboard, Strategies, ActiveTrade, Logs
+### 3.0 Bootstrap & Configurazione
+- [ ] Creare Angular app: `ng new synthtrade-ui --style=scss --routing --standalone`
+- [ ] Rimuovere Karma/Jasmine, installare `jest-preset-angular`, creare `jest.config.ts` e `setup-jest.ts`
+- [ ] Creare `tsconfig.spec.json` per Jest
+- [ ] Configurare `environment.ts` / `environment.prod.ts` con `apiUrl`, `wsUrl`, `supabaseUrl`, `supabaseAnonKey`
+- [ ] Configurare `proxy.conf.json` per dev: `/api → localhost:8000`, `/ws → localhost:8000`
+- [ ] Aggiungere script npm: `start:proxy`, `test:watch`, `test:ci`, `test:coverage`
+- [ ] Installare e configurare `eslint` + `prettier` con regole Angular
+- [ ] Configurare `jest --coverage` con soglia minima 80% su `core/` e `shared/`
+
+### 3.1 Design Tokens & Tema
+- [ ] Creare `src/styles/_variables.scss`
+- [ ] Creare `src/styles/_mixins.scss`
+- [ ] Creare `src/styles/_reset.scss`
+- [ ] Creare `src/styles/_animations.scss`
+- [ ] Creare `src/styles/theme-dark.scss`
+- [ ] Importare tutto in `styles.scss`
+
+### 3.2 Modelli & Interfacce
+- [ ] `core/models/user.model.ts` → `User`, `AuthTokens`, `JwtPayload`
+- [ ] `core/models/strategy.model.ts` → `Strategy`, `StrategyStatus`, `StrategyCreateDto`, `StrategyMetrics`
+- [ ] `core/models/trade.model.ts` → `Trade`, `TradeDirection`, `TradeStatus`
+- [ ] `core/models/dashboard.model.ts` → `DashboardStats`, `BalanceSnapshot`, `PipelineStatus`
+- [ ] `core/models/log.model.ts` → `OperationLog`, `LogLevel`, `LogFilters`, `PaginatedLogs`
+- [ ] `core/models/ws-message.model.ts` → `WsMessage<T>`, `WsMessageType` (enum)
+
+### 3.3 Interceptors & Guards
+- [ ] 🔴 Test `auth.interceptor.spec.ts`
+- [ ] 🟢 Implementare `core/interceptors/auth.interceptor.ts`
+- [ ] 🔴 Test `error.interceptor.spec.ts`
+- [ ] 🟢 Implementare `core/interceptors/error.interceptor.ts`
+- [ ] 🔴 Test `auth.guard.spec.ts`
+- [ ] 🟢 Implementare `core/guards/auth.guard.ts`
+- [ ] 🔴 Test `no-auth.guard.spec.ts`
+- [ ] 🟢 Implementare `core/guards/no-auth.guard.ts`
+
+### 3.4 Services
+- [ ] 🔴 Test `token-storage.service.spec.ts` (setTokens, getAccessToken, clear, isTokenExpired)
+- [ ] 🟢 Implementare `core/services/token-storage.service.ts`
+- [ ] 🔴 Test `auth.service.spec.ts` (login, logout, refreshToken, isAuthenticated)
+- [ ] 🟢 Implementare `core/services/auth.service.ts`
+- [ ] 🔴 Test `strategy.service.spec.ts` (getStrategies, getStrategy, activate, deactivate, delete)
+- [ ] 🟢 Implementare `core/services/strategy.service.ts`
+- [ ] 🔴 Test `dashboard.service.spec.ts` (getStats, getBalanceHistory, getPipelineStatus, cache 30s)
+- [ ] 🟢 Implementare `core/services/dashboard.service.ts`
+- [ ] 🔵 Refactor: cache con `shareReplay(1)` + invalidazione dopo 30s
+- [ ] 🔴 Test `log.service.spec.ts` (getLogs con filtri e paginazione)
+- [ ] 🟢 Implementare `core/services/log.service.ts`
+- [ ] 🔴 Test `ws.service.spec.ts` (connect, messages$, disconnect, reconnect backoff)
+- [ ] 🟢 Implementare `core/services/ws.service.ts`
+- [ ] 🔵 Refactor: `on<T>(type)` helper tipizzato
+
+### 3.5 Shared — Componenti Atomici
+- [ ] 🔴 Test `stat-card.component.spec.ts` (label, value, delta, skeleton)
+- [ ] 🟢 Implementare `shared/components/stat-card/`
+- [ ] 🔴 Test `badge-status.component.spec.ts` (testo e classe CSS per ogni status)
+- [ ] 🟢 Implementare `shared/components/badge-status/`
+- [ ] 🔴 Test `price-ticker.component.spec.ts` (decimali, flash-up, flash-down, rimozione classe)
+- [ ] 🟢 Implementare `shared/components/price-ticker/`
+- [ ] 🔴 Test `confirm-dialog.component.spec.ts` (confirmed, cancelled, Escape)
+- [ ] 🟢 Implementare `shared/components/confirm-dialog/`
+- [ ] 🟢 Implementare `shared/components/empty-state/`
+- [ ] 🔴 Test `relative-time.pipe.spec.ts`
+- [ ] 🟢 Implementare `shared/pipes/relative-time.pipe.ts`
+- [ ] 🔴 Test `format-number.pipe.spec.ts` (K/M suffisso)
+- [ ] 🟢 Implementare `shared/pipes/format-number.pipe.ts`
+- [ ] 🔴 Test `signed-number.pipe.spec.ts`
+- [ ] 🟢 Implementare `shared/pipes/signed-number.pipe.ts`
+
+### 3.6 Layout Shell
+- [ ] 🔴 Test `sidebar.component.spec.ts` (voce attiva, toggle collapsed)
+- [ ] 🟢 Implementare `layout/sidebar/` (Dashboard, Strategies, Active Trade, Logs)
+- [ ] 🔴 Test `topbar.component.spec.ts` (username, logout)
+- [ ] 🟢 Implementare `layout/topbar/`
+- [ ] 🟢 Implementare `layout/app-shell/`
+- [ ] 🔵 Refactor: stato collapsed persistito in localStorage
+
+### 3.7 Routing
+- [ ] Creare `app.routes.ts` con lazy loading (login, dashboard, strategies, active-trade, logs)
+- [ ] 🔴 Test routing: `''` → `/dashboard`, `**` → `/dashboard`
+- [ ] 🔴 Test: `authGuard` redirige a `/login` senza token
+
+### 3.8 Pagine
+
+#### LoginPage
+- [ ] 🔴 Test `login.component.spec.ts` (form invalido, submit, 401, redirect, spinner)
+- [ ] 🟢 Implementare `pages/login/login.component.ts`
+- [ ] 🔵 Refactor: estrarre `LoginFormComponent`
+
+#### DashboardPage
+- [ ] 🔴 Test `dashboard.component.spec.ts` (getStats, 4 StatCard, WS stats_update, PipelineStatus)
+- [ ] 🟢 Implementare `pages/dashboard/dashboard.component.ts`
+- [ ] 🟢 Aggiungere grafico balance history
+- [ ] 🔵 Refactor: `DashboardStore` con Angular Signals
+
+#### StrategiesPage
+- [ ] 🔴 Test `strategies.component.spec.ts` (list, activate, delete+confirm, filtro, empty state)
+- [ ] 🟢 Implementare `pages/strategies/strategies.component.ts`
+- [ ] 🔵 Refactor: `StrategyListComponent` + `StrategyRowComponent`
+
+#### ActiveTradePage
+- [ ] 🔴 Test `active-trade.component.spec.ts` (empty state, render trade, WS price_update, P&L classi)
+- [ ] 🟢 Implementare `pages/active-trade/active-trade.component.ts`
+
+#### LogsPage
+- [ ] 🔴 Test `logs.component.spec.ts` (getLogs, filtro level, paginazione, riga, WS new_log)
+- [ ] 🟢 Implementare `pages/logs/logs.component.ts`
+- [ ] 🔵 Refactor: `LogFiltersComponent` + query params sync
+
+### 3.9 E2E
+- [ ] Installare e configurare Playwright
+- [ ] 🔴 E2E `auth.spec.ts` (login errato → errore; login corretto → /dashboard)
+- [ ] 🔴 E2E `strategies.spec.ts` (attivazione e disattivazione end-to-end)
+- [ ] 🔴 E2E `logs.spec.ts` (filtro level aggiorna lista)
 
 ---
 

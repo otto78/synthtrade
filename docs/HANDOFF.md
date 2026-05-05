@@ -6,80 +6,61 @@
 
 ### Da: Amazon Q → A: prossima sessione
 
-**Data:** 2025-01-15
+**Data:** 2025-01-16
 
-**Contesto:** Fase 0 completata + `indicators.py` (Fase 1) completato. Repo Git inizializzata con primo commit `9508d8c`.
+**Contesto:** Fase 2 (Backend API) completata. Fase 3 (Frontend Angular) pronta per partire con lista task dettagliata.
 
 ---
 
 ### 📊 Stato Attuale
 
-**Fase corrente:** Fase 1 — Core Engine (in corso)
+**Fase corrente:** Fase 3 — Frontend Angular (da iniziare)
 
-**Completato oggi:**
-- ✅ Fase 0 intera (monorepo, FastAPI, Supabase migrations, Docker)
-- ✅ `indicators.py` — EMA, RSI, Bollinger + 3 signal functions (17/17 test verdi)
+**Completato:**
+- ✅ Fase 0 — Setup & Infrastruttura
+- ✅ Fase 1 — Core Engine (indicators, generator, backtester, ranker, market_data, pipeline)
+- ✅ Fase 2 — Backend API (auth JWT, strategies, dashboard, logs, WebSocket)
 
-**Prossimo task:** `strategy_generator.py` — TDD prodotto cartesiano parametri
+**Prossimo task:** 3.0 Bootstrap — `ng new synthtrade-ui --style=scss --routing --standalone`
 
-**Ultimo commit:** `9508d8c` — "feat: Fase 0 completa + indicators.py (Fase 1 iniziata)"
+**Ultimo commit:** `c382f00` — direttive frontend LOOM
 
-**Test totali:** 18 (1 health + 17 indicators) — tutti ✅
-
-**Virtualenv:** `.venv/` nella root del workspace (Python 3.12)
+**Test backend:** 114/114 ✅
 
 ---
 
-### 📁 File rilevanti Fase 1 (in corso)
+### 📁 Direttive LOOM da leggere prima di iniziare la Fase 3
 
 ```
-synthtrade/backend/app/core/indicators.py        ✅ completo
-synthtrade/backend/tests/unit/test_indicators.py ✅ 17 test
-```
-
-**Da creare:**
-```
-synthtrade/backend/app/core/strategy_generator.py
-synthtrade/backend/app/core/backtester.py
-synthtrade/backend/app/core/ranker.py
-synthtrade/backend/app/core/market_data.py
-synthtrade/backend/app/core/run_pipeline.py
-synthtrade/backend/tests/unit/test_generator.py
-synthtrade/backend/tests/unit/test_backtester.py
-synthtrade/backend/tests/unit/test_ranker.py
-synthtrade/backend/tests/unit/test_market_data.py
-synthtrade/backend/tests/integration/test_pipeline.py
+loom/directives/frontend-angular.md    ← regole Angular 17+, pattern HTTP/WS, test Jest
+loom/directives/scss-tokens.md         ← tutti i design token (colori, font, spacing)
+loom/directives/component-patterns.md ← interfacce TS, pattern componenti, checklist pagine
 ```
 
 ---
 
-### 🎯 Prossimi Step
+### 🎯 Prossimi Step (in ordine)
 
-1. **`strategy_generator.py`** — TDD
-   - Test: ≥200 varianti, ID deterministico, no duplicati su 500
-   - Implementare con prodotto cartesiano `TEMPLATES`
-
-2. **`backtester.py`** — TDD
-   - Test: PnL corretto, fee applicate, equity_curve lunghezza, no look-ahead
-   - Implementare con fee 0.1% + slippage 0.07%
-
-3. **`ranker.py`** — TDD
-   - Test: filtri hard (min_trades, max_drawdown, min_sharpe, min_pnl)
-   - Implementare score composito
-
-4. **`market_data.py`** — TDD con mock Supabase + mock Binance
-
-5. **`run_pipeline.py`** — integration test
+1. **3.0 Bootstrap** — `ng new`, rimuovere Karma, installare Jest, environments, proxy, eslint
+2. **3.1 Design Tokens** — `_variables.scss`, `_mixins.scss`, `_reset.scss`, `_animations.scss`
+3. **3.2 Modelli** — interfacce TypeScript per Strategy, Trade, Dashboard, Log, WsMessage
+4. **3.3 Interceptors & Guards** — TDD su auth interceptor, error interceptor, auth guard, no-auth guard
+5. **3.4 Services** — TDD su TokenStorage, Auth, Strategy, Dashboard, Log, WebSocket
+6. **3.5 Shared** — TDD su StatCard, BadgeStatus, PriceTicker, ConfirmDialog, pipes
+7. **3.6 Layout** — Sidebar, Topbar, AppShell
+8. **3.7 Routing** — lazy loading, guards
+9. **3.8 Pagine** — Login, Dashboard, Strategies, ActiveTrade, Logs
+10. **3.9 E2E** — Playwright
 
 ---
 
 ### 📝 Note Importanti
 
-- Comando test: `set PYTHONPATH=synthtrade\backend && .venv\Scripts\pytest`
-- `.env` non esiste — copiare da `.env.example` e compilare prima di avviare il server
-- Supabase locale non avviato — serve `supabase start` in `synthtrade/supabase/`
+- Frontend va in `synthtrade/frontend/synthtrade-ui/` (dentro la struttura monorepo)
+- Backend gira su `localhost:8000` — usare proxy Angular per dev
+- Design system completo in `PROJECT.md` e nelle direttive LOOM
 - `PAPER_TRADING=true` default — non toccare fino alla Fase 6
-- Fix RSI già applicato: `loss=0` → RSI=100 (non NaN)
+- Comando test backend: `set PYTHONPATH=synthtrade\backend && .venv\Scripts\pytest`
 
 ---
 

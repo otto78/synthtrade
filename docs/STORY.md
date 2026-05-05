@@ -105,10 +105,15 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📝 Decisioni Architetturali
 
-**2026-05-05 — ExecutionEngine con dipendenze iniettate**
-- Problema: testare l’engine senza exchange reale
-- Soluzione: `RiskManager`, `OrderTracker`, `exchange` tutti iniettati nel costruttore
-- Beneficio: mock completi nei test, zero chiamate reali
+**2026-05-05 — AI cascade con lista modelli configurabile**
+- Problema: lista modelli free OpenRouter cambia spesso
+- Soluzione: `AI_CASCADE_MODELS` come stringa CSV in `.env`, property `ai_cascade_models_list` in `Settings`
+- Beneficio: cambio modelli senza deploy, fallback Claude Haiku solo se tutti i free falliscono
+
+**2026-05-05 — run_pipeline ora async**
+- Problema: AI eval richiede `await`, pipeline era sync
+- Soluzione: `run_pipeline` diventa `async def`, scheduler usa `await run_pipeline()`
+- Beneficio: nessun thread blocking, compatibile con APScheduler AsyncIO
 
 ---
 

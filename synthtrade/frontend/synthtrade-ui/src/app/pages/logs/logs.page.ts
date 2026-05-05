@@ -1,5 +1,4 @@
 import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
-import { NgClass } from '@angular/common';
 import { Subscription } from 'rxjs';
 import { LogService } from '../../core/services/log.service';
 import { WsService } from '../../core/services/ws.service';
@@ -13,7 +12,7 @@ const PAGE_SIZE = 50;
 @Component({
   selector: 'app-logs',
   standalone: true,
-  imports: [NgClass, BadgeStatusComponent, RelativeTimePipe],
+  imports: [BadgeStatusComponent, RelativeTimePipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="logs-page">

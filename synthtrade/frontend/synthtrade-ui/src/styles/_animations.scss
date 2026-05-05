@@ -1,3 +1,5 @@
+@use 'variables' as *;
+
 @keyframes pulse-border {
   0%, 100% { box-shadow: 0 0 0 1px var(--accent-primary), 0 0 12px var(--accent-glow); }
   50%       { box-shadow: 0 0 0 1px var(--accent-primary), 0 0 28px var(--accent-glow); }

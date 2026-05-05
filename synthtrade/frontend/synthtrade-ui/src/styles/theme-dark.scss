@@ -1,4 +1,6 @@
 // Utility classes globali tema dark
+@use 'variables' as *;
+@use 'mixins' as *;
 
 .text-primary   { color: var(--text-primary); }
 .text-secondary { color: var(--text-secondary); }

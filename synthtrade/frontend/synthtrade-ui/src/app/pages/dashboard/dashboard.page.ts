@@ -18,7 +18,7 @@ import { SignedNumberPipe } from '../../shared/pipes/signed-number.pipe';
       <div class="stats-grid">
         <app-stat-card
           label="Balance"
-          [value]="stats().balance | number:'1.2-2'"
+          [value]="(stats().balance | number:'1.2-2') ?? '—'"
           [loading]="loading()"
         />
         <app-stat-card

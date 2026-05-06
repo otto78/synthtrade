@@ -97,7 +97,7 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ### Progresso Generale
 
-- **Task completati:** 361 (Fase 0–2.B complete, Loom migration)
+- **Task completati:** 405 (Fase 0–3.B complete, Loom migration, Bugfixing)
 - **Test passati:** 214 backend + 116 frontend + 21 nuovi = 351 totali
 - **Test coverage:** ~82% backend, ~85% frontend core/shared
 
@@ -105,10 +105,10 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📝 Decisioni Architetturali
 
-**2026-05-06 — Implementazione Exchange Adapter e Pipeline Intelligente**
-- Problema: Necessità di interfacciarsi con Binance e generare strategie guidate dall'utente.
-- Soluzione: Implementato `BinanceExchangeAdapter` con CCXT e `StrategyRequest` con arricchimento AI.
-- Beneficio: Trading reale/paper sicuro e UX migliorata per la generazione di strategie.
+**2026-05-06 — Integrazione UI Generatore Intelligente e Fix Networking**
+- Problema: Necessità di un'interfaccia Angular per il nuovo generatore e conflitti di porte locali.
+- Soluzione: Implementati componenti `StrategyRequestForm` e `GenerationProgress`. Spostato Frontend su porta 4201 e Backend su porta 8001 con prefisso `/api`.
+- Beneficio: UX fluida per la creazione di strategie e ambiente di sviluppo isolato da altre app.
 
 **2026-05-06 — Integrazione Framework Loom**
 - Problema: Necessità di un workflow standardizzato per task management e TDD.

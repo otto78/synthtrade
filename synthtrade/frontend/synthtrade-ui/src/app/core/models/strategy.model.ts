@@ -34,3 +34,25 @@ export interface StrategyCreateDto {
   timeframe: string;
   params: Record<string, number>;
 }
+
+export type RiskLevel = 'low' | 'medium' | 'high';
+export type AssetClass = 'crypto' | 'stocks' | 'forex';
+
+export interface StrategyRequest {
+  budget_eur: number;
+  duration_days: number;
+  asset_class: AssetClass;
+  risk_level: RiskLevel;
+  symbols?: string[];
+  free_text?: string;
+  max_strategies?: number;
+}
+
+export type GenerationProgressStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export interface GenerationStatus {
+  generation_id: string;
+  status: GenerationProgressStatus;
+  results?: Strategy[];
+  error?: string;
+}

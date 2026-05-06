@@ -24,15 +24,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router)
-app.include_router(strategies.router)
-app.include_router(dashboard.router)
-app.include_router(logs.router)
-app.include_router(ws.router)
-app.include_router(trades.router)
-app.include_router(eval_api.router)
-app.include_router(pipeline.router)
-app.include_router(exchange.router)
+app.include_router(auth.router, prefix="/api")
+app.include_router(strategies.router, prefix="/api")
+app.include_router(dashboard.router, prefix="/api")
+app.include_router(logs.router, prefix="/api")
+app.include_router(ws.router, prefix="/api")
+app.include_router(trades.router, prefix="/api")
+app.include_router(eval_api.router, prefix="/api")
+app.include_router(pipeline.router, prefix="/api")
+app.include_router(exchange.router, prefix="/api")
+
+@app.get("/")
+def read_root():
+    return {"message": "SynthTrade API is running"}
 
 
 @app.get("/health")

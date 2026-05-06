@@ -7,10 +7,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [0.7.0] — 2026-05-06
 
 ### Added
-- Fase 6: Hardening & Deploy
+- **Frontend**: Nuovo tab "GENERATE" nella pagina strategie.
+- **Frontend**: Componente `StrategyRequestForm` per input guidato dall'AI.
+- **Frontend**: Componente `GenerationProgress` con feedback visuale in tempo reale.
+- **Frontend**: `PipelineService` per integrazione con il generatore intelligente.
+- **Backend**: Prefisso `/api` obbligatorio per tutti gli endpoint.
+- **Backend**: Endpoint `POST /strategies` per il salvataggio delle strategie generate.
+
+### Fixed
+- **Networking**: Risolti conflitti di porta (Frontend -> 4201, Backend -> 8001).
+- **Backend**: Corretto bug nel `lifespan` relativo allo scheduler delle posizioni.
+- **Frontend**: Risolti errori ESLint relativi alla configurazione del path `tsconfig.json`.
 
 ---
 

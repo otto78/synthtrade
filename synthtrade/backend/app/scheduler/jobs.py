@@ -31,6 +31,10 @@ async def monitor_positions_job(engine=None) -> None:
         logger.error(f"Monitor positions job error: {e}")
 
 
+async def monitor_wrapper(engine=None):
+    await monitor_positions_job(engine)
+
+
 async def heartbeat_job() -> None:
     try:
         await manager.broadcast({
@@ -46,7 +50,7 @@ def setup_scheduler(engine=None) -> AsyncIOScheduler:
     scheduler.add_job(run_pipeline_job, "interval",
                       minutes=settings.SCHEDULER_PIPELINE_INTERVAL_MIN,
                       id="pipeline")
-    scheduler.add_job(lambda: monitor_positions_job(engine), "interval",
+    scheduler.add_job(monitor_wrapper, "interval", args=[engine],
                       seconds=30, id="monitor")
     scheduler.add_job(heartbeat_job, "interval", seconds=10, id="heartbeat")
     return scheduler

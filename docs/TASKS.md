@@ -1765,7 +1765,8 @@
 
 ### TASK-296 — `core/logging.py` con `setup_logging()` e `JsonFormatter`
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-297 — Chiamare `setup_logging()` nel lifespan di `main.py`

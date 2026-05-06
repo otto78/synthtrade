@@ -1000,7 +1000,8 @@
 
 ### TASK-166 — 🔵 Refactor: `DashboardStore` con Angular Signals
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 

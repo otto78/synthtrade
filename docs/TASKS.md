@@ -557,7 +557,8 @@
 
 ### TASK-086 — 🔴 Test → quantità calcolata non supera mai il `budget_eur` convertito in USDT
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-087 — 🔴 Test → se la quantità risultante è sotto `MIN_QTY` del simbolo, solleva `BudgetTooSmallError` con il minimo richiesto

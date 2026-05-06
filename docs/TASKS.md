@@ -1782,7 +1782,8 @@
 
 ### TASK-299 — Middleware FastAPI con `request_id` (UUID) in ogni log
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 

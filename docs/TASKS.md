@@ -489,7 +489,8 @@
 
 ### TASK-074 — 🔴 Test → `get_ticker_price(symbol)` restituisce il prezzo corrente del simbolo come `float`
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-075 — 🔴 Test → `place_market_order(symbol, side, quantity)` chiama `POST /api/v3/order` con `type=MARKET` e i parametri corretti

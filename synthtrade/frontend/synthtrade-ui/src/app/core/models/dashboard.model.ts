@@ -1,7 +1,22 @@
 import { Strategy } from './strategy.model';
 
+export interface BalanceAsset {
+  asset: string;
+  quantity: number;
+  value_eur: number;
+}
+
+export interface BalanceBreakdown {
+  [wallet: string]: {
+    value_eur: number;
+    assets: BalanceAsset[];
+  };
+}
+
 export interface DashboardStats {
-  balance: number;
+  balance_eur: number;
+  balance_breakdown: BalanceBreakdown;
+  balance_assets: BalanceAsset[];
   pnl_today: number;
   active_strategy: Partial<Strategy> | null;
   engine_status: string;

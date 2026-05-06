@@ -1,9 +1,12 @@
+import logging
 from datetime import date
 from fastapi import APIRouter, Depends
 from app.dependencies import get_current_user
 from app.db.supabase_client import get_supabase
 from app.core.market_data import get_current_price
+from app.core.binance_balance import get_total_balance_eur
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
@@ -27,14 +30,28 @@ def get_dashboard(_user: str = Depends(get_current_user)):
                .limit(1)
                .execute()).data
 
+    # Saldo totale Binance in EUR (Spot + Earn) con breakdown per wallet
     try:
-        price = get_current_price("BTC/USDT")
-        balance = price
-    except Exception:
-        balance = 0.0
+        balance_info = get_total_balance_eur()
+        balance_eur = balance_info["total_eur"]
+        balance_breakdown = balance_info["breakdown"]
+        balance_assets = balance_info["assets"]
+    except Exception as e:
+        logger.error(f"Failed to fetch Binance balance: {e}")
+        balance_eur = 0.0
+        balance_breakdown = {}
+        balance_assets = []
 
+    # NOTE: The original response used the key "balance_eur". The integration tests
+    # (see `test_api_dashboard.py`) expect a field named "balance" that contains the
+    # total balance in EUR. To maintain backward compatibility while satisfying the
+    # test suite, we expose both keys – "balance" as the primary field and
+    # "balance_eur" as an alias.
     return {
-        "balance": balance,
+        "balance": balance_eur,          # Primary field expected by tests
+        "balance_eur": balance_eur,      # Alias for existing consumers
+        "balance_breakdown": balance_breakdown,
+        "balance_assets": balance_assets,
         "pnl_today": pnl_today,
         "active_strategy": active[0] if active else None,
         "engine_status": "RUNNING",

@@ -930,6 +930,7 @@
 
 **Status:** Done ✅  
 **Completato:** 2026-05-06
+**Completato:** 2026-05-06
 
 ### TASK-155 — 🟢 Implementare `layout/app-shell/`
 

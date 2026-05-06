@@ -456,7 +456,8 @@
 
 ### TASK-070 — Aggiungere in `config.py`:
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
   - `BINANCE_API_KEY` e `BINANCE_API_SECRET` (già presenti nel `.env` — verificare i nomi)

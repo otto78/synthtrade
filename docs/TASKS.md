@@ -569,7 +569,8 @@
 
 ### TASK-088 — 🟢 Implementare `execution/quantity_calculator.py`
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-089 — 🟢 `BinanceExchangeAdapter.get_symbol_filters(symbol)` che recupera i filtri `LOT_SIZE` e `MIN_NOTIONAL` dall'API Binance (con cache in memoria — non cambiano spesso)

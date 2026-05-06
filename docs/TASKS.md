@@ -250,7 +250,8 @@
 
 ### TASK-038 — 🔴 Test → `risk_level = "high"` consente tutti i template inclusi quelli aggressivi
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-039 — 🔴 Test → `budget_eur` viene propagato come `position_size_eur` nei parametri della strategia generata

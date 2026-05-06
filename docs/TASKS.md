@@ -346,7 +346,8 @@
 
 ### TASK-053 — 🟢 Al completamento della pipeline, inviare messaggio WS di tipo `generation_complete` con `generation_id` e numero di strategie generate
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 

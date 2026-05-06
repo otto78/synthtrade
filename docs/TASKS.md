@@ -1790,7 +1790,8 @@
 ### 6.6 Error Handling Globale
 ### TASK-300 — `core/exceptions.py`: `SynthTradeError`, `RiskViolationError`, `ModelUnavailableError`, `OrderExecutionError`
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-301 — Handler globale `Exception` → `{"error": "internal_server_error", "request_id": "..."}`

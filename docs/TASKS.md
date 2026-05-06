@@ -466,7 +466,8 @@
   - `BINANCE_WS_BASE_URL` → analogamente per i WebSocket di Binance
 ### TASK-071 — Aggiungere a `requirements.txt`: `python-binance` oppure `ccxt` (da scegliere — vedi nota sotto)
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-072 — Documentare in `README.md` come creare le API key sul Binance Testnet (`testnet.binance.vision`) e i permessi necessari: **Enable Spot & Margin Trading**

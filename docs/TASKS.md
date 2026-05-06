@@ -596,7 +596,8 @@
 
 ### TASK-092 — 🔴 Test → con `BINANCE_TESTNET=False`, ogni chiamata usa l'URL di produzione
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-093 — 🟢 Aggiungere nel frontend (`Topbar` o `Dashboard`) un badge visibile **TESTNET** / **LIVE** che chiama `GET /api/exchange/status` all'avvio — impossibile ignorare in quale modalità si è

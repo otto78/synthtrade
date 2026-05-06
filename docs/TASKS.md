@@ -1016,6 +1016,7 @@
 
 **Status:** Done ✅  
 **Completato:** 2026-05-06
+**Completato:** 2026-05-06
 
 ### TASK-169 — 🔵 Refactor: `StrategyListComponent` + `StrategyRowComponent`
 

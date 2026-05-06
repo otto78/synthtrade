@@ -232,7 +232,8 @@
 
 ### TASK-035 — 🔴 Test `test_generator_constrained.py` → `generate_for_request(req: StrategyRequest)` restituisce solo strategie con `duration_days` compatibile (± 20%)
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-036 — 🔴 Test → se `req.symbols` è specificato, le strategie generate usano solo quei simboli

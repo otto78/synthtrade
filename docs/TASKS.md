@@ -307,7 +307,8 @@
 
 ### TASK-047 — 🟢 Aggiungere chiamata a `enrich_request_with_ai()` all'inizio di `generate_for_request()` se `free_text` è presente
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 

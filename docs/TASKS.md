@@ -563,7 +563,8 @@
 
 ### TASK-087 — 🔴 Test → se la quantità risultante è sotto `MIN_QTY` del simbolo, solleva `BudgetTooSmallError` con il minimo richiesto
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-088 — 🟢 Implementare `execution/quantity_calculator.py`

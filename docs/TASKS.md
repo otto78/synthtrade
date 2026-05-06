@@ -537,7 +537,8 @@
 
 ### TASK-083 — 🟢 Definire `ExchangeProtocol` (Protocol class) con i metodi sopra — così in futuro si può aggiungere Kraken, Coinbase ecc. senza toccare l'engine
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-084 — 🔵 Refactor: `BinanceExchangeAdapter` istanziato come singleton in `dependencies.py` e iniettato negli endpoint che richiedono

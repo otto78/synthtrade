@@ -1771,7 +1771,8 @@
 
 ### TASK-297 — Chiamare `setup_logging()` nel lifespan di `main.py`
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-298 — Sostituire tutti i `print()` con `logger = logging.getLogger(__name__)`

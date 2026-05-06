@@ -602,7 +602,8 @@
 
 ### TASK-093 — 🟢 Aggiungere nel frontend (`Topbar` o `Dashboard`) un badge visibile **TESTNET** / **LIVE** che chiama `GET /api/exchange/status` all'avvio — impossibile ignorare in quale modalità si è
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 

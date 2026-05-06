@@ -334,7 +334,8 @@
 
 ### TASK-051 — 🔴 Test → endpoint protetti da `get_current_user`
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-052 — 🟢 Implementare `api/pipeline.py` e registrare il router in `main.py`

@@ -1010,6 +1010,7 @@
 
 **Status:** Done ✅  
 **Completato:** 2026-05-06
+**Completato:** 2026-05-06
 
 ### TASK-168 — 🟢 Implementare `pages/strategies/strategies.page.ts`
 

@@ -328,7 +328,8 @@
 
 ### TASK-050 — 🔴 Test → `GET /api/pipeline/generate/{generation_id}/status` restituisce lo stato (`pending` / `running` / `completed` / `failed`) e, se completato, la lista delle strategie generate
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-051 — 🔴 Test → endpoint protetti da `get_current_user`

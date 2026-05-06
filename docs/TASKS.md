@@ -924,6 +924,7 @@
 
 **Status:** Done ✅  
 **Completato:** 2026-05-06
+**Completato:** 2026-05-06
 
 ### TASK-154 — 🟢 Implementare `layout/topbar/`
 

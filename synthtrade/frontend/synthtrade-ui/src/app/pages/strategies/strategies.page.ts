@@ -7,7 +7,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
 import { EmptyStateComponent } from '../../shared/components/empty-state/empty-state.component';
 import { StrategyRequestFormComponent } from '../../shared/components/strategy-request-form/strategy-request-form.component';
 import { GenerationProgressComponent } from '../../shared/components/generation-progress/generation-progress.component';
-import { NgClass } from '@angular/common';
+import { NgClass, KeyValuePipe, DecimalPipe } from '@angular/common';
 import { switchMap } from 'rxjs';
 
 type Tab = 'ALL' | 'ACTIVE' | 'PENDING' | 'GENERATE';
@@ -21,7 +21,9 @@ type Tab = 'ALL' | 'ACTIVE' | 'PENDING' | 'GENERATE';
     EmptyStateComponent, 
     StrategyRequestFormComponent,
     GenerationProgressComponent,
-    NgClass
+    NgClass,
+    KeyValuePipe,
+    DecimalPipe
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -48,10 +50,20 @@ type Tab = 'ALL' | 'ACTIVE' | 'PENDING' | 'GENERATE';
                 <h3>Strategie Generate</h3>
                 <div class="strategy-list">
                   @for (s of generatedStrategies(); track s.template + s.pair + $index) {
-                    <div class="strategy-row">
+                    <div class="strategy-row strategy-row--generated">
                       <div class="strategy-info">
-                        <span class="strategy-title">{{ s.template || s.title }}</span>
-                        <span class="strategy-pair">{{ s.pair }} · {{ s.timeframe }}</span>
+                        <div class="strategy-header">
+                          <span class="strategy-title">{{ s.title }}</span>
+                          <span class="ai-badge">AI Score: {{ s.ai_score | number:'1.0-0' }}%</span>
+                        </div>
+                        <p class="strategy-desc">{{ s.description }}</p>
+                        <div class="strategy-meta">
+                          <span class="tag">{{ s.pair }}</span>
+                          <span class="tag">{{ s.timeframe }}</span>
+                          @for (param of s.params | keyvalue; track param.key) {
+                            <span class="tag tag--param">{{ param.key }}: {{ param.value }}</span>
+                          }
+                        </div>
                       </div>
                       <div class="strategy-actions">
                         <button class="btn-approve" (click)="saveAndApprove(s)">Salva e Approva</button>
@@ -110,9 +122,18 @@ type Tab = 'ALL' | 'ACTIVE' | 'PENDING' | 'GENERATE';
     .btn-approve { background: rgba(14,203,129,0.1); color: var(--color-buy); border: 1px solid var(--color-buy); padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
     .btn-reject  { background: rgba(246,70,93,0.1);  color: var(--color-sell); border: 1px solid var(--color-sell); padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
     .btn-ghost { background:transparent; color:var(--text-secondary); border:1px solid var(--border-default); padding:8px 16px; border-radius:4px; cursor:pointer; }
-    .generation-container { max-width: 600px; margin: 0 auto; }
+    .generation-container { max-width: 800px; margin: 0 auto; }
     .generated-results { margin-top: 24px; }
     .mt-16 { margin-top: 16px; }
+
+    /* Nuovi stili per varianti generate */
+    .strategy-row--generated { flex-direction: column; align-items: stretch; gap: 12px; }
+    .strategy-header { display: flex; justify-content: space-between; align-items: center; }
+    .ai-badge { background: rgba(240,185,11,0.1); color: #F0B90B; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; border: 1px solid rgba(240,185,11,0.3); }
+    .strategy-desc { font-size: 13px; color: var(--text-secondary); margin: 4px 0; line-height: 1.4; }
+    .strategy-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag { background: var(--bg-card); border: 1px solid var(--border-default); padding: 2px 6px; border-radius: 4px; font-size: 11px; color: var(--text-primary); font-family: monospace; }
+    .tag--param { border-color: var(--accent-primary); color: var(--accent-primary); }
   `]
 })
 export class StrategiesPage implements OnInit {

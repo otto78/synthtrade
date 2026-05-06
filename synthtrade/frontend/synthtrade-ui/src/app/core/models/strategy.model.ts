@@ -11,6 +11,7 @@ export interface StrategyMetrics {
 export interface Strategy {
   id: string;
   title: string;
+  description?: string;
   template: string;
   pair: string;
   timeframe: string;

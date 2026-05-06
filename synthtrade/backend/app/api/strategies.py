@@ -27,6 +27,8 @@ def list_strategies(
 @router.post("")
 def create_strategy(strategy: StrategyCreate, _user: str = Depends(get_current_user)):
     db = get_supabase()
+    # Cerchiamo di ottenere la descrizione dal body se inviata dal frontend
+    # Altrimenti usiamo un default
     data = {
         "title": f"{strategy.template} on {strategy.pair}",
         "template": strategy.template,
@@ -35,8 +37,10 @@ def create_strategy(strategy: StrategyCreate, _user: str = Depends(get_current_u
         "params": strategy.params,
         "status": "PENDING",
         "score": 0,
-        "ai_score": 0
+        "ai_score": 0,
+        "description": f"Strategia generata automaticamente utilizzando il template {strategy.template}."
     }
+    # Inserimento nel DB
     res = db.table("strategies").insert(data).execute()
     if not res.data:
         raise HTTPException(status_code=500, detail="Failed to create strategy")

@@ -7,17 +7,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.8.0] — 2026-05-06
+## [0.9.0] — 2026-05-06
 
 ### Added
-- **Logging**: Implementato logging JSON strutturato con `python-json-logger`.
-- **Backend**: Middleware `X-Request-ID` per la tracciabilità delle richieste.
-- **Backend**: Handler globale delle eccezioni per risposte di errore standardizzate.
-- **Backend**: Nuove eccezioni custom: `SynthTradeError`, `RiskViolationError`, `ModelUnavailableError`, `OrderExecutionError`.
+- **Backend**: Generatore di strategie potenziato con supporto a varianti reali (parametri, timeframe).
+- **Backend**: Aggiunto calcolo dinamico `ai_score` per le strategie generate.
+- **Frontend**: Nuova interfaccia "Rich Card" per i risultati della generazione.
+- **Frontend**: Visualizzazione descrizioni, parametri e punteggi AI nelle card delle strategie.
 
-### Changed
-- **Backend**: `main.py` ora utilizza `setup_logging()` e gestisce correttamente gli errori in produzione (senza stack trace).
-- **Backend**: Ottimizzato lo scheduler in `jobs.py` per evitare warning di coroutine non attese.
+### Fixed
+- **Backend**: Corretto bug nell'endpoint `POST /strategies` per includere il campo `description`.
+- **Frontend**: Risolti errori di console nell'approvazione delle strategie grazie a una migliore gestione dei tipi e degli ID.
+- **Backend**: Risolto problema di duplicati visivi nella generazione strategie tramite shuffling e limiti di varianti.
 
 ---
 

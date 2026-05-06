@@ -24,10 +24,13 @@ async def run_generation_task(generation_id: str, req: StrategyRequest):
         for s in strategies:
             strategies_data.append({
                 "template": s.template,
+                "title": s.title,
+                "description": s.description,
                 "pair": s.pair,
                 "timeframe": s.timeframe,
                 "params": s.params,
-                "budget_eur": s.budget_eur
+                "budget_eur": s.budget_eur,
+                "ai_score": s.ai_score
             })
             
         generations[generation_id]["status"] = "completed"

@@ -97,7 +97,7 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ### Progresso Generale
 
-- **Task completati:** 415 (Fase 6: Logging & Error Handling completata)
+- **Task completati:** 425 (Generatore varianti migliorato, UI Rich Strategy Card)
 - **Test passati:** 214 backend + 116 frontend + 21 nuovi = 351 totali
 - **Test coverage:** ~82% backend, ~85% frontend core/shared
 
@@ -105,10 +105,10 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📝 Decisioni Architetturali
 
-**2026-05-06 — Structured Logging & Global Exception Handling**
-- Problema: Difficoltà nel debug in produzione e risposte di errore non uniformi.
-- Soluzione: Implementato logging JSON strutturato con `python-json-logger`, middleware per `X-Request-ID` e handler globali per le eccezioni.
-- Beneficio: Tracciabilità end-to-end delle richieste e API robuste che non espongono stack trace sensibili.
+**2026-05-06 — Enhanced Strategy Generation & Rich UI**
+- Problema: Varianti generate tutte uguali e mancanza di informazioni per l'utente nella scelta.
+- Soluzione: Refactor di `strategy_generator.py` per generare varianti reali basate su griglie di parametri, timeframe e asset diversi. Implementata una UI "Rich Card" con descrizioni, tag dei parametri e punteggio AI.
+- Beneficio: L'utente può ora confrontare le strategie in base a dati reali e punteggi suggeriti dall'AI.
 
 **2026-05-06 — Integrazione UI Generatore Intelligente e Fix Networking**
 - Problema: Necessità di un'interfaccia Angular per il nuovo generatore e conflitti di porte locali.

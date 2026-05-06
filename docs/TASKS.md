@@ -590,7 +590,8 @@
 
 ### TASK-091 — 🔴 Test → con `BINANCE_TESTNET=True`, ogni chiamata di scrittura usa l'URL del testnet
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-092 — 🔴 Test → con `BINANCE_TESTNET=False`, ogni chiamata usa l'URL di produzione

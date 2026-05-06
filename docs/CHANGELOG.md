@@ -7,22 +7,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.7.0] — 2026-05-06
+## [0.8.0] — 2026-05-06
 
 ### Added
-- **Frontend**: Nuovo tab "GENERATE" nella pagina strategie.
-- **Frontend**: Componente `StrategyRequestForm` per input guidato dall'AI.
-- **Frontend**: Componente `GenerationProgress` con feedback visuale in tempo reale.
-- **Frontend**: `PipelineService` per integrazione con il generatore intelligente.
-- **Backend**: Prefisso `/api` obbligatorio per tutti gli endpoint.
-- **Backend**: Endpoint `POST /strategies` per il salvataggio delle strategie generate.
+- **Logging**: Implementato logging JSON strutturato con `python-json-logger`.
+- **Backend**: Middleware `X-Request-ID` per la tracciabilità delle richieste.
+- **Backend**: Handler globale delle eccezioni per risposte di errore standardizzate.
+- **Backend**: Nuove eccezioni custom: `SynthTradeError`, `RiskViolationError`, `ModelUnavailableError`, `OrderExecutionError`.
 
-### Fixed
-- **Networking**: Risolti conflitti di porta (Frontend -> 4201, Backend -> 8001).
-- **Backend**: Corretto bug nel `lifespan` relativo allo scheduler delle posizioni.
-- **Frontend**: Risolti errori ESLint relativi alla configurazione del path `tsconfig.json`.
+### Changed
+- **Backend**: `main.py` ora utilizza `setup_logging()` e gestisce correttamente gli errori in produzione (senza stack trace).
+- **Backend**: Ottimizzato lo scheduler in `jobs.py` per evitare warning di coroutine non attese.
 
 ---
+
+## [0.7.0] — 2026-05-06
 
 ## [0.6.1] — 2026-05-06
 

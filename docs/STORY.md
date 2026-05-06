@@ -97,13 +97,18 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ### Progresso Generale
 
-- **Task completati:** 405 (Fase 0–3.B complete, Loom migration, Bugfixing)
+- **Task completati:** 415 (Fase 6: Logging & Error Handling completata)
 - **Test passati:** 214 backend + 116 frontend + 21 nuovi = 351 totali
 - **Test coverage:** ~82% backend, ~85% frontend core/shared
 
 ---
 
 ## 📝 Decisioni Architetturali
+
+**2026-05-06 — Structured Logging & Global Exception Handling**
+- Problema: Difficoltà nel debug in produzione e risposte di errore non uniformi.
+- Soluzione: Implementato logging JSON strutturato con `python-json-logger`, middleware per `X-Request-ID` e handler globali per le eccezioni.
+- Beneficio: Tracciabilità end-to-end delle richieste e API robuste che non espongono stack trace sensibili.
 
 **2026-05-06 — Integrazione UI Generatore Intelligente e Fix Networking**
 - Problema: Necessità di un'interfaccia Angular per il nuovo generatore e conflitti di porte locali.

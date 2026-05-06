@@ -483,7 +483,8 @@
 
 ### TASK-073 — 🔴 Test `test_exchange_adapter.py` → `get_balance()` chiama l'endpoint corretto e restituisce il saldo USDT disponibile come `float`
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-074 — 🔴 Test → `get_ticker_price(symbol)` restituisce il prezzo corrente del simbolo come `float`

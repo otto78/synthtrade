@@ -1802,7 +1802,8 @@
 
 ### TASK-302 — Handler `HTTPException` con `request_id`
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-303 — Handler `RequestValidationError` con errori Pydantic leggibili

@@ -289,7 +289,8 @@
 
 ### TASK-044 — 🔴 Test → se `free_text` è `None` o vuoto, `enrich_request_with_ai()` restituisce l'input invariato senza chiamare il modello
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-045 — 🔴 Test → se il modello non è disponibile, la funzione restituisce l'input invariato (graceful degradation)

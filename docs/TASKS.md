@@ -283,7 +283,8 @@
 
 ### TASK-043 — 🔴 Test `test_generator_ai_hint.py` → `enrich_request_with_ai(req)` chiama il modello LLM con il `free_text` e restituisce una lista di simboli suggeriti e un template preferito
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-044 — 🔴 Test → se `free_text` è `None` o vuoto, `enrich_request_with_ai()` restituisce l'input invariato senza chiamare il modello

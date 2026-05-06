@@ -495,7 +495,8 @@
 
 ### TASK-075 — 🔴 Test → `place_market_order(symbol, side, quantity)` chiama `POST /api/v3/order` con `type=MARKET` e i parametri corretti
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-076 — 🔴 Test → `place_market_order()` in modalità testnet usa `BINANCE_BASE_URL` del testnet (mock del client, non chiamata reale)

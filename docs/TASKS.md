@@ -274,7 +274,8 @@
 
 ### TASK-042 — 🔵 Refactor: la selezione dei template estratta in `_filter_templates_by_constraints(req)` — funzione pura testabile in isolamento
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 

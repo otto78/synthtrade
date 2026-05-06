@@ -238,7 +238,8 @@
 
 ### TASK-036 — 🔴 Test → se `req.symbols` è specificato, le strategie generate usano solo quei simboli
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-037 — 🔴 Test → `risk_level = "low"` esclude strategie con `max_drawdown > 15%` dai template selezionabili

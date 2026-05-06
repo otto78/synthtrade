@@ -295,7 +295,8 @@
 
 ### TASK-045 — 🔴 Test → se il modello non è disponibile, la funzione restituisce l'input invariato (graceful degradation)
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-046 — 🟢 Implementare `ai/request_enricher.py` con `enrich_request_with_ai(req: StrategyRequest) -> StrategyRequest`

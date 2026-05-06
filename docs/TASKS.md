@@ -551,7 +551,8 @@
 
 ### TASK-085 — 🔴 Test `test_quantity_calculator.py` → `calculate_quantity(symbol, budget_eur, current_price)` restituisce la quantità corretta rispettando i `LOT_SIZE` filter di Binance (step size)
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-086 — 🔴 Test → quantità calcolata non supera mai il `budget_eur` convertito in USDT

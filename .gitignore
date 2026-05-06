@@ -25,6 +25,10 @@ dist/
 supabase/.branches/
 supabase/.temp/
 
+# Loom Framework
+.task-backups/
+*.bak
+
 # IDE
 .idea/
 .vscode/

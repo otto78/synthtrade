@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.api import auth, strategies, dashboard, logs, ws, trades, eval as eval_api
+from app.api import auth, strategies, dashboard, logs, ws, trades, eval as eval_api, pipeline, exchange
 from app.scheduler.jobs import setup_scheduler
 
 
@@ -31,6 +31,8 @@ app.include_router(logs.router)
 app.include_router(ws.router)
 app.include_router(trades.router)
 app.include_router(eval_api.router)
+app.include_router(pipeline.router)
+app.include_router(exchange.router)
 
 
 @app.get("/health")

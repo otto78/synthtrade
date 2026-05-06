@@ -14,6 +14,14 @@ class Settings(BaseSettings):
     BINANCE_SECRET_KEY: str = ""
     BINANCE_TESTNET: bool = True
 
+    @property
+    def binance_base_url(self) -> str:
+        return "https://testnet.binance.vision" if self.BINANCE_TESTNET else "https://api.binance.com"
+
+    @property
+    def binance_ws_base_url(self) -> str:
+        return "wss://testnet.binance.vision/ws" if self.BINANCE_TESTNET else "wss://stream.binance.com:9443/ws"
+
     # Auth
     APP_PASSWORD: str = "changeme"
     JWT_SECRET: str = "dev-secret-change-in-prod"

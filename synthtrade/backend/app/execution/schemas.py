@@ -57,3 +57,14 @@ class PositionSnapshot:
     take_profit: float
     opened_at: datetime
     unrealized_pnl: float = 0.0
+
+
+@dataclass
+class StrategyRequest:
+    budget_eur: float
+    duration_days: int
+    asset_class: Literal["crypto", "stocks", "forex"]
+    risk_level: Literal["low", "medium", "high"]
+    symbols: list[str] | None = None
+    free_text: str | None = None
+    max_strategies: int = 5

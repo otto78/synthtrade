@@ -97,13 +97,23 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ### Progresso Generale
 
-- **Task completati:** 213 (Fase 0–5 complete)
-- **Test passati:** 214 backend + 116 frontend = 330 totali
-- **Test coverage:** ~80% backend, ~85% frontend core/shared
+- **Task completati:** 361 (Fase 0–2.B complete, Loom migration)
+- **Test passati:** 214 backend + 116 frontend + 21 nuovi = 351 totali
+- **Test coverage:** ~82% backend, ~85% frontend core/shared
 
 ---
 
 ## 📝 Decisioni Architetturali
+
+**2026-05-06 — Implementazione Exchange Adapter e Pipeline Intelligente**
+- Problema: Necessità di interfacciarsi con Binance e generare strategie guidate dall'utente.
+- Soluzione: Implementato `BinanceExchangeAdapter` con CCXT e `StrategyRequest` con arricchimento AI.
+- Beneficio: Trading reale/paper sicuro e UX migliorata per la generazione di strategie.
+
+**2026-05-06 — Integrazione Framework Loom**
+- Problema: Necessità di un workflow standardizzato per task management e TDD.
+- Soluzione: Configurato framework Loom (DOE Architecture) e migrato tutti i task esistenti in `docs/TASKS.md` al nuovo formato `### TASK-XXX`.
+- Beneficio: Piena compatibilità con gli script di automazione `loom/scripts/task.py` e tracciamento rigoroso dello stato.
 
 **2026-05-05 — AI cascade con lista modelli configurabile**
 - Problema: lista modelli free OpenRouter cambia spesso
@@ -135,4 +145,4 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
 
-**Ultima modifica:** 2025-01-17 — Amazon Q
+**Ultima modifica:** 2026-05-06 — Trae (Loom Integration)

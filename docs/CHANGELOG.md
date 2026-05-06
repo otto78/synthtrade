@@ -14,6 +14,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.6.1] — 2026-05-06
+
+### Added
+- `app/execution/exchange.py`: Implementato `BinanceExchangeAdapter` con CCXT e `ExchangeProtocol`.
+- `app/execution/quantity_calculator.py`: Calcolatore quantità con validazione `stepSize` e `minNotional`.
+- `app/api/exchange.py`: Endpoint `GET /api/exchange/status`.
+- `app/api/pipeline.py`: Endpoint `POST /api/pipeline/generate` e `GET /api/pipeline/generate/:id/status`.
+- `app/ai/request_enricher.py`: Integrazione AI per estrazione simboli e template da testo libero.
+- `app/execution/schemas.py`: Aggiunto modello `StrategyRequest`.
+
+### Changed
+- `app/core/strategy_generator.py`: Aggiornato per supportare `StrategyRequest` e filtri dinamici.
+
+---
+
 ## [0.5.9] — 2026-05-05
 
 ### Added

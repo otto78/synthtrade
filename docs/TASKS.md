@@ -7,61 +7,203 @@
 ## 🔵 Fase 0 — Setup & Infrastruttura
 
 ### Monorepo & Tooling
-- [x] Creare struttura cartelle `synthtrade/` con `backend/`, `supabase/`
-- [x] Inizializzare Git con `.gitignore`
-- [x] Creare `README.md` con istruzioni setup locale
+### TASK-001 — Creare struttura cartelle `synthtrade/` con `backend/`, `supabase/`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-002 — Inizializzare Git con `.gitignore`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-003 — Creare `README.md` con istruzioni setup locale
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ### Backend Bootstrap
-- [x] Creare `requirements.txt` con tutte le dipendenze
-- [x] Creare `config.py` con `Settings` via `pydantic-settings`
-- [x] Creare `main.py` con lifespan, CORS, router placeholder
-- [x] 🔴 Test: `test_main.py` → `GET /health` restituisce `{"status": "ok"}` ✅
-- [x] 🟢 Implementare route `/health` ✅
-- [x] Creare `pytest.ini` con `asyncio_mode = auto`
-- [x] Creare `conftest.py` con fixture `mock_supabase`
+### TASK-004 — Creare `requirements.txt` con tutte le dipendenze
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-005 — Creare `config.py` con `Settings` via `pydantic-settings`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-006 — Creare `main.py` con lifespan, CORS, router placeholder
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-007 — 🔴 Test: `test_main.py` → `GET /health` restituisce `{"status": "ok"}`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-008 — 🟢 Implementare route `/health`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-009 — Creare `pytest.ini` con `asyncio_mode = auto`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-010 — Creare `conftest.py` con fixture `mock_supabase`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ### Supabase Setup
-- [x] Creare le 4 migration SQL (strategies, trades, logs, ohlcv_cache)
-- [x] Creare `seed.sql` con 3 strategie di esempio PENDING
-- [x] Creare `supabase_client.py` singleton
+### TASK-011 — Creare le 4 migration SQL (strategies, trades, logs, ohlcv_cache)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-012 — Creare `seed.sql` con 3 strategie di esempio PENDING
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-013 — Creare `supabase_client.py` singleton
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ### Docker
-- [x] `docker-compose.yml` per backend (porta 8000)
-- [x] `Dockerfile` backend
+### TASK-014 — `docker-compose.yml` per backend (porta 8000)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-015 — `Dockerfile` backend
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ---
 
 ## 🟡 Fase 1 — Core Engine
 
 ### Indicatori tecnici
-- [x] 🔴 Test `test_indicators.py` ✅ 17 test
-- [x] 🟢 Implementare `indicators.py` ✅
-- [x] 🔵 Refactor: costante `LOOKBACK_PERIODS` ✅
+### TASK-016 — 🔴 Test `test_indicators.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-017 — 🟢 Implementare `indicators.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-018 — 🔵 Refactor: costante `LOOKBACK_PERIODS`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ### Strategy Generator
-- [x] 🔴 Test `test_generator.py` ✅ 8 test
-- [x] 🟢 Implementare `strategy_generator.py` ✅
-- [ ] 🔵 Refactor: `TEMPLATES` configurabile via JSON
+### TASK-019 — 🔴 Test `test_generator.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-020 — 🟢 Implementare `strategy_generator.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-021 — 🔵 Refactor: `TEMPLATES` configurabile via JSON
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+---
+
+## 🧵 Loom Framework
+
+### TASK-319 — Migrazione task a formato Loom
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+**Data:** 2026-05-06
+
 
 ### Backtester
-- [x] 🔴 Test `test_backtester.py` ✅ 14 test
-- [x] 🟢 Implementare `backtester.py` ✅
-- [ ] 🔵 Refactor: `StopLossManager` separato
+### TASK-022 — 🔴 Test `test_backtester.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-023 — 🟢 Implementare `backtester.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-024 — 🔵 Refactor: `StopLossManager` separato
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### Ranker
-- [x] 🔴 Test `test_ranker.py` ✅ 15 test
-- [x] 🟢 Implementare `ranker.py` ✅
-- [ ] 🔵 Refactor: `RankConfig` da `.env`
+### TASK-025 — 🔴 Test `test_ranker.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-026 — 🟢 Implementare `ranker.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-027 — 🔵 Refactor: `RankConfig` da `.env`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### Market Data + Cache Supabase
-- [x] 🔴 Test `test_market_data.py` ✅ 7 test
-- [x] 🟢 Implementare `market_data.py` ✅
-- [ ] 🔵 Refactor: separare `exchange.py`
+### TASK-028 — 🔴 Test `test_market_data.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-029 — 🟢 Implementare `market_data.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-030 — 🔵 Refactor: separare `exchange.py`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### Pipeline Batch
-- [x] 🔴 Test `test_pipeline.py` (integration) ✅ 5 test
-- [x] 🟢 Implementare `run_pipeline.py` ✅
-- [ ] 🔵 Refactor: progress logging + gestione eccezioni
+### TASK-031 — 🔴 Test `test_pipeline.py` (integration)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-032 — 🟢 Implementare `run_pipeline.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-033 — 🔵 Refactor: progress logging + gestione eccezioni
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ---
 
@@ -72,7 +214,12 @@
 
 ### 1.B.0 Schema StrategyRequest
 
-- [ ] Creare `execution/schemas.py` → aggiungere `StrategyRequest`:
+### TASK-034 — Creare `execution/schemas.py` → aggiungere `StrategyRequest`:
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+**Data:** 2026-05-06
+
   - `budget_eur: float` — capitale da allocare (es. 100.0)
   - `duration_days: int` — orizzonte temporale (es. 30)
   - `asset_class: Literal["crypto", "stocks", "forex"]` — classe di asset
@@ -83,61 +230,201 @@
 
 ### 1.B.1 Modifica Strategy Generator
 
-- [ ] 🔴 Test `test_generator_constrained.py` → `generate_for_request(req: StrategyRequest)` restituisce solo strategie con `duration_days` compatibile (± 20%)
-- [ ] 🔴 Test → se `req.symbols` è specificato, le strategie generate usano solo quei simboli
-- [ ] 🔴 Test → `risk_level = "low"` esclude strategie con `max_drawdown > 15%` dai template selezionabili
-- [ ] 🔴 Test → `risk_level = "high"` consente tutti i template inclusi quelli aggressivi
-- [ ] 🔴 Test → `budget_eur` viene propagato come `position_size_eur` nei parametri della strategia generata
-- [ ] 🔴 Test → `max_strategies` limita il numero di strategie restituite
-- [ ] 🟢 Aggiungere `generate_for_request(req: StrategyRequest) -> list[Strategy]` in `strategy_generator.py`
-- [ ] 🔵 Refactor: la selezione dei template estratta in `_filter_templates_by_constraints(req)` — funzione pura testabile in isolamento
+### TASK-035 — 🔴 Test `test_generator_constrained.py` → `generate_for_request(req: StrategyRequest)` restituisce solo strategie con `duration_days` compatibile (± 20%)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-036 — 🔴 Test → se `req.symbols` è specificato, le strategie generate usano solo quei simboli
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-037 — 🔴 Test → `risk_level = "low"` esclude strategie con `max_drawdown > 15%` dai template selezionabili
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-038 — 🔴 Test → `risk_level = "high"` consente tutti i template inclusi quelli aggressivi
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-039 — 🔴 Test → `budget_eur` viene propagato come `position_size_eur` nei parametri della strategia generata
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-040 — 🔴 Test → `max_strategies` limita il numero di strategie restituite
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-041 — 🟢 Aggiungere `generate_for_request(req: StrategyRequest) -> list[Strategy]` in `strategy_generator.py`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-042 — 🔵 Refactor: la selezione dei template estratta in `_filter_templates_by_constraints(req)` — funzione pura testabile in isolamento
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 1.B.2 Integrazione free_text con AI
 
-- [ ] 🔴 Test `test_generator_ai_hint.py` → `enrich_request_with_ai(req)` chiama il modello LLM con il `free_text` e restituisce una lista di simboli suggeriti e un template preferito
-- [ ] 🔴 Test → se `free_text` è `None` o vuoto, `enrich_request_with_ai()` restituisce l'input invariato senza chiamare il modello
-- [ ] 🔴 Test → se il modello non è disponibile, la funzione restituisce l'input invariato (graceful degradation)
-- [ ] 🟢 Implementare `ai/request_enricher.py` con `enrich_request_with_ai(req: StrategyRequest) -> StrategyRequest`
-- [ ] 🟢 Aggiungere chiamata a `enrich_request_with_ai()` all'inizio di `generate_for_request()` se `free_text` è presente
+### TASK-043 — 🔴 Test `test_generator_ai_hint.py` → `enrich_request_with_ai(req)` chiama il modello LLM con il `free_text` e restituisce una lista di simboli suggeriti e un template preferito
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-044 — 🔴 Test → se `free_text` è `None` o vuoto, `enrich_request_with_ai()` restituisce l'input invariato senza chiamare il modello
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-045 — 🔴 Test → se il modello non è disponibile, la funzione restituisce l'input invariato (graceful degradation)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-046 — 🟢 Implementare `ai/request_enricher.py` con `enrich_request_with_ai(req: StrategyRequest) -> StrategyRequest`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-047 — 🟢 Aggiungere chiamata a `enrich_request_with_ai()` all'inizio di `generate_for_request()` se `free_text` è presente
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 1.B.3 API Endpoint
 
-- [ ] 🔴 Test `test_api_pipeline.py` → `POST /api/pipeline/generate` accetta un `StrategyRequest` nel body e avvia la pipeline in background (`BackgroundTasks`)
-- [ ] 🔴 Test → risponde immediatamente con `202 Accepted` e un `generation_id` (UUID)
-- [ ] 🔴 Test → `GET /api/pipeline/generate/{generation_id}/status` restituisce lo stato (`pending` / `running` / `completed` / `failed`) e, se completato, la lista delle strategie generate
-- [ ] 🔴 Test → endpoint protetti da `get_current_user`
-- [ ] 🟢 Implementare `api/pipeline.py` e registrare il router in `main.py`
-- [ ] 🟢 Al completamento della pipeline, inviare messaggio WS di tipo `generation_complete` con `generation_id` e numero di strategie generate
+### TASK-048 — 🔴 Test `test_api_pipeline.py` → `POST /api/pipeline/generate` accetta un `StrategyRequest` nel body e avvia la pipeline in background (`BackgroundTasks`)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-049 — 🔴 Test → risponde immediatamente con `202 Accepted` e un `generation_id` (UUID)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-050 — 🔴 Test → `GET /api/pipeline/generate/{generation_id}/status` restituisce lo stato (`pending` / `running` / `completed` / `failed`) e, se completato, la lista delle strategie generate
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-051 — 🔴 Test → endpoint protetti da `get_current_user`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-052 — 🟢 Implementare `api/pipeline.py` e registrare il router in `main.py`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-053 — 🟢 Al completamento della pipeline, inviare messaggio WS di tipo `generation_complete` con `generation_id` e numero di strategie generate
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ---
 
 ## �🟠 Fase 2 — Backend API
 
 ### Auth
-- [x] 🔴 Test `test_api_auth.py` ✅ 7 test
-- [x] 🟢 Implementare `api/auth.py` + JWT ✅
-- [x] 🟢 Implementare `dependencies.py` → `get_current_user` ✅
-- [x] 🔵 Refactor: `core/auth_utils.py` ✅
+### TASK-054 — 🔴 Test `test_api_auth.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-055 — 🟢 Implementare `api/auth.py` + JWT
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-056 — 🟢 Implementare `dependencies.py` → `get_current_user`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-057 — 🔵 Refactor: `core/auth_utils.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ### Strategies API
-- [x] 🔴 Test `test_api_strategies.py` ✅ 12 test
-- [x] 🟢 Implementare `api/strategies.py` ✅
-- [ ] 🔵 Refactor: `StrategyRepository`
+### TASK-058 — 🔴 Test `test_api_strategies.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-059 — 🟢 Implementare `api/strategies.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-060 — 🔵 Refactor: `StrategyRepository`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### Dashboard API
-- [x] 🔴 Test `test_api_dashboard.py` ✅ 10 test
-- [x] 🟢 Implementare `api/dashboard.py` ✅
-- [ ] 🔵 Refactor: cache balance 30s
+### TASK-061 — 🔴 Test `test_api_dashboard.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-062 — 🟢 Implementare `api/dashboard.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-063 — 🔵 Refactor: cache balance 30s
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### Logs API
-- [x] 🔴 Test `test_api_logs.py` ✅ 12 test
-- [x] 🟢 Implementare `api/logs.py` ✅
-- [ ] 🔵 Refactor: filtri aggiuntivi
+### TASK-064 — 🔴 Test `test_api_logs.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-065 — 🟢 Implementare `api/logs.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-066 — 🔵 Refactor: filtri aggiuntivi
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### WebSocket
-- [x] 🔴 Test `test_ws.py` ✅ 6 test
-- [x] 🟢 Implementare `api/ws.py` ✅
-- [x] 🔵 Refactor: broadcast per tipo ✅
+### TASK-067 — 🔴 Test `test_ws.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-068 — 🟢 Implementare `api/ws.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-069 — 🔵 Refactor: broadcast per tipo
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ---
 
@@ -148,164 +435,600 @@
 
 ### 2.B.0 Configurazione
 
-- [ ] Aggiungere in `config.py`:
+### TASK-070 — Aggiungere in `config.py`:
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
   - `BINANCE_API_KEY` e `BINANCE_API_SECRET` (già presenti nel `.env` — verificare i nomi)
   - `BINANCE_TESTNET: bool = True` — flag per switchare tra testnet e live
   - `BINANCE_BASE_URL` → calcolato automaticamente: `https://testnet.binance.vision` se testnet, `https://api.binance.com` se live
   - `BINANCE_WS_BASE_URL` → analogamente per i WebSocket di Binance
-- [ ] Aggiungere a `requirements.txt`: `python-binance` oppure `ccxt` (da scegliere — vedi nota sotto)
-- [ ] Documentare in `README.md` come creare le API key sul Binance Testnet (`testnet.binance.vision`) e i permessi necessari: **Enable Spot & Margin Trading**
+### TASK-071 — Aggiungere a `requirements.txt`: `python-binance` oppure `ccxt` (da scegliere — vedi nota sotto)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-072 — Documentare in `README.md` come creare le API key sul Binance Testnet (`testnet.binance.vision`) e i permessi necessari: **Enable Spot & Margin Trading**
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 > **Nota sulla libreria**: `python-binance` è più semplice per Binance puro; `ccxt` è più generico e permette di aggiungere altri exchange in futuro cambiando una riga. Consigliato `ccxt` per flessibilità futura.
 
 ### 2.B.1 BinanceExchangeAdapter
 
-- [ ] 🔴 Test `test_exchange_adapter.py` → `get_balance()` chiama l'endpoint corretto e restituisce il saldo USDT disponibile come `float`
-- [ ] 🔴 Test → `get_ticker_price(symbol)` restituisce il prezzo corrente del simbolo come `float`
-- [ ] 🔴 Test → `place_market_order(symbol, side, quantity)` chiama `POST /api/v3/order` con `type=MARKET` e i parametri corretti
-- [ ] 🔴 Test → `place_market_order()` in modalità testnet usa `BINANCE_BASE_URL` del testnet (mock del client, non chiamata reale)
-- [ ] 🔴 Test → `close_position(symbol, side, quantity)` piazza un ordine sul lato opposto per chiudere la posizione
-- [ ] 🔴 Test → `get_open_orders(symbol)` restituisce gli ordini aperti per quel simbolo
-- [ ] 🔴 Test → errore HTTP 400 da Binance (es. `MIN_NOTIONAL`, quantità troppo bassa) viene wrappato in `ExchangeOrderError` con il codice Binance originale nel messaggio
-- [ ] 🔴 Test → errore HTTP 401 (API key non valida) viene wrappato in `ExchangeAuthError`
-- [ ] 🔴 Test → errore di rete (timeout, connessione rifiutata) viene wrappato in `ExchangeNetworkError`
-- [ ] 🟢 Implementare `execution/exchange.py` con classe `BinanceExchangeAdapter` che implementa `ExchangeProtocol`
-- [ ] 🟢 Definire `ExchangeProtocol` (Protocol class) con i metodi sopra — così in futuro si può aggiungere Kraken, Coinbase ecc. senza toccare l'engine
-- [ ] 🔵 Refactor: `BinanceExchangeAdapter` istanziato come singleton in `dependencies.py` e iniettato negli endpoint che richiedono
+### TASK-073 — 🔴 Test `test_exchange_adapter.py` → `get_balance()` chiama l'endpoint corretto e restituisce il saldo USDT disponibile come `float`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-074 — 🔴 Test → `get_ticker_price(symbol)` restituisce il prezzo corrente del simbolo come `float`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-075 — 🔴 Test → `place_market_order(symbol, side, quantity)` chiama `POST /api/v3/order` con `type=MARKET` e i parametri corretti
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-076 — 🔴 Test → `place_market_order()` in modalità testnet usa `BINANCE_BASE_URL` del testnet (mock del client, non chiamata reale)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-077 — 🔴 Test → `close_position(symbol, side, quantity)` piazza un ordine sul lato opposto per chiudere la posizione
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-078 — 🔴 Test → `get_open_orders(symbol)` restituisce gli ordini aperti per quel simbolo
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-079 — 🔴 Test → errore HTTP 400 da Binance (es. `MIN_NOTIONAL`, quantità troppo bassa) viene wrappato in `ExchangeOrderError` con il codice Binance originale nel messaggio
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-080 — 🔴 Test → errore HTTP 401 (API key non valida) viene wrappato in `ExchangeAuthError`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-081 — 🔴 Test → errore di rete (timeout, connessione rifiutata) viene wrappato in `ExchangeNetworkError`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-082 — 🟢 Implementare `execution/exchange.py` con classe `BinanceExchangeAdapter` che implementa `ExchangeProtocol`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-083 — 🟢 Definire `ExchangeProtocol` (Protocol class) con i metodi sopra — così in futuro si può aggiungere Kraken, Coinbase ecc. senza toccare l'engine
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-084 — 🔵 Refactor: `BinanceExchangeAdapter` istanziato come singleton in `dependencies.py` e iniettato negli endpoint che richiedono
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 2.B.2 Quantity Calculator
 
-- [ ] 🔴 Test `test_quantity_calculator.py` → `calculate_quantity(symbol, budget_eur, current_price)` restituisce la quantità corretta rispettando i `LOT_SIZE` filter di Binance (step size)
-- [ ] 🔴 Test → quantità calcolata non supera mai il `budget_eur` convertito in USDT
-- [ ] 🔴 Test → se la quantità risultante è sotto `MIN_QTY` del simbolo, solleva `BudgetTooSmallError` con il minimo richiesto
-- [ ] 🟢 Implementare `execution/quantity_calculator.py`
-- [ ] 🟢 `BinanceExchangeAdapter.get_symbol_filters(symbol)` che recupera i filtri `LOT_SIZE` e `MIN_NOTIONAL` dall'API Binance (con cache in memoria — non cambiano spesso)
+### TASK-085 — 🔴 Test `test_quantity_calculator.py` → `calculate_quantity(symbol, budget_eur, current_price)` restituisce la quantità corretta rispettando i `LOT_SIZE` filter di Binance (step size)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-086 — 🔴 Test → quantità calcolata non supera mai il `budget_eur` convertito in USDT
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-087 — 🔴 Test → se la quantità risultante è sotto `MIN_QTY` del simbolo, solleva `BudgetTooSmallError` con il minimo richiesto
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-088 — 🟢 Implementare `execution/quantity_calculator.py`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-089 — 🟢 `BinanceExchangeAdapter.get_symbol_filters(symbol)` che recupera i filtri `LOT_SIZE` e `MIN_NOTIONAL` dall'API Binance (con cache in memoria — non cambiano spesso)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 2.B.3 Paper Trading Mode (Testnet)
 
-- [ ] 🟢 Aggiungere endpoint `GET /api/exchange/status` che restituisce `{ "mode": "testnet" | "live", "base_url": "...", "balance": {...} }`
-- [ ] 🔴 Test → con `BINANCE_TESTNET=True`, ogni chiamata di scrittura usa l'URL del testnet
-- [ ] 🔴 Test → con `BINANCE_TESTNET=False`, ogni chiamata usa l'URL di produzione
-- [ ] 🟢 Aggiungere nel frontend (`Topbar` o `Dashboard`) un badge visibile **TESTNET** / **LIVE** che chiama `GET /api/exchange/status` all'avvio — impossibile ignorare in quale modalità si è
+### TASK-090 — 🟢 Aggiungere endpoint `GET /api/exchange/status` che restituisce `{ "mode": "testnet" | "live", "base_url": "...", "balance": {...} }`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-091 — 🔴 Test → con `BINANCE_TESTNET=True`, ogni chiamata di scrittura usa l'URL del testnet
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-092 — 🔴 Test → con `BINANCE_TESTNET=False`, ogni chiamata usa l'URL di produzione
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-093 — 🟢 Aggiungere nel frontend (`Topbar` o `Dashboard`) un badge visibile **TESTNET** / **LIVE** che chiama `GET /api/exchange/status` all'avvio — impossibile ignorare in quale modalità si è
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ---
 
 ## �🟢 Fase 3 — Frontend Angular
 
 ### 3.0 Bootstrap & Configurazione
-- [x] Creare Angular app: `ng new synthtrade-ui --style=scss --routing --standalone`
-- [x] Rimuovere Karma/Jasmine, installare `jest-preset-angular`, creare `jest.config.ts` e `setup-jest.ts`
-- [x] Creare `tsconfig.spec.json` per Jest
-- [x] Configurare `environment.ts` / `environment.prod.ts` con `apiUrl`, `wsUrl`, `supabaseUrl`, `supabaseAnonKey`
-- [x] Configurare `proxy.conf.json` per dev: `/api → localhost:8000`, `/ws → localhost:8000`
-- [x] Aggiungere script npm: `start:proxy`, `test:watch`, `test:ci`, `test:coverage`
-- [x] Installare e configurare `eslint` + `prettier` con regole Angular
-- [x] Configurare `jest --coverage` con soglia minima 80% su `core/` e `shared/`
+### TASK-094 — Creare Angular app: `ng new synthtrade-ui --style=scss --routing --standalone`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-095 — Rimuovere Karma/Jasmine, installare `jest-preset-angular`, creare `jest.config.ts` e `setup-jest.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-096 — Creare `tsconfig.spec.json` per Jest
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-097 — Configurare `environment.ts` / `environment.prod.ts` con `apiUrl`, `wsUrl`, `supabaseUrl`, `supabaseAnonKey`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-098 — Configurare `proxy.conf.json` per dev: `/api → localhost:8000`, `/ws → localhost:8000`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-099 — Aggiungere script npm: `start:proxy`, `test:watch`, `test:ci`, `test:coverage`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-100 — Installare e configurare `eslint` + `prettier` con regole Angular
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-101 — Configurare `jest --coverage` con soglia minima 80% su `core/` e `shared/`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ### 3.1 Design Tokens & Tema
-- [x] Creare `src/styles/_variables.scss`
-- [x] Creare `src/styles/_mixins.scss`
-- [x] Creare `src/styles/_reset.scss`
-- [x] Creare `src/styles/_animations.scss`
-- [x] Creare `src/styles/theme-dark.scss`
-- [x] Importare tutto in `styles.scss`
+### TASK-102 — Creare `src/styles/_variables.scss`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-103 — Creare `src/styles/_mixins.scss`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-104 — Creare `src/styles/_reset.scss`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-105 — Creare `src/styles/_animations.scss`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-106 — Creare `src/styles/theme-dark.scss`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-107 — Importare tutto in `styles.scss`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ### 3.2 Modelli & Interfacce
-- [x] `core/models/user.model.ts` → `User`, `AuthTokens`, `JwtPayload`
-- [x] `core/models/strategy.model.ts` → `Strategy`, `StrategyStatus`, `StrategyCreateDto`, `StrategyMetrics`
-- [x] `core/models/trade.model.ts` → `Trade`, `TradeDirection`, `TradeStatus`
-- [x] `core/models/dashboard.model.ts` → `DashboardStats`, `BalanceSnapshot`, `PipelineStatus`
-- [x] `core/models/log.model.ts` → `OperationLog`, `LogLevel`, `LogFilters`, `PaginatedLogs`
-- [x] `core/models/ws-message.model.ts` → `WsMessage<T>`, `WsMessageType` (enum)
+### TASK-108 — `core/models/user.model.ts` → `User`, `AuthTokens`, `JwtPayload`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-109 — `core/models/strategy.model.ts` → `Strategy`, `StrategyStatus`, `StrategyCreateDto`, `StrategyMetrics`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-110 — `core/models/trade.model.ts` → `Trade`, `TradeDirection`, `TradeStatus`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-111 — `core/models/dashboard.model.ts` → `DashboardStats`, `BalanceSnapshot`, `PipelineStatus`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-112 — `core/models/log.model.ts` → `OperationLog`, `LogLevel`, `LogFilters`, `PaginatedLogs`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-113 — `core/models/ws-message.model.ts` → `WsMessage<T>`, `WsMessageType` (enum)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ### 3.3 Interceptors & Guards
-- [x] 🔴 Test `auth.interceptor.spec.ts` ✅ 2 test
-- [x] 🟢 Implementare `core/interceptors/auth.interceptor.ts` ✅
-- [x] 🔴 Test `error.interceptor.spec.ts` ✅ 3 test
-- [x] 🟢 Implementare `core/interceptors/error.interceptor.ts` ✅
-- [x] 🔴 Test `auth.guard.spec.ts` ✅ 3 test
-- [x] 🟢 Implementare `core/guards/auth.guard.ts` ✅
-- [x] 🔴 Test `no-auth.guard.spec.ts` ✅ 2 test
-- [x] 🟢 Implementare `core/guards/no-auth.guard.ts` ✅
+### TASK-114 — 🔴 Test `auth.interceptor.spec.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-115 — 🟢 Implementare `core/interceptors/auth.interceptor.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-116 — 🔴 Test `error.interceptor.spec.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-117 — 🟢 Implementare `core/interceptors/error.interceptor.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-118 — 🔴 Test `auth.guard.spec.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-119 — 🟢 Implementare `core/guards/auth.guard.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-120 — 🔴 Test `no-auth.guard.spec.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-121 — 🟢 Implementare `core/guards/no-auth.guard.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ### 3.4 Services
-- [x] 🔴 Test `token-storage.service.spec.ts` ✅ 7 test
-- [x] 🟢 Implementare `core/services/token-storage.service.ts` ✅
-- [x] 🔴 Test `auth.service.spec.ts` ✅ 7 test
-- [x] 🟢 Implementare `core/services/auth.service.ts` ✅
-- [x] 🔴 Test `strategy.service.spec.ts` ✅ 5 test
-- [x] 🟢 Implementare `core/services/strategy.service.ts` ✅
-- [x] 🔴 Test `dashboard.service.spec.ts` ✅ 4 test (incl. cache 30s)
-- [x] 🟢 Implementare `core/services/dashboard.service.ts` ✅
-- [ ] 🔵 Refactor: cache con `shareReplay(1)` + invalidazione dopo 30s
-- [x] 🔴 Test `log.service.spec.ts` ✅ 5 test
-- [x] 🟢 Implementare `core/services/log.service.ts` ✅
-- [x] 🔴 Test `ws.service.spec.ts` ✅ 5 test
-- [x] 🟢 Implementare `core/services/ws.service.ts` ✅
-- [x] 🔵 Refactor: `on<T>(type)` helper tipizzato ✅
+### TASK-122 — 🔴 Test `token-storage.service.spec.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-123 — 🟢 Implementare `core/services/token-storage.service.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-124 — 🔴 Test `auth.service.spec.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-125 — 🟢 Implementare `core/services/auth.service.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-126 — 🔴 Test `strategy.service.spec.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-127 — 🟢 Implementare `core/services/strategy.service.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-128 — 🔴 Test `dashboard.service.spec.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-129 — 🟢 Implementare `core/services/dashboard.service.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-130 — 🔵 Refactor: cache con `shareReplay(1)` + invalidazione dopo 30s
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-131 — 🔴 Test `log.service.spec.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-132 — 🟢 Implementare `core/services/log.service.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-133 — 🔴 Test `ws.service.spec.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-134 — 🟢 Implementare `core/services/ws.service.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-135 — 🔵 Refactor: `on<T>(type)` helper tipizzato
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ### 3.5 Shared — Componenti Atomici
-- [x] 🔴 Test `stat-card.component.spec.ts` (label, value, delta, skeleton) ✅ 4 test
-- [x] 🟢 Implementare `shared/components/stat-card/` ✅
-- [x] 🔴 Test `badge-status.component.spec.ts` (testo e classe CSS per ogni status) ✅ 6 test
-- [x] 🟢 Implementare `shared/components/badge-status/` ✅
-- [x] 🔴 Test `price-ticker.component.spec.ts` (decimali, flash-up, flash-down, rimozione classe) ✅ 4 test
-- [x] 🟢 Implementare `shared/components/price-ticker/` ✅
-- [x] 🔴 Test `confirm-dialog.component.spec.ts` (confirmed, cancelled, Escape) ✅ 5 test
-- [x] 🟢 Implementare `shared/components/confirm-dialog/` ✅
-- [x] 🟢 Implementare `shared/components/empty-state/` ✅
-- [x] 🔴 Test `relative-time.pipe.spec.ts` ✅ 5 test
-- [x] 🟢 Implementare `shared/pipes/relative-time.pipe.ts` ✅
-- [x] 🔴 Test `format-number.pipe.spec.ts` (K/M suffisso) ✅ 5 test
-- [x] 🟢 Implementare `shared/pipes/format-number.pipe.ts` ✅
-- [x] 🔴 Test `signed-number.pipe.spec.ts` ✅ 4 test
-- [x] 🟢 Implementare `shared/pipes/signed-number.pipe.ts` ✅
+### TASK-136 — 🔴 Test `stat-card.component.spec.ts` (label, value, delta, skeleton)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-137 — 🟢 Implementare `shared/components/stat-card/`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-138 — 🔴 Test `badge-status.component.spec.ts` (testo e classe CSS per ogni status)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-139 — 🟢 Implementare `shared/components/badge-status/`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-140 — 🔴 Test `price-ticker.component.spec.ts` (decimali, flash-up, flash-down, rimozione classe)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-141 — 🟢 Implementare `shared/components/price-ticker/`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-142 — 🔴 Test `confirm-dialog.component.spec.ts` (confirmed, cancelled, Escape)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-143 — 🟢 Implementare `shared/components/confirm-dialog/`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-144 — 🟢 Implementare `shared/components/empty-state/`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-145 — 🔴 Test `relative-time.pipe.spec.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-146 — 🟢 Implementare `shared/pipes/relative-time.pipe.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-147 — 🔴 Test `format-number.pipe.spec.ts` (K/M suffisso)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-148 — 🟢 Implementare `shared/pipes/format-number.pipe.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-149 — 🔴 Test `signed-number.pipe.spec.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-150 — 🟢 Implementare `shared/pipes/signed-number.pipe.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ### 3.6 Layout Shell
-- [x] 🔴 Test `sidebar.component.spec.ts` (voce attiva, toggle collapsed) ✅ 4 test
-- [x] 🟢 Implementare `layout/sidebar/` (Dashboard, Strategies, Active Trade, Logs) ✅
-- [x] 🔴 Test `topbar.component.spec.ts` (username, logout) ✅ 2 test
-- [x] 🟢 Implementare `layout/topbar/` ✅
-- [x] 🟢 Implementare `layout/app-shell/` ✅
-- [ ] 🔵 Refactor: stato collapsed persistito in localStorage
+### TASK-151 — 🔴 Test `sidebar.component.spec.ts` (voce attiva, toggle collapsed)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-152 — 🟢 Implementare `layout/sidebar/` (Dashboard, Strategies, Active Trade, Logs)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-153 — 🔴 Test `topbar.component.spec.ts` (username, logout)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-154 — 🟢 Implementare `layout/topbar/`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-155 — 🟢 Implementare `layout/app-shell/`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-156 — 🔵 Refactor: stato collapsed persistito in localStorage
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 3.7 Routing
-- [x] Creare `app.routes.ts` con lazy loading (login, dashboard, strategies, active-trade, logs) ✅
-- [x] 🔴 Test routing: `''` → `/login` senza token, `''` → `/dashboard` con token ✅ 6 test
-- [x] 🔴 Test: `authGuard` redirige a `/login` senza token ✅
+### TASK-157 — Creare `app.routes.ts` con lazy loading (login, dashboard, strategies, active-trade, logs)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-158 — 🔴 Test routing: `''` → `/login` senza token, `''` → `/dashboard` con token
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-159 — 🔴 Test: `authGuard` redirige a `/login` senza token
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ### 3.8 Pagine
 
 #### LoginPage
-- [x] 🔴 Test `login.component.spec.ts` (form invalido, submit, 401, redirect, spinner) ✅ 7 test
-- [x] 🟢 Implementare `pages/login/login.page.ts` ✅
-- [ ] 🔵 Refactor: estrarre `LoginFormComponent`
+### TASK-160 — 🔴 Test `login.component.spec.ts` (form invalido, submit, 401, redirect, spinner)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-161 — 🟢 Implementare `pages/login/login.page.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-162 — 🔵 Refactor: estrarre `LoginFormComponent`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 #### DashboardPage
-- [x] 🔴 Test `dashboard.component.spec.ts` (getStats, 4 StatCard, WS stats_update, loading) ✅ 4 test
-- [x] 🟢 Implementare `pages/dashboard/dashboard.page.ts` ✅
-- [ ] 🟢 Aggiungere grafico balance history
-- [ ] 🔵 Refactor: `DashboardStore` con Angular Signals
+### TASK-163 — 🔴 Test `dashboard.component.spec.ts` (getStats, 4 StatCard, WS stats_update, loading)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-164 — 🟢 Implementare `pages/dashboard/dashboard.page.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-165 — 🟢 Aggiungere grafico balance history
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-166 — 🔵 Refactor: `DashboardStore` con Angular Signals
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 #### StrategiesPage
-- [x] 🔴 Test `strategies.component.spec.ts` (list, activate, delete+confirm, filtro, empty state) ✅ 5 test
-- [x] 🟢 Implementare `pages/strategies/strategies.page.ts` ✅
-- [ ] 🔵 Refactor: `StrategyListComponent` + `StrategyRowComponent`
+### TASK-167 — 🔴 Test `strategies.component.spec.ts` (list, activate, delete+confirm, filtro, empty state)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-168 — 🟢 Implementare `pages/strategies/strategies.page.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-169 — 🔵 Refactor: `StrategyListComponent` + `StrategyRowComponent`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 #### ActiveTradePage
-- [x] 🔴 Test `active-trade.component.spec.ts` (empty state, render trade, WS price_update, P&L classi) ✅ 5 test
-- [x] 🟢 Implementare `pages/active-trade/active-trade.page.ts` ✅
+### TASK-170 — 🔴 Test `active-trade.component.spec.ts` (empty state, render trade, WS price_update, P&L classi)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-171 — 🟢 Implementare `pages/active-trade/active-trade.page.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 #### LogsPage
-- [x] 🔴 Test `logs.component.spec.ts` (getLogs, filtro level, paginazione, riga, WS new_log) ✅ 5 test
-- [x] 🟢 Implementare `pages/logs/logs.page.ts` ✅
-- [ ] 🔵 Refactor: `LogFiltersComponent` + query params sync
+### TASK-172 — 🔴 Test `logs.component.spec.ts` (getLogs, filtro level, paginazione, riga, WS new_log)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-173 — 🟢 Implementare `pages/logs/logs.page.ts`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-174 — 🔵 Refactor: `LogFiltersComponent` + query params sync
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 3.9 E2E
-- [ ] Installare e configurare Playwright
-- [ ] 🔴 E2E `auth.spec.ts` (login errato → errore; login corretto → /dashboard)
-- [ ] 🔴 E2E `strategies.spec.ts` (attivazione e disattivazione end-to-end)
-- [ ] 🔴 E2E `logs.spec.ts` (filtro level aggiorna lista)
+### TASK-175 — Installare e configurare Playwright
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-176 — 🔴 E2E `auth.spec.ts` (login errato → errore; login corretto → /dashboard)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-177 — 🔴 E2E `strategies.spec.ts` (attivazione e disattivazione end-to-end)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-178 — 🔴 E2E `logs.spec.ts` (filtro level aggiorna lista)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ---
 
@@ -316,49 +1039,153 @@
 
 ### 3.B.0 Modelli
 
-- [ ] Aggiungere in `core/models/strategy.model.ts`:
+### TASK-179 — Aggiungere in `core/models/strategy.model.ts`:
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
   - `StrategyRequest` → `budgetEur`, `durationDays`, `assetClass`, `symbols`, `riskLevel`, `freeText`, `maxStrategies`
   - `GenerationStatus` → `generationId`, `status` (`pending`/`running`/`completed`/`failed`), `strategies?`
 
 ### 3.B.1 PipelineService
 
-- [ ] 🔴 Test `pipeline.service.spec.ts` → `generateStrategies(req: StrategyRequest)` chiama `POST /api/pipeline/generate` e restituisce il `generationId`
-- [ ] 🔴 Test → `pollGenerationStatus(generationId)` chiama `GET /api/pipeline/generate/:id/status` ogni 3s con `interval()` RxJS e completa quando `status === 'completed'` o `'failed'`
-- [ ] 🟢 Implementare `core/services/pipeline.service.ts`
+### TASK-180 — 🔴 Test `pipeline.service.spec.ts` → `generateStrategies(req: StrategyRequest)` chiama `POST /api/pipeline/generate` e restituisce il `generationId`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-181 — 🔴 Test → `pollGenerationStatus(generationId)` chiama `GET /api/pipeline/generate/:id/status` ogni 3s con `interval()` RxJS e completa quando `status === 'completed'` o `'failed'`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-182 — 🟢 Implementare `core/services/pipeline.service.ts`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 3.B.2 StrategyRequestFormComponent
 
-- [ ] 🔴 Test `strategy-request-form.component.spec.ts` → form invalido se `budgetEur ≤ 0` o `durationDays ≤ 0`
-- [ ] 🔴 Test → `riskLevel` obbligatorio, default `medium`
-- [ ] 🔴 Test → al submit valido emette evento `requestSubmitted` con il `StrategyRequest` compilato
-- [ ] 🔴 Test → campo `freeText` opzionale, max 500 caratteri con counter visibile
-- [ ] 🔴 Test → chip-selector per `symbols`: l'utente può aggiungere/rimuovere simboli (BTCUSDT, ETHUSDT, ecc.) o lasciare vuoto per "scegli tu"
-- [ ] 🟢 Implementare `shared/components/strategy-request-form/strategy-request-form.component.ts` con `ReactiveFormsModule`
+### TASK-183 — 🔴 Test `strategy-request-form.component.spec.ts` → form invalido se `budgetEur ≤ 0` o `durationDays ≤ 0`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-184 — 🔴 Test → `riskLevel` obbligatorio, default `medium`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-185 — 🔴 Test → al submit valido emette evento `requestSubmitted` con il `StrategyRequest` compilato
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-186 — 🔴 Test → campo `freeText` opzionale, max 500 caratteri con counter visibile
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-187 — 🔴 Test → chip-selector per `symbols`: l'utente può aggiungere/rimuovere simboli (BTCUSDT, ETHUSDT, ecc.) o lasciare vuoto per "scegli tu"
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-188 — 🟢 Implementare `shared/components/strategy-request-form/strategy-request-form.component.ts` con `ReactiveFormsModule`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 3.B.3 GenerationProgressComponent
 
-- [ ] 🔴 Test `generation-progress.component.spec.ts` → mostra spinner con messaggio "Generazione in corso..." durante `status === 'running'`
-- [ ] 🔴 Test → al completamento mostra "N strategie generate" con animazione e bottone "Vedi risultati"
-- [ ] 🔴 Test → in caso di `status === 'failed'` mostra messaggio di errore e bottone "Riprova"
-- [ ] 🟢 Implementare `shared/components/generation-progress/generation-progress.component.ts`
+### TASK-189 — 🔴 Test `generation-progress.component.spec.ts` → mostra spinner con messaggio "Generazione in corso..." durante `status === 'running'`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-190 — 🔴 Test → al completamento mostra "N strategie generate" con animazione e bottone "Vedi risultati"
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-191 — 🔴 Test → in caso di `status === 'failed'` mostra messaggio di errore e bottone "Riprova"
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-192 — 🟢 Implementare `shared/components/generation-progress/generation-progress.component.ts`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 3.B.4 Integrazione in StrategiesPage
 
-- [ ] 🟢 Aggiungere bottone **"Genera nuove strategie"** in `StrategiesPage` che apre il `StrategyRequestFormComponent` in un pannello laterale (o modale)
-- [ ] 🟢 Al submit del form, chiamare `PipelineService.generateStrategies()` e mostrare `GenerationProgressComponent`
-- [ ] 🟢 Sottoscriversi al messaggio WS `generation_complete` per aggiornare la lista automaticamente senza polling manuale
-- [ ] 🔴 Test `strategies.component.spec.ts` (aggiuntivi) → click "Genera nuove strategie" apre il pannello
-- [ ] 🔴 Test → messaggio WS `generation_complete` aggiorna la lista delle strategie senza ricaricare la pagina
-- [ ] 🔵 Refactor: le strategie generate dall'utente hanno un badge visivo **"Generata per te"** distinto dalle strategie pre-esistenti del seed
+### TASK-193 — 🟢 Aggiungere bottone **"Genera nuove strategie"** in `StrategiesPage` che apre il `StrategyRequestFormComponent` in un pannello laterale (o modale)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-194 — 🟢 Al submit del form, chiamare `PipelineService.generateStrategies()` e mostrare `GenerationProgressComponent`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-195 — 🟢 Sottoscriversi al messaggio WS `generation_complete` per aggiornare la lista automaticamente senza polling manuale
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-196 — 🔴 Test `strategies.component.spec.ts` (aggiuntivi) → click "Genera nuove strategie" apre il pannello
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-197 — 🔴 Test → messaggio WS `generation_complete` aggiorna la lista delle strategie senza ricaricare la pagina
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-198 — 🔵 Refactor: le strategie generate dall'utente hanno un badge visivo **"Generata per te"** distinto dalle strategie pre-esistenti del seed
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 3.B.5 Dettaglio Strategia
 
-- [ ] 🟢 Creare `pages/strategy-detail/strategy-detail.component.ts` raggiungibile da `/strategies/:id`
-- [ ] 🔴 Test `strategy-detail.component.spec.ts` → mostra tutti i parametri della strategia: simbolo, timeframe, indicatori usati, metriche backtest (Sharpe, Win Rate, Max Drawdown, Total Trades)
-- [ ] 🔴 Test → mostra il `reasoning` dell'AI Evaluator (se disponibile) con score e verdict badge
-- [ ] 🔴 Test → bottone **"Attiva questa strategia"** chiama `StrategyService.activateStrategy(id)` e naviga a `/active-trade`
-- [ ] 🔴 Test → bottone **"Attiva questa strategia"** è disabilitato se `budget` della strategia supera il saldo disponibile
-- [ ] 🟢 Aggiungere la route `/strategies/:id` in `app.routes.ts`
+### TASK-199 — 🟢 Creare `pages/strategy-detail/strategy-detail.component.ts` raggiungibile da `/strategies/:id`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-200 — 🔴 Test `strategy-detail.component.spec.ts` → mostra tutti i parametri della strategia: simbolo, timeframe, indicatori usati, metriche backtest (Sharpe, Win Rate, Max Drawdown, Total Trades)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-201 — 🔴 Test → mostra il `reasoning` dell'AI Evaluator (se disponibile) con score e verdict badge
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-202 — 🔴 Test → bottone **"Attiva questa strategia"** chiama `StrategyService.activateStrategy(id)` e naviga a `/active-trade`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-203 — 🔴 Test → bottone **"Attiva questa strategia"** è disabilitato se `budget` della strategia supera il saldo disponibile
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-204 — 🟢 Aggiungere la route `/strategies/:id` in `app.routes.ts`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ---
 
@@ -367,41 +1194,133 @@
 > Struttura: `synthtrade/backend/app/execution/` + `synthtrade/backend/app/scheduler/`
 
 ### 4.0 Modelli & Configurazione
-- [x] Aggiungere in `config.py`: `MAX_CONCURRENT_POSITIONS`, `MAX_EXPOSURE_PER_SYMBOL_PCT`, `MAX_DRAWDOWN_PCT`, `DEFAULT_POSITION_SIZE_PCT`, `DEFAULT_STOP_LOSS_PCT`, `DEFAULT_TAKE_PROFIT_PCT`, `SCHEDULER_PIPELINE_INTERVAL_MIN` ✅
-- [x] Creare `execution/schemas.py`: `Signal`, `OrderRequest`, `OrderResult`, `RiskCheckResult`, `PositionSnapshot` ✅
+### TASK-205 — Aggiungere in `config.py`: `MAX_CONCURRENT_POSITIONS`, `MAX_EXPOSURE_PER_SYMBOL_PCT`, `MAX_DRAWDOWN_PCT`, `DEFAULT_POSITION_SIZE_PCT`, `DEFAULT_STOP_LOSS_PCT`, `DEFAULT_TAKE_PROFIT_PCT`, `SCHEDULER_PIPELINE_INTERVAL_MIN`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-206 — Creare `execution/schemas.py`: `Signal`, `OrderRequest`, `OrderResult`, `RiskCheckResult`, `PositionSnapshot`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ### 4.1 RiskManager
-- [x] 🔴 Test `test_risk_manager.py` ✅ 13 test
-- [x] 🟢 Implementare `execution/risk_manager.py` ✅
-- [ ] 🔵 Refactor: `RiskConfig` dataclass iniettabile nei test
+### TASK-207 — 🔴 Test `test_risk_manager.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-208 — 🟢 Implementare `execution/risk_manager.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-209 — 🔵 Refactor: `RiskConfig` dataclass iniettabile nei test
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 4.2 OrderTracker
-- [x] 🔴 Test `test_order_tracker.py` ✅ 7 test
-- [x] 🟢 Implementare `execution/order_tracker.py` ✅
+### TASK-210 — 🔴 Test `test_order_tracker.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-211 — 🟢 Implementare `execution/order_tracker.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ### 4.3 SignalResolver
-- [x] 🔴 Test `test_signal_resolver.py` ✅ 5 test
-- [x] 🟢 Implementare `execution/signal_resolver.py` con `SignalResolverProtocol` + `DefaultSignalResolver` ✅
-- [ ] 🔵 Refactor: pluggabile via `config.py` con `importlib`
+### TASK-212 — 🔴 Test `test_signal_resolver.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-213 — 🟢 Implementare `execution/signal_resolver.py` con `SignalResolverProtocol` + `DefaultSignalResolver`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-214 — 🔵 Refactor: pluggabile via `config.py` con `importlib`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 4.4 ExecutionEngine
-- [x] 🔴 Test `test_execution_engine.py` ✅ 11 test
-- [x] 🟢 Implementare `execution/execution_engine.py` ✅
-- [ ] 🔵 Refactor: `SignalResolver` iniettato nel costruttore
+### TASK-215 — 🔴 Test `test_execution_engine.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-216 — 🟢 Implementare `execution/execution_engine.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-217 — 🔵 Refactor: `SignalResolver` iniettato nel costruttore
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 4.5 Scheduler
-- [x] 🔴 Test `test_scheduler.py` ✅ 4 test
-- [x] 🟢 Implementare `scheduler/jobs.py` con `AsyncIOScheduler` ✅
-- [x] 🟢 Aggiungere `GET /api/scheduler/status` ✅
-- [x] 🟢 Registrare scheduler nel lifespan di `main.py` ✅
-- [ ] 🔵 Refactor: intervalli configurabili da `Settings`
+### TASK-218 — 🔴 Test `test_scheduler.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-219 — 🟢 Implementare `scheduler/jobs.py` con `AsyncIOScheduler`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-220 — 🟢 Aggiungere `GET /api/scheduler/status`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-221 — 🟢 Registrare scheduler nel lifespan di `main.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-222 — 🔵 Refactor: intervalli configurabili da `Settings`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 4.6 Integration Tests
-- [x] 🔴 Test `test_execution_integration.py` → pipeline completa: Signal → trade aperto su Supabase ✅
-- [x] 🔴 Test → scenario stop loss: posizione aperta → SL raggiunto → posizione chiusa ✅
-- [x] 🔴 Test → scenario risk reject: portfolio al limite → nessun ordine → log con reason ✅
-- [x] 🔴 Test → scenario drawdown: drawdown oltre soglia → tutti i signal rigettati ✅
-- [x] 🟢 `api/trades.py`: `GET /api/trades`, `GET /api/trades/open` ✅ 5 test
+### TASK-223 — 🔴 Test `test_execution_integration.py` → pipeline completa: Signal → trade aperto su Supabase
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-224 — 🔴 Test → scenario stop loss: posizione aperta → SL raggiunto → posizione chiusa
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-225 — 🔴 Test → scenario risk reject: portfolio al limite → nessun ordine → log con reason
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-226 — 🔴 Test → scenario drawdown: drawdown oltre soglia → tutti i signal rigettati
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-227 — 🟢 `api/trades.py`: `GET /api/trades`, `GET /api/trades/open`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ---
 
@@ -410,48 +1329,144 @@
 > Struttura: `synthtrade/backend/app/ai/` con `schemas.py`, `context_builder.py`, `prompt_builder.py`, `model_client.py`, `eval_parser.py`, `cache.py`, `evaluator.py`
 
 ### 5.0 Config & Schemas
-- [x] Aggiungere in `config.py`: `AI_API_KEY`, `AI_API_BASE_URL`, `AI_CASCADE_MODELS`, `AI_FALLBACK_MODEL`, `AI_MAX_TOKENS`, `AI_TEMPERATURE`, `AI_TIMEOUT_SECONDS`, `AI_MAX_RETRIES`, `AI_BACKOFF_BASE`, `AI_EVAL_CACHE_TTL_MINUTES`, `PIPELINE_AI_EVAL_TOP_N`, `MAX_CONCURRENT_EVALS` ✅
-- [x] Creare `ai/schemas.py`: `OhlcvSummary`, `MarketContext`, `StrategyContext`, `EvalPromptInput`, `EvalResult`, `ModelResponse` ✅
+### TASK-228 — Aggiungere in `config.py`: `AI_API_KEY`, `AI_API_BASE_URL`, `AI_CASCADE_MODELS`, `AI_FALLBACK_MODEL`, `AI_MAX_TOKENS`, `AI_TEMPERATURE`, `AI_TIMEOUT_SECONDS`, `AI_MAX_RETRIES`, `AI_BACKOFF_BASE`, `AI_EVAL_CACHE_TTL_MINUTES`, `PIPELINE_AI_EVAL_TOP_N`, `MAX_CONCURRENT_EVALS`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-229 — Creare `ai/schemas.py`: `OhlcvSummary`, `MarketContext`, `StrategyContext`, `EvalPromptInput`, `EvalResult`, `ModelResponse`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ### 5.1 MarketContext Builder
-- [x] 🔴 Test `test_context_builder.py` ✅ 7 test
-- [x] 🟢 Implementare `ai/context_builder.py` ✅
-- [ ] 🔵 Refactor: `MarketRegimeDetector` con soglie configurabili da `Settings`
+### TASK-230 — 🔴 Test `test_context_builder.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-231 — 🟢 Implementare `ai/context_builder.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-232 — 🔵 Refactor: `MarketRegimeDetector` con soglie configurabili da `Settings`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 5.2 Prompt Builder
-- [x] 🔴 Test `test_prompt_builder.py` ✅ 6 test
-- [x] 🟢 Implementare `ai/prompt_builder.py` ✅
-- [ ] 🔵 Refactor: template `.jinja2` separato da logica
+### TASK-233 — 🔴 Test `test_prompt_builder.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-234 — 🟢 Implementare `ai/prompt_builder.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-235 — 🔵 Refactor: template `.jinja2` separato da logica
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 5.3 Model Client
-- [x] 🔴 Test `test_model_client.py` ✅ 7 test
-- [x] 🟢 Implementare `ai/model_client.py` con `httpx.AsyncClient` ✅
-- [ ] 🔵 Refactor: `@async_retry` decorator in `ai/retry.py`
+### TASK-236 — 🔴 Test `test_model_client.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-237 — 🟢 Implementare `ai/model_client.py` con `httpx.AsyncClient`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-238 — 🔵 Refactor: `@async_retry` decorator in `ai/retry.py`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 5.4 EvalResult Parser & Validator
-- [x] 🔴 Test `test_eval_parser.py` ✅ 8 test
-- [x] 🟢 Implementare `ai/eval_parser.py` ✅
+### TASK-239 — 🔴 Test `test_eval_parser.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-240 — 🟢 Implementare `ai/eval_parser.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ### 5.5 EvalCache
-- [x] 🔴 Test `test_eval_cache.py` ✅ 4 test
-- [x] 🟢 Implementare `ai/cache.py` ✅
+### TASK-241 — 🔴 Test `test_eval_cache.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-242 — 🟢 Implementare `ai/cache.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ### 5.6 Evaluator (orchestratore)
-- [x] 🔴 Test `test_evaluator.py` ✅ 7 test
-- [x] 🟢 Implementare `ai/evaluator.py` ✅
-- [ ] 🔵 Refactor: `MAX_CONCURRENT_EVALS` da `Settings`
+### TASK-243 — 🔴 Test `test_evaluator.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-244 — 🟢 Implementare `ai/evaluator.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-245 — 🔵 Refactor: `MAX_CONCURRENT_EVALS` da `Settings`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 5.7 API Endpoint
-- [x] 🔴 Test `test_api_eval.py` ✅ 4 test
-- [x] 🟢 Implementare `api/eval.py` + registrare in `main.py` ✅
+### TASK-246 — 🔴 Test `test_api_eval.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-247 — 🟢 Implementare `api/eval.py` + registrare in `main.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ### 5.8 Integrazione in Pipeline
-- [x] 🔴 Test `test_pipeline_ai.py` ✅ 4 test
-- [x] 🟢 Aggiornare `run_pipeline.py` con passo AI Evaluator (async, DEMOTE→REJECTED) ✅
-- [ ] 🟢 Broadcast WS `eval_complete` con `strategy_id`, `verdict`, `score`
+### TASK-248 — 🔴 Test `test_pipeline_ai.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-249 — 🟢 Aggiornare `run_pipeline.py` con passo AI Evaluator (async, DEMOTE→REJECTED)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
+### TASK-250 — 🟢 Broadcast WS `eval_complete` con `strategy_id`, `verdict`, `score`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 5.9 Integration Tests
-- [x] 🔴 Test `test_ai_integration.py` ✅ 5 test (happy path, fallback, cache hit, JSON malformato, all models down)
+### TASK-251 — 🔴 Test `test_ai_integration.py`
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06
+
 
 ---
 
@@ -460,106 +1475,382 @@
 > Architettura target: **Supabase Cloud** + **VPS Linux** con Docker + Nginx + HTTPS.
 
 ### 6.0 Supabase — Produzione
-- [ ] Creare progetto Supabase Cloud (region EU)
-- [ ] Eseguire 4 migration SQL + seed.sql
-- [ ] Verificare schema tabelle
-- [ ] Copiare `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+### TASK-252 — Creare progetto Supabase Cloud (region EU)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-253 — Eseguire 4 migration SQL + seed.sql
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-254 — Verificare schema tabelle
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-255 — Copiare `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 #### RLS
-- [ ] Abilitare RLS su `strategies`, `trades`, `operation_logs`, `ohlcv_cache`
-- [ ] Policy `SELECT/INSERT/UPDATE/DELETE` solo per `auth.uid() = user_id`
-- [ ] Testare policy con `SET LOCAL role = anon`
+### TASK-256 — Abilitare RLS su `strategies`, `trades`, `operation_logs`, `ohlcv_cache`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-257 — Policy `SELECT/INSERT/UPDATE/DELETE` solo per `auth.uid() = user_id`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-258 — Testare policy con `SET LOCAL role = anon`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 #### Realtime
-- [ ] Abilitare Realtime su `operation_logs`
-- [ ] Verificare eventi `INSERT` trasmessi correttamente
+### TASK-259 — Abilitare Realtime su `operation_logs`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-260 — Verificare eventi `INSERT` trasmessi correttamente
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 #### Auth
-- [ ] Disabilitare registrazione pubblica
-- [ ] Creare utente admin manualmente
-- [ ] Configurare JWT expiry in linea con backend
+### TASK-261 — Disabilitare registrazione pubblica
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-262 — Creare utente admin manualmente
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-263 — Configurare JWT expiry in linea con backend
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 6.1 Docker — Hardening Immagini
 
 #### Backend multi-stage
-- [ ] Stage `builder`: `python:3.12-slim`, virtualenv isolato
-- [ ] Stage `runtime`: immagine pulita, solo virtualenv + codice
-- [ ] Utente non-root `appuser`
-- [ ] Nessun `pip`, `gcc`, cache `apt`, `.pyc` nell'immagine finale
-- [ ] `HEALTHCHECK`: `curl -f http://localhost:8000/health || exit 1`
-- [ ] `.dockerignore`: `__pycache__`, `*.pyc`, `.env`, `tests/`, `.git/`
+### TASK-264 — Stage `builder`: `python:3.12-slim`, virtualenv isolato
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-265 — Stage `runtime`: immagine pulita, solo virtualenv + codice
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-266 — Utente non-root `appuser`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-267 — Nessun `pip`, `gcc`, cache `apt`, `.pyc` nell'immagine finale
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-268 — `HEALTHCHECK`: `curl -f http://localhost:8000/health || exit 1`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-269 — `.dockerignore`: `__pycache__`, `*.pyc`, `.env`, `tests/`, `.git/`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 #### Frontend multi-stage
-- [ ] Stage `builder`: `node:20-alpine`, `npm ci` + `ng build --configuration production`
-- [ ] Stage `runtime`: `nginx:alpine`, solo `dist/`
-- [ ] `nginx.conf`: SPA fallback, cache headers, gzip
+### TASK-270 — Stage `builder`: `node:20-alpine`, `npm ci` + `ng build --configuration production`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-271 — Stage `runtime`: `nginx:alpine`, solo `dist/`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-272 — `nginx.conf`: SPA fallback, cache headers, gzip
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 6.2 docker-compose Produzione
-- [ ] `docker-compose.prod.yml`: backend + frontend + nginx, nessun port binding diretto
-- [ ] Network `internal` bridge isolata
-- [ ] Volume named per certificati SSL (`certbot_certs`)
-- [ ] Logging `json-file` con `max-size: 10m`, `max-file: 3`
-- [ ] `.env.prod.example` con tutti i nomi variabili (senza valori)
+### TASK-273 — `docker-compose.prod.yml`: backend + frontend + nginx, nessun port binding diretto
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-274 — Network `internal` bridge isolata
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-275 — Volume named per certificati SSL (`certbot_certs`)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-276 — Logging `json-file` con `max-size: 10m`, `max-file: 3`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-277 — `.env.prod.example` con tutti i nomi variabili (senza valori)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 6.3 Nginx — Reverse Proxy & HTTPS
-- [ ] Redirect 301 HTTP → HTTPS
-- [ ] `location /api/` → proxy_pass `backend:8000`
-- [ ] `location /ws/` → proxy_pass con upgrade WebSocket
-- [ ] `location /` → proxy_pass `frontend:80`
-- [ ] Headers sicurezza: `X-Frame-Options`, `X-Content-Type-Options`, `HSTS`, `CSP`
-- [ ] Rate limiting su `/api/auth/` (5 req/min per IP)
-- [ ] `ssl-params.conf` con TLS 1.2+, no SSLv3
+### TASK-278 — Redirect 301 HTTP → HTTPS
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-279 — `location /api/` → proxy_pass `backend:8000`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-280 — `location /ws/` → proxy_pass con upgrade WebSocket
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-281 — `location /` → proxy_pass `frontend:80`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-282 — Headers sicurezza: `X-Frame-Options`, `X-Content-Type-Options`, `HSTS`, `CSP`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-283 — Rate limiting su `/api/auth/` (5 req/min per IP)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-284 — `ssl-params.conf` con TLS 1.2+, no SSLv3
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 #### Certbot / Let's Encrypt
-- [ ] Servizio `certbot` in `docker-compose.prod.yml`
-- [ ] `scripts/init-letsencrypt.sh` (staging → production)
-- [ ] `scripts/renew-certs.sh` (nginx reload, no downtime)
+### TASK-285 — Servizio `certbot` in `docker-compose.prod.yml`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-286 — `scripts/init-letsencrypt.sh` (staging → production)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-287 — `scripts/renew-certs.sh` (nginx reload, no downtime)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 6.4 VPS — Provisioning
-- [ ] `[provider]` VPS: Ubuntu 24.04 LTS, 2 vCPU / 4 GB RAM / 40 GB SSD
-- [ ] `[provider]` SSH key, firewall porte 22/80/443, DNS record A
-- [ ] Utente non-root `deploy` con sudo
-- [ ] Disabilitare login SSH root
-- [ ] UFW: `allow 22,80,443/tcp`
-- [ ] Installare Docker + Docker Compose plugin
-- [ ] `unattended-upgrades` per aggiornamenti sicurezza automatici
+### TASK-288 — `[provider]` VPS: Ubuntu 24.04 LTS, 2 vCPU / 4 GB RAM / 40 GB SSD
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-289 — `[provider]` SSH key, firewall porte 22/80/443, DNS record A
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-290 — Utente non-root `deploy` con sudo
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-291 — Disabilitare login SSH root
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-292 — UFW: `allow 22,80,443/tcp`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-293 — Installare Docker + Docker Compose plugin
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-294 — `unattended-upgrades` per aggiornamenti sicurezza automatici
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 6.5 Logging Strutturato
-- [ ] Installare `python-json-logger`
-- [ ] `core/logging.py` con `setup_logging()` e `JsonFormatter`
-- [ ] Chiamare `setup_logging()` nel lifespan di `main.py`
-- [ ] Sostituire tutti i `print()` con `logger = logging.getLogger(__name__)`
-- [ ] Middleware FastAPI con `request_id` (UUID) in ogni log
+### TASK-295 — Installare `python-json-logger`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-296 — `core/logging.py` con `setup_logging()` e `JsonFormatter`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-297 — Chiamare `setup_logging()` nel lifespan di `main.py`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-298 — Sostituire tutti i `print()` con `logger = logging.getLogger(__name__)`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-299 — Middleware FastAPI con `request_id` (UUID) in ogni log
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 6.6 Error Handling Globale
-- [ ] `core/exceptions.py`: `SynthTradeError`, `RiskViolationError`, `ModelUnavailableError`, `OrderExecutionError`
-- [ ] Handler globale `Exception` → `{"error": "internal_server_error", "request_id": "..."}`
-- [ ] Handler `HTTPException` con `request_id`
-- [ ] Handler `RequestValidationError` con errori Pydantic leggibili
-- [ ] Nessun stack trace esposto in produzione
+### TASK-300 — `core/exceptions.py`: `SynthTradeError`, `RiskViolationError`, `ModelUnavailableError`, `OrderExecutionError`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-301 — Handler globale `Exception` → `{"error": "internal_server_error", "request_id": "..."}`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-302 — Handler `HTTPException` con `request_id`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-303 — Handler `RequestValidationError` con errori Pydantic leggibili
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-304 — Nessun stack trace esposto in produzione
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 6.7 Deploy & Script di Rilascio
-- [ ] `scripts/deploy.sh`: git pull → build → up -d → image prune
-- [ ] `scripts/rollback.sh`: riavvia immagine tag precedente
-- [ ] Cron job rinnovo SSL: `0 3 * * *`
-- [ ] Backup DB: verificare retention Supabase Cloud
+### TASK-305 — `scripts/deploy.sh`: git pull → build → up -d → image prune
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-306 — `scripts/rollback.sh`: riavvia immagine tag precedente
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-307 — Cron job rinnovo SSL: `0 3 * * *`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-308 — Backup DB: verificare retention Supabase Cloud
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 6.8 Smoke Test Post-Deploy
-- [ ] `scripts/smoke_test.sh`:
+### TASK-309 — `scripts/smoke_test.sh`:
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
   - `GET /health` → 200 `{"status": "ok"}`
   - `POST /api/auth/login` → JWT token
   - `GET /api/strategies` con token → 200
   - `GET /api/dashboard/stats` con token → 200
   - WebSocket `wss://` → heartbeat ricevuto
   - Certificato SSL valido
-- [ ] `smoke_test.sh` integrato in `deploy.sh` con rollback automatico su fallimento
+### TASK-310 — `smoke_test.sh` integrato in `deploy.sh` con rollback automatico su fallimento
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
 
 ### 6.9 Checklist Pre-Go-Live
-- [ ] Nessuna variabile `.env` hardcodata (`grep -r "SECRET\|PASSWORD\|API_KEY"`)
-- [ ] `DEBUG=False`, `ENVIRONMENT=production`
-- [ ] CORS: `allow_origins` lista esplicita, no `*`
-- [ ] Tutte le tabelle Supabase con RLS abilitato
-- [ ] Nessun endpoint pubblico senza autenticazione
-- [ ] `ng build --configuration production` senza warning critici
-- [ ] `docker compose -f docker-compose.prod.yml config` senza errori
-- [ ] Smoke test completato con tutti i check verdi
+### TASK-311 — Nessuna variabile `.env` hardcodata (`grep -r "SECRET\|PASSWORD\|API_KEY"`)
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-312 — `DEBUG=False`, `ENVIRONMENT=production`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-313 — CORS: `allow_origins` lista esplicita, no `*`
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-314 — Tutte le tabelle Supabase con RLS abilitato
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-315 — Nessun endpoint pubblico senza autenticazione
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-316 — `ng build --configuration production` senza warning critici
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-317 — `docker compose -f docker-compose.prod.yml config` senza errori
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+### TASK-318 — Smoke test completato con tutti i check verdi
+
+**Status:** In Progress  
+**Data:** 2026-05-06
+
+---
+
+## 🧵 Loom Framework
+
+### TASK-319 — Migrazione task a formato Loom
+
+**Status:** Done ✅  
+**Completato:** 2026-05-06

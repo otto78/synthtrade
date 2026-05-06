@@ -135,23 +135,12 @@ python loom/execution/task_status.py --action get --task-id TASK-XXX
 ```
 **You MUST update task status** after completing or starting a task. / **DEVI aggiornare lo stato dei task** dopo aver completato o avviato un task.
 
-### 5. Check and apply framework updates / Controlla e applica aggiornamenti framework
+### 5. Check for framework updates / Controlla aggiornamenti framework
 ```bash
-python loom/scripts/update.py --status     # current version / versione attuale
-python loom/scripts/update.py --check      # check for updates / controlla aggiornamenti
-python loom/scripts/update.py --apply      # download and apply / scarica e applica
-python loom/scripts/update.py --rollback   # restore previous / ripristina precedente
+python loom/scripts/check_updates.py
+python loom/scripts/check_updates.py --update
 ```
-
-**Natural language triggers / Trigger in linguaggio naturale:**
-- `"check for loom updates"` / `"ci sono aggiornamenti di loom?"` / `"controlla aggiornamenti loom"` → `--check`
-- `"update loom"` / `"aggiorna loom"` / `"scarica aggiornamenti loom"` → `--apply`
-- `"loom version"` / `"versione loom"` / `"che versione di loom ho?"` → `--status`
-- `"rollback loom"` / `"ripristina loom"` → `--rollback`
-
-When running `--check`: inform the user of the result and suggest `--apply` if an update is available.
-During `--apply`: the `loom/` directory is replaced; project files (AGENT.md, IDE configs, docs/) are **never touched**.
-
+Run this at session start to inform the user if a new version is available. / Esegui all'inizio della sessione per informare l'utente se c'e una nuova versione.
 
 ### 6. Manage custom directive plugins / Gestisci plugin direttive custom
 ```bash
@@ -224,32 +213,6 @@ Se una direttiva o configurazione è usata sia da file locali (`directives/*.md`
 - `docs/` — documentazione progetto (TASKS.md, STORY.md, etc.)
 - `loom/` — framework Loom (non modificare)
 - `AGENT.md` — configurazione progetto (questo file)
-
----
-
-## Bootstrap — First Run / Prima Esecuzione
-
-**When you read this file for the first time, check if the `docs/` folder exists and contains all required files. If any are missing, create them immediately using the templates below.**
-
-**Quando leggi questo file per la prima volta, verifica che la cartella `docs/` esista e contenga tutti i file richiesti. Se mancano, creali subito usando i template qui sotto.**
-
-### Required files in `docs/` / File richiesti in `docs/`
-
-| File | Purpose |
-|------|---------|
-| `docs/TASKS.md` | Task tracking — active and completed tasks |
-| `docs/BACKLOG.md` | Future ideas and experiments |
-| `docs/STORY.md` | Project history, versions, key decisions |
-| `docs/CHANGELOG.md` | Version changelog |
-| `docs/HANDOFF.md` | Agent handoff notes |
-
-If `docs/` or any of these files is missing, run:
-
-```bash
-python loom/scripts/setup.py --auto
-```
-
-Or create them manually from the templates in `loom/templates/docs/`.
 
 ---
 

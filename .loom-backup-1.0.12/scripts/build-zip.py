@@ -55,10 +55,7 @@ EXCLUDE_PATTERNS = {
     
     # Test directories (users don't need these)
     "tests",
-
-    # Website documentation (not needed in user's download)
-    "docs",
-
+    
     # Examples (for reference only, not in distribution)
     "examples",
     

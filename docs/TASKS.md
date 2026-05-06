@@ -65,7 +65,53 @@
 
 ---
 
-## 🟠 Fase 2 — Backend API
+## � Fase 1.B — Constraint-Aware Generator
+
+> Modifica del `strategy_generator.py` esistente per accettare parametri utente invece di generare strategie casuali.
+> Da inserire dopo la Fase 1 esistente, prima della Fase 2.
+
+### 1.B.0 Schema StrategyRequest
+
+- [ ] Creare `execution/schemas.py` → aggiungere `StrategyRequest`:
+  - `budget_eur: float` — capitale da allocare (es. 100.0)
+  - `duration_days: int` — orizzonte temporale (es. 30)
+  - `asset_class: Literal["crypto", "stocks", "forex"]` — classe di asset
+  - `symbols: list[str] | None` — simboli specifici (es. `["BTCUSDT", "ETHUSDT"]`); se `None` il generator sceglie
+  - `risk_level: Literal["low", "medium", "high"]`
+  - `free_text: str | None` — descrizione libera dell'idea utente (es. "preferisco trend following su Bitcoin")
+  - `max_strategies: int = 5` — quante strategie generare
+
+### 1.B.1 Modifica Strategy Generator
+
+- [ ] 🔴 Test `test_generator_constrained.py` → `generate_for_request(req: StrategyRequest)` restituisce solo strategie con `duration_days` compatibile (± 20%)
+- [ ] 🔴 Test → se `req.symbols` è specificato, le strategie generate usano solo quei simboli
+- [ ] 🔴 Test → `risk_level = "low"` esclude strategie con `max_drawdown > 15%` dai template selezionabili
+- [ ] 🔴 Test → `risk_level = "high"` consente tutti i template inclusi quelli aggressivi
+- [ ] 🔴 Test → `budget_eur` viene propagato come `position_size_eur` nei parametri della strategia generata
+- [ ] 🔴 Test → `max_strategies` limita il numero di strategie restituite
+- [ ] 🟢 Aggiungere `generate_for_request(req: StrategyRequest) -> list[Strategy]` in `strategy_generator.py`
+- [ ] 🔵 Refactor: la selezione dei template estratta in `_filter_templates_by_constraints(req)` — funzione pura testabile in isolamento
+
+### 1.B.2 Integrazione free_text con AI
+
+- [ ] 🔴 Test `test_generator_ai_hint.py` → `enrich_request_with_ai(req)` chiama il modello LLM con il `free_text` e restituisce una lista di simboli suggeriti e un template preferito
+- [ ] 🔴 Test → se `free_text` è `None` o vuoto, `enrich_request_with_ai()` restituisce l'input invariato senza chiamare il modello
+- [ ] 🔴 Test → se il modello non è disponibile, la funzione restituisce l'input invariato (graceful degradation)
+- [ ] 🟢 Implementare `ai/request_enricher.py` con `enrich_request_with_ai(req: StrategyRequest) -> StrategyRequest`
+- [ ] 🟢 Aggiungere chiamata a `enrich_request_with_ai()` all'inizio di `generate_for_request()` se `free_text` è presente
+
+### 1.B.3 API Endpoint
+
+- [ ] 🔴 Test `test_api_pipeline.py` → `POST /api/pipeline/generate` accetta un `StrategyRequest` nel body e avvia la pipeline in background (`BackgroundTasks`)
+- [ ] 🔴 Test → risponde immediatamente con `202 Accepted` e un `generation_id` (UUID)
+- [ ] 🔴 Test → `GET /api/pipeline/generate/{generation_id}/status` restituisce lo stato (`pending` / `running` / `completed` / `failed`) e, se completato, la lista delle strategie generate
+- [ ] 🔴 Test → endpoint protetti da `get_current_user`
+- [ ] 🟢 Implementare `api/pipeline.py` e registrare il router in `main.py`
+- [ ] 🟢 Al completamento della pipeline, inviare messaggio WS di tipo `generation_complete` con `generation_id` e numero di strategie generate
+
+---
+
+## �🟠 Fase 2 — Backend API
 
 ### Auth
 - [x] 🔴 Test `test_api_auth.py` ✅ 7 test
@@ -95,7 +141,56 @@
 
 ---
 
-## 🟢 Fase 3 — Frontend Angular
+## � Fase 2.B — Exchange Adapter (Binance)
+
+> Implementazione reale di `exchange.py` con supporto Testnet/Live e operazioni di scrittura.
+> Da inserire dopo la Fase 2 esistente, prima della Fase 3.
+
+### 2.B.0 Configurazione
+
+- [ ] Aggiungere in `config.py`:
+  - `BINANCE_API_KEY` e `BINANCE_API_SECRET` (già presenti nel `.env` — verificare i nomi)
+  - `BINANCE_TESTNET: bool = True` — flag per switchare tra testnet e live
+  - `BINANCE_BASE_URL` → calcolato automaticamente: `https://testnet.binance.vision` se testnet, `https://api.binance.com` se live
+  - `BINANCE_WS_BASE_URL` → analogamente per i WebSocket di Binance
+- [ ] Aggiungere a `requirements.txt`: `python-binance` oppure `ccxt` (da scegliere — vedi nota sotto)
+- [ ] Documentare in `README.md` come creare le API key sul Binance Testnet (`testnet.binance.vision`) e i permessi necessari: **Enable Spot & Margin Trading**
+
+> **Nota sulla libreria**: `python-binance` è più semplice per Binance puro; `ccxt` è più generico e permette di aggiungere altri exchange in futuro cambiando una riga. Consigliato `ccxt` per flessibilità futura.
+
+### 2.B.1 BinanceExchangeAdapter
+
+- [ ] 🔴 Test `test_exchange_adapter.py` → `get_balance()` chiama l'endpoint corretto e restituisce il saldo USDT disponibile come `float`
+- [ ] 🔴 Test → `get_ticker_price(symbol)` restituisce il prezzo corrente del simbolo come `float`
+- [ ] 🔴 Test → `place_market_order(symbol, side, quantity)` chiama `POST /api/v3/order` con `type=MARKET` e i parametri corretti
+- [ ] 🔴 Test → `place_market_order()` in modalità testnet usa `BINANCE_BASE_URL` del testnet (mock del client, non chiamata reale)
+- [ ] 🔴 Test → `close_position(symbol, side, quantity)` piazza un ordine sul lato opposto per chiudere la posizione
+- [ ] 🔴 Test → `get_open_orders(symbol)` restituisce gli ordini aperti per quel simbolo
+- [ ] 🔴 Test → errore HTTP 400 da Binance (es. `MIN_NOTIONAL`, quantità troppo bassa) viene wrappato in `ExchangeOrderError` con il codice Binance originale nel messaggio
+- [ ] 🔴 Test → errore HTTP 401 (API key non valida) viene wrappato in `ExchangeAuthError`
+- [ ] 🔴 Test → errore di rete (timeout, connessione rifiutata) viene wrappato in `ExchangeNetworkError`
+- [ ] 🟢 Implementare `execution/exchange.py` con classe `BinanceExchangeAdapter` che implementa `ExchangeProtocol`
+- [ ] 🟢 Definire `ExchangeProtocol` (Protocol class) con i metodi sopra — così in futuro si può aggiungere Kraken, Coinbase ecc. senza toccare l'engine
+- [ ] 🔵 Refactor: `BinanceExchangeAdapter` istanziato come singleton in `dependencies.py` e iniettato negli endpoint che richiedono
+
+### 2.B.2 Quantity Calculator
+
+- [ ] 🔴 Test `test_quantity_calculator.py` → `calculate_quantity(symbol, budget_eur, current_price)` restituisce la quantità corretta rispettando i `LOT_SIZE` filter di Binance (step size)
+- [ ] 🔴 Test → quantità calcolata non supera mai il `budget_eur` convertito in USDT
+- [ ] 🔴 Test → se la quantità risultante è sotto `MIN_QTY` del simbolo, solleva `BudgetTooSmallError` con il minimo richiesto
+- [ ] 🟢 Implementare `execution/quantity_calculator.py`
+- [ ] 🟢 `BinanceExchangeAdapter.get_symbol_filters(symbol)` che recupera i filtri `LOT_SIZE` e `MIN_NOTIONAL` dall'API Binance (con cache in memoria — non cambiano spesso)
+
+### 2.B.3 Paper Trading Mode (Testnet)
+
+- [ ] 🟢 Aggiungere endpoint `GET /api/exchange/status` che restituisce `{ "mode": "testnet" | "live", "base_url": "...", "balance": {...} }`
+- [ ] 🔴 Test → con `BINANCE_TESTNET=True`, ogni chiamata di scrittura usa l'URL del testnet
+- [ ] 🔴 Test → con `BINANCE_TESTNET=False`, ogni chiamata usa l'URL di produzione
+- [ ] 🟢 Aggiungere nel frontend (`Topbar` o `Dashboard`) un badge visibile **TESTNET** / **LIVE** che chiama `GET /api/exchange/status` all'avvio — impossibile ignorare in quale modalità si è
+
+---
+
+## �🟢 Fase 3 — Frontend Angular
 
 ### 3.0 Bootstrap & Configurazione
 - [x] Creare Angular app: `ng new synthtrade-ui --style=scss --routing --standalone`
@@ -214,7 +309,60 @@
 
 ---
 
-## 🔴 Fase 4 — Execution Engine
+## � Fase 3.B — Frontend: Strategy Request Form
+
+> Finestra di prompt per guidare la generazione delle strategie.
+> Da inserire come sotto-fase di Fase 3, dopo il completamento di `StrategiesPage`.
+
+### 3.B.0 Modelli
+
+- [ ] Aggiungere in `core/models/strategy.model.ts`:
+  - `StrategyRequest` → `budgetEur`, `durationDays`, `assetClass`, `symbols`, `riskLevel`, `freeText`, `maxStrategies`
+  - `GenerationStatus` → `generationId`, `status` (`pending`/`running`/`completed`/`failed`), `strategies?`
+
+### 3.B.1 PipelineService
+
+- [ ] 🔴 Test `pipeline.service.spec.ts` → `generateStrategies(req: StrategyRequest)` chiama `POST /api/pipeline/generate` e restituisce il `generationId`
+- [ ] 🔴 Test → `pollGenerationStatus(generationId)` chiama `GET /api/pipeline/generate/:id/status` ogni 3s con `interval()` RxJS e completa quando `status === 'completed'` o `'failed'`
+- [ ] 🟢 Implementare `core/services/pipeline.service.ts`
+
+### 3.B.2 StrategyRequestFormComponent
+
+- [ ] 🔴 Test `strategy-request-form.component.spec.ts` → form invalido se `budgetEur ≤ 0` o `durationDays ≤ 0`
+- [ ] 🔴 Test → `riskLevel` obbligatorio, default `medium`
+- [ ] 🔴 Test → al submit valido emette evento `requestSubmitted` con il `StrategyRequest` compilato
+- [ ] 🔴 Test → campo `freeText` opzionale, max 500 caratteri con counter visibile
+- [ ] 🔴 Test → chip-selector per `symbols`: l'utente può aggiungere/rimuovere simboli (BTCUSDT, ETHUSDT, ecc.) o lasciare vuoto per "scegli tu"
+- [ ] 🟢 Implementare `shared/components/strategy-request-form/strategy-request-form.component.ts` con `ReactiveFormsModule`
+
+### 3.B.3 GenerationProgressComponent
+
+- [ ] 🔴 Test `generation-progress.component.spec.ts` → mostra spinner con messaggio "Generazione in corso..." durante `status === 'running'`
+- [ ] 🔴 Test → al completamento mostra "N strategie generate" con animazione e bottone "Vedi risultati"
+- [ ] 🔴 Test → in caso di `status === 'failed'` mostra messaggio di errore e bottone "Riprova"
+- [ ] 🟢 Implementare `shared/components/generation-progress/generation-progress.component.ts`
+
+### 3.B.4 Integrazione in StrategiesPage
+
+- [ ] 🟢 Aggiungere bottone **"Genera nuove strategie"** in `StrategiesPage` che apre il `StrategyRequestFormComponent` in un pannello laterale (o modale)
+- [ ] 🟢 Al submit del form, chiamare `PipelineService.generateStrategies()` e mostrare `GenerationProgressComponent`
+- [ ] 🟢 Sottoscriversi al messaggio WS `generation_complete` per aggiornare la lista automaticamente senza polling manuale
+- [ ] 🔴 Test `strategies.component.spec.ts` (aggiuntivi) → click "Genera nuove strategie" apre il pannello
+- [ ] 🔴 Test → messaggio WS `generation_complete` aggiorna la lista delle strategie senza ricaricare la pagina
+- [ ] 🔵 Refactor: le strategie generate dall'utente hanno un badge visivo **"Generata per te"** distinto dalle strategie pre-esistenti del seed
+
+### 3.B.5 Dettaglio Strategia
+
+- [ ] 🟢 Creare `pages/strategy-detail/strategy-detail.component.ts` raggiungibile da `/strategies/:id`
+- [ ] 🔴 Test `strategy-detail.component.spec.ts` → mostra tutti i parametri della strategia: simbolo, timeframe, indicatori usati, metriche backtest (Sharpe, Win Rate, Max Drawdown, Total Trades)
+- [ ] 🔴 Test → mostra il `reasoning` dell'AI Evaluator (se disponibile) con score e verdict badge
+- [ ] 🔴 Test → bottone **"Attiva questa strategia"** chiama `StrategyService.activateStrategy(id)` e naviga a `/active-trade`
+- [ ] 🔴 Test → bottone **"Attiva questa strategia"** è disabilitato se `budget` della strategia supera il saldo disponibile
+- [ ] 🟢 Aggiungere la route `/strategies/:id` in `app.routes.ts`
+
+---
+
+## �🔴 Fase 4 — Execution Engine
 
 > Struttura: `synthtrade/backend/app/execution/` + `synthtrade/backend/app/scheduler/`
 

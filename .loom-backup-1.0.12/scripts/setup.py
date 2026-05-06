@@ -168,7 +168,7 @@ class ProjectDetector:
         return frameworks
     
     def detect_ides(self) -> Set[str]:
-        """Detect IDEs and AI agents in use based on config files."""
+        """Detect IDEs in use based on config files."""
         ides = set()
         
         if (self.project_root / ".idea").exists():
@@ -187,10 +187,6 @@ class ProjectDetector:
             ides.add("agents")
         if (self.project_root / ".github" / "copilot-instructions.md").exists():
             ides.add("vscode")
-        if (self.project_root / ".clinerules").exists() or (self.project_root / ".clinerules" / "loom.md").exists():
-            ides.add("cline")
-        if (self.project_root / ".trae" / "rules").exists():
-            ides.add("trae")
         
         return ides
     
@@ -406,24 +402,19 @@ class FrameworkSetup:
         print_success(f"Created AGENT.md (merged template with {meta_path.name} data)")
     
     def setup_ide_config(self, ide: str):
-        """Setup IDE/agent-specific configuration."""
+        """Setup IDE-specific configuration."""
         ide_map = {
-            # IDEs & Editors
             "windsurf": (".windsurfrules", "ide-configs/windsurf/windsurfrules.template"),
+            "claude": ("CLAUDE.md", "ide-configs/claude/CLAUDE.md.template"),
             "cursor": (".cursorrules", "ide-configs/cursor/cursorrules.template"),
-            "trae": (".trae/rules/project_rules.md", "ide-configs/trae/trae.md.template"),
             "antigravity": ("GEMINI.md", "ide-configs/antigravity/GEMINI.md.template"),
+            "agents": ("AGENTS.md", "ide-configs/antigravity/AGENTS.md.template"),
             "vscode": (".github/copilot-instructions.md", "ide-configs/vscode/copilot-instructions.md.template"),
             "intellij": (".aiassistant/rules/loom.md", "ide-configs/intellij/LOOM.md.template"),
-            # AI Agents
-            "claude": ("CLAUDE.md", "ide-configs/claude/CLAUDE.md.template"),
-            "cline": (".clinerules/loom.md", "ide-configs/cline/cline.md.template"),
-            # Cross-tool
-            "agents": ("AGENTS.md", "ide-configs/antigravity/AGENTS.md.template"),
         }
         
         if ide not in ide_map:
-            print_warning(f"Unknown tool: {ide}")
+            print_warning(f"Unknown IDE: {ide}")
             return
         
         target_file, template_file = ide_map[ide]
@@ -634,40 +625,33 @@ def interactive_setup():
         project_name = project_root.name
         print_info(f"Using directory name: {project_name}")
     
-    # Ask for tools to configure
-    print(f"\n{Colors.CYAN}Which tools do you want to configure?{Colors.END}")
-    print(f"\n{Colors.BOLD}--- IDEs & Editors ---{Colors.END}")
+    # Ask for IDEs to configure
+    print(f"\n{Colors.CYAN}Which IDEs do you want to configure?{Colors.END}")
     print("1. Windsurf")
-    print("2. Cursor")
-    print("3. Trae")
+    print("2. Claude Code")
+    print("3. Cursor")
     print("4. Antigravity (GEMINI.md)")
     print("5. VS Code / VS Code Insider (GitHub Copilot)")
     print("6. IntelliJ IDEA (AI Assistant)")
-    print(f"\n{Colors.BOLD}--- AI Agents ---{Colors.END}")
-    print("7. Claude Code")
-    print("8. Cline (runs inside VS Code)")
-    print(f"\n{Colors.BOLD}--- Cross-tool ---{Colors.END}")
-    print("9. AGENTS.md (universal fallback — read by Cline, Windsurf, VS Code...)")
-    print("10. All")
+    print("7. AGENTS.md (cross-tool: Antigravity + Windsurf + VS Code + Insider)")
+    print("8. All")
     
-    ide_choice = input(f"\n{Colors.CYAN}Enter numbers (comma-separated, e.g., 1,3,9): {Colors.END}").strip()
+    ide_choice = input(f"{Colors.CYAN}Enter numbers (comma-separated, e.g., 1,3,7): {Colors.END}").strip()
     
     ide_map = {
         "1": "windsurf",
-        "2": "cursor",
-        "3": "trae",
+        "2": "claude",
+        "3": "cursor",
         "4": "antigravity",
         "5": "vscode",
         "6": "intellij",
-        "7": "claude",
-        "8": "cline",
-        "9": "agents",
-        "10": "all",
+        "7": "agents",
+        "8": "all",
     }
     
     selected_ides = set()
-    if "10" in ide_choice:
-        selected_ides = {"windsurf", "cursor", "trae", "antigravity", "vscode", "intellij", "claude", "cline", "agents"}
+    if "8" in ide_choice:
+        selected_ides = {"windsurf", "claude", "cursor", "antigravity", "vscode", "intellij", "agents"}
     else:
         for num in ide_choice.split(","):
             num = num.strip()
@@ -723,7 +707,7 @@ def auto_setup(project_name: Optional[str] = None, ides: Optional[List[str]] = N
         project_name = project_root.name
     
     if not ides:
-        ides = list(detected_ides) if detected_ides else ["windsurf", "cursor", "trae", "claude", "cline", "agents"]
+        ides = list(detected_ides) if detected_ides else ["windsurf", "cursor", "agents"]
     
     print_info(f"Project: {project_name}")
     print_info(f"Languages: {', '.join(languages)}")

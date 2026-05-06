@@ -256,7 +256,8 @@
 
 ### TASK-039 — 🔴 Test → `budget_eur` viene propagato come `position_size_eur` nei parametri della strategia generata
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-040 — 🔴 Test → `max_strategies` limita il numero di strategie restituite

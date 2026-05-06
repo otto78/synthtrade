@@ -262,7 +262,8 @@
 
 ### TASK-040 — 🔴 Test → `max_strategies` limita il numero di strategie restituite
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-041 — 🟢 Aggiungere `generate_for_request(req: StrategyRequest) -> list[Strategy]` in `strategy_generator.py`

@@ -30,7 +30,9 @@ async def run_generation_task(generation_id: str, req: StrategyRequest):
                 "timeframe": s.timeframe,
                 "params": s.params,
                 "budget_eur": s.budget_eur,
-                "ai_score": s.ai_score
+                "ai_score": s.ai_score,
+                "estimated_profit_pct": s.estimated_profit_pct,
+                "estimated_profit_eur": s.estimated_profit_eur
             })
             
         generations[generation_id]["status"] = "completed"

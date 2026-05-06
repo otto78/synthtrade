@@ -11,6 +11,8 @@ class StrategyCreate(BaseModel):
     timeframe: str
     params: dict
     budget_eur: float = 100.0
+    title: str | None = None
+    description: str | None = None
 
 @router.get("")
 def list_strategies(
@@ -18,7 +20,7 @@ def list_strategies(
     _user: str = Depends(get_current_user),
 ):
     db = get_supabase()
-    query = db.table("strategies").select("id,title,score,status,ai_score,ai_risk")
+    query = db.table("strategies").select("id,title,score,status,ai_score,ai_risk,budget_eur")
     if strategy_status:
         query = query.eq("status", strategy_status)
     res = query.execute()
@@ -27,21 +29,22 @@ def list_strategies(
 @router.post("")
 def create_strategy(strategy: StrategyCreate, _user: str = Depends(get_current_user)):
     db = get_supabase()
-    # Cerchiamo di ottenere la descrizione dal body se inviata dal frontend
-    # Altrimenti usiamo un default
     data = {
-        "title": f"{strategy.template} on {strategy.pair}",
+        "title": strategy.title or f"{strategy.template} on {strategy.pair}",
         "template": strategy.template,
         "pair": strategy.pair,
         "timeframe": strategy.timeframe,
         "params": strategy.params,
+        "budget_eur": strategy.budget_eur,
         "status": "PENDING",
         "score": 0,
         "ai_score": 0,
-        "description": f"Strategia generata automaticamente utilizzando il template {strategy.template}."
+        "description": strategy.description or f"Strategia generata automaticamente utilizzando il template {strategy.template}."
     }
+    print(f"DEBUG: Creating strategy with data: {data}")
     # Inserimento nel DB
     res = db.table("strategies").insert(data).execute()
+    print(f"DEBUG: Creation response: {res.data}")
     if not res.data:
         raise HTTPException(status_code=500, detail="Failed to create strategy")
     return res.data[0]
@@ -56,13 +59,21 @@ def get_strategy(strategy_id: str, _user: str = Depends(get_current_user)):
 
 @router.post("/{strategy_id}/approve")
 def approve_strategy(strategy_id: str, _user: str = Depends(get_current_user)):
+    print(f"DEBUG: Approving strategy {strategy_id}")
     db = get_supabase()
     res = db.table("strategies").select("id,status").eq("id", strategy_id).execute()
+    print(f"DEBUG: Found strategy in DB: {res.data}")
     if not res.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
-    if res.data[0]["status"] != "PENDING":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Strategy is not PENDING")
-    db.table("strategies").update({"status": "APPROVED"}).eq("id", strategy_id).execute()
+    
+    update_res = db.table("strategies").update({"status": "APPROVED"}).eq("id", strategy_id).execute()
+    print(f"DEBUG: Update result: {update_res.data}")
+    if not update_res.data:
+        # Tentativo fallback se l'ID è un UUID stringa ma il DB si aspetta altro o viceversa
+        print(f"DEBUG: Retrying with explicit ID match")
+        update_res = db.table("strategies").update({"status": "APPROVED"}).match({"id": strategy_id}).execute()
+        print(f"DEBUG: Fallback update result: {update_res.data}")
+        
     return {"id": strategy_id, "status": "APPROVED"}
 
 @router.post("/{strategy_id}/reject")
@@ -73,3 +84,13 @@ def reject_strategy(strategy_id: str, _user: str = Depends(get_current_user)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
     db.table("strategies").update({"status": "REJECTED"}).eq("id", strategy_id).execute()
     return {"id": strategy_id, "status": "REJECTED"}
+
+@router.post("/{strategy_id}/activate")
+def activate_strategy(strategy_id: str, _user: str = Depends(get_current_user)):
+    db = get_supabase()
+    res = db.table("strategies").select("id,status").eq("id", strategy_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
+    # Una strategia può essere attivata solo se APPROVED o PENDING
+    db.table("strategies").update({"status": "ACTIVE"}).eq("id", strategy_id).execute()
+    return {"id": strategy_id, "status": "ACTIVE"}

@@ -1101,82 +1101,82 @@
 
 ### TASK-181 — 🔴 Test → `pollGenerationStatus(generationId)` chiama `GET /api/pipeline/generate/:id/status` ogni 3s con `interval()` RxJS e completa quando `status === 'completed'` o `'failed'`
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
 ### TASK-182 — 🟢 Implementare `core/services/pipeline.service.ts`
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
 
 ### 3.B.2 StrategyRequestFormComponent
 
 ### TASK-183 — 🔴 Test `strategy-request-form.component.spec.ts` → form invalido se `budgetEur ≤ 0` o `durationDays ≤ 0`
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
 ### TASK-184 — 🔴 Test → `riskLevel` obbligatorio, default `medium`
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
 ### TASK-185 — 🔴 Test → al submit valido emette evento `requestSubmitted` con il `StrategyRequest` compilato
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
 ### TASK-186 — 🔴 Test → campo `freeText` opzionale, max 500 caratteri con counter visibile
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
 ### TASK-187 — 🔴 Test → chip-selector per `symbols`: l'utente può aggiungere/rimuovere simboli (BTCUSDT, ETHUSDT, ecc.) o lasciare vuoto per "scegli tu"
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
 ### TASK-188 — 🟢 Implementare `shared/components/strategy-request-form/strategy-request-form.component.ts` con `ReactiveFormsModule`
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
 
 ### 3.B.3 GenerationProgressComponent
 
 ### TASK-189 — 🔴 Test `generation-progress.component.spec.ts` → mostra spinner con messaggio "Generazione in corso..." durante `status === 'running'`
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
 ### TASK-190 — 🔴 Test → al completamento mostra "N strategie generate" con animazione e bottone "Vedi risultati"
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
 ### TASK-191 — 🔴 Test → in caso di `status === 'failed'` mostra messaggio di errore e bottone "Riprova"
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
 ### TASK-192 — 🟢 Implementare `shared/components/generation-progress/generation-progress.component.ts`
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
 
 ### 3.B.4 Integrazione in StrategiesPage
 
 ### TASK-193 — 🟢 Aggiungere bottone **"Genera nuove strategie"** in `StrategiesPage` che apre il `StrategyRequestFormComponent` in un pannello laterale (o modale)
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
 ### TASK-194 — 🟢 Al submit del form, chiamare `PipelineService.generateStrategies()` e mostrare `GenerationProgressComponent`
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
 ### TASK-195 — 🟢 Sottoscriversi al messaggio WS `generation_complete` per aggiornare la lista automaticamente senza polling manuale
 
@@ -1185,8 +1185,8 @@
 
 ### TASK-196 — 🔴 Test `strategies.component.spec.ts` (aggiuntivi) → click "Genera nuove strategie" apre il pannello
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
 ### TASK-197 — 🔴 Test → messaggio WS `generation_complete` aggiorna la lista delle strategie senza ricaricare la pagina
 
@@ -1195,41 +1195,37 @@
 
 ### TASK-198 — 🔵 Refactor: le strategie generate dall'utente hanno un badge visivo **"Generata per te"** distinto dalle strategie pre-esistenti del seed
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
 
-### 3.B.5 Dettaglio Strategia
+### 3.B.5 Nuovi Task UI & Fix Critici
 
-### TASK-199 — 🟢 Creare `pages/strategy-detail/strategy-detail.component.ts` raggiungibile da `/strategies/:id`
+### TASK-200 — 🟢 Risoluzione Bug Visualizzazione Profitto Stimato (Backend/Frontend)
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
-### TASK-200 — 🔴 Test `strategy-detail.component.spec.ts` → mostra tutti i parametri della strategia: simbolo, timeframe, indicatori usati, metriche backtest (Sharpe, Win Rate, Max Drawdown, Total Trades)
+### TASK-201 — 🟢 Fix Pulsante "Approva" (Gestione Stato e API)
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
-### TASK-201 — 🔴 Test → mostra il `reasoning` dell'AI Evaluator (se disponibile) con score e verdict badge
+### TASK-202 — 🟢 Riorganizzazione Dashboard Flow (Generazione -> Approvazione -> Avvio -> Completamento)
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
-### TASK-202 — 🔴 Test → bottone **"Attiva questa strategia"** chiama `StrategyService.activateStrategy(id)` e naviga a `/active-trade`
+### TASK-203 — 🟢 Implementazione CORS Middleware globale per sblocco API
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
-### TASK-203 — 🔴 Test → bottone **"Attiva questa strategia"** è disabilitato se `budget` della strategia supera il saldo disponibile
+### TASK-204 — 🟢 Miglioramento Estetico Pulsante "Nuova Ricerca" e Layout Risultati
 
-**Status:** In Progress  
-**Data:** 2026-05-06
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 
-### TASK-204 — 🟢 Aggiungere la route `/strategies/:id` in `app.routes.ts`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
 
 
 ---

@@ -29,4 +29,8 @@ export class StrategyService {
   reject(id: string): Observable<{ id: string; status: string }> {
     return this.http.post<{ id: string; status: string }>(`${this.base}/${id}/reject`, {});
   }
+
+  activate(id: string): Observable<{ id: string; status: string }> {
+    return this.http.post<{ id: string; status: string }>(`${this.base}/${id}/activate`, {});
+  }
 }

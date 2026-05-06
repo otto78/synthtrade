@@ -1,50 +1,92 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { GenerationProgressStatus } from '../../../core/models/strategy.model';
+import { NgClass } from '@angular/common';
 
 @Component({
   selector: 'app-generation-progress',
   standalone: true,
+  imports: [NgClass],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="progress-container">
+    <div class="progress-container" [ngClass]="status()">
       <div class="status-header">
-        <span class="status-dot" [class]="status()"></span>
-        <span class="status-text">{{ statusLabel() }}</span>
+        <div class="icon-wrapper">
+          @if (status() === 'running' || status() === 'pending') {
+            <div class="spinner"></div>
+          } @else if (status() === 'completed') {
+            <span class="icon success">✓</span>
+          } @else {
+            <span class="icon error">!</span>
+          }
+        </div>
+        <div class="text-group">
+          <span class="status-title">{{ statusLabel() }}</span>
+          <p class="status-subtitle">{{ statusDescription() }}</p>
+        </div>
       </div>
       
       @if (status() === 'running' || status() === 'pending') {
-        <div class="progress-bar">
-          <div class="progress-fill animate"></div>
+        <div class="progress-wrapper">
+          <div class="progress-bar">
+            <div class="progress-fill animate"></div>
+          </div>
+          <div class="steps">
+            <span class="step active">Analisi Mercato</span>
+            <span class="step" [class.active]="status() === 'running'">Ottimizzazione AI</span>
+            <span class="step">Backtesting</span>
+          </div>
         </div>
-        <p class="hint">L'AI sta analizzando la tua richiesta...</p>
       }
 
       @if (status() === 'completed') {
-        <p class="success">Generazione completata! Analizza i risultati qui sotto.</p>
-      }
-
-      @if (status() === 'failed') {
-        <p class="error">Si è verificato un errore durante la generazione. Riprova.</p>
+        <div class="completion-banner">
+          <span class="celebration">✨</span>
+          <span>Abbiamo trovato le migliori opportunità per il tuo profilo!</span>
+        </div>
       }
     </div>
   `,
   styles: [`
-    .progress-container { padding:20px; background:var(--bg-elevated,#161B22); border-radius:8px; border:1px solid var(--border-default); }
-    .status-header { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
-    .status-dot { width:8px; height:8px; border-radius:50%; }
-    .status-dot.pending { background: #848E9C; }
-    .status-dot.running { background: #F0B90B; box-shadow: 0 0 8px #F0B90B; }
-    .status-dot.completed { background: #0ECB81; }
-    .status-dot.failed { background: #F6465D; }
-    .status-text { font-weight:600; text-transform:capitalize; }
+    .progress-container { 
+      padding:32px; 
+      background:var(--bg-elevated,#161B22); 
+      border-radius:16px; 
+      border:1px solid var(--border-default);
+      transition: all 0.3s ease;
+    }
+    .progress-container.completed { border-color: var(--color-buy); background: rgba(14, 203, 129, 0.05); }
+    .progress-container.failed { border-color: var(--color-sell); background: rgba(246, 70, 93, 0.05); }
+
+    .status-header { display:flex; align-items:center; gap:20px; margin-bottom:24px; }
     
-    .progress-bar { height:4px; background:var(--border-default); border-radius:2px; overflow:hidden; margin:8px 0; }
-    .progress-fill { height:100%; background:var(--color-primary,#F0B90B); width:0; }
-    .progress-fill.animate { width: 100%; transition: width 30s linear; }
+    .icon-wrapper { width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: rgba(255,255,255,0.05); }
     
-    .hint { font-size:12px; color:var(--text-secondary); }
-    .success { color:var(--color-buy); }
-    .error { color:var(--color-sell); }
+    .spinner { width: 24px; height: 24px; border: 3px solid rgba(240, 185, 11, 0.1); border-top-color: var(--accent-primary); border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .icon { font-size: 24px; font-weight: bold; }
+    .icon.success { color: var(--color-buy); }
+    .icon.error { color: var(--color-sell); }
+
+    .text-group { display: flex; flex-direction: column; gap: 4px; }
+    .status-title { font-size: 18px; font-weight: 700; color: var(--text-primary); }
+    .status-subtitle { font-size: 14px; color: var(--text-secondary); margin: 0; }
+    
+    .progress-wrapper { display: flex; flex-direction: column; gap: 12px; }
+    .progress-bar { height:6px; background:rgba(255,255,255,0.05); border-radius:3px; overflow:hidden; }
+    .progress-fill { height:100%; background:var(--accent-primary); width:0; }
+    .progress-fill.animate { width: 100%; transition: width 30s cubic-bezier(0.1, 0, 0.4, 1); }
+    
+    .steps { display: flex; justify-content: space-between; }
+    .step { font-size: 11px; color: var(--text-secondary); opacity: 0.5; text-transform: uppercase; letter-spacing: 0.5px; }
+    .step.active { color: var(--accent-primary); opacity: 1; font-weight: 600; }
+
+    .completion-banner { 
+      display: flex; align-items: center; gap: 12px; padding: 12px 16px; 
+      background: rgba(14, 203, 129, 0.1); border-radius: 8px; color: var(--color-buy); 
+      font-size: 14px; font-weight: 500;
+    }
+    .celebration { font-size: 20px; }
   `]
 })
 export class GenerationProgressComponent {
@@ -52,11 +94,21 @@ export class GenerationProgressComponent {
 
   statusLabel(): string {
     const labels: Record<string, string> = {
-      pending: 'In attesa...',
-      running: 'Generazione in corso...',
-      completed: 'Completato',
-      failed: 'Errore'
+      pending: 'Inizializzazione AI',
+      running: 'Elaborazione in corso',
+      completed: 'Generazione Completata',
+      failed: 'Errore di Generazione'
     };
     return labels[this.status()] || this.status();
+  }
+
+  statusDescription(): string {
+    const desc: Record<string, string> = {
+      pending: 'Stiamo preparando i modelli per la tua richiesta...',
+      running: 'Analizzando pattern storici e ottimizzando i parametri...',
+      completed: 'Le strategie sono pronte per essere revisionate.',
+      failed: 'Non è stato possibile completare la richiesta. Riprova tra poco.'
+    };
+    return desc[this.status()] || '';
   }
 }

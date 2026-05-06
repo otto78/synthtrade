@@ -9,7 +9,8 @@ export interface StrategyMetrics {
 }
 
 export interface Strategy {
-  id: string;
+  id?: string;
+  user_id?: string;
   title: string;
   description?: string;
   template: string;
@@ -18,6 +19,8 @@ export interface Strategy {
   params: Record<string, number>;
   score: number | null;
   ai_score: number | null;
+  estimated_profit_pct?: number;
+  estimated_profit_eur?: number;
   ai_risk: 'LOW' | 'MEDIUM' | 'HIGH' | null;
   ai_note: string | null;
   ai_strengths: string[];
@@ -25,6 +28,7 @@ export interface Strategy {
   status: StrategyStatus;
   backtest: StrategyMetrics | null;
   equity_curve: number[];
+  budget_eur: number;
   created_at: string;
   updated_at: string;
 }
@@ -34,6 +38,9 @@ export interface StrategyCreateDto {
   pair: string;
   timeframe: string;
   params: Record<string, number>;
+  budget_eur: number;
+  title?: string;
+  description?: string;
 }
 
 export type RiskLevel = 'low' | 'medium' | 'high';

@@ -56,6 +56,8 @@ class StrategyParams:
     title: Optional[str] = None
     description: Optional[str] = None
     ai_score: float = 0.0
+    estimated_profit_pct: float = 0.0
+    estimated_profit_eur: float = 0.0
 
     def __hash__(self):
         return hash((self.template, self.pair, self.timeframe, tuple(sorted(self.params.items())), self.budget_eur))
@@ -90,15 +92,28 @@ async def generate_for_request(req: StrategyRequest) -> List[StrategyParams]:
             if req.free_text and template_name in req.free_text.lower():
                 score += 5.0
             
+            # Stima profitto (simulata basata sul template e rischio)
+            base_profit_map = {"low": 3.0, "medium": 8.0, "high": 15.0}
+            base_profit = base_profit_map.get(template_data.get("risk_level", "medium"), 5.0)
+            est_profit_pct = float(base_profit + random.uniform(-2.0, 5.0))
+            
+            # Usiamo il budget della richiesta, assicurandoci che non sia 0
+            budget = float(req.budget_eur) if req.budget_eur > 0 else 100.0
+            est_profit_eur = float((budget * est_profit_pct) / 100.0)
+            
+            print(f"DEBUG: Generating {template_name} - Pct: {est_profit_pct}% - Eur: {est_profit_eur} - Budget: {budget}")
+            
             variant = StrategyParams(
                 template=template_name,
-                title=template_data["title"],
+                title=f"{template_data['title']} ({pair})", 
                 description=template_data["description"],
                 pair=pair,
                 timeframe=timeframe,
                 params=params_dict,
-                budget_eur=req.budget_eur,
-                ai_score=min(score, 99.0)
+                budget_eur=budget,
+                ai_score=float(min(score, 99.0)),
+                estimated_profit_pct=est_profit_pct,
+                estimated_profit_eur=est_profit_eur
             )
             all_variants.append(variant)
                 

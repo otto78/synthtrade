@@ -531,7 +531,8 @@
 
 ### TASK-082 — 🟢 Implementare `execution/exchange.py` con classe `BinanceExchangeAdapter` che implementa `ExchangeProtocol`
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-083 — 🟢 Definire `ExchangeProtocol` (Protocol class) con i metodi sopra — così in futuro si può aggiungere Kraken, Coinbase ecc. senza toccare l'engine

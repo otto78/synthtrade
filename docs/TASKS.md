@@ -939,7 +939,8 @@
 
 ### TASK-156 — 🔵 Refactor: stato collapsed persistito in localStorage
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 

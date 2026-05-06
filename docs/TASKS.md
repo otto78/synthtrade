@@ -316,7 +316,8 @@
 
 ### TASK-048 — 🔴 Test `test_api_pipeline.py` → `POST /api/pipeline/generate` accetta un `StrategyRequest` nel body e avvia la pipeline in background (`BackgroundTasks`)
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-049 — 🔴 Test → risponde immediatamente con `202 Accepted` e un `generation_id` (UUID)

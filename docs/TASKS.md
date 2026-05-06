@@ -1759,7 +1759,8 @@
 ### 6.5 Logging Strutturato
 ### TASK-295 — Installare `python-json-logger`
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-06
 **Data:** 2026-05-06
 
 ### TASK-296 — `core/logging.py` con `setup_logging()` e `JsonFormatter`

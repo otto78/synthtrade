@@ -38,6 +38,17 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - Aggiornata documentazione (README.md, PROJECT.md, HANDOFF.md)
 - Allineate variabili d'ambiente (.env.example)
 
+### v1.1.0 — 2026-05-07 (In Progress)
+
+**Milestone:** Evoluzione UX e Hardening Generazione
+
+**In corso:**
+- Implementazione persistenza strategie e gestione scadenze (7 giorni)
+- Riprogettazione Dashboard per multi-strategy view
+- Nuova UI Accordion per strategie completate con export report
+- Vista "Monitora" in real-time per strategie attive
+- Rafforzamento del processo di generazione con logging e progress bar dettagliata
+
 ---
 
 ## 🎯 Roadmap

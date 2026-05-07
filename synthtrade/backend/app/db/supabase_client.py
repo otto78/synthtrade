@@ -48,9 +48,9 @@ class _DummyResult:
     provide the minimal attributes used.
     """
 
-    def __init__(self) -> None:
-        self.data: list[Any] = []
-        self.count: int = 0
+    def __init__(self, data: list[Any] | None = None) -> None:
+        self.data: list[Any] = data if data is not None else []
+        self.count: int = len(self.data)
 
 
 class _DummyTable:
@@ -62,6 +62,7 @@ class _DummyTable:
 
     def __init__(self, name: str) -> None:
         self._name = name
+        self._last_data: Any = None
 
     def select(self, *_, **__) -> "_DummyTable":
         return self
@@ -78,13 +79,35 @@ class _DummyTable:
     def order(self, *_, **__) -> "_DummyTable":
         return self
 
-    def update(self, *_, **__) -> "_DummyTable":
+    def update(self, data: Any, *_, **__) -> "_DummyTable":
+        self._last_data = data
         return self
 
-    def upsert(self, *_, **__) -> "_DummyTable":
+    def insert(self, data: Any, *_, **__) -> "_DummyTable":
+        self._last_data = data
+        return self
+
+    def upsert(self, data: Any, *_, **__) -> "_DummyTable":
+        self._last_data = data
+        return self
+
+    def match(self, *_, **__) -> "_DummyTable":
+        return self
+
+    def delete(self, *_, **__) -> "_DummyTable":
         return self
 
     def execute(self) -> _DummyResult:
+        # If we just did an insert/update, return that data as a list
+        if self._last_data is not None:
+            # Ensure it's a list for compatibility with .data[0]
+            data_to_return = self._last_data if isinstance(self._last_data, list) else [self._last_data]
+            # Add a dummy ID if missing
+            for item in data_to_return:
+                if isinstance(item, dict) and "id" not in item:
+                    import uuid
+                    item["id"] = str(uuid.uuid4())
+            return _DummyResult(data_to_return)
         return _DummyResult()
 
 

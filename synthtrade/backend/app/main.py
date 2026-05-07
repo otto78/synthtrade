@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.api import auth, strategies, dashboard, logs, ws, trades, eval as eval_api, pipeline, exchange
+from app.api import auth, strategies, dashboard, logs, ws, trades, eval as eval_api, pipeline, exchange, monitor
 from app.scheduler.jobs import setup_scheduler
 from app.core.logging import setup_logging
 from app.core.exceptions import (
@@ -18,10 +18,14 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 import logging
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
+    logger.info("🚀 SynthTrade API starting...")
+    
     sched = setup_scheduler()
     sched.start()
     yield
@@ -70,6 +74,7 @@ app.include_router(trades.router, prefix="/api")
 app.include_router(eval_api.router, prefix="/api")
 app.include_router(pipeline.router, prefix="/api")
 app.include_router(exchange.router, prefix="/api")
+app.include_router(monitor.router, prefix="/api")
 
 @app.get("/")
 def read_root():

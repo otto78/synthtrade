@@ -7,7 +7,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
 import { EmptyStateComponent } from '../../shared/components/empty-state/empty-state.component';
 import { StrategyRequestFormComponent } from '../../shared/components/strategy-request-form/strategy-request-form.component';
 import { GenerationProgressComponent } from '../../shared/components/generation-progress/generation-progress.component';
-import { NgClass, KeyValuePipe, DecimalPipe, CurrencyPipe } from '@angular/common';
+import { NgClass, KeyValuePipe, DecimalPipe, CurrencyPipe, DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
 import { switchMap } from 'rxjs';
 import { animate, style, transition, trigger } from '@angular/animations';
@@ -26,7 +26,8 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
     NgClass,
     KeyValuePipe,
     DecimalPipe,
-    CurrencyPipe
+    CurrencyPipe,
+    DatePipe
   ],
   animations: [
     trigger('fadeIn', [
@@ -102,6 +103,12 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
                               ≈ {{ (s.estimated_profit_eur || 0) | currency:'EUR':'symbol':'1.2-2' }}
                             </span>
                           </div>
+                          @if (s.expires_at) {
+                            <div class="expiry-timer">
+                              <span class="timer-label">Scade il</span>
+                              <span class="timer-value">{{ s.expires_at | date:'dd/MM HH:mm' }}</span>
+                            </div>
+                          }
                         </div>
 
                         <p class="strategy-description">{{ s.description }}</p>
@@ -200,37 +207,66 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
             @if (completed().length === 0) {
               <app-empty-state message="Non ci sono strategie completate nella cronologia." />
             } @else {
-              <div class="completed-grid">
+              <div class="accordion-list">
                 @for (s of completed(); track s.id) {
-                  <div class="strategy-card completed" @slideIn>
-                    <div class="card-header">
-                      <div class="title-group">
-                        <span class="strategy-name">{{ s.title }}</span>
-                        <span class="tag tag--pair">{{ s.pair }}</span>
+                  <div class="accordion-item" [class.accordion-item--expanded]="expandedStrategy() === s.id" @slideIn>
+                    <!-- Header Accordion -->
+                    <div class="accordion-header" (click)="toggleExpand(s.id!)">
+                      <div class="acc-info">
+                        <span class="acc-title">{{ s.title }}</span>
+                        <div class="acc-meta">
+                          <span class="tag">{{ s.pair }}</span>
+                          <span class="date">{{ s.updated_at | date:'dd MMM yyyy' }}</span>
+                        </div>
                       </div>
-                      <div class="result-badge" [class.success]="(s.backtest?.pnl_pct || 0) > 0">
-                        {{ (s.backtest?.pnl_pct || 0) > 0 ? 'WIN' : 'LOSS' }}
+                      <div class="acc-stats">
+                        <div class="stat-group">
+                          <span class="label">P&L Totale</span>
+                          <span class="value" [class.success]="(s.backtest?.pnl_pct || 0) > 0">
+                            {{ (s.backtest?.pnl_pct || 0) | number:'1.2-2' }}%
+                          </span>
+                        </div>
+                        <div class="stat-group">
+                          <span class="label">Win Rate</span>
+                          <span class="value">{{ (s.backtest?.win_rate || 0) | number:'1.0-0' }}%</span>
+                        </div>
                       </div>
+                      <span class="chevron"></span>
                     </div>
 
-                    <div class="results-comparison">
-                      <div class="res-item">
-                        <span class="res-label">PNL Reale</span>
-                        <span class="res-value" [class.success]="(s.backtest?.pnl_pct || 0) > 0">
-                          {{ (s.backtest?.pnl_pct || 0) | number:'1.2-2' }}%
-                        </span>
+                    <!-- Content Accordion (Dettaglio) -->
+                    @if (expandedStrategy() === s.id) {
+                      <div class="accordion-content" @fadeIn>
+                        <div class="detail-grid">
+                          <div class="detail-card">
+                            <h4>Statistiche Dettagliate</h4>
+                            <div class="mini-stats">
+                              <div class="ms-row"><span>Max Drawdown</span><span class="danger">{{ s.backtest?.max_drawdown_pct | number:'1.1-2' }}%</span></div>
+                              <div class="ms-row"><span>Sharpe Ratio</span><span>{{ s.backtest?.sharpe | number:'1.2-2' }}</span></div>
+                              <div class="ms-row"><span>Totale Trade</span><span>{{ s.backtest?.num_trades }}</span></div>
+                            </div>
+                          </div>
+                          <div class="detail-card">
+                            <h4>Equity Curve</h4>
+                            <div class="equity-preview">
+                              <!-- Placeholder grafico a barre per performance -->
+                              <div class="bars">
+                                @for (val of s.equity_curve; track $index) {
+                                  <div class="bar" [style.height.%]="val * 100"></div>
+                                }
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="accordion-actions">
+                          <button class="btn-outline" (click)="goToDetail(s)">Vedi Analisi Completa</button>
+                          <button class="btn-outline btn-export">
+                            <span class="icon">📥</span> Esporta Report
+                          </button>
+                        </div>
                       </div>
-                      <div class="res-item">
-                        <span class="res-label">Profitto/Loss</span>
-                        <span class="res-value">€{{ ((s.budget_eur || 0) * (s.backtest?.pnl_pct || 0) / 100) | number:'1.2-2' }}</span>
-                      </div>
-                      <div class="res-item">
-                        <span class="res-label">Win Rate</span>
-                        <span class="res-value">{{ (s.backtest?.win_rate || 0) | number:'1.0-0' }}%</span>
-                      </div>
-                    </div>
-                    
-                    <button class="btn-ghost-full" (click)="goToDetail(s)">Report Dettagliato</button>
+                    }
                   </div>
                 }
               </div>
@@ -244,6 +280,13 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
         message="Sei sicuro di voler scartare questa strategia?"
         (confirmed)="doReject()"
         (cancelled)="pendingReject.set(null)"
+      />
+
+      <app-confirm-dialog
+        [visible]="!!pendingStop()"
+        message="Sei sicuro di voler interrompere questa strategia attiva? L'operazione è irreversibile."
+        (confirmed)="doStop()"
+        (cancelled)="pendingStop.set(null)"
       />
     </div>
   `,
@@ -306,6 +349,10 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
     .profit-value { font-size: 18px; font-weight: 700; color: var(--color-buy); }
     .profit-abs { display: block; font-size: 11px; color: var(--text-secondary); font-family: monospace; }
 
+    .expiry-timer { text-align: right; background: rgba(0,0,0,0.2); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.05); }
+    .timer-label { display: block; font-size: 8px; color: var(--text-secondary); text-transform: uppercase; }
+    .timer-value { font-size: 11px; font-weight: 600; color: var(--accent-primary); font-family: monospace; }
+
     .active-list { display: flex; flex-direction: column; gap: 12px; }
     .active-row { background: var(--bg-card); border: 1px solid var(--border-default); padding: 16px 24px; border-radius: 12px; display: flex; align-items: center; gap: 24px; }
     .active-info { flex: 1; }
@@ -316,6 +363,48 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
     @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
     .btn-view { background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border-default); padding: 6px 16px; border-radius: 6px; cursor: pointer; }
     .btn-stop { background: rgba(246,70,93,0.1); color: var(--color-sell); border: 1px solid var(--color-sell); padding: 6px 16px; border-radius: 6px; cursor: pointer; }
+
+    /* Accordion Styles */
+    .accordion-list { display: flex; flex-direction: column; gap: 12px; }
+    .accordion-item { background: var(--bg-card); border: 1px solid var(--border-default); border-radius: 12px; overflow: hidden; transition: all 0.2s; }
+    .accordion-item--expanded { border-color: var(--accent-primary); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+    
+    .accordion-header { padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: background 0.2s; }
+    .accordion-header:hover { background: rgba(255,255,255,0.02); }
+    
+    .acc-info { display: flex; flex-direction: column; gap: 4px; }
+    .acc-title { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+    .acc-meta { display: flex; align-items: center; gap: 12px; }
+    .acc-meta .tag { font-size: 11px; color: var(--text-secondary); font-family: monospace; background: rgba(0,0,0,0.2); padding: 2px 8px; border-radius: 4px; }
+    .acc-meta .date { font-size: 11px; color: var(--text-muted); }
+    
+    .acc-stats { display: flex; gap: 32px; }
+    .stat-group { display: flex; flex-direction: column; gap: 2px; }
+    .stat-group .label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; }
+    .stat-group .value { font-size: 15px; font-weight: 700; font-family: monospace; }
+    
+    .chevron { width: 20px; height: 20px; position: relative; }
+    .chevron::before { content: ''; position: absolute; top: 50%; left: 50%; width: 8px; height: 8px; border-right: 2px solid var(--text-secondary); border-bottom: 2px solid var(--text-secondary); transform: translate(-50%, -70%) rotate(45deg); transition: transform 0.3s; }
+    .accordion-item--expanded .chevron::before { transform: translate(-50%, -30%) rotate(-135deg); border-color: var(--accent-primary); }
+
+    .accordion-content { padding: 24px; border-top: 1px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.1); }
+    .detail-grid { display: grid; grid-template-columns: 1fr 2fr; gap: 24px; margin-bottom: 24px; }
+    .detail-card { background: var(--bg-surface); padding: 20px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.03); }
+    .detail-card h4 { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; margin: 0 0 16px 0; }
+    
+    .mini-stats { display: flex; flex-direction: column; gap: 12px; }
+    .ms-row { display: flex; justify-content: space-between; font-size: 13px; }
+    .ms-row .danger { color: var(--color-sell); }
+    
+    .equity-preview { height: 100px; display: flex; align-items: flex-end; }
+    .bars { display: flex; align-items: flex-end; gap: 4px; height: 100%; width: 100%; }
+    .bar { flex: 1; background: var(--accent-primary); opacity: 0.5; border-radius: 2px 2px 0 0; min-width: 4px; }
+
+    .accordion-actions { display: flex; gap: 12px; }
+    .btn-outline { background: transparent; border: 1px solid var(--border-default); color: var(--text-secondary); padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s; }
+    .btn-outline:hover { border-color: var(--text-primary); color: var(--text-primary); }
+    .btn-export { color: var(--accent-primary); border-color: rgba(240,185,11,0.3); }
+    .btn-export:hover { background: rgba(240,185,11,0.1); }
 
     .results-comparison { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; background: rgba(0,0,0,0.2); padding: 16px; border-radius: 8px; }
     .res-item { display: flex; flex-direction: column; gap: 4px; }
@@ -346,6 +435,8 @@ export class StrategiesPage implements OnInit {
   
   // Dialogs
   pendingReject = signal<Strategy | null>(null);
+  pendingStop = signal<Strategy | null>(null);
+  expandedStrategy = signal<string | null>(null);
 
   // Computed State (Store Pattern with Signals)
   approved = computed(() => this.strategies().filter(s => s.status === 'APPROVED' || s.status === 'PENDING'));
@@ -432,8 +523,9 @@ export class StrategiesPage implements OnInit {
     ).subscribe({
       next: () => {
         console.log('Strategia approvata con successo');
+        this.resetGeneration(); // Pulisce i risultati generati dopo l'approvazione
         this.loadStrategies();
-        this.activeTab.set('APPROVATE'); // Aggiornato per riflettere il nuovo nome del tab
+        this.activeTab.set('APPROVATE');
       },
       error: (err) => console.error('Errore durante salvataggio/approvazione:', err)
     });
@@ -451,10 +543,20 @@ export class StrategiesPage implements OnInit {
     });
   }
 
+  goToDetail(_s: Strategy) {
+    this.router.navigate(['/active-trade']);
+  }
+
   stopStrategy(s: Strategy) {
-    if (!s.id) return;
+    this.pendingStop.set(s);
+  }
+
+  doStop(): void {
+    const s = this.pendingStop();
+    if (!s || !s.id) return;
     this.strategyService.reject(s.id).subscribe(() => {
       this.loadStrategies();
+      this.pendingStop.set(null);
     });
   }
 
@@ -489,8 +591,8 @@ export class StrategiesPage implements OnInit {
     return ' ' + String(value);
   }
 
-  goToDetail(s: Strategy): void {
-    // Per ora non facciamo nulla o logghiamo, in attesa della pagina di dettaglio
-    console.log('Navigazione verso dettaglio strategia:', s);
+  toggleExpand(id: string) {
+    this.expandedStrategy.update(current => current === id ? null : id);
   }
+
 }

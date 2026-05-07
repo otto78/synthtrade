@@ -58,9 +58,21 @@ class StrategyParams:
     ai_score: float = 0.0
     estimated_profit_pct: float = 0.0
     estimated_profit_eur: float = 0.0
+    created_at: Optional[str] = None
+    expires_at: Optional[str] = None
 
     def __hash__(self):
         return hash((self.template, self.pair, self.timeframe, tuple(sorted(self.params.items())), self.budget_eur))
+
+    def __post_init__(self):
+        # Garantisce budget non nullo
+        if self.budget_eur is None or self.budget_eur <= 0:
+            object.__setattr__(self, 'budget_eur', 100.0)
+        # Garantisce titolo e descrizione
+        if not self.title and self.template in TEMPLATES:
+            object.__setattr__(self, 'title', f"{TEMPLATES[self.template]['title']} ({self.pair})")
+        if not self.description and self.template in TEMPLATES:
+            object.__setattr__(self, 'description', TEMPLATES[self.template]['description'])
 
 
 async def generate_for_request(req: StrategyRequest) -> List[StrategyParams]:
@@ -101,7 +113,7 @@ async def generate_for_request(req: StrategyRequest) -> List[StrategyParams]:
             budget = float(req.budget_eur) if req.budget_eur > 0 else 100.0
             est_profit_eur = float((budget * est_profit_pct) / 100.0)
             
-            print(f"DEBUG: Generating {template_name} - Pct: {est_profit_pct}% - Eur: {est_profit_eur} - Budget: {budget}")
+            # print(f"DEBUG: Generating {template_name} - Pct: {est_profit_pct}% - Eur: {est_profit_eur} - Budget: {budget}")
             
             variant = StrategyParams(
                 template=template_name,
@@ -121,7 +133,54 @@ async def generate_for_request(req: StrategyRequest) -> List[StrategyParams]:
     random.shuffle(all_variants)
     
     # Ritorna le varianti ordinate per punteggio AI
-    return sorted(all_variants, key=lambda x: x.ai_score, reverse=True)[:req.max_strategies]
+    results = sorted(all_variants, key=lambda x: x.ai_score, reverse=True)[:req.max_strategies]
+    
+    # TASK-321: Calcolo data di scadenza (7 giorni da ora)
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    expiry = now + timedelta(days=7)
+    now_str = now.isoformat()
+    expiry_str = expiry.isoformat()
+
+    # Assicuriamoci che ogni risultato abbia titolo, descrizione e timestamp validi
+    for r in results:
+        if not r.title:
+            r.title = f"{TEMPLATES[r.template]['title']} ({r.pair})"
+        if not r.description:
+            r.description = TEMPLATES[r.template]['description']
+        
+        # Impostazione timestamp (uso di object.__setattr__ perché la classe è frozen)
+        object.__setattr__(r, 'created_at', now_str)
+        object.__setattr__(r, 'expires_at', expiry_str)
+            
+    return results
+
+
+def generate_all_variants(
+    pairs: list[str] = ["BTC/USDT"],
+    timeframes: list[str] = ["5m", "15m"],
+) -> Generator[StrategyParams, None, None]:
+    """Prodotto cartesiano: tipicamente 200–800 strategie candidate."""
+    for template_name, template_data in TEMPLATES.items():
+        param_grid = template_data["params"]
+        keys = list(param_grid.keys())
+        for pair, timeframe, combo in product(pairs, timeframes, product(*param_grid.values())):
+            yield StrategyParams(
+                template=template_name,
+                pair=pair,
+                timeframe=timeframe,
+                params=dict(zip(keys, combo)),
+                title=f"{template_data['title']} ({pair})",
+                description=template_data["description"]
+            )
+
+
+def build_strategy_id(s: StrategyParams) -> str:
+    """Genera un ID deterministico basato sui parametri."""
+    import hashlib
+    import json
+    payload = f"{s.template}:{s.pair}:{s.timeframe}:{json.dumps(s.params, sort_keys=True)}"
+    return hashlib.md5(payload.encode()).hexdigest()[:10]
 
 
 def _filter_templates_by_constraints(req: StrategyRequest) -> List[str]:

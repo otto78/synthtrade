@@ -1,12 +1,12 @@
 import { ChangeDetectionStrategy, Component, output, signal, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { StrategyRequest, RiskLevel, AssetClass } from '../../../core/models/strategy.model';
-import { NgClass, TitleCasePipe } from '@angular/common';
+import { TitleCasePipe } from '@angular/common';
 
 @Component({
   selector: 'app-strategy-request-form',
   standalone: true,
-  imports: [ReactiveFormsModule, NgClass, TitleCasePipe],
+  imports: [ReactiveFormsModule, TitleCasePipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()" class="request-form">

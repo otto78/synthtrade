@@ -38,16 +38,16 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - Aggiornata documentazione (README.md, PROJECT.md, HANDOFF.md)
 - Allineate variabili d'ambiente (.env.example)
 
-### v1.1.0 — 2026-05-07 (In Progress)
+### v1.1.0 — 2026-05-07
 
-**Milestone:** Evoluzione UX e Hardening Generazione
+**Milestone:** Fase 7 — Miglioramenti Evolutivi UX
 
-**In corso:**
-- Implementazione persistenza strategie e gestione scadenze (7 giorni)
-- Riprogettazione Dashboard per multi-strategy view
-- Nuova UI Accordion per strategie completate con export report
-- Vista "Monitora" in real-time per strategie attive
-- Rafforzamento del processo di generazione con logging e progress bar dettagliata
+**Completato:**
+- ✅ **7.1 Persistenza & Scadenza Strategie**: Migration 005 con `expires_at`, trigger automatico 7gg, funzione cleanup. Backend/frontend già implementati per gestione scadenza e auto-pulizia. Migrazione applicata su Supabase Cloud (colonna + funzioni + trigger).
+- ✅ **7.2 Gestione Strategie Attive**: Dialog conferma Stop, pagina Monitoraggio Real-time con polling 5s, equity curve, P&L, Win Rate.
+- ✅ **7.3 Strategie Completate**: UI Accordion con intestazione (nome, data, P&L, performance%), dettaglio trade espandibile, statistiche, equity curve, pulsante Esporta Report.
+- ✅ **7.4 Dashboard**: Ordinamento asset per valore EUR decrescente, colonna % Portfolio, Card strategia attiva con Score/Budget/Rischio AI, navigazione one-click alla vista Monitoraggio.
+- Fix build frontend (errori TS, duplicati, unused imports) per bundle pulito.
 
 ---
 
@@ -86,7 +86,6 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - [x] `execution/execution_engine.py` (process_signal, check_exit_conditions) — 11 test
 - [x] `scheduler/jobs.py` (APScheduler: pipeline, monitor, heartbeat) — 4 test
 - [x] 4.6 Integration Tests (pipeline completa, stop loss, risk reject, drawdown) + `api/trades.py`
-- [ ] Fase 5 AI Evaluator
 
 ### v0.6.0 — AI Evaluator ✅
 - [x] `ai/schemas.py` (MarketContext, StrategyContext, EvalPromptInput, EvalResult, ModelResponse)
@@ -118,13 +117,18 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ### Progresso Generale
 
-- **Task completati:** 425 (Generatore varianti migliorato, UI Rich Strategy Card)
-- **Test passati:** 214 backend + 116 frontend + 21 nuovi = 351 totali
+- **Task completati:** 435 (Fase 7 completata)
+- **Test passati:** 214 backend + 116 frontend = 330 totali
 - **Test coverage:** ~82% backend, ~85% frontend core/shared
 
 ---
 
 ## 📝 Decisioni Architetturali
+
+**2026-05-07 — Fase 7: Persistenza, Dashboard Avanzata, Fix Build**
+- Problema: Strategie non avevano scadenza, Dashboard mancava di card strategia attiva e ordinamento asset, build frontend con errori.
+- Soluzione: Migration 005 per `expires_at`, trigger auto cleanup. Dashboard con card interattiva e asset ordinati per exposure. Fix di tutti gli errori TS.
+- Beneficio: Strategie auto-pulite dopo 7gg, UX dashboard migliorata, build pulito.
 
 **2026-05-06 — Enhanced Strategy Generation & Rich UI**
 - Problema: Varianti generate tutte uguali e mancanza di informazioni per l'utente nella scelta.
@@ -141,19 +145,9 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - Soluzione: Configurato framework Loom (DOE Architecture) e migrato tutti i task esistenti in `docs/TASKS.md` al nuovo formato `### TASK-XXX`.
 - Beneficio: Piena compatibilità con gli script di automazione `loom/scripts/task.py` e tracciamento rigoroso dello stato.
 
-**2026-05-05 — AI cascade con lista modelli configurabile**
-- Problema: lista modelli free OpenRouter cambia spesso
-- Soluzione: `AI_CASCADE_MODELS` come stringa CSV in `.env`, property `ai_cascade_models_list` in `Settings`
-- Beneficio: cambio modelli senza deploy, fallback Claude Haiku solo se tutti i free falliscono
-
-**2026-05-05 — run_pipeline ora async**
-- Problema: AI eval richiede `await`, pipeline era sync
-- Soluzione: `run_pipeline` diventa `async def`, scheduler usa `await run_pipeline()`
-- Beneficio: nessun thread blocking, compatibile con APScheduler AsyncIO
-
 ---
 
-## 📝 Decisioni Architetturali
+## 📝 Decisioni Architetturali (Precedenti)
 
 **2025-01-15 — Cascade AI con 5 tier**
 - Problema: costo AI per valutare 200–800 strategie/giorno
@@ -171,4 +165,4 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
 
-**Ultima modifica:** 2026-05-06 — Trae (Loom Integration)
+**Ultima modifica:** 2026-05-07 — Cline (Fase 7 completata)

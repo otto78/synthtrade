@@ -1,8 +1,19 @@
+import os
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Get the directory where this file is located (synthtrade/backend/app)
+# Then go up one level to find the .env file in synthtrade/backend/
+BASE_DIR = Path(__file__).resolve().parent.parent
+ENV_FILE = BASE_DIR / ".env"
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=str(ENV_FILE),
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"
+    )
 
     # Supabase
     SUPABASE_URL: str = ""
@@ -68,8 +79,8 @@ class Settings(BaseSettings):
 
     # Backend
     BACKEND_HOST: str = "0.0.0.0"
-    BACKEND_PORT: int = 8000
-    CORS_ORIGINS: str = "http://localhost:4200"
+    BACKEND_PORT: int = 8008
+    CORS_ORIGINS: str = "http://localhost:4208"
     LOG_LEVEL: str = "INFO"
 
     @property

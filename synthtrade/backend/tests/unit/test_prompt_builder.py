@@ -14,7 +14,7 @@ def make_input() -> EvalPromptInput:
     )
     market = MarketContext(symbol="BTC/USDT", timeframe="1h",
                            regime="trending", summary=summary,
-                           generated_at=datetime.utcnow())
+                           generated_at=datetime.now(UTC))
     strategy = StrategyContext(
         strategy_id="s1", title="EMA Cross", template="trend_ema",
         params={"ema_fast": 9, "ema_slow": 21},

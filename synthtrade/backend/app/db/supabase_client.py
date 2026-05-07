@@ -26,8 +26,11 @@ client via ``create_client`` as before.
 
 from functools import lru_cache
 from typing import Any
+import logging
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 try:
     # ``supabase`` is an optional dependency; import lazily so that the module
@@ -120,13 +123,9 @@ class _DummyClient:
 
 @lru_cache(maxsize=1)
 def get_supabase() -> Client:
-    """Return a Supabase client or a dummy fallback.
-
-    If the required ``SUPABASE_URL`` setting is missing, a dummy client is
-    returned to keep the application functional in test environments.
-    """
+    """Return a Supabase client or a dummy fallback."""
     if not settings.SUPABASE_URL:
-        # No configuration – use the in‑memory dummy client.
+        logger.warning("SUPABASE_URL not set. Using DummyClient.")
         return _DummyClient()  # type: ignore[return-value]
-    # Real configuration – create the actual client.
+    
     return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)

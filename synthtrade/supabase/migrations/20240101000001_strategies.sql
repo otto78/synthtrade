@@ -1,9 +1,11 @@
 CREATE TABLE strategies (
   id            TEXT PRIMARY KEY,
   title         TEXT NOT NULL,
+  description   TEXT,
   template      TEXT NOT NULL,
   pair          TEXT NOT NULL DEFAULT 'BTC/USDT',
   timeframe     TEXT NOT NULL DEFAULT '5m',
+  budget_eur    FLOAT DEFAULT 100.0,
   params        JSONB NOT NULL,
   rules         JSONB NOT NULL,
   risk          JSONB NOT NULL,

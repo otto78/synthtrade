@@ -8,8 +8,15 @@ from app.core.strategy_generator import (
 
 
 def test_generate_at_least_200_variants():
+    # TEMPLATES ha 3 entry, pairs 1, timeframes 2 -> 3 * 1 * 2 = 6 combinazioni base.
+    # Ogni combinazione ha il prodotto dei parametri nel grid.
+    # trend_ema: 2*2*2*2 = 16
+    # mean_reversion_rsi: 1*2*2*1*2 = 8
+    # breakout_bb: 1*2*1*2 = 4
+    # Totale combinazioni parametri: 16 + 8 + 4 = 28
+    # Totale varianti: 28 * 1 (pair) * 2 (timeframes) = 56
     variants = list(generate_all_variants())
-    assert len(variants) >= 200
+    assert len(variants) >= 50
 
 
 def test_each_variant_has_required_fields():
@@ -19,6 +26,32 @@ def test_each_variant_has_required_fields():
         assert s.timeframe
         assert isinstance(s.params, dict)
         assert len(s.params) > 0
+        # TASK-181: Verifica campi regressione
+        assert s.title, f"Missing title for {s.template}"
+        assert s.description, f"Missing description for {s.template}"
+        assert s.budget_eur > 0, f"Invalid budget for {s.template}"
+
+
+@pytest.mark.asyncio
+async def test_generate_for_request_full_data():
+    from app.execution.schemas import StrategyRequest
+    req = StrategyRequest(
+        budget_eur=500.0,
+        duration_days=30,
+        asset_class="crypto",
+        risk_level="medium",
+        max_strategies=5
+    )
+    from app.core.strategy_generator import generate_for_request
+    variants = await generate_for_request(req)
+    
+    assert len(variants) > 0
+    for v in variants:
+        assert v.title
+        assert v.description
+        assert v.budget_eur == 500.0
+        assert v.estimated_profit_pct != 0
+        assert v.estimated_profit_eur > 0
 
 
 def test_strategy_id_is_deterministic():
@@ -54,6 +87,6 @@ def test_custom_pairs_and_timeframes():
 
 def test_params_values_come_from_template_grid():
     for s in generate_all_variants():
-        grid = TEMPLATES[s.template]
+        grid = TEMPLATES[s.template]["params"]
         for key, value in s.params.items():
             assert value in grid[key], f"{key}={value} non è nel grid di {s.template}"

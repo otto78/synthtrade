@@ -1,4 +1,4 @@
-INSERT INTO strategies (id, title, template, pair, timeframe, params, rules, risk, targets, status) VALUES
+INSERT INTO strategies (id, title, template, pair, timeframe, params, rules, risk, targets, status, expires_at) VALUES
 (
   'trend_00001',
   'EMA Trend BTC 5m',
@@ -9,7 +9,8 @@ INSERT INTO strategies (id, title, template, pair, timeframe, params, rules, ris
   '{"entry": "ema_crossover", "exit": "reverse_signal"}',
   '{"max_position_eur": 100, "max_daily_loss": 15}',
   '{"horizon_days": 7, "expected_return_pct": 4}',
-  'PENDING'
+   'PENDING',
+   NOW() + INTERVAL '7 days'
 ),
 (
   'mean_00001',
@@ -21,7 +22,8 @@ INSERT INTO strategies (id, title, template, pair, timeframe, params, rules, ris
   '{"entry": "rsi_oversold", "exit": "rsi_overbought"}',
   '{"max_position_eur": 100, "max_daily_loss": 15}',
   '{"horizon_days": 7, "expected_return_pct": 3}',
-  'PENDING'
+   'PENDING',
+   NOW() + INTERVAL '7 days'
 ),
 (
   'brkout_00001',
@@ -33,5 +35,6 @@ INSERT INTO strategies (id, title, template, pair, timeframe, params, rules, ris
   '{"entry": "bb_breakout_up", "exit": "bb_breakout_down"}',
   '{"max_position_eur": 100, "max_daily_loss": 15}',
   '{"horizon_days": 7, "expected_return_pct": 5}',
-  'PENDING'
+   'PENDING',
+   NOW() + INTERVAL '7 days'
 );

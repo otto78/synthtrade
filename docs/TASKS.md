@@ -143,54 +143,54 @@
 ### TASK-320 — Aggiornamento schema DB `strategies`: aggiunta `expires_at` e trigger pulizia
 - Aggiunta colonna `expires_at` TIMESTAMP
 - Creazione funzione/cron per eliminazione automatica strategie scadute (status PENDING)
-**Status:** Pending
+**Status:** Done
 **Priorità:** Alta
 
 ### TASK-321 — Backend: Logica di scadenza (7 giorni) e timestamp creazione
 - Impostazione `expires_at = now() + 7 days` durante `POST /api/strategies`
 - Restituzione `expires_at` nelle API GET
-**Status:** Pending
+**Status:** Done
 
 ### TASK-322 — Frontend: Persistenza sessione e visualizzazione scadenza
 - Modifica `StrategyStore` per mantenere le strategie generate tra navigazioni
 - Visualizzazione countdown/data scadenza nelle card
 - Bottone "Nuova Ricerca" con reset esplicito dello store
-**Status:** Pending
+**Status:** Done
 
 ### 7.2 Gestione Strategie Attive
 ### TASK-323 — Frontend: Dialog di conferma Stop Strategia
 - Implementazione modale di conferma con messaggio di avvertimento irreversibile
-**Status:** Pending
+**Status:** Done
 
 ### TASK-324 — Vista Dettaglio "Monitora" (Real-time)
 - Creazione pagina `MonitorPage` con grafici performance (equity curve)
 - Statistiche operative: P&L, Win Rate, Drawdown corrente
 - Indicatori di rischio e stato monitoraggio (attivo/disattivo)
 - Polling ogni 5 secondi per aggiornamento dati
-**Status:** Pending
+**Status:** Done
 
 ### 7.3 Ristrutturazione Strategie Completate
 ### TASK-325 — UI Accordion per Strategie Completate
 - Riprogettazione `CompletedPage` con lista accordion
 - Intestazione: Nome, Data, P&L totale, Performance %
-**Status:** Pending
+**Status:** Done
 
 ### TASK-326 — Dettaglio Trade & Export
 - Lista trade espandibile (Timestamp, Asset, Dir, Prezzi, P&L)
 - Statistiche dettagliate e equity curve per singola strategia completata
 - Funzionalità export PDF/CSV
-**Status:** Pending
+**Status:** Done
 
 ### 7.4 Ottimizzazione Dashboard
 ### TASK-327 — Dashboard: Ordinamento Asset & Multi-strategy Grid
 - Ordinamento per Market Cap / Exposure nelle API
 - Layout responsive a griglia per supportare più strategie attive contemporaneamente
-**Status:** Pending
+**Status:** Done
 
 ### TASK-328 — Dashboard: Card Strategia Avanzata & Fix P&L
 - Card con P&L real-time, numero trade aperti e metriche di rischio
 - Fix recupero P&L odierno con gestione errore e fallback (no "0" o "Loading" infiniti)
-**Status:** Pending
+**Status:** Done
 
 ### 7.5 Verifica Processo Generazione (AI/Performance)
 ### TASK-329 — Backend: Logging & Metriche Generazione

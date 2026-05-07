@@ -51,17 +51,17 @@ supabase db reset   # applica migrations + seed
 
 ```bash
 cd synthtrade/backend
-uvicorn app.main:app --reload
-# http://localhost:8000/health
+uvicorn app.main:app --reload --port 8008
+# http://localhost:8008/health
 ```
 
 ### 4. Frontend
 
 ```bash
-cd synthtrade/frontend
+cd synthtrade/frontend/synthtrade-ui
 npm install
-ng serve
-# http://localhost:4200
+npm start
+# http://localhost:4208
 ```
 
 ### 5. Docker (alternativa)

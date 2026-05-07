@@ -998,6 +998,15 @@
 **Completato:** 2026-05-06
 **Data:** 2026-05-06
 
+---
+
+## 🛠️ Fase 4 — DevOps & Tooling
+
+### TASK-180 — Configurazione porte di sviluppo (Backend: 8008, Frontend: 4208)
+
+**Status:** In Progress 🟡  
+**Data:** 2026-05-07
+
 ### TASK-166 — 🔵 Refactor: `DashboardStore` con Angular Signals
 
 **Status:** Done ✅  
@@ -1094,9 +1103,47 @@
 
 ### 3.B.1 PipelineService
 
-### TASK-180 — 🔴 Test `pipeline.service.spec.ts` → `generateStrategies(req: StrategyRequest)` chiama `POST /api/pipeline/generate` e restituisce il `generationId`
+### TASK-180 — 🔴 Test `pipeline.service.spec.spec.ts` → `generateStrategies(req: StrategyRequest)` chiama `POST /api/pipeline/generate` e restituisce il `generationId`
 
 **Status:** In Progress  
+
+---
+
+## 🛠️ Fase 3.C — Bugfix Regressione Dashboard & Generazione (TDD)
+
+> Ripristino delle funzionalità core interrotte durante i precedenti aggiornamenti.
+
+### 3.C.1 Backend: Pipeline & Generazione
+
+### TASK-181 — 🔴 Test (Unit) `test_generator.py` → verifica che `generate_all_variants` e `generate_for_request` restituiscano strategie valide con tutti i campi richiesti (titolo, descrizione, budget).
+**Status:** Done ✅  
+**Priorità:** Alta
+
+### TASK-182 — 🔴 Test (Integration) `test_api_pipeline.py` → verifica che l'endpoint `/api/pipeline/generate` non restituisca errori 500 e generi correttamente l'ID di sessione.
+**Status:** Done ✅  
+**Priorità:** Alta
+
+### TASK-183 — 🟢 Fix `app/core/strategy_generator.py` e `app/api/pipeline.py` per risolvere eventuali discrepanze di schema o import mancanti.
+**Status:** Done ✅  
+
+### 3.C.2 Backend: Dashboard & Saldo
+
+### TASK-184 — 🔴 Test (Integration) `test_api_dashboard.py` → verifica che l'endpoint `/api/dashboard/stats` restituisca un saldo `balance_eur` valido (non null/0) e la scomposizione degli asset.
+**Status:** Done ✅  
+**Priorità:** Alta
+
+### TASK-185 — 🟢 Fix `app/api/dashboard.py` e relativi service (`binance_balance.py`) per garantire il caricamento dei dati reali o mock validi.
+**Status:** Done ✅  
+
+### 3.C.3 Frontend: Dashboard Regression
+
+### TASK-186 — 🔴 Test (Unit) `dashboard.page.spec.ts` → verifica che i componenti `StatCard` ricevano i dati corretti dal service e non mostrino "0" o "Loading" indefinitamente.
+**Status:** Pending  
+
+### TASK-187 — 🟢 Fix `dashboard.page.ts` e `dashboard.service.ts` per gestire correttamente la sottoscrizione ai dati del backend.
+**Status:** Pending  
+
+---
 **Data:** 2026-05-06
 
 ### TASK-181 — 🔴 Test → `pollGenerationStatus(generationId)` chiama `GET /api/pipeline/generate/:id/status` ogni 3s con `interval()` RxJS e completa quando `status === 'completed'` o `'failed'`

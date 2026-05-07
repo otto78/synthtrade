@@ -521,15 +521,15 @@ PAPER_TRADING=true                          # SEMPRE true finché non in prod
 # BACKEND
 # =============================================
 BACKEND_HOST=0.0.0.0
-BACKEND_PORT=8000
-CORS_ORIGINS=http://localhost:4200,https://synthtrade.yourdomain.com
+BACKEND_PORT=8008
+CORS_ORIGINS=http://localhost:4208,https://synthtrade.yourdomain.com
 LOG_LEVEL=INFO
 
 # =============================================
 # FRONTEND — environments/environment.ts
 # =============================================
-# apiBaseUrl: 'http://localhost:8000'
-# wsUrl: 'ws://localhost:8000/ws'
+# apiBaseUrl: 'http://localhost:8008'
+# wsUrl: 'ws://localhost:8008/ws'
 ```
 
 ---
@@ -1228,7 +1228,7 @@ def build_market_context(ohlcv_df) -> dict:
 - [ ] 🟢 Aggiornare `AppComponent` con titolo corretto
 
 #### Docker
-- [ ] `docker-compose.yml` per backend (porta 8000)
+- [ ] `docker-compose.yml` per backend (porta 8008)
 - [ ] Verificare `supabase start` + backend up insieme
 
 ---

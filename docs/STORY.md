@@ -28,6 +28,16 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - Paper trading obbligatorio fino alla Fase 6
 - TDD con pytest per backend, Jest per frontend
 
+### v1.0.1 — 2026-05-07
+
+**Milestone:** Standardizzazione porte di sviluppo
+
+**Completato:**
+- Backend configurato sulla porta 8008 (FastAPI, Docker, Docker Compose)
+- Frontend configurato sulla porta 4208 (Angular, package.json, proxy)
+- Aggiornata documentazione (README.md, PROJECT.md, HANDOFF.md)
+- Allineate variabili d'ambiente (.env.example)
+
 ---
 
 ## 🎯 Roadmap

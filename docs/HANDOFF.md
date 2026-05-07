@@ -85,7 +85,7 @@ loom/directives/component-patterns.md ← interfacce TS, pattern componenti, che
 ### 📝 Note Importanti
 
 - Frontend va in `synthtrade/frontend/synthtrade-ui/` (dentro la struttura monorepo)
-- Backend gira su `localhost:8000` — usare proxy Angular per dev
+- Backend gira su `localhost:8008` — usare proxy Angular per dev (porta 4208)
 - Design system completo in `PROJECT.md` e nelle direttive LOOM
 - `PAPER_TRADING=true` default — non toccare fino alla Fase 6
 - Comando test backend: `set PYTHONPATH=synthtrade\backend && .venv\Scripts\pytest`

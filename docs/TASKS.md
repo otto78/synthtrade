@@ -1004,7 +1004,8 @@
 
 ### TASK-180 — Configurazione porte di sviluppo (Backend: 8008, Frontend: 4208)
 
-**Status:** In Progress 🟡  
+**Status:** Done ✅  
+**Completato:** 2026-05-07
 **Data:** 2026-05-07
 
 ### TASK-166 — 🔵 Refactor: `DashboardStore` con Angular Signals

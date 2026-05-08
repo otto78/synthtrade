@@ -181,4 +181,20 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
 
-**Ultima modifica:** 2026-05-07 — Cline (Fase 7 completata)
+### v1.1.2 — 2026-05-08
+
+**Milestone:** Fix valutazione strategie — estimated_profit_pct/eur
+
+**Completato:**
+- ✅ **Migration 007**: Aggiunte colonne `estimated_profit_pct FLOAT` e `estimated_profit_eur FLOAT` alla tabella `strategies`
+- ✅ **Fix `pipeline.py`**: `estimated_profit_pct` e `estimated_profit_eur` ora salvati nel row insert su DB
+- ✅ **Fix `strategies.py`**: `list_strategies()` ora seleziona tutti i campi di valutazione (`estimated_profit_pct`, `estimated_profit_eur`, `description`, `pair`, `timeframe`, `params`, `ai_note`, `ai_strengths`, `ai_warnings`)
+- ✅ Migration applicata su Supabase Cloud
+
+**Decisioni chiave:**
+- Le stime di profitto vengono salvate direttamente sul DB durante la generazione, non solo in memoria
+- La SELECT di `list_strategies` è stata espansa da 9 a 18 campi per garantire la visibilità di tutti i dati di valutazione
+
+---
+
+**Ultima modifica:** 2026-05-08 — Cline (Fix valutazione strategie)

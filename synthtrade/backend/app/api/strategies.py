@@ -42,7 +42,7 @@ def list_strategies(
     except Exception as e:
         logger.warning(f"Auto-cleanup failed: {e}")
 
-    query = db.table("strategies").select("id,title,score,status,ai_score,ai_risk,budget_eur,expires_at,created_at")
+    query = db.table("strategies").select("id,title,description,template,pair,timeframe,score,status,ai_score,ai_risk,budget_eur,params,estimated_profit_pct,estimated_profit_eur,ai_note,ai_strengths,ai_warnings,expires_at,created_at,updated_at")
     if strategy_status:
         query = query.eq("status", strategy_status)
     res = query.execute()

@@ -137,6 +137,27 @@
 
 ---
 
+## 🐛 Bug Fix — v1.1.2
+
+### TASK-FIX-EVAL — Fix: strategie generate non mostrano stime valutazione (estimated_profit_pct/eur)
+
+**Status:** Done ✅  
+**Completato:** 2026-05-08  
+**Priorità:** Alta
+
+**Problema**: Le strategie generate e salvate a DB non mostravano le stime di profitto (`estimated_profit_pct`/`estimated_profit_eur`) nel tab GENERAZIONE. Due cause:
+1. `list_strategies()` in `strategies.py` aveva una select troppo limitata che escludeva questi campi
+2. `run_generation_task()` in `pipeline.py` non salvava `estimated_profit_pct`/`estimated_profit_eur` sul DB
+3. Le colonne `estimated_profit_pct`/`estimated_profit_eur` non esistevano nello schema DB
+
+**Fix**:
+- Aggiunte colonne `estimated_profit_pct FLOAT` e `estimated_profit_eur FLOAT` alla tabella `strategies` (Migration 007)
+- `pipeline.py`: `estimated_profit_pct` e `estimated_profit_eur` ora salvati nel row insert
+- `strategies.py`: `list_strategies()` ora seleziona anche `estimated_profit_pct`, `estimated_profit_eur`, `description`, `pair`, `timeframe`, `params`, `ai_note`, `ai_strengths`, `ai_warnings`, `updated_at`
+- Migration 007 applicata su Supabase Cloud
+
+---
+
 ## 🌟 Fase 7 — Miglioramenti Evolutivi (v1.1.0)
 
 ### 7.1 Persistenza & Scadenza Strategie

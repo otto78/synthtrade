@@ -46,6 +46,8 @@ async def run_generation_task(generation_id: str, req: StrategyRequest):
                 "status": "PENDING",
                 "score": 0.0,
                 "ai_score": s.ai_score or 0.0,
+                "estimated_profit_pct": s.estimated_profit_pct,
+                "estimated_profit_eur": s.estimated_profit_eur,
                 "created_at": now.isoformat(),
                 "expires_at": expires_at
             }

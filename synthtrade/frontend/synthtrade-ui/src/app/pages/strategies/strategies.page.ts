@@ -64,83 +64,91 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
         <!-- FASE 1: GENERAZIONE -->
         @if (activeTab() === 'GENERAZIONE') {
           <div class="generation-container">
-            @if (!generationId()) {
+
+            <!-- Progress bar se generazione in corso -->
+            @if (generationId()) {
+              <app-generation-progress [status]="generationStatus()" />
+            }
+
+            <!-- Intestazione + bottone Nuova Ricerca se ci sono strategie candidate -->
+            @if (generatedStrategies().length > 0) {
+              <div class="results-header" @fadeIn>
+                <h3 class="results-title">✨ Strategie Candidate</h3>
+                <button class="btn-new-search-inline" (click)="resetGeneration()">
+                  <span class="icon">🔍</span> Nuova Ricerca
+                </button>
+              </div>
+            }
+
+            <!-- Griglia strategie PENDING (dal DB o appena generate) -->
+            @if (generatedStrategies().length > 0) {
+              <div class="strategy-grid" @fadeIn>
+                @for (s of generatedStrategies(); track $index) {
+                  <div class="strategy-card" @slideIn>
+                    <div class="card-header">
+                      <div class="title-group">
+                        <div class="ai-badge">✨ AI Optimized</div>
+                        <span class="strategy-name">{{ s.title }}</span>
+                        <div class="meta-tags">
+                          <span class="tag tag--pair">{{ s.pair }}</span>
+                          <span class="tag tag--tf">{{ s.timeframe }}</span>
+                        </div>
+                      </div>
+                      <div class="profit-estimate">
+                        <span class="profit-label">Profitto Stimato</span>
+                        <span class="profit-value success">
+                          +{{ (s.estimated_profit_pct || 0) | number:'1.1-2' }}%
+                        </span>
+                        <span class="profit-abs">
+                          ≈ {{ (s.estimated_profit_eur || 0) | currency:'EUR':'symbol':'1.2-2' }}
+                        </span>
+                      </div>
+                      @if (s.expires_at) {
+                        <div class="expiry-timer">
+                          <span class="timer-label">Scade il</span>
+                          <span class="timer-value">{{ s.expires_at | date:'dd/MM HH:mm' }}</span>
+                        </div>
+                      }
+                    </div>
+
+                    <p class="strategy-description">{{ s.description }}</p>
+
+                    <div class="params-list">
+                      @for (param of s.params | keyvalue; track param.key) {
+                        <div class="param-row">
+                          <span class="param-dot"></span>
+                          <span class="param-label">{{ formatParamLabel(param.key) }}:</span>
+                          <span class="param-value">{{ formatParamValue(param.key, param.value) }}</span>
+                        </div>
+                      }
+                    </div>
+
+                    <div class="card-actions">
+                      <button class="btn-approve" (click)="saveAndApprove(s)">
+                        <span class="icon">✅</span> Approva
+                      </button>
+                      <button class="btn-reject" (click)="removeGenerated(s)">
+                        <span class="icon">🗑️</span> Scarta
+                      </button>
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+
+            <!-- Welcome card se non ci sono strategie e non c'è generazione -->
+            @if (generatedStrategies().length === 0 && !generationId()) {
               <div class="welcome-card">
                 <h2>Crea nuove strategie con AI</h2>
                 <p>Inserisci i tuoi parametri e lascia che l'intelligenza artificiale trovi i pattern migliori per te.</p>
                 <app-strategy-request-form (requestSubmitted)="onGenerate($event)" />
               </div>
-            } @else {
-              <app-generation-progress [status]="generationStatus()" />
-              
-              @if (generationStatus() === 'completed') {
-                <div class="generated-results" @fadeIn>
-                  <div class="results-header">
-                    <h3 class="results-title">✨ Strategie Candidate</h3>
-                    <button class="btn-new-search-inline" (click)="resetGeneration()">
-                      <span class="icon">🔍</span> Nuova Ricerca
-                    </button>
-                  </div>
-                  
-                  <div class="strategy-grid">
-                    @for (s of generatedStrategies(); track $index) {
-                      <div class="strategy-card" @slideIn>
-                        <div class="card-header">
-                          <div class="title-group">
-                            <div class="ai-badge">✨ AI Optimized</div>
-                            <span class="strategy-name">{{ s.title }}</span>
-                            <div class="meta-tags">
-                              <span class="tag tag--pair">{{ s.pair }}</span>
-                              <span class="tag tag--tf">{{ s.timeframe }}</span>
-                            </div>
-                          </div>
-                          <div class="profit-estimate">
-                            <span class="profit-label">Profitto Stimato</span>
-                            <span class="profit-value success">
-                              +{{ (s.estimated_profit_pct || 0) | number:'1.1-2' }}%
-                            </span>
-                            <span class="profit-abs">
-                              ≈ {{ (s.estimated_profit_eur || 0) | currency:'EUR':'symbol':'1.2-2' }}
-                            </span>
-                          </div>
-                          @if (s.expires_at) {
-                            <div class="expiry-timer">
-                              <span class="timer-label">Scade il</span>
-                              <span class="timer-value">{{ s.expires_at | date:'dd/MM HH:mm' }}</span>
-                            </div>
-                          }
-                        </div>
-
-                        <p class="strategy-description">{{ s.description }}</p>
-
-                        <div class="params-list">
-                          @for (param of s.params | keyvalue; track param.key) {
-                            <div class="param-row">
-                              <span class="param-dot"></span>
-                              <span class="param-label">{{ formatParamLabel(param.key) }}:</span>
-                              <span class="param-value">{{ formatParamValue(param.key, param.value) }}</span>
-                            </div>
-                          }
-                        </div>
-
-                        <div class="card-actions">
-                          <button class="btn-approve" (click)="saveAndApprove(s)">
-                            <span class="icon">✅</span> Approva
-                          </button>
-                          <button class="btn-reject" (click)="removeGenerated(s)">
-                            <span class="icon">🗑️</span> Scarta
-                          </button>
-                        </div>
-                      </div>
-                    }
-                  </div>
-                </div>
-              }
             }
+
           </div>
         }
 
-        <!-- FASE 2: APPROVATE (PENDING START) -->
+        <!-- FASE 2: APPROVATE -->
         @if (activeTab() === 'APPROVATE') {
           <div class="approved-container" @fadeIn>
             @if (approved().length === 0) {
@@ -201,7 +209,7 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
           </div>
         }
 
-        <!-- FASE 4 & 5: COMPLETATE & VALUTAZIONE -->
+        <!-- FASE 4: COMPLETATE -->
         @if (activeTab() === 'COMPLETATE') {
           <div class="completed-container" @fadeIn>
             @if (completed().length === 0) {
@@ -210,7 +218,6 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
               <div class="accordion-list">
                 @for (s of completed(); track s.id) {
                   <div class="accordion-item" [class.accordion-item--expanded]="expandedStrategy() === s.id" @slideIn>
-                    <!-- Header Accordion -->
                     <div class="accordion-header" (click)="toggleExpand(s.id!)">
                       <div class="acc-info">
                         <span class="acc-title">{{ s.title }}</span>
@@ -234,7 +241,6 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
                       <span class="chevron"></span>
                     </div>
 
-                    <!-- Content Accordion (Dettaglio) -->
                     @if (expandedStrategy() === s.id) {
                       <div class="accordion-content" @fadeIn>
                         <div class="detail-grid">
@@ -249,7 +255,6 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
                           <div class="detail-card">
                             <h4>Equity Curve</h4>
                             <div class="equity-preview">
-                              <!-- Placeholder grafico a barre per performance -->
                               <div class="bars">
                                 @for (val of s.equity_curve; track $index) {
                                   <div class="bar" [style.height.%]="val * 100"></div>
@@ -258,7 +263,6 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
                             </div>
                           </div>
                         </div>
-
                         <div class="accordion-actions">
                           <button class="btn-outline" (click)="goToDetail(s)">Vedi Analisi Completa</button>
                           <button class="btn-outline btn-export">
@@ -364,7 +368,6 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
     .btn-view { background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border-default); padding: 6px 16px; border-radius: 6px; cursor: pointer; }
     .btn-stop { background: rgba(246,70,93,0.1); color: var(--color-sell); border: 1px solid var(--color-sell); padding: 6px 16px; border-radius: 6px; cursor: pointer; }
 
-    /* Accordion Styles */
     .accordion-list { display: flex; flex-direction: column; gap: 12px; }
     .accordion-item { background: var(--bg-card); border: 1px solid var(--border-default); border-radius: 12px; overflow: hidden; transition: all 0.2s; }
     .accordion-item--expanded { border-color: var(--accent-primary); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
@@ -438,13 +441,14 @@ export class StrategiesPage implements OnInit {
   pendingStop = signal<Strategy | null>(null);
   expandedStrategy = signal<string | null>(null);
 
-  // Computed State (Store Pattern with Signals)
-  approved = computed(() => this.strategies().filter(s => s.status === 'APPROVED' || s.status === 'PENDING'));
+  // Computed State
+  pending = computed(() => this.strategies().filter(s => s.status === 'PENDING'));
+  approved = computed(() => this.strategies().filter(s => s.status === 'APPROVED'));
   active = computed(() => this.strategies().filter(s => s.status === 'ACTIVE'));
-  completed = computed(() => this.strategies().filter(s => s.status === 'EXPIRED' || s.status === 'REJECTED'));
+  completed = computed(() => this.strategies().filter(s => s.status === 'EXPIRED'));
 
   countForTab(tab: Tab): number {
-    if (tab === 'GENERAZIONE') return this.generatedStrategies().length;
+    if (tab === 'GENERAZIONE') return this.pending().length;
     if (tab === 'APPROVATE') return this.approved().length;
     if (tab === 'ATTIVE') return this.active().length;
     if (tab === 'COMPLETATE') return this.completed().length;
@@ -457,9 +461,24 @@ export class StrategiesPage implements OnInit {
 
   loadStrategies() {
     this.strategyService.getStrategies().subscribe({
-      next: (data) => { this.strategies.set(data); this.loading.set(false); },
+      next: (data) => { 
+        this.strategies.set(data); 
+        this.loading.set(false);
+        // Ricarica le strategie PENDING dal DB nel tab GENERAZIONE
+        if (this.activeTab() === 'GENERAZIONE') {
+          this.refreshPendingFromDb(data);
+        }
+      },
       error: () => this.loading.set(false),
     });
+  }
+
+  private refreshPendingFromDb(allStrategies?: Strategy[]) {
+    const data = allStrategies ?? this.strategies();
+    const pendingFromDb = data.filter(s => s.status === 'PENDING');
+    if (pendingFromDb.length > 0) {
+      this.generatedStrategies.set(pendingFromDb);
+    }
   }
 
   onGenerate(req: StrategyRequest) {
@@ -473,37 +492,45 @@ export class StrategiesPage implements OnInit {
   pollStatus(id: string) {
     this.pipelineService.pollGenerationStatus(id).subscribe({
       next: (status: GenerationStatus) => {
-        console.log('Poll status update (raw):', status);
         this.generationStatus.set(status.status);
         if (status.status === 'completed' && status.results) {
-          // Assicuriamoci che i campi del profitto siano mappati correttamente
-          const mappedResults = status.results.map(s => {
-            const mapped = {
-              ...s,
-              estimated_profit_pct: Number(s.estimated_profit_pct) || 0,
-              estimated_profit_eur: Number(s.estimated_profit_eur) || 0,
-              budget_eur: Number(s.budget_eur) || 100
-            };
-            return mapped;
-          });
-          console.log('Poll status update (mapped):', mappedResults);
+          const mappedResults = status.results.map(s => ({
+            ...s,
+            estimated_profit_pct: Number(s.estimated_profit_pct) || 0,
+            estimated_profit_eur: Number(s.estimated_profit_eur) || 0,
+            budget_eur: Number(s.budget_eur) || 100
+          }));
           this.generatedStrategies.set(mappedResults);
+          // Ricarica dal DB per sincronizzare
+          this.loadStrategies();
         }
       },
-      error: (err) => {
-        console.error('Polling error:', err);
-        this.generationStatus.set('failed');
-      }
+      error: () => this.generationStatus.set('failed')
     });
   }
 
   resetGeneration() {
     this.generationId.set(null);
     this.generationStatus.set('pending');
-    this.generatedStrategies.set([]);
+    // Resetta solo le strategie dalla UI, NON dal DB
+    this.loadStrategies();
   }
 
   saveAndApprove(s: Strategy): void {
+    // Se la strategia ha già un ID (salvata su DB durante la generazione), approva direttamente
+    if (s.id) {
+      this.strategyService.approve(s.id).subscribe({
+        next: () => {
+          this.generatedStrategies.update(list => list.filter(x => x.id !== s.id));
+          this.loadStrategies();
+          this.activeTab.set('APPROVATE');
+        },
+        error: (err) => console.error('Errore durante approvazione:', err)
+      });
+      return;
+    }
+
+    // Fallback: strategia senza ID (solo in memoria)
     const dto: StrategyCreateDto = {
       template: s.template,
       pair: s.pair,
@@ -516,14 +543,12 @@ export class StrategiesPage implements OnInit {
 
     this.strategyService.createStrategy(dto).pipe(
       switchMap(newStrategy => {
-        console.log('Strategia creata con successo:', newStrategy);
         if (!newStrategy.id) throw new Error('Strategy ID is missing after creation');
         return this.strategyService.approve(newStrategy.id);
       })
     ).subscribe({
       next: () => {
-        console.log('Strategia approvata con successo');
-        this.resetGeneration(); // Pulisce i risultati generati dopo l'approvazione
+        this.generatedStrategies.update(list => list.filter(x => x !== s));
         this.loadStrategies();
         this.activeTab.set('APPROVATE');
       },

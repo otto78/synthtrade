@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timedelta, timezone
 from app.core.strategy_generator import generate_all_variants, build_strategy_id, TEMPLATES
 from app.core.indicators import signal_ema_crossover, signal_rsi_reversion, signal_breakout_bb
 from app.core.backtester import run_backtest
@@ -61,6 +62,8 @@ async def run_pipeline(
                 continue
 
             strategy_id = build_strategy_id(strategy)
+            now = datetime.now(timezone.utc)
+            expires_at = (now + timedelta(days=7)).isoformat()
             row = {
                 "id": strategy_id,
                 "title": f"{strategy.template} {strategy.pair} {strategy.timeframe}",
@@ -81,6 +84,7 @@ async def run_pipeline(
                 "equity_curve": result.equity_curve,
                 "score": score,
                 "status": "PENDING",
+                "expires_at": expires_at,
             }
             db.table("strategies").upsert(row).execute()
             saved_strategies.append(row)

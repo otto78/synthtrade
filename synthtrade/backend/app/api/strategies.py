@@ -28,7 +28,14 @@ def list_strategies(
 ):
     db = get_supabase()
     
-    # Pulizia automatica strategie scadute (solo PENDING)
+    # Transizione automatica: ACTIVE scadute → EXPIRED
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        db.table("strategies").update({"status": "EXPIRED"}).eq("status", "ACTIVE").lt("expires_at", now).execute()
+    except Exception as e:
+        logger.warning(f"Expiry transition failed: {e}")
+    
+    # Pulizia: PENDING scadute → cancellate
     try:
         now = datetime.now(timezone.utc).isoformat()
         db.table("strategies").delete().eq("status", "PENDING").lt("expires_at", now).execute()

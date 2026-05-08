@@ -10,7 +10,7 @@ INSERT INTO strategies (id, title, template, pair, timeframe, params, rules, ris
   '{"max_position_eur": 100, "max_daily_loss": 15}',
   '{"horizon_days": 7, "expected_return_pct": 4}',
    'PENDING',
-   NOW() + INTERVAL '7 days'
+   NOW() + INTERVAL '30 days'
 ),
 (
   'mean_00001',
@@ -23,7 +23,7 @@ INSERT INTO strategies (id, title, template, pair, timeframe, params, rules, ris
   '{"max_position_eur": 100, "max_daily_loss": 15}',
   '{"horizon_days": 7, "expected_return_pct": 3}',
    'PENDING',
-   NOW() + INTERVAL '7 days'
+   NOW() + INTERVAL '30 days'
 ),
 (
   'brkout_00001',
@@ -36,5 +36,5 @@ INSERT INTO strategies (id, title, template, pair, timeframe, params, rules, ris
   '{"max_position_eur": 100, "max_daily_loss": 15}',
   '{"horizon_days": 7, "expected_return_pct": 5}',
    'PENDING',
-   NOW() + INTERVAL '7 days'
+   NOW() + INTERVAL '30 days'
 );

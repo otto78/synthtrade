@@ -1,4 +1,3 @@
-# Project Story — SynthTrade
 
 Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
@@ -48,6 +47,23 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - ✅ **7.3 Strategie Completate**: UI Accordion con intestazione (nome, data, P&L, performance%), dettaglio trade espandibile, statistiche, equity curve, pulsante Esporta Report.
 - ✅ **7.4 Dashboard**: Ordinamento asset per valore EUR decrescente, colonna % Portfolio, Card strategia attiva con Score/Budget/Rischio AI, navigazione one-click alla vista Monitoraggio.
 - Fix build frontend (errori TS, duplicati, unused imports) per bundle pulito.
+
+### v1.1.1 — 2026-05-08
+
+**Milestone:** Fix workflow strategie — persistenza, approvazione, scadenza
+
+**Completato:**
+- ✅ **Persistenza strategie su DB**: Le strategie generate vengono ora salvate immediatamente su Supabase con status `PENDING` e `expires_at = now + 7gg` (in `pipeline.py`). Non più solo in memoria.
+- ✅ **Ricarica PENDING dal DB**: Il tab GENERAZIONE carica le strategie PENDING dal DB all'avvio della pagina. Navigando via e tornando, le strategie sono ancora lì.
+- ✅ **Approvazione diretta**: `saveAndApprove()` approva l'ID già presente su DB invece di ricreare la strategia.
+- ✅ **Fix BUG approvazione**: Non cancella più tutte le strategie generate dopo averne approvata una.
+- ✅ **Transizione ACTIVE→EXPIRED**: Le strategie ACTIVE scadute ora transitano a EXPIRED (non solo cancellazione PENDING).
+- ✅ **Tab COMPLETATE**: Mostra solo strategie EXPIRED, non più REJECTED.
+- ✅ **Migration 006**: Fix `expires_at` NULL su tutti i record esistenti, funzione cleanup aggiornata.
+
+**Decisioni chiave:**
+- Le strategie generate vengono salvate su DB subito per garantire persistenza tra navigazioni e sessioni
+- La cleanup PENDING scadute cancella i record, mentre ACTIVE scadute diventano EXPIRED per tracciabilità
 
 ---
 

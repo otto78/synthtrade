@@ -190,7 +190,22 @@
 ### TASK-328 — Dashboard: Card Strategia Avanzata & Fix P&L
 - Card con P&L real-time, numero trade aperti e metriche di rischio
 - Fix recupero P&L odierno con gestione errore e fallback (no "0" o "Loading" infiniti)
-**Status:** Done
+**Status:** Done ✅
+
+### TASK-STRATEGY-FIX — Fix workflow strategie: generazione, approvazione, scadenza
+**Status:** Done ✅  
+**Completato:** 2026-05-08
+**Data:** 2026-05-08
+
+**BUG 1 - CRITICO (saveAndApprove)**: `saveAndApprove()` chiamava `resetGeneration()` che cancellava TUTTE le strategie generate dopo averne approvata UNA. **Fix**: sostituito con `generatedStrategies.update(list => list.filter(x => x !== s))` che rimuove solo quella approvata.
+
+**BUG 2 (run_pipeline no expires_at)**: `run_pipeline.py` non impostava `expires_at` nelle strategie salvate via upsert, lasciando valore NULL. **Fix**: aggiunto `expires_at = (now + timedelta(days=7)).isoformat()` al row dict.
+
+**BUG 3 (list_strategies cleanup incompleta)**: La cleanup automatica cancellava solo PENDING scadute, ma le ACTIVE scadute restavano bloccate nello stato ACTIVE. **Fix**: aggiunta transizione `ACTIVE → EXPIRED` prima della cancellazione PENDING.
+
+**BUG 4 (COMPLETATE tab include REJECTED)**: Il computed `completed` filtrava per `EXPIRED || REJECTED`, mescolando strategie rifiutate con completate. **Fix**: filtrato solo per `EXPIRED`.
+
+**BUG 5 (seed/data NULL expires_at)**: Record seed e dati esistenti avevano `expires_at = NULL`. **Fix**: migration applicata su DB, seed.sql aggiornato con `INTERVAL '30 days'`.
 
 ### 7.5 Verifica Processo Generazione (AI/Performance)
 ### TASK-329 — Backend: Logging & Metriche Generazione

@@ -195,6 +195,7 @@
 ### TASK-STRATEGY-FIX — Fix workflow strategie: generazione, approvazione, scadenza
 **Status:** Done ✅  
 **Completato:** 2026-05-08
+**Completato:** 2026-05-08
 **Data:** 2026-05-08
 
 **BUG 1 - CRITICO (saveAndApprove)**: `saveAndApprove()` chiamava `resetGeneration()` che cancellava TUTTE le strategie generate dopo averne approvata UNA. **Fix**: sostituito con `generatedStrategies.update(list => list.filter(x => x !== s))` che rimuove solo quella approvata.

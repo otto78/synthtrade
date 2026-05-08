@@ -34,6 +34,10 @@ export class StrategyService {
     return this.http.post<{ id: string; status: string }>(`${this.base}/${id}/activate`, {});
   }
 
+  deleteStrategy(id: string): Observable<{ id: string; status: string }> {
+    return this.http.delete<{ id: string; status: string }>(`${this.base}/${id}`);
+  }
+
   getMonitorData(id: string): Observable<any> {
     return this.http.get<any>(`${environment.apiUrl}/monitor/${id}`);
   }

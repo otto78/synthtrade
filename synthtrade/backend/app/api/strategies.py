@@ -136,3 +136,13 @@ def activate_strategy(strategy_id: str, _user: str = Depends(get_current_user)):
     # Una strategia può essere attivata solo se APPROVED o PENDING
     db.table("strategies").update({"status": "ACTIVE"}).eq("id", strategy_id).execute()
     return {"id": strategy_id, "status": "ACTIVE"}
+
+@router.delete("/{strategy_id}")
+def delete_strategy(strategy_id: str, _user: str = Depends(get_current_user)):
+    db = get_supabase()
+    res = db.table("strategies").select("id,status").eq("id", strategy_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
+    db.table("strategies").delete().eq("id", strategy_id).execute()
+    logger.info(f"Deleted strategy {strategy_id}")
+    return {"id": strategy_id, "status": "DELETED"}

@@ -477,7 +477,12 @@ export class StrategiesPage implements OnInit {
     const data = allStrategies ?? this.strategies();
     const pendingFromDb = data.filter(s => s.status === 'PENDING');
     if (pendingFromDb.length > 0) {
-      this.generatedStrategies.set(pendingFromDb);
+      // Non sovrascrivere se le strategie già in UI hanno dati di valutazione validi
+      const current = this.generatedStrategies();
+      const hasValidEstimates = current.length > 0 && current.some(s => (s.estimated_profit_pct ?? 0) > 0);
+      if (!hasValidEstimates) {
+        this.generatedStrategies.set(pendingFromDb);
+      }
     }
   }
 
@@ -557,7 +562,17 @@ export class StrategiesPage implements OnInit {
   }
 
   removeGenerated(s: Strategy) {
-    this.generatedStrategies.update(list => list.filter(x => x !== s));
+    if (s.id) {
+      this.strategyService.deleteStrategy(s.id).subscribe({
+        next: () => {
+          this.generatedStrategies.update(list => list.filter(x => x.id !== s.id));
+          this.loadStrategies();
+        },
+        error: (err) => console.error('Errore durante la cancellazione:', err)
+      });
+    } else {
+      this.generatedStrategies.update(list => list.filter(x => x !== s));
+    }
   }
 
   startStrategy(s: Strategy) {

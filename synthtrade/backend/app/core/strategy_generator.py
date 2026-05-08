@@ -114,8 +114,18 @@ async def generate_for_request(req: StrategyRequest) -> List[StrategyParams]:
             budget = float(req.budget_eur) if req.budget_eur > 0 else 100.0
             est_profit_eur = float((budget * est_profit_pct) / 100.0)
             
-            # print(f"DEBUG: Generating {template_name} - Pct: {est_profit_pct}% - Eur: {est_profit_eur} - Budget: {budget}")
-            
+            # Nome personalizzato: se l'utente lo fornisce, usalo; altrimenti generane uno automatico
+            if req.custom_name:
+                final_custom_name = req.custom_name
+            else:
+                auto_names = {
+                    "trend_ema": ["Il Seguace", "L'Ondaiolo", "Trendy", "Mr EMA", "La Scia"],
+                    "mean_reversion_rsi": ["Il Rimbalzista", "Mr RSI", "Elastico", "L'Armonico", "Controcorrente"],
+                    "breakout_bb": ["Lo Squartatore", "Boomer", "La Fiamma", "Rompiballe", "Il Valicano"],
+                }
+                base_name = random.choice(auto_names.get(template_name, ["Il Geniale"]))
+                final_custom_name = f"{base_name} su {pair.split('/')[0]}"
+
             variant = StrategyParams(
                 template=template_name,
                 title=f"{template_data['title']} ({pair})", 
@@ -127,7 +137,7 @@ async def generate_for_request(req: StrategyRequest) -> List[StrategyParams]:
                 ai_score=float(min(score, 99.0)),
                 estimated_profit_pct=est_profit_pct,
                 estimated_profit_eur=est_profit_eur,
-                custom_name=req.custom_name
+                custom_name=final_custom_name
             )
             all_variants.append(variant)
                 

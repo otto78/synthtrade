@@ -195,6 +195,67 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - Le stime di profitto vengono salvate direttamente sul DB durante la generazione, non solo in memoria
 - La SELECT di `list_strategies` è stata espansa da 9 a 18 campi per garantire la visibilità di tutti i dati di valutazione
 
+### v1.1.3 — 2026-05-08
+
+**Milestone:** Fix flusso UI generazione, nome personalizzato strategie, build error
+
+**Completato:**
+- ✅ **Spinner attesa**: Aggiunto `checkingSaved` signal con spinner "Verifico se ci sono strategie salvate..." durante il caricamento dal DB
+- ✅ **Welcome card condizionale**: Appare solo dopo il caricamento e se non ci sono strategie salvate
+- ✅ **Pulsante rinominato**: "Nuova Ricerca" → "Genera Nuove Strategie"
+- ✅ **Cancellazione PENDING su generazione**: `startNewGeneration()` cancella tutte le PENDING dal DB prima di mostrare il form
+- ✅ **Migration 008**: `ALTER TABLE strategies ADD COLUMN custom_name TEXT` applicata su Supabase Cloud
+- ✅ **Nomi automatici AI**: Il generator crea nomi simpatici per template (es. "Il Seguace su BTC", "Mr RSI su ETH", "Lo Squartatore su SOL")
+- ✅ **Override utente**: Il campo "Nome Personalizzato" nel form sovrascrive il nome automatico se compilato
+- ✅ **Nome visibile in tutti i tab**: GENERAZIONE, APPROVATE, ATTIVE, COMPLETATE
+- ✅ **Fix build TS2559**: Risolta collisione `MonitorData` tra interfaccia globale e locale
+
+**Decisioni chiave:**
+- I nomi personalizzati sono generati dall'AI in base al template, non dall'utente (ma l'utente può sovrascriverli)
+- La cancellazione delle PENDING su "Genera Nuove Strategie" evita accumulo di strategie orfane
+
 ---
 
-**Ultima modifica:** 2026-05-08 — Cline (Fix valutazione strategie)
+## 🎯 Prossimi Task (da BACKLOG)
+
+### TASK-DASH-PNL — Fix P&L Dashboard sempre a 0
+**Priorità:** Alta
+- Verificare che l'API Binance restituisca il P&L reale
+- Fixare il calcolo/visualizzazione del P&L nella Dashboard
+- Aggiungere logging per debug del dato
+
+### TASK-DASH-STRAT — Lista strategie attive riassuntiva in Dashboard
+**Priorità:** Alta
+- Mostrare tutte le strategie attive (non solo una) con: nome, budget iniziale, data avvio, saldo attuale, stima profitto %, risultato corrente
+- Pulsante "Vedi Dettaglio" che porta alla pagina strategie attive
+
+### TASK-DASH-GRAFICO — Grafico andamento saldo mensile in Dashboard
+**Priorità:** Media
+- Aggiungere grafico con l'andamento del saldo a scala mensile
+- Usare lightweight-charts o barre semplici
+
+### TASK-TRADE-PAGE — Refactoring pagina Active Trade
+**Priorità:** Alta
+- Mostrare lista di tutti i trade in corso e sotto quelli conclusi
+- Ogni trade deve mostrare: nome strategia, asset, direzione, prezzo entry/exit, P&L, data
+- Filtro dropdown per strategia
+- Il pulsante "Monitora" nelle card strategie deve portare qui con filtro pre-attivato
+
+### TASK-AUDIT-GEN — Audit processo generazione strategie
+**Priorità:** Alta
+- Aggiungere logging dettagliato su ogni fase: analisi mercato, creazione, validazione, backtest
+- Verificare che i dati di mercato vengano caricati correttamente da Binance
+- Verificare che le analisi AI siano basate su dati reali, non allucinate
+- Aggiungere endpoint `/api/pipeline/audit/{generation_id}` per tracciare ogni step
+
+### TASK-AUDIT-ACTIVATE — Audit processo attivazione ed esecuzione strategie
+**Priorità:** Critica
+- Analizzare il flusso di attivazione: APPROVED → ACTIVE → execution
+- Verificare che all'avvio ci sia disponibilità economica reale nel saldo
+- Testare l'esecuzione reale dei trade (paper trading)
+- Verificare che stop loss / take profit vengano piazzati correttamente
+- Aggiungere test di integrazione per l'intero ciclo vita
+
+---
+
+**Ultima modifica:** 2026-05-08 — Cline (v1.1.3 + nuovi task)

@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Strategy, StrategyCreateDto, MonitorData } from '../models/strategy.model';
+import { Strategy, StrategyCreateDto } from '../models/strategy.model';
 import { environment } from '../../../environments/environment';
 
 @Injectable({ providedIn: 'root' })
@@ -38,7 +38,7 @@ export class StrategyService {
     return this.http.delete<{ id: string; status: string }>(`${this.base}/${id}`);
   }
 
-  getMonitorData(id: string): Observable<MonitorData> {
-    return this.http.get<MonitorData>(`${environment.apiUrl}/monitor/${id}`);
+  getMonitorData(id: string): Observable<any> {
+    return this.http.get<any>(`${environment.apiUrl}/monitor/${id}`);
   }
 }

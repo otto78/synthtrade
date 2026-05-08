@@ -10,7 +10,7 @@ import { EmptyStateComponent } from '../../shared/components/empty-state/empty-s
 import { PriceTickerComponent } from '../../shared/components/price-ticker/price-ticker.component';
 import { SignedNumberPipe } from '../../shared/pipes/signed-number.pipe';
 
-interface MonitorData {
+interface ActiveTradeMonitorData {
   stats?: {
     total_pnl_pct: number;
     win_rate: number;
@@ -190,7 +190,7 @@ export class ActiveTradePage implements OnInit, OnDestroy {
   private sub = new Subscription();
 
   activeStrategy = signal<Partial<Strategy> | null>(null);
-  monitorData = signal<MonitorData | null>(null);
+  monitorData = signal<ActiveTradeMonitorData | null>(null);
   currentPrice = signal(0);
 
   ngOnInit(): void {

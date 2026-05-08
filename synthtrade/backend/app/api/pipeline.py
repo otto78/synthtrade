@@ -48,6 +48,7 @@ async def run_generation_task(generation_id: str, req: StrategyRequest):
                 "ai_score": s.ai_score or 0.0,
                 "estimated_profit_pct": s.estimated_profit_pct,
                 "estimated_profit_eur": s.estimated_profit_eur,
+                "custom_name": s.custom_name,
                 "created_at": now.isoformat(),
                 "expires_at": expires_at
             }
@@ -68,6 +69,7 @@ async def run_generation_task(generation_id: str, req: StrategyRequest):
                 "ai_score": s.ai_score,
                 "estimated_profit_pct": s.estimated_profit_pct,
                 "estimated_profit_eur": s.estimated_profit_eur,
+                "custom_name": s.custom_name,
                 "expires_at": expires_at,
                 "created_at": now.isoformat(),
                 "status": "PENDING"

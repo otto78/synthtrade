@@ -70,12 +70,12 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
               <app-generation-progress [status]="generationStatus()" />
             }
 
-            <!-- Intestazione + bottone Nuova Ricerca se ci sono strategie candidate -->
+            <!-- Intestazione + bottone Genera Nuove Strategie se ci sono strategie candidate -->
             @if (generatedStrategies().length > 0) {
               <div class="results-header" @fadeIn>
                 <h3 class="results-title">✨ Strategie Candidate</h3>
-                <button class="btn-new-search-inline" (click)="resetGeneration()">
-                  <span class="icon">🔍</span> Nuova Ricerca
+                <button class="btn-new-search-inline" (click)="startNewGeneration()">
+                  <span class="icon">🔍</span> Genera Nuove Strategie
                 </button>
               </div>
             }
@@ -88,6 +88,9 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
                     <div class="card-header">
                       <div class="title-group">
                         <div class="ai-badge">✨ AI Optimized</div>
+                        @if (s.custom_name) {
+                          <span class="strategy-custom-name">{{ s.custom_name }}</span>
+                        }
                         <span class="strategy-name">{{ s.title }}</span>
                         <div class="meta-tags">
                           <span class="tag tag--pair">{{ s.pair }}</span>
@@ -136,8 +139,16 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
               </div>
             }
 
+            <!-- Spinner di attesa mentre carichiamo le strategie salvate -->
+            @if (checkingSaved()) {
+              <div class="loading-spinner">
+                <div class="spinner"></div>
+                <p class="loading-text">Verifico se ci sono strategie salvate...</p>
+              </div>
+            }
+
             <!-- Welcome card se non ci sono strategie e non c'è generazione -->
-            @if (generatedStrategies().length === 0 && !generationId()) {
+            @if (!checkingSaved() && generatedStrategies().length === 0 && !generationId()) {
               <div class="welcome-card">
                 <h2>Crea nuove strategie con AI</h2>
                 <p>Inserisci i tuoi parametri e lascia che l'intelligenza artificiale trovi i pattern migliori per te.</p>
@@ -159,6 +170,9 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
                   <div class="strategy-card approved" @slideIn>
                     <div class="card-header">
                       <div class="title-group">
+                        @if (s.custom_name) {
+                          <span class="strategy-custom-name-small">{{ s.custom_name }}</span>
+                        }
                         <span class="strategy-name">{{ s.title }}</span>
                         <div class="meta-tags">
                           <span class="tag tag--pair">{{ s.pair }}</span>
@@ -191,6 +205,9 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
                 @for (s of active(); track s.id) {
                   <div class="active-row" @slideIn>
                     <div class="active-info">
+                      @if (s.custom_name) {
+                        <span class="active-custom-name">{{ s.custom_name }}</span>
+                      }
                       <span class="active-title">{{ s.title }}</span>
                       <span class="active-meta">{{ s.pair }} · {{ s.timeframe }}</span>
                     </div>
@@ -220,6 +237,9 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
                   <div class="accordion-item" [class.accordion-item--expanded]="expandedStrategy() === s.id" @slideIn>
                     <div class="accordion-header" (click)="toggleExpand(s.id!)">
                       <div class="acc-info">
+                        @if (s.custom_name) {
+                          <span class="acc-custom-name">{{ s.custom_name }}</span>
+                        }
                         <span class="acc-title">{{ s.title }}</span>
                         <div class="acc-meta">
                           <span class="tag">{{ s.pair }}</span>
@@ -417,6 +437,18 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
     .result-badge { padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 700; background: rgba(246,70,93,0.1); color: var(--color-sell); }
     .result-badge.success { background: rgba(14,203,129,0.1); color: var(--color-buy); }
     .btn-ghost-full { width: 100%; margin-top: 12px; background: transparent; border: 1px solid var(--border-default); color: var(--text-secondary); padding: 8px; border-radius: 6px; cursor: pointer; }
+
+    /* Spinner loading */
+    .loading-spinner { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; gap: 16px; }
+    .spinner { width: 40px; height: 40px; border: 3px solid var(--border-default); border-top: 3px solid var(--accent-primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { color: var(--text-secondary); font-size: 14px; }
+
+    /* Nome personalizzato */
+    .strategy-custom-name { display: block; font-size: 14px; font-weight: 700; color: var(--accent-primary); margin-bottom: 2px; }
+    .strategy-custom-name-small { display: block; font-size: 13px; font-weight: 600; color: var(--accent-primary); margin-bottom: 2px; }
+    .active-custom-name { display: block; font-size: 13px; font-weight: 600; color: var(--accent-primary); margin-bottom: 2px; }
+    .acc-custom-name { display: block; font-size: 13px; font-weight: 600; color: var(--accent-primary); margin-bottom: 2px; }
   `]
 })
 export class StrategiesPage implements OnInit {
@@ -431,6 +463,7 @@ export class StrategiesPage implements OnInit {
   strategies = signal<Strategy[]>([]);
   generatedStrategies = signal<Strategy[]>([]);
   loading = signal(true);
+  checkingSaved = signal(true);
   
   // Generation State
   generationId = signal<string | null>(null);
@@ -460,16 +493,21 @@ export class StrategiesPage implements OnInit {
   }
 
   loadStrategies() {
+    this.checkingSaved.set(true);
     this.strategyService.getStrategies().subscribe({
       next: (data) => { 
         this.strategies.set(data); 
         this.loading.set(false);
+        this.checkingSaved.set(false);
         // Ricarica le strategie PENDING dal DB nel tab GENERAZIONE
         if (this.activeTab() === 'GENERAZIONE') {
           this.refreshPendingFromDb(data);
         }
       },
-      error: () => this.loading.set(false),
+      error: () => {
+        this.loading.set(false);
+        this.checkingSaved.set(false);
+      },
     });
   }
 
@@ -517,8 +555,45 @@ export class StrategiesPage implements OnInit {
   resetGeneration() {
     this.generationId.set(null);
     this.generationStatus.set('pending');
-    // Resetta solo le strategie dalla UI, NON dal DB
+    this.generatedStrategies.set([]);
     this.loadStrategies();
+  }
+
+  startNewGeneration() {
+    // Cancella tutte le PENDING esistenti dal DB, poi mostra il form di generazione
+    const pendings = this.generatedStrategies();
+    if (pendings.length > 0) {
+      // Elimina tutte le PENDING una per una
+      let completed = 0;
+      const pendingWithIds = pendings.filter(p => p.id);
+      for (const s of pendings) {
+        if (s.id) {
+          this.strategyService.deleteStrategy(s.id).subscribe({
+            next: () => {
+              completed++;
+              if (completed >= pendingWithIds.length) {
+                this.generationId.set(null);
+                this.generationStatus.set('pending');
+                this.generatedStrategies.set([]);
+                this.strategies.update(list => list.filter(x => x.status !== 'PENDING'));
+                this.checkingSaved.set(false);
+              }
+            }
+          });
+        }
+      }
+      if (pendingWithIds.length === 0) {
+        this.generationId.set(null);
+        this.generationStatus.set('pending');
+        this.generatedStrategies.set([]);
+        this.checkingSaved.set(false);
+      }
+    } else {
+      this.generationId.set(null);
+      this.generationStatus.set('pending');
+      this.generatedStrategies.set([]);
+      this.checkingSaved.set(false);
+    }
   }
 
   saveAndApprove(s: Strategy): void {

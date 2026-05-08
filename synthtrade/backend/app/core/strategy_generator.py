@@ -60,6 +60,7 @@ class StrategyParams:
     estimated_profit_eur: float = 0.0
     created_at: Optional[str] = None
     expires_at: Optional[str] = None
+    custom_name: Optional[str] = None
 
     def __hash__(self):
         return hash((self.template, self.pair, self.timeframe, tuple(sorted(self.params.items())), self.budget_eur))
@@ -125,7 +126,8 @@ async def generate_for_request(req: StrategyRequest) -> List[StrategyParams]:
                 budget_eur=budget,
                 ai_score=float(min(score, 99.0)),
                 estimated_profit_pct=est_profit_pct,
-                estimated_profit_eur=est_profit_eur
+                estimated_profit_eur=est_profit_eur,
+                custom_name=req.custom_name
             )
             all_variants.append(variant)
                 

@@ -11,6 +11,7 @@ export interface StrategyMetrics {
 export interface Strategy {
   id?: string;
   user_id?: string;
+  custom_name?: string;
   title: string;
   description?: string;
   template: string;
@@ -42,6 +43,7 @@ export interface StrategyCreateDto {
   budget_eur: number;
   title?: string;
   description?: string;
+  custom_name?: string;
 }
 
 export type RiskLevel = 'low' | 'medium' | 'high';
@@ -55,6 +57,7 @@ export interface StrategyRequest {
   symbols?: string[];
   free_text?: string;
   max_strategies?: number;
+  custom_name?: string;
 }
 
 export type GenerationProgressStatus = 'pending' | 'running' | 'completed' | 'failed';
@@ -64,4 +67,17 @@ export interface GenerationStatus {
   status: GenerationProgressStatus;
   results?: Strategy[];
   error?: string;
+}
+
+export interface MonitorData {
+  id: string;
+  strategy_id: string;
+  pnl_pct: number;
+  pnl_eur: number;
+  win_rate: number;
+  num_trades: number;
+  equity_curve: number[];
+  max_drawdown_pct: number;
+  sharpe: number;
+  [key: string]: unknown;
 }

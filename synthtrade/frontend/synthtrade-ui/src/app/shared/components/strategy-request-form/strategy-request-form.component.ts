@@ -74,6 +74,12 @@ import { TitleCasePipe } from '@angular/common';
       </div>
 
       <div class="form-group">
+        <label>Nome Personalizzato (opzionale)</label>
+        <input formControlName="custom_name" placeholder="Es. 'Toro Scatenato', 'Moon Landing'..." maxlength="100">
+        <small class="hint">Dai un nome simpatico alla tua strategia per riconoscerla facilmente.</small>
+      </div>
+
+      <div class="form-group">
         <label>Descrizione Libera (AI Hint)</label>
         <textarea formControlName="free_text" placeholder="Es. 'Preferisco strategie trend following su Bitcoin con stop loss stretto'"></textarea>
         <div class="textarea-footer">
@@ -165,7 +171,8 @@ export class StrategyRequestFormComponent {
     risk_level: ['medium' as RiskLevel, [Validators.required]],
     asset_class: ['crypto' as AssetClass],
     free_text: ['', [Validators.maxLength(500)]],
-    max_strategies: [5]
+    max_strategies: [5],
+    custom_name: ['', [Validators.maxLength(100)]]
   });
 
   isRiskActive(level: string): boolean {
@@ -197,7 +204,8 @@ export class StrategyRequestFormComponent {
         asset_class: rawValues.asset_class as AssetClass,
         free_text: rawValues.free_text as string,
         max_strategies: rawValues.max_strategies as number,
-        symbols: this.selectedSymbols()
+        symbols: this.selectedSymbols(),
+        custom_name: rawValues.custom_name as string || undefined
       };
       this.requestSubmitted.emit(request);
     }

@@ -68,3 +68,4 @@ class StrategyRequest:
     symbols: list[str] | None = None
     free_text: str | None = None
     max_strategies: int = 5
+    custom_name: str | None = None

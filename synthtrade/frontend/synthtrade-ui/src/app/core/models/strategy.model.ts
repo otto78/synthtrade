@@ -79,5 +79,4 @@ export interface MonitorData {
   equity_curve: number[];
   max_drawdown_pct: number;
   sharpe: number;
-  [key: string]: unknown;
 }

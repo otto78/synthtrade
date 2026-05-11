@@ -2063,3 +2063,868 @@
 
 **Status:** Done ✅  
 **Completato:** 2026-05-06
+
+---
+
+## 🔍 Audit — Verifica Engine Generazione Strategie
+
+> **Obiettivo:** Determinare se le strategie create dall'utente sono basate su dati reali
+> o sono allucinazioni (valori casuali). Seguire la metodologia TDD per ogni verifica.
+>
+> **Findings preliminari (analisi statica del codice):**
+> - `generate_for_request()` (path utente) usa `random.uniform()` per score e profitti stimati → ALLUCINAZIONE
+> - `run_pipeline()` (path automatico) esegue backtest reali su dati Binance → REALE
+> - L'AI viene chiamata nel path utente solo per estrarre simboli dal testo libero, NON per valutare strategie
+> - Non esiste un test E2E che copra il path utente completo con dati reali
+
+### TASK-AUDIT-001 — Verifica connettività API: Binance e OpenRouter
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/backend/tests/test_connectivity.py`
+
+**Obiettivo:** Confermare che le chiavi API nel `.env` reale siano configurate e funzionanti.
+
+**Step da eseguire:**
+
+1. Leggere `.env` e verificare che `AI_API_KEY`, `BINANCE_API_KEY`, `BINANCE_SECRET_KEY` siano non vuoti
+2. Chiamare `ccxt.binance().fetch_ticker("BTC/USDT")` e verificare che ritorni un prezzo reale
+3. Chiamare `GET https://openrouter.ai/api/v1/models` con `AI_API_KEY` e verificare 200 OK
+4. Chiamare `ccxt.binance().fetch_ohlcv("BTC/USDT", "5m", limit=5)` e verificare 5 candele
+
+**Comandi:**
+```bash
+cd synthtrade/backend
+python -m pytest tests/test_connectivity.py -v -s
+```
+
+**Criteri di successo:**
+- Binance risponde con prezzo BTC/USDT > 0
+- OpenRouter risponde con lista modelli disponibili
+- Nessuna eccezione di autenticazione
+
+---
+
+### TASK-AUDIT-002 — Prova del Random: due chiamate identiche producono output diversi
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/backend/tests/audit/test_random_proof.py` (nuovo)
+
+**Obiettivo:** Dimostrare in modo automatico e riproducibile che `generate_for_request()`
+usa valori casuali per `ai_score` e `estimated_profit_pct`.
+
+**Test da scrivere (Red):**
+```python
+# test_random_proof.py
+import asyncio, pytest
+from app.core.strategy_generator import generate_for_request
+from app.execution.schemas import StrategyRequest
+
+@pytest.mark.asyncio
+async def test_same_request_produces_different_scores():
+    """AUDIT: Due chiamate identiche NON devono produrre score diversi."""
+    req = StrategyRequest(
+        budget_eur=100.0, duration_days=30,
+        asset_class="crypto", risk_level="medium"
+    )
+    results_1 = await generate_for_request(req)
+    results_2 = await generate_for_request(req)
+
+    scores_1 = sorted([r.ai_score for r in results_1])
+    scores_2 = sorted([r.ai_score for r in results_2])
+
+    # Questo test DEVE FALLIRE finché il random non viene rimosso
+    assert scores_1 == scores_2, (
+        f"ALLUCINAZIONE CONFERMATA: stessi input → score diversi.\n"
+        f"Call 1: {scores_1}\nCall 2: {scores_2}"
+    )
+
+@pytest.mark.asyncio
+async def test_estimated_profit_is_not_random():
+    """AUDIT: I profitti stimati devono essere deterministici e basati su backtest."""
+    req = StrategyRequest(
+        budget_eur=100.0, duration_days=30,
+        asset_class="crypto", risk_level="medium"
+    )
+    results_1 = await generate_for_request(req)
+    results_2 = await generate_for_request(req)
+
+    profits_1 = sorted([r.estimated_profit_pct for r in results_1])
+    profits_2 = sorted([r.estimated_profit_pct for r in results_2])
+
+    assert profits_1 == profits_2, (
+        f"ALLUCINAZIONE CONFERMATA: profitti stimati diversi tra chiamate identiche.\n"
+        f"Call 1: {profits_1}\nCall 2: {profits_2}"
+    )
+```
+
+**Criteri di successo del test (che ora fallisce = conferma il bug):**
+- `test_same_request_produces_different_scores` → FAIL conferma il random
+- `test_estimated_profit_is_not_random` → FAIL conferma il random sui profitti
+
+**Comandi:**
+```bash
+cd synthtrade/backend
+python -m pytest tests/audit/test_random_proof.py -v -s 2>&1
+```
+
+---
+
+### TASK-AUDIT-003 — Test AI Evaluator reale: verifica risposta LLM con dati di mercato
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/backend/tests/audit/test_ai_evaluator_real.py` (nuovo)
+
+**Obiettivo:** Verificare che il componente AI sia in grado di:
+1. Connettersi a OpenRouter
+2. Inviare un prompt con dati di backtest reali
+3. Ricevere e parsare una risposta JSON strutturata (score, verdict, reasoning)
+
+**Test da scrivere:**
+```python
+# test_ai_evaluator_real.py — richiede AI_API_KEY nel .env
+import asyncio, pytest, os
+from app.ai.model_client import ModelClient
+from app.ai.prompt_builder import build_system_prompt, build_prompt
+from app.ai.eval_parser import parse_eval_result
+from app.config import settings
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not os.getenv("AI_API_KEY"), reason="AI_API_KEY non configurata")
+async def test_model_client_returns_valid_json():
+    """AUDIT: Il model client risponde con JSON valido parsabile da eval_parser."""
+    client = ModelClient(
+        api_key=settings.AI_API_KEY,
+        api_base_url=settings.AI_API_BASE_URL,
+        cascade_models=settings.ai_cascade_models_list,
+        fallback_model=settings.AI_FALLBACK_MODEL,
+        timeout=60.0, max_retries=2, backoff_base=2.0
+    )
+    system = build_system_prompt()
+    # Strategia fittizia con dati realistici
+    user = """## Market Context
+Symbol: BTC/USDT | Timeframe: 5m | Regime: trending
+Price range: 60000 - 68000 | Last: 65000
+Volatility: 1.85% | Trend: +8.33%
+
+## Strategy: Trend Following EMA (BTC/USDT)
+Template: trend_ema | Params: {'ema_fast': 10, 'ema_slow': 50}
+PnL: +12.40% | Win rate: 62% | Sharpe: 1.32
+Max drawdown: 8.20% | Trades: 47 | Score: 0.6824
+
+## Task
+Evaluate this strategy. Respond ONLY with JSON:
+{"score": <0.0-1.0>, "verdict": "<PROMOTE|HOLD|DEMOTE>", "reasoning": "<explanation>", "confidence": <0.0-1.0>}"""
+
+    response = await client.call_with_fallback(system, user)
+
+    assert response.content, "Nessuna risposta dal modello"
+    result = parse_eval_result(response.content, "test_strategy_id", response.model)
+    assert 0.0 <= result.score <= 1.0, f"Score fuori range: {result.score}"
+    assert result.verdict in ("PROMOTE", "HOLD", "DEMOTE"), f"Verdict invalido: {result.verdict}"
+    assert len(result.reasoning) > 10, "Reasoning troppo corto"
+    print(f"\n✅ AI Response: model={response.model} score={result.score} verdict={result.verdict}")
+    print(f"   Reasoning: {result.reasoning[:200]}")
+```
+
+**Criteri di successo:**
+- Il modello risponde entro 60 secondi
+- La risposta è JSON valido con score, verdict, reasoning
+- `verdict` è uno dei valori attesi (PROMOTE/HOLD/DEMOTE)
+
+---
+
+### TASK-AUDIT-004 — Verifica backtest con dati OHLCV reali di Binance
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/backend/tests/audit/test_backtest_real_data.py` (nuovo)
+
+**Obiettivo:** Verificare che il backtester usi dati storici reali e produca risultati
+deterministici (stessi dati → stessi risultati).
+
+**Test da scrivere:**
+```python
+# test_backtest_real_data.py
+import pytest, pandas as pd
+from unittest.mock import patch, MagicMock
+from app.core.backtester import run_backtest
+from app.core.indicators import signal_ema_crossover
+
+@pytest.mark.asyncio
+async def test_backtest_uses_real_ohlcv_shape():
+    """AUDIT: Il backtester processa i dati OHLCV nel formato corretto."""
+    # Simula dati Binance realistici (senza chiamare API reale)
+    import numpy as np
+    n = 500
+    prices = 60000 + np.cumsum(np.random.randn(n) * 100)
+    ohlcv = pd.DataFrame({
+        "open": prices * 0.999,
+        "high": prices * 1.002,
+        "low":  prices * 0.998,
+        "close": prices,
+        "volume": np.random.uniform(1, 10, n)
+    })
+
+    signal_fn = lambda df: signal_ema_crossover(df, fast=10, slow=50)
+    result = run_backtest(ohlcv, signal_fn, initial_capital=1000.0)
+
+    assert isinstance(result.pnl_pct, float), "pnl_pct deve essere float"
+    assert isinstance(result.num_trades, int), "num_trades deve essere int"
+    assert result.num_trades > 0, "Nessun trade eseguito su 500 candele"
+    assert len(result.equity_curve) == n, "equity_curve deve avere N elementi"
+    print(f"\n✅ Backtest: pnl={result.pnl_pct:.2f}% trades={result.num_trades} sharpe={result.sharpe:.3f}")
+
+def test_backtest_is_deterministic():
+    """AUDIT: Stessi dati → stessi risultati (no random nel backtester)."""
+    import numpy as np
+    rng = np.random.default_rng(42)
+    prices = 60000 + np.cumsum(rng.standard_normal(300) * 100)
+    ohlcv = pd.DataFrame({
+        "open": prices, "high": prices*1.001,
+        "low": prices*0.999, "close": prices,
+        "volume": np.ones(300) * 5.0
+    })
+    signal_fn = lambda df: signal_ema_crossover(df, fast=10, slow=50)
+
+    r1 = run_backtest(ohlcv, signal_fn)
+    r2 = run_backtest(ohlcv, signal_fn)
+
+    assert r1.pnl_pct == r2.pnl_pct, "ERRORE: backtester non deterministico!"
+    assert r1.num_trades == r2.num_trades
+```
+
+**Verifica aggiuntiva (connessione reale):**
+```bash
+cd synthtrade/backend
+python -c "
+from app.core.market_data import fetch_ohlcv
+import pandas as pd
+df = fetch_ohlcv('BTC/USDT', '5m', days=7)
+print(f'Candele scaricate: {len(df)}')
+print(f'Primo timestamp: {df.index[0]}')
+print(f'Ultimo timestamp: {df.index[-1]}')
+print(df.tail(3))
+"
+```
+
+---
+
+### TASK-AUDIT-005 — Confronto DB: strategie manuali vs pipeline automatica
+
+**Status:** Pending
+**Priorità:** Alta
+
+**Obiettivo:** Interrogare il database Supabase e confrontare le strategie generate
+manualmente (via UI) con quelle generate dalla pipeline automatica.
+
+**Script di diagnosi da eseguire:**
+```python
+# scripts/audit_strategies_db.py
+from app.db.supabase_client import get_supabase
+import json
+
+db = get_supabase()
+
+# Leggi tutte le strategie recenti
+res = db.table("strategies").select(
+    "id, title, template, pair, status, score, ai_score, "
+    "estimated_profit_pct, backtest, created_at"
+).order("created_at", desc=True).limit(20).execute()
+
+print(f"\n{'='*80}")
+print(f"{'ID':12} {'Template':20} {'Score':8} {'BacktestOK':10} {'Est.Profit':12} {'Status':10}")
+print(f"{'='*80}")
+
+hallucinated = []
+real = []
+
+for s in res.data:
+    has_backtest = bool(s.get("backtest") and s["backtest"].get("num_trades", 0) > 0)
+    backtest_trades = s.get("backtest", {}).get("num_trades", "N/A") if s.get("backtest") else "MANCANTE"
+    
+    row = (f"{s['id']:12} {s['template']:20} {str(s.get('score','N/A')):8} "
+           f"{'✅' if has_backtest else '❌ MANCANTE':10} "
+           f"{str(s.get('estimated_profit_pct', 'N/A')):12} {s['status']:10}")
+    print(row)
+    
+    if has_backtest:
+        real.append(s)
+    else:
+        hallucinated.append(s)
+
+print(f"\n📊 RISULTATO:")
+print(f"   Strategie con backtest reale: {len(real)}")
+print(f"   Strategie SENZA backtest (potenziali allucinazioni): {len(hallucinated)}")
+```
+
+**Criteri di successo:**
+- Confermare quante strategie nel DB hanno `backtest.num_trades > 0`
+- Identificare quali percorsi (manuale/automatico) producono quali risultati
+
+**Comandi:**
+```bash
+cd synthtrade/backend
+python -m pytest tests/audit/test_db_strategies.py -v -s
+# oppure
+python scripts/audit_strategies_db.py
+```
+
+---
+
+### TASK-AUDIT-006 — 🟢 Fix: Integrare backtest reale in `generate_for_request()`
+
+**Status:** Pending
+**Priorità:** Alta (dopo conferma findings AUDIT-002)
+**File:** `synthtrade/backend/app/core/strategy_generator.py`
+
+**Obiettivo:** Modificare `generate_for_request()` per eseguire un backtest reale
+su dati storici prima di restituire le strategie, eliminando il `random.uniform()`.
+
+**Modifiche da applicare:**
+
+```python
+# PRIMA (attuale — ALLUCINAZIONE):
+score = 70.0 + random.uniform(0, 25.0)
+est_profit_pct = base_profit + random.uniform(-2.0, 5.0)
+
+# DOPO (fix — backtest reale):
+from app.core.market_data import fetch_ohlcv
+from app.core.backtester import run_backtest
+from app.core.ranker import compute_score
+
+ohlcv = fetch_ohlcv(pair, "1h", days=90)  # 90 giorni per velocità
+signal_fn = SIGNAL_MAP[template_name](ohlcv, params_dict)
+result = run_backtest(ohlcv, signal_fn)
+score = compute_score(result)  # None se non supera soglie qualità
+est_profit_pct = result.pnl_pct  # Valore reale dal backtest
+```
+
+**Vincoli:**
+- Cache OHLCV per pair/timeframe per evitare N chiamate API per lo stesso asset
+- Se backtest fallisce o score è None → escludere la variante (non mostrare all'utente)
+- Aggiungere progress tracking via WebSocket (la pipeline diventa più lenta)
+
+**Test (Green):**
+```bash
+python -m pytest tests/audit/test_random_proof.py -v -s
+# Ora i test devono passare (score deterministici)
+```
+
+---
+
+### TASK-AUDIT-007 — 🟢 Fix: Rimuovere `random` e nomi casuali, aggiungere metadata backtest
+
+**Status:** Pending
+**Priorità:** Media
+**File:** `synthtrade/backend/app/core/strategy_generator.py`
+
+**Obiettivo:** Pulire tutto il codice di simulazione random dalla funzione
+`generate_for_request()`:
+
+1. **Rimuovere** `import random` e tutti gli usi di `random.uniform()`, `random.choice()`
+2. **Rimuovere** i nomi casuali tipo "Il Seguace", "Rompiballe"
+3. **Usare** il titolo derivato dal template + pair come nome deterministico
+4. **Aggiungere** `backtest_summary` nei campi della strategy restituita
+5. **Aggiungere** `data_source: "binance_historical"` per tracciabilità
+
+**Naming deterministico:**
+```python
+# PRIMA (random):
+auto_names = {"trend_ema": ["Il Seguace", "L'Ondaiolo", ...]}
+final_custom_name = random.choice(auto_names[template_name])
+
+# DOPO (deterministico):
+final_custom_name = f"{TEMPLATES[template_name]['title']} — {pair} {timeframe}"
+# Es: "Trend Following EMA — BTC/USDT 1h"
+```
+
+**Aggiungere field backtest_summary:**
+```python
+StrategyParams(
+    ...
+    backtest_pnl=result.pnl_pct,
+    backtest_trades=result.num_trades,
+    backtest_sharpe=result.sharpe,
+    backtest_drawdown=result.max_drawdown_pct,
+    data_source="binance_historical_90d"
+)
+```
+
+---
+
+### TASK-AUDIT-008 — Test E2E: pipeline completa utente → backtest → AI → DB
+
+**Status:** Pending
+**Priorità:** Alta (da eseguire DOPO i fix AUDIT-006 e AUDIT-007)
+**File:** `synthtrade/backend/tests/audit/test_e2e_pipeline.py` (nuovo)
+
+**Obiettivo:** Test di integrazione completo che simula l'intera pipeline utente
+dopo il fix, verificando che ogni componente sia reale.
+
+**Test da scrivere:**
+```python
+# test_e2e_pipeline.py
+import asyncio, pytest
+from unittest.mock import patch, AsyncMock, MagicMock
+from app.core.strategy_generator import generate_for_request
+from app.execution.schemas import StrategyRequest
+
+@pytest.mark.asyncio
+async def test_generate_for_request_uses_real_backtest(mock_ohlcv_data):
+    """
+    E2E: Dopo il fix, generate_for_request() deve:
+    1. Chiamare fetch_ohlcv() (dati storici)
+    2. Chiamare run_backtest() (simulazione)
+    3. Avere score deterministici (non random)
+    4. Avere backtest_pnl popolato con valore reale
+    """
+    req = StrategyRequest(
+        budget_eur=100.0, duration_days=30,
+        asset_class="crypto", risk_level="medium",
+        max_strategies=3
+    )
+
+    with patch("app.core.strategy_generator.fetch_ohlcv") as mock_fetch, \
+         patch("app.core.strategy_generator.enrich_request_with_ai") as mock_ai:
+        mock_fetch.return_value = mock_ohlcv_data  # fixture con 300 candele realistiche
+        mock_ai.return_value = req  # no AI enrichment per semplicità
+
+        results_1 = await generate_for_request(req)
+        results_2 = await generate_for_request(req)
+
+    # Verifica determinismo
+    scores_1 = [r.ai_score for r in results_1]
+    scores_2 = [r.ai_score for r in results_2]
+    assert scores_1 == scores_2, f"Score non deterministici: {scores_1} vs {scores_2}"
+
+    # Verifica che il backtest sia stato eseguito
+    for strategy in results_1:
+        assert hasattr(strategy, 'backtest_pnl'), "backtest_pnl mancante"
+        assert strategy.backtest_pnl is not None, "backtest_pnl è None"
+        assert strategy.estimated_profit_pct == strategy.backtest_pnl, (
+            f"estimated_profit_pct ({strategy.estimated_profit_pct}) != "
+            f"backtest_pnl ({strategy.backtest_pnl})"
+        )
+
+    # Verifica che fetch_ohlcv sia stato chiamato
+    assert mock_fetch.called, "fetch_ohlcv NON è stato chiamato — nessun dato reale!"
+
+@pytest.mark.asyncio
+async def test_pipeline_rejects_low_quality_strategies(mock_ohlcv_data):
+    """
+    E2E: Le strategie che non superano le soglie del ranker devono essere
+    escluse (score=None) e non mostrate all'utente.
+    """
+    req = StrategyRequest(
+        budget_eur=100.0, duration_days=30,
+        asset_class="crypto", risk_level="medium",
+        max_strategies=10  # Chiede 10, ma il filtro può restituirne meno
+    )
+
+    with patch("app.core.strategy_generator.fetch_ohlcv") as mock_fetch, \
+         patch("app.core.strategy_generator.enrich_request_with_ai") as mock_ai:
+        mock_fetch.return_value = mock_ohlcv_data
+        mock_ai.return_value = req
+        results = await generate_for_request(req)
+
+    # Tutte le strategie restituite devono avere score > 0
+    for s in results:
+        assert s.ai_score > 0, f"Strategia con score nullo non filtrata: {s}"
+```
+
+**Comandi:**
+```bash
+cd synthtrade/backend
+python -m pytest tests/audit/ -v --tb=short -s
+
+# Output atteso dopo i fix:
+# PASSED tests/audit/test_random_proof.py::test_same_request_produces_different_scores
+# PASSED tests/audit/test_random_proof.py::test_estimated_profit_is_not_random
+# PASSED tests/audit/test_e2e_pipeline.py::test_generate_for_request_uses_real_backtest
+# PASSED tests/audit/test_e2e_pipeline.py::test_pipeline_rejects_low_quality_strategies
+```
+
+**Criteri finali di successo:**
+- Zero `random.uniform()` in `strategy_generator.py`
+- Tutte le strategie proposte hanno `backtest.num_trades > 0`
+- Score identici per input identici (deterministico)
+- `estimated_profit_pct` corrisponde a `result.pnl_pct` del backtest
+- `fetch_ohlcv()` chiamato per ogni pair/timeframe (con cache)
+
+---
+
+## 🔴 Fix Allucinazioni — `generate_for_request()` (PRIORITÀ ASSOLUTA)
+
+> **Principio:** nessuna strategia proposta all'utente senza backtest reale su dati storici Binance.
+> Il `random` è VIETATO in qualsiasi calcolo finanziario.
+
+---
+
+### TASK-FIX-001 — Rimuovere `import random` e aggiungere imports reali
+
+**Status:** Pending
+**Priorità:** Bloccante
+**File:** `synthtrade/backend/app/core/strategy_generator.py`
+
+**Cosa fare:**
+- Rimuovere `import random`
+- Aggiungere: `import asyncio`, `import logging`
+- Aggiungere: `from app.core.market_data import fetch_ohlcv`
+- Aggiungere: `from app.core.backtester import run_backtest`
+- Aggiungere: `from app.core.ranker import compute_score`
+- Aggiungere: `from app.core.indicators import signal_ema_crossover, signal_rsi_reversion, signal_breakout_bb`
+- Aggiungere `from datetime import datetime, timedelta, timezone` se non già presente
+- Aggiungere in cima al modulo il `SIGNAL_MAP` (già presente in `run_pipeline.py`, copiarlo):
+```python
+logger = logging.getLogger("synthtrade.generator")
+
+SIGNAL_MAP = {
+    "trend_ema": lambda df, p: signal_ema_crossover(df, p["ema_fast"], p["ema_slow"]),
+    "mean_reversion_rsi": lambda df, p: signal_rsi_reversion(
+        df, p["rsi_period"], p["rsi_oversold"], p["rsi_overbought"]),
+    "breakout_bb": lambda df, p: signal_breakout_bb(df, p["bb_period"], p["bb_std"]),
+}
+```
+
+**Verifica:** `grep -n "import random" strategy_generator.py` → nessun risultato.
+
+---
+
+### TASK-FIX-002 — Aggiungere campi backtest a `StrategyParams`
+
+**Status:** Pending
+**Priorità:** Bloccante
+**File:** `synthtrade/backend/app/core/strategy_generator.py`
+
+**Cosa fare:** Modificare il dataclass `StrategyParams` (frozen=True):
+- Rinominare `ai_score` → `score` (valore da `compute_score()`, range 0–1)
+- Aggiungere i campi backtest:
+```python
+score: float = 0.0                # da compute_score() — deterministico
+estimated_profit_pct: float = 0.0 # da result.pnl_pct — reale
+estimated_profit_eur: float = 0.0 # budget * pnl_pct / 100 — reale
+backtest_pnl: float = 0.0         # result.pnl_pct
+backtest_win_rate: float = 0.0    # result.win_rate
+backtest_sharpe: float = 0.0      # result.sharpe
+backtest_drawdown: float = 0.0    # result.max_drawdown_pct
+backtest_trades: int = 0          # result.num_trades
+data_source: str = ""             # es. "binance_1h_90d"
+```
+- Aggiornare `__hash__` rimuovendo riferimento ad `ai_score`
+- Aggiornare `__post_init__`: rimuovere logica che usava `ai_score`
+
+---
+
+### TASK-FIX-003 — Riscrivere `generate_for_request()` — Fase 1: fetch OHLCV reale
+
+**Status:** Pending
+**Priorità:** Bloccante
+**File:** `synthtrade/backend/app/core/strategy_generator.py`
+
+**Cosa fare:** All'inizio di `generate_for_request()`, dopo `enrich_request_with_ai()`:
+```python
+pairs = req.symbols if req.symbols else ["BTC/USDT"]
+timeframes = ["1h", "4h"]
+
+# Cache OHLCV: UNA sola chiamata per (pair, timeframe)
+ohlcv_cache: dict[tuple, object] = {}
+for pair in pairs:
+    for tf in timeframes:
+        key = (pair, tf)
+        try:
+            ohlcv_cache[key] = await asyncio.to_thread(
+                fetch_ohlcv, pair, tf, 90  # 90 giorni dati storici
+            )
+            logger.info(f"OHLCV: {pair} {tf} — {len(ohlcv_cache[key])} candele")
+        except Exception as e:
+            logger.warning(f"OHLCV fetch fallito {pair}/{tf}: {e}")
+```
+
+**Perché `asyncio.to_thread`:** `fetch_ohlcv` usa `ccxt` che è sincrono (bloccante).
+Wrapparlo in `to_thread` lo rende non-bloccante per il loop asincrono di FastAPI.
+
+**Verifica:** Log deve mostrare `"OHLCV: BTC/USDT 1h — 2160 candele"` (90 giorni × 24h).
+
+---
+
+### TASK-FIX-004 — Riscrivere `generate_for_request()` — Fase 2: loop backtest reale
+
+**Status:** Pending
+**Priorità:** Bloccante
+**File:** `synthtrade/backend/app/core/strategy_generator.py`
+
+**Cosa fare:** Sostituire il blocco del for loop che conteneva i `random.uniform()`:
+
+```python
+results: list[StrategyParams] = []
+for template_name in filtered_templates:
+    template_data = TEMPLATES[template_name]
+    param_grid = template_data["params"]
+    keys = list(param_grid.keys())
+    combos = list(product(*param_grid.values()))
+
+    for pair, tf, combo in product(pairs, timeframes, combos):
+        ohlcv = ohlcv_cache.get((pair, tf))
+        if ohlcv is None or ohlcv.empty:
+            continue
+
+        params_dict = dict(zip(keys, combo))
+        try:
+            signal_fn = lambda df, t=template_name, p=params_dict: SIGNAL_MAP[t](df, p)
+            bt = run_backtest(ohlcv, signal_fn)
+            score = compute_score(bt)
+            if score is None:
+                continue  # Non supera soglie qualità — scartata, mai mostrata
+
+            budget = float(req.budget_eur) if req.budget_eur > 0 else 100.0
+            title = f"{template_data['title']} — {pair} {tf}"
+            now = datetime.now(timezone.utc)
+
+            variant = StrategyParams(
+                template=template_name,
+                pair=pair, timeframe=tf,
+                params=params_dict,
+                budget_eur=budget,
+                title=title,
+                description=template_data["description"],
+                score=score,
+                estimated_profit_pct=round(bt.pnl_pct, 4),
+                estimated_profit_eur=round(budget * bt.pnl_pct / 100, 4),
+                backtest_pnl=bt.pnl_pct,
+                backtest_win_rate=bt.win_rate,
+                backtest_sharpe=bt.sharpe,
+                backtest_drawdown=bt.max_drawdown_pct,
+                backtest_trades=bt.num_trades,
+                data_source=f"binance_{tf}_90d",
+                custom_name=req.custom_name or title,
+                created_at=now.isoformat(),
+                expires_at=(now + timedelta(days=7)).isoformat(),
+            )
+            results.append(variant)
+        except Exception as e:
+            logger.warning(f"Backtest fallito {template_name}/{pair}/{tf}: {e}")
+
+logger.info(f"Generator: {len(results)} strategie superano i filtri")
+return sorted(results, key=lambda x: x.score, reverse=True)[:req.max_strategies]
+```
+
+**Eliminare completamente:**
+- Tutto il blocco `score = 70.0 + random.uniform(0, 25.0)`
+- Tutto il blocco `est_profit_pct = base_profit + random.uniform(-2.0, 5.0)`
+- Il dizionario `auto_names = {...}` con i nomi casuali
+- `random.shuffle(all_variants)`
+- `random.choice(auto_names[...])`
+- Il blocco `base_profit_map = {...}`
+
+---
+
+### TASK-FIX-005 — Aggiornare `pipeline.py` — Salvare `backtest` nel DB
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/backend/app/api/pipeline.py`
+
+**Cosa fare:** In `run_generation_task()`, nel dizionario `row` dell'insert Supabase:
+```python
+row = {
+    "id": strategy_id,
+    "title": s.title or f"{s.template} on {s.pair}",
+    "description": s.description,
+    "template": s.template,
+    "pair": s.pair,
+    "timeframe": s.timeframe,
+    "budget_eur": s.budget_eur,
+    "params": s.params,
+    "rules": {}, "risk": {}, "targets": {},
+    "status": "PENDING",
+    "score": s.score,           # REALE (era 0.0 hardcoded)
+    "ai_score": s.score,        # REALE (era s.ai_score random)
+    "estimated_profit_pct": s.estimated_profit_pct,   # REALE
+    "estimated_profit_eur": s.estimated_profit_eur,   # REALE
+    "backtest": {               # NUOVO — popolato con dati reali
+        "pnl_pct":          s.backtest_pnl,
+        "win_rate":         s.backtest_win_rate,
+        "sharpe":           s.backtest_sharpe,
+        "max_drawdown_pct": s.backtest_drawdown,
+        "num_trades":       s.backtest_trades,
+        "data_source":      s.data_source,
+    },
+    "custom_name": s.custom_name,
+    "created_at": now.isoformat(),
+    "expires_at": expires_at,
+}
+```
+
+Aggiornare anche `strategies_data` (la risposta WS) aggiungendo i campi backtest.
+
+---
+
+### TASK-FIX-006 — Aggiungere WS progress events durante la generazione
+
+**Status:** Pending
+**Priorità:** Media
+**File:** `synthtrade/backend/app/api/pipeline.py`
+
+**Motivazione:** Il backtest reale richiede alcuni secondi. L'utente deve sapere
+cosa sta succedendo invece di vedere un'attesa senza feedback.
+
+**Cosa fare:** In `run_generation_task()`, aggiungere broadcast prima e dopo:
+```python
+# PRIMA di chiamare generate_for_request():
+await manager.broadcast({
+    "type": "generation_progress",
+    "generation_id": generation_id,
+    "phase": "fetching_market_data",
+    "message": "Scaricamento dati storici Binance (90 giorni)...",
+})
+
+# generate_for_request() internamente scarica OHLCV e fa backtest
+
+# DOPO generate_for_request(), PRIMA del salvataggio DB:
+await manager.broadcast({
+    "type": "generation_progress",
+    "generation_id": generation_id,
+    "phase": "saving",
+    "message": f"Backtest completato: {len(strategies)} strategie valide. Salvataggio...",
+})
+```
+
+---
+
+### TASK-FIX-007 — Gestire lista vuota con messaggio utente chiaro
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/backend/app/api/pipeline.py`
+
+**Scenario:** Il backtest su 90 giorni può restituire 0 strategie se nessuna
+supera i filtri del `ranker` (Sharpe > 0.5, DD < 15%, PnL > 2%, Trades > 30).
+
+**Cosa fare:** Dopo `strategies = await generate_for_request(req)`:
+```python
+if not strategies:
+    generations[generation_id]["status"] = "completed"
+    generations[generation_id]["results"] = []
+    generations[generation_id]["message"] = (
+        "Nessuna strategia ha superato i criteri di qualità sui dati storici "
+        "(Sharpe > 0.5, Drawdown < 15%, PnL > 2%, Trades > 30 in 90 giorni). "
+        "Prova con un orizzonte temporale più lungo o un livello di rischio diverso."
+    )
+    await manager.broadcast({
+        "type": "generation_complete",
+        "generation_id": generation_id,
+        "count": 0,
+    })
+    return
+```
+
+---
+
+### TASK-FIX-008 — Test E2E: `test_e2e_pipeline.py` con mock OHLCV
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/backend/tests/audit/test_e2e_pipeline.py` (nuovo)
+
+**Cosa fare:** Creare test con fixture OHLCV sintetica (no Binance reale):
+```python
+@pytest.fixture
+def mock_ohlcv():
+    import numpy as np
+    rng = np.random.default_rng(42)  # seed fisso = deterministico
+    n = 2000
+    prices = 60000 + np.cumsum(rng.standard_normal(n) * 100 + 3)
+    return pd.DataFrame({
+        "open": prices*0.999, "high": prices*1.002,
+        "low": prices*0.998,  "close": prices,
+        "volume": np.ones(n) * 5.0
+    }, index=pd.date_range("2024-01-01", periods=n, freq="1h"))
+
+@pytest.mark.asyncio
+async def test_generate_for_request_uses_backtest(mock_ohlcv):
+    req = StrategyRequest(budget_eur=100.0, duration_days=30,
+                          asset_class="crypto", risk_level="medium",
+                          max_strategies=3)
+    with patch("app.core.strategy_generator.fetch_ohlcv", return_value=mock_ohlcv), \
+         patch("app.core.strategy_generator.enrich_request_with_ai",
+               new_callable=AsyncMock, return_value=req):
+        results_1 = await generate_for_request(req)
+        results_2 = await generate_for_request(req)
+
+    # Deterministico: stessi input → stessi output
+    assert [r.score for r in results_1] == [r.score for r in results_2]
+    assert [r.estimated_profit_pct for r in results_1] == \
+           [r.estimated_profit_pct for r in results_2]
+
+    # Backtest eseguito: campi popolati
+    for s in results_1:
+        assert s.backtest_trades > 0, "backtest_trades deve essere > 0"
+        assert s.estimated_profit_pct == s.backtest_pnl, \
+               "estimated_profit_pct deve = backtest_pnl"
+        assert s.data_source.startswith("binance_"), \
+               "data_source deve indicare fonte Binance"
+        assert 0.0 < s.score <= 1.0, "score fuori range [0,1]"
+```
+
+---
+
+### TASK-FIX-009 — Aggiornare `test_generator_constrained.py`
+
+**Status:** Pending
+**Priorità:** Media
+**File:** `synthtrade/backend/tests/unit/test_generator_constrained.py`
+
+**Cosa fare:** Verificare che i test esistenti assumano `score` (0–1) invece di
+`ai_score` (70–99). Aggiornare le asserzioni e i mock di conseguenza.
+Aggiungere mock per `fetch_ohlcv` e `run_backtest` dove mancante.
+
+---
+
+### TASK-FIX-010 — Aggiornare `test_generator_ai_hint.py`
+
+**Status:** Pending
+**Priorità:** Media
+**File:** `synthtrade/backend/tests/unit/test_generator_ai_hint.py`
+
+**Cosa fare:** Verificare che `enrich_request_with_ai()` sia ancora chiamato
+correttamente dopo il refactor. Aggiornare mock per includere OHLCV e backtest.
+
+---
+
+### TASK-FIX-011 — Verifica finale: `test_random_proof.py` deve PASSARE
+
+**Status:** Pending
+**Priorità:** Alta — è il criterio di successo finale
+
+**Cosa fare:** Dopo tutti i fix, eseguire:
+```bash
+cd synthtrade/backend
+python -m pytest tests/audit/test_random_proof.py -v -s
+```
+
+**Risultato atteso:**
+```
+PASSED tests/audit/test_random_proof.py::test_same_request_produces_different_scores
+PASSED tests/audit/test_random_proof.py::test_estimated_profit_is_not_random
+PASSED tests/audit/test_random_proof.py::test_score_is_within_random_range  (ora verifica range 0-1)
+```
+
+Se uno di questi fallisce → il bug non è completamente risolto.
+
+**Verifica suite completa:**
+```bash
+python -m pytest tests/ -v --tb=short 2>&1 | tail -20
+# Atteso: 0 regressioni rispetto alla suite pre-fix
+```
+
+**Verifica DB post-deploy:**
+```sql
+SELECT COUNT(*) as total,
+       COUNT(backtest) as with_backtest,
+       COUNT(*) - COUNT(backtest) as missing_backtest
+FROM strategies WHERE status = 'PENDING';
+-- Atteso: with_backtest == total, missing_backtest == 0
+```

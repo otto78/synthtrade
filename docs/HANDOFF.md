@@ -4,15 +4,38 @@
 
 ## 🔄 Ultimo Handoff
 
-### Da: Amazon Q → A: prossima sessione
+### Da: Antigravity → prossima sessione
 
-**Data:** 2025-01-16
+**Data:** 2026-05-11
 
-**Contesto:** Fase 2 (Backend API) completata. Fase 3 (Frontend Angular) pronta per partire con lista task dettagliata.
+**Contesto:** Audit del motore di generazione strategie. Confermata presenza di
+allucinazioni nel path utente (`generate_for_request()`). Fix prioritario: TASK-AUDIT-006.
 
 ---
 
-### 📊 Stato Attuale
+### 🚨 FINDING CRITICO (sessione 2026-05-11)
+
+**`generate_for_request()` usa `random.uniform()` per score e profitti stimati.**
+
+Le strategie generate **manualmente dall'utente** hanno score e profitti inventati:
+- `ai_score = 70.0 + random.uniform(0, 25.0)` — non basato su dati reali
+- `estimated_profit_pct = base_profit + random.uniform(-2.0, 5.0)` — inventato
+- Nessuna chiamata a `fetch_ohlcv()` né a `run_backtest()`
+- I nomi tipo "Il Seguace" sono scelti con `random.choice()`
+
+**Confermato da test automatici** (2 FAIL by design in `tests/audit/test_random_proof.py`):
+```
+Call 1 scores: [92.94, 93.51, 93.55, 94.11, 94.12]
+Call 2 scores: [92.32, 93.22, 93.84, 94.80, 94.88]
+→ Stessi input, output diversi = random confermato
+```
+
+**Il path automatico (`run_pipeline.py`) è invece REALE** — backtest su 180gg Binance.
+
+---
+
+### 📊 Stato Attuale (post audit)
+
 
 **Fase corrente:** Fase 6 — Hardening & Deploy
 

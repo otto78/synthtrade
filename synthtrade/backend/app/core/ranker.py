@@ -5,10 +5,10 @@ from app.core.backtester import BacktestResult
 
 @dataclass
 class RankConfig:
-    min_trades:   int   = 30
-    min_sharpe:   float = 0.5
-    max_drawdown: float = 15.0
-    min_pnl:      float = 2.0
+    min_trades:   int   = 5     # ridotto da 30 a 5 per timeframes veloci
+    min_sharpe:   float = 0.0   # ridotto da 0.5 a 0.0 per accettare strategie neutre
+    max_drawdown: float = 25.0  # aumentato da 15.0 a 25.0 per crypto volatili
+    min_pnl:      float = 0.0   # ridotto da 2.0 a 0.0 per accettare break-even
     w_pnl:        float = 0.40
     w_sharpe:     float = 0.30
     w_winrate:    float = 0.20

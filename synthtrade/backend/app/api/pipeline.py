@@ -20,17 +20,50 @@ generations: Dict[str, Dict[str, Any]] = {}
 async def run_generation_task(generation_id: str, req: StrategyRequest):
     generations[generation_id]["status"] = "running"
     try:
-        # TASK-041/047: Generate strategies
+        # TASK-FIX-006: WS progress — fetching market data
+        await manager.broadcast({
+            "type": "generation_progress",
+            "generation_id": generation_id,
+            "phase": "fetching_market_data",
+            "message": "Scaricamento dati storici Binance (90 giorni)...",
+        })
+
+        # TASK-041/047: Generate strategies with real backtest
         strategies = await generate_for_request(req)
-        
+
+        # TASK-FIX-007: Handle empty list with user message
+        if not strategies:
+            generations[generation_id]["status"] = "completed"
+            generations[generation_id]["results"] = []
+            generations[generation_id]["message"] = (
+                "Nessuna strategia ha superato i criteri di qualità sui dati storici "
+                "(Sharpe > 0.5, Drawdown < 15%, PnL > 2%, Trades > 30 in 90 giorni). "
+                "Prova con un orizzonte temporale più lungo o un livello di rischio diverso."
+            )
+            await manager.broadcast({
+                "type": "generation_complete",
+                "generation_id": generation_id,
+                "count": 0,
+            })
+            return
+
+        # TASK-FIX-006: WS progress — saving
+        await manager.broadcast({
+            "type": "generation_progress",
+            "generation_id": generation_id,
+            "phase": "saving",
+            "message": f"Backtest completato: {len(strategies)} strategie valide. Salvataggio...",
+        })
+
         db = get_supabase()
         now = datetime.now(timezone.utc)
         expires_at = (now + timedelta(days=7)).isoformat()
-        
+
         # Salva subito sul DB per persistenza tra le pagine
         strategies_data = []
         for s in strategies:
             strategy_id = str(uuid.uuid4())
+            # TASK-FIX-005: Save backtest fields in DB row
             row = {
                 "id": strategy_id,
                 "title": s.title or f"{s.template} on {s.pair}",
@@ -44,10 +77,18 @@ async def run_generation_task(generation_id: str, req: StrategyRequest):
                 "risk": {},
                 "targets": {},
                 "status": "PENDING",
-                "score": 0.0,
-                "ai_score": s.ai_score or 0.0,
-                "estimated_profit_pct": s.estimated_profit_pct,
-                "estimated_profit_eur": s.estimated_profit_eur,
+                "score": s.score,                          # REALE (era 0.0 hardcoded)
+                "ai_score": s.score,                       # REALE (era s.ai_score random)
+                "estimated_profit_pct": s.estimated_profit_pct,  # REALE
+                "estimated_profit_eur": s.estimated_profit_eur,  # REALE
+                "backtest": {                               # NUOVO — popolato con dati reali
+                    "pnl_pct":          s.backtest_pnl,
+                    "win_rate":         s.backtest_win_rate,
+                    "sharpe":           s.backtest_sharpe,
+                    "max_drawdown_pct": s.backtest_drawdown,
+                    "num_trades":       s.backtest_trades,
+                    "data_source":      s.data_source,
+                },
                 "custom_name": s.custom_name,
                 "created_at": now.isoformat(),
                 "expires_at": expires_at
@@ -56,7 +97,7 @@ async def run_generation_task(generation_id: str, req: StrategyRequest):
                 db.table("strategies").insert(row).execute()
             except Exception as e:
                 logger.warning(f"Failed to save generated strategy to DB: {e}")
-            
+
             strategies_data.append({
                 "id": strategy_id,
                 "template": s.template,
@@ -66,25 +107,34 @@ async def run_generation_task(generation_id: str, req: StrategyRequest):
                 "timeframe": s.timeframe,
                 "params": s.params,
                 "budget_eur": s.budget_eur,
-                "ai_score": s.ai_score,
+                "score": s.score,
+                "ai_score": s.score,
                 "estimated_profit_pct": s.estimated_profit_pct,
                 "estimated_profit_eur": s.estimated_profit_eur,
+                "backtest": {
+                    "pnl_pct":          s.backtest_pnl,
+                    "win_rate":         s.backtest_win_rate,
+                    "sharpe":           s.backtest_sharpe,
+                    "max_drawdown_pct": s.backtest_drawdown,
+                    "num_trades":       s.backtest_trades,
+                    "data_source":      s.data_source,
+                },
                 "custom_name": s.custom_name,
                 "expires_at": expires_at,
                 "created_at": now.isoformat(),
                 "status": "PENDING"
             })
-            
+
         generations[generation_id]["status"] = "completed"
         generations[generation_id]["results"] = strategies_data
-        
+
         # TASK-053: Broadcast WS completion
         await manager.broadcast({
             "type": "generation_complete",
             "generation_id": generation_id,
             "count": len(strategies_data)
         })
-        
+
     except Exception as e:
         generations[generation_id]["status"] = "failed"
         generations[generation_id]["error"] = str(e)
@@ -109,9 +159,9 @@ async def start_generation(
         "status": "pending",
         "results": []
     }
-    
+
     background_tasks.add_task(run_generation_task, generation_id, req)
-    
+
     return {"generation_id": generation_id, "status": "pending"}
 
 @router.get("/generate/{generation_id}/status")
@@ -124,5 +174,5 @@ async def get_generation_status(
     """
     if generation_id not in generations:
         raise HTTPException(status_code=404, detail="Generation not found")
-        
+
     return generations[generation_id]

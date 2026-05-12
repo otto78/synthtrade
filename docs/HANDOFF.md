@@ -4,37 +4,30 @@
 
 ## 🔄 Ultimo Handoff
 
-### Da: Antigravity → prossima sessione
+### Da: Cline → prossima sessione
 
-**Data:** 2026-05-11
+**Data:** 2026-05-12
 
-**Contesto:** Audit del motore di generazione strategie. Confermata presenza di
-allucinazioni nel path utente (`generate_for_request()`). Fix prioritario: TASK-AUDIT-006.
-
----
-
-### 🚨 FINDING CRITICO (sessione 2026-05-11)
-
-**`generate_for_request()` usa `random.uniform()` per score e profitti stimati.**
-
-Le strategie generate **manualmente dall'utente** hanno score e profitti inventati:
-- `ai_score = 70.0 + random.uniform(0, 25.0)` — non basato su dati reali
-- `estimated_profit_pct = base_profit + random.uniform(-2.0, 5.0)` — inventato
-- Nessuna chiamata a `fetch_ohlcv()` né a `run_backtest()`
-- I nomi tipo "Il Seguace" sono scelti con `random.choice()`
-
-**Confermato da test automatici** (2 FAIL by design in `tests/audit/test_random_proof.py`):
-```
-Call 1 scores: [92.94, 93.51, 93.55, 94.11, 94.12]
-Call 2 scores: [92.32, 93.22, 93.84, 94.80, 94.88]
-→ Stessi input, output diversi = random confermato
-```
-
-**Il path automatico (`run_pipeline.py`) è invece REALE** — backtest su 180gg Binance.
+**Contesto:** Completato il Fix Allucinazioni (v1.2.0). `generate_for_request()` ora usa backtest reale su dati Binance invece di random.uniform(). TUTTI i 21 test PASS.
 
 ---
 
-### 📊 Stato Attuale (post audit)
+### ✅ FIX COMPLETATO (sessione 2026-05-12)
+
+**Fix Allucinazioni (TASK-FIX-001 → 011)** — PRIORITÀ ASSOLUTA
+
+**Cosa è stato fatto:**
+- `strategy_generator.py` riscritto: rimosso `import random`, `random.uniform()`, `random.choice()`, `random.shuffle()`
+- `generate_for_request()` ora: fetch OHLCV da Binance (90gg) → backtest reale → compute_score → filtraggio
+- `StrategyParams` aggiornato: `ai_score` → `score` (range [0,1]), nuovi campi backtest (backtest_pnl, win_rate, sharpe, drawdown, trades, data_source)
+- Nomi deterministici (template + pair), rimossi nomi casuali tipo "Il Seguace"
+- `pipeline.py`: salva `backtest` completo nel DB, WS progress events, gestione lista vuota
+- `test_random_proof.py`: ora test PASS (determinismo verificato, score range [0,1])
+- Nuovo `test_e2e_pipeline.py`: test E2E con mock OHLCV (21/21 test PASS)
+
+---
+
+### 📊 Stato Attuale
 
 
 **Fase corrente:** Fase 6 — Hardening & Deploy

@@ -1,9 +1,25 @@
-import random
+import asyncio
+import logging
 from itertools import product
 from dataclasses import dataclass
-from typing import Generator, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional, Generator
 from app.execution.schemas import StrategyRequest
 from app.ai.request_enricher import enrich_request_with_ai
+from app.core.market_data import fetch_ohlcv
+from app.core.backtester import run_backtest, BacktestResult
+from app.core.ranker import compute_score
+from app.core.indicators import signal_ema_crossover, signal_rsi_reversion, signal_breakout_bb
+
+logger = logging.getLogger("synthtrade.generator")
+
+SIGNAL_MAP = {
+    "trend_ema": lambda df, p: signal_ema_crossover(df, p["ema_fast"], p["ema_slow"]),
+    "mean_reversion_rsi": lambda df, p: signal_rsi_reversion(
+        df, p["rsi_period"], p["rsi_oversold"], p["rsi_overbought"]
+    ),
+    "breakout_bb": lambda df, p: signal_breakout_bb(df, p["bb_period"], p["bb_std"]),
+}
 
 TEMPLATES: dict[str, dict] = {
     "trend_ema": {
@@ -55,9 +71,15 @@ class StrategyParams:
     budget_eur: float = 100.0
     title: Optional[str] = None
     description: Optional[str] = None
-    ai_score: float = 0.0
-    estimated_profit_pct: float = 0.0
-    estimated_profit_eur: float = 0.0
+    score: float = 0.0                # da compute_score() — deterministico
+    estimated_profit_pct: float = 0.0 # da result.pnl_pct — reale
+    estimated_profit_eur: float = 0.0 # budget * pnl_pct / 100 — reale
+    backtest_pnl: float = 0.0         # result.pnl_pct
+    backtest_win_rate: float = 0.0    # result.win_rate
+    backtest_sharpe: float = 0.0      # result.sharpe
+    backtest_drawdown: float = 0.0    # result.max_drawdown_pct
+    backtest_trades: int = 0          # result.num_trades
+    data_source: str = ""             # es. "binance_1h_90d"
     created_at: Optional[str] = None
     expires_at: Optional[str] = None
     custom_name: Optional[str] = None
@@ -78,94 +100,85 @@ class StrategyParams:
 
 async def generate_for_request(req: StrategyRequest) -> List[StrategyParams]:
     """
-    TASK-041: Generatore migliorato con varianti reali e descrizioni.
+    TASK-FIX-003/004: Generatore con backtest reale su dati storici Binance.
+    Nessun random.uniform(), nessun nome casuale.
     """
-    # Arricchimento con AI per estrarre simboli e template preferito
     req = await enrich_request_with_ai(req)
-    
     filtered_templates = _filter_templates_by_constraints(req)
-    
+
     pairs = req.symbols if req.symbols else ["BTC/USDT"]
-    timeframes = ["1h", "4h"] # Varietà di timeframe
-    
-    all_variants = []
+    timeframes = ["1h", "4h"]
+
+    # TASK-FIX-003: Cache OHLCV — una sola chiamata per (pair, timeframe)
+    ohlcv_cache: dict[tuple, object] = {}
+    for pair in pairs:
+        for tf in timeframes:
+            key = (pair, tf)
+            try:
+                ohlcv_cache[key] = await asyncio.to_thread(
+                    fetch_ohlcv, pair, tf, 90
+                )
+                n_candles = len(ohlcv_cache[key])
+                logger.info(f"OHLCV: {pair} {tf} — {n_candles} candele")
+            except Exception as e:
+                logger.warning(f"OHLCV fetch fallito {pair}/{tf}: {e}")
+
+    results: List[StrategyParams] = []
+    now = datetime.now(timezone.utc)
+
+    # TASK-FIX-004: Loop backtest reale (sostituisce random)
     for template_name in filtered_templates:
         template_data = TEMPLATES[template_name]
         param_grid = template_data["params"]
         keys = list(param_grid.keys())
-        
-        # Generiamo tutte le combinazioni possibili per questo template
         combos = list(product(*param_grid.values()))
-        
-        for pair, timeframe, combo in product(pairs, timeframes, combos):
+
+        for pair, tf, combo in product(pairs, timeframes, combos):
+            ohlcv = ohlcv_cache.get((pair, tf))
+            if ohlcv is None or (hasattr(ohlcv, 'empty') and ohlcv.empty):
+                continue
+
             params_dict = dict(zip(keys, combo))
-            
-            # Calcolo di un punteggio AI simulato basato sulle preferenze utente
-            score = 70.0 + random.uniform(0, 25.0)
-            if req.free_text and template_name in req.free_text.lower():
-                score += 5.0
-            
-            # Stima profitto (simulata basata sul template e rischio)
-            base_profit_map = {"low": 3.0, "medium": 8.0, "high": 15.0}
-            base_profit = base_profit_map.get(template_data.get("risk_level", "medium"), 5.0)
-            est_profit_pct = float(base_profit + random.uniform(-2.0, 5.0))
-            
-            # Usiamo il budget della richiesta, assicurandoci che non sia 0
-            budget = float(req.budget_eur) if req.budget_eur > 0 else 100.0
-            est_profit_eur = float((budget * est_profit_pct) / 100.0)
-            
-            # Nome personalizzato: se l'utente lo fornisce, usalo; altrimenti generane uno automatico
-            if req.custom_name:
-                final_custom_name = req.custom_name
-            else:
-                auto_names = {
-                    "trend_ema": ["Il Seguace", "L'Ondaiolo", "Trendy", "Mr EMA", "La Scia"],
-                    "mean_reversion_rsi": ["Il Rimbalzista", "Mr RSI", "Elastico", "L'Armonico", "Controcorrente"],
-                    "breakout_bb": ["Lo Squartatore", "Boomer", "La Fiamma", "Rompiballe", "Il Valicano"],
-                }
-                base_name = random.choice(auto_names.get(template_name, ["Il Geniale"]))
-                final_custom_name = f"{base_name} su {pair.split('/')[0]}"
 
-            variant = StrategyParams(
-                template=template_name,
-                title=f"{template_data['title']} ({pair})", 
-                description=template_data["description"],
-                pair=pair,
-                timeframe=timeframe,
-                params=params_dict,
-                budget_eur=budget,
-                ai_score=float(min(score, 99.0)),
-                estimated_profit_pct=est_profit_pct,
-                estimated_profit_eur=est_profit_eur,
-                custom_name=final_custom_name
-            )
-            all_variants.append(variant)
-                
-    # Mischiamo e prendiamo solo le migliori N varianti per evitare duplicati visivi
-    random.shuffle(all_variants)
-    
-    # Ritorna le varianti ordinate per punteggio AI
-    results = sorted(all_variants, key=lambda x: x.ai_score, reverse=True)[:req.max_strategies]
-    
-    # TASK-321: Calcolo data di scadenza (7 giorni da ora)
-    from datetime import datetime, timedelta, timezone
-    now = datetime.now(timezone.utc)
-    expiry = now + timedelta(days=7)
-    now_str = now.isoformat()
-    expiry_str = expiry.isoformat()
+            try:
+                signal_fn = lambda df, t=template_name, p=params_dict: SIGNAL_MAP[t](df, p)
+                bt = run_backtest(ohlcv, signal_fn)
+                score = compute_score(bt)
+                if score is None:
+                    continue  # Non supera soglie qualità — scartata
 
-    # Assicuriamoci che ogni risultato abbia titolo, descrizione e timestamp validi
-    for r in results:
-        if not r.title:
-            r.title = f"{TEMPLATES[r.template]['title']} ({r.pair})"
-        if not r.description:
-            r.description = TEMPLATES[r.template]['description']
-        
-        # Impostazione timestamp (uso di object.__setattr__ perché la classe è frozen)
-        object.__setattr__(r, 'created_at', now_str)
-        object.__setattr__(r, 'expires_at', expiry_str)
-            
-    return results
+                budget = float(req.budget_eur) if req.budget_eur > 0 else 100.0
+                title = f"{template_data['title']} — {pair} {tf}"
+                custom_name = req.custom_name or title
+                data_source = f"binance_{tf}_90d"
+
+                variant = StrategyParams(
+                    template=template_name,
+                    pair=pair,
+                    timeframe=tf,
+                    params=params_dict,
+                    budget_eur=budget,
+                    title=title,
+                    description=template_data["description"],
+                    score=score,
+                    estimated_profit_pct=round(bt.pnl_pct, 4),
+                    estimated_profit_eur=round(budget * bt.pnl_pct / 100, 4),
+                    backtest_pnl=bt.pnl_pct,
+                    backtest_win_rate=bt.win_rate,
+                    backtest_sharpe=bt.sharpe,
+                    backtest_drawdown=bt.max_drawdown_pct,
+                    backtest_trades=bt.num_trades,
+                    data_source=data_source,
+                    custom_name=custom_name,
+                    created_at=now.isoformat(),
+                    expires_at=(now + timedelta(days=7)).isoformat(),
+                )
+                results.append(variant)
+            except Exception as e:
+                logger.warning(f"Backtest fallito {template_name}/{pair}/{tf}: {e}")
+
+    logger.info(f"Generator: {len(results)} strategie superano i filtri")
+    return sorted(results, key=lambda x: x.score, reverse=True)[:req.max_strategies]
 
 
 def generate_all_variants(
@@ -202,15 +215,15 @@ def _filter_templates_by_constraints(req: StrategyRequest) -> List[str]:
         dur = data.get("duration_days", 30)
         if not (req.duration_days * 0.5 <= dur <= req.duration_days * 1.5):
             continue
-            
+
         # Rischio
         if req.risk_level == "low" and data.get("risk_level") == "high":
             continue
-            
+
         valid_templates.append(name)
-        
+
     # Se nessun template soddisfa i vincoli rigidi, restituiamo quello più vicino
     if not valid_templates:
         return [list(TEMPLATES.keys())[0]]
-        
+
     return valid_templates

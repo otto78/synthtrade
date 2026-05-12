@@ -258,4 +258,25 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
 
-**Ultima modifica:** 2026-05-08 — Cline (v1.1.3 + nuovi task)
+### v1.2.0 — 2026-05-12
+
+**Milestone:** 🔴 Fix Allucinazioni — Backtest reale sostituisce random.uniform()
+
+**Completato:**
+- ✅ **Strategy Generator riscritto**: Rimosso `import random`, `random.uniform()`, `random.choice()`, `random.shuffle()`
+- ✅ **Backtest reale**: `generate_for_request()` ora scarica OHLCV da Binance (90gg), esegue backtest reale, calcola score via `compute_score()`
+- ✅ **StrategyParams aggiornato**: Rinominato `ai_score` → `score` (range [0,1]), aggiunti campi backtest: `backtest_pnl`, `backtest_win_rate`, `backtest_sharpe`, `backtest_drawdown`, `backtest_trades`, `data_source`
+- ✅ **Nomi deterministici**: Rimossi nomi casuali tipo "Il Seguace", "Rompiballe". Usa titolo derivato da template + pair
+- ✅ **Pipeline.py**: Salva `backtest` completo nel DB, WS progress events (fetching_market_data, saving), gestione lista vuota con messaggio utente
+- ✅ **Test**: 21 test PASS (generator, constrained, random_proof, e2e_pipeline). Zero regressioni nella suite unità (152/157)
+
+**Decisioni chiave:**
+- Le strategie generate via UI ora si basano su dati storici reali Binance, non su valori casuali
+- Score nel range [0,1] da `compute_score()` invece di range arbitrario [70,99]
+- I nomi delle strategie ora sono deterministici invece di random.choice()
+- Cache OHLCV per (pair, timeframe) evita N chiamate API per lo stesso asset
+- Se backtest fallisce o score è None, la variante viene esclusa silenziosamente
+
+---
+
+**Ultima modifica:** 2026-05-12 — Cline (v1.2.0 Fix Allucinazioni)

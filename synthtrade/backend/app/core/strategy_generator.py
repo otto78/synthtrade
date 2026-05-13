@@ -3,15 +3,43 @@ import logging
 from itertools import product
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Generator
+from typing import List, Optional, Generator, Tuple
 from app.execution.schemas import StrategyRequest
 from app.ai.request_enricher import enrich_request_with_ai
 from app.core.market_data import fetch_ohlcv
 from app.core.backtester import run_backtest, BacktestResult
-from app.core.ranker import compute_score
+from app.core.ranker import compute_score, RankConfig
 from app.core.indicators import signal_ema_crossover, signal_rsi_reversion, signal_breakout_bb
 
 logger = logging.getLogger("synthtrade.generator")
+
+QUALITY_EMPTY_MESSAGE = (
+    "Nessuna strategia ha superato i criteri di qualità sui dati storici "
+    "(Trades >= 15, Sharpe >= 0, Drawdown < 40%, P&L > 0% su 60 giorni). "
+    "Prova con un orizzonte temporale più lungo o un livello di rischio diverso."
+)
+
+MARKET_DATA_EMPTY_MESSAGE = (
+    "Impossibile scaricare dati di mercato per i simboli indicati. "
+    "Verifica il formato (es. BTC/USDT o BTCUSDT) e la connessione di rete."
+)
+
+
+def normalize_trading_pair(symbol: str) -> str:
+    """
+    Converte chip tipo BTCUSDT nel formato ccxt/Binance BTC/USDT.
+    """
+    s = symbol.strip().upper()
+    if "/" in s:
+        return s
+    quotes = ("USDT", "USDC", "BUSD", "EUR", "FDUSD", "BTC", "ETH", "BNB")
+    for quote in quotes:
+        if len(s) > len(quote) and s.endswith(quote):
+            base = s[: -len(quote)]
+            if base:
+                return f"{base}/{quote}"
+    return s
+
 
 SIGNAL_MAP = {
     "trend_ema": lambda df, p: signal_ema_crossover(df, p["ema_fast"], p["ema_slow"]),
@@ -98,7 +126,7 @@ class StrategyParams:
             object.__setattr__(self, 'description', TEMPLATES[self.template]['description'])
 
 
-async def generate_for_request(req: StrategyRequest) -> List[StrategyParams]:
+async def generate_for_request(req: StrategyRequest) -> Tuple[List[StrategyParams], Optional[str]]:
     """
     TASK-FIX-003/004: Generatore con backtest reale su dati storici Binance.
     Nessun random.uniform(), nessun nome casuale.
@@ -106,8 +134,16 @@ async def generate_for_request(req: StrategyRequest) -> List[StrategyParams]:
     req = await enrich_request_with_ai(req)
     filtered_templates = _filter_templates_by_constraints(req)
 
-    pairs = req.symbols if req.symbols else ["BTC/USDT"]
+    if req.symbols:
+        pairs = [normalize_trading_pair(p) for p in req.symbols]
+    else:
+        # Default: top marketcap crypto per massimizzare probabilità strategie valide
+        pairs = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT"]
+    # Timeframe 1h = buon bilanciamento segnali/rumore; 4h = trend più ampi
     timeframes = ["1h", "4h"]
+    # 60 giorni = periodo sufficiente per significatività statistica senza includere
+    # trend troppo vecchi che potrebbero non essere più validi
+    lookback_days = 60
 
     # TASK-FIX-003: Cache OHLCV — una sola chiamata per (pair, timeframe)
     ohlcv_cache: dict[tuple, object] = {}
@@ -116,12 +152,17 @@ async def generate_for_request(req: StrategyRequest) -> List[StrategyParams]:
             key = (pair, tf)
             try:
                 ohlcv_cache[key] = await asyncio.to_thread(
-                    fetch_ohlcv, pair, tf, 90
+                    fetch_ohlcv, pair, tf, lookback_days
                 )
                 n_candles = len(ohlcv_cache[key])
                 logger.info(f"OHLCV: {pair} {tf} — {n_candles} candele")
             except Exception as e:
                 logger.warning(f"OHLCV fetch fallito {pair}/{tf}: {e}")
+
+    fetch_had_data = any(
+        df is not None and not (hasattr(df, "empty") and df.empty)
+        for df in ohlcv_cache.values()
+    )
 
     results: List[StrategyParams] = []
     now = datetime.now(timezone.utc)
@@ -150,7 +191,7 @@ async def generate_for_request(req: StrategyRequest) -> List[StrategyParams]:
                 budget = float(req.budget_eur) if req.budget_eur > 0 else 100.0
                 title = f"{template_data['title']} — {pair} {tf}"
                 custom_name = req.custom_name or title
-                data_source = f"binance_{tf}_90d"
+                data_source = f"binance_{tf}_{lookback_days}d"
 
                 variant = StrategyParams(
                     template=template_name,
@@ -178,7 +219,11 @@ async def generate_for_request(req: StrategyRequest) -> List[StrategyParams]:
                 logger.warning(f"Backtest fallito {template_name}/{pair}/{tf}: {e}")
 
     logger.info(f"Generator: {len(results)} strategie superano i filtri")
-    return sorted(results, key=lambda x: x.score, reverse=True)[:req.max_strategies]
+    out = sorted(results, key=lambda x: x.score, reverse=True)[: req.max_strategies]
+    if not out:
+        hint = MARKET_DATA_EMPTY_MESSAGE if not fetch_had_data else QUALITY_EMPTY_MESSAGE
+        return [], hint
+    return out, None
 
 
 def generate_all_variants(

@@ -318,7 +318,7 @@
 
 ---
 
-## � Fase 1.B — Constraint-Aware Generator
+##  Fase 1.B — Constraint-Aware Generator
 
 > Modifica del `strategy_generator.py` esistente per accettare parametri utente invece di generare strategie casuali.
 > Da inserire dopo la Fase 1 esistente, prima della Fase 2.
@@ -464,7 +464,7 @@
 
 ---
 
-## �🟠 Fase 2 — Backend API
+## 🟠 Fase 2 — Backend API
 
 ### Auth
 ### TASK-054 — 🔴 Test `test_api_auth.py`
@@ -558,7 +558,7 @@
 
 ---
 
-## � Fase 2.B — Exchange Adapter (Binance)
+##  Fase 2.B — Exchange Adapter (Binance)
 
 > Implementazione reale di `exchange.py` con supporto Testnet/Live e operazioni di scrittura.
 > Da inserire dopo la Fase 2 esistente, prima della Fase 3.
@@ -720,7 +720,7 @@
 
 ---
 
-## �🟢 Fase 3 — Frontend Angular
+## 🟢 Fase 3 — Frontend Angular
 
 ### 3.0 Bootstrap & Configurazione
 ### TASK-094 — Creare Angular app: `ng new synthtrade-ui --style=scss --routing --standalone`
@@ -1198,7 +1198,7 @@
 
 ---
 
-## � Fase 3.B — Frontend: Strategy Request Form
+##  Fase 3.B — Frontend: Strategy Request Form
 
 > Finestra di prompt per guidare la generazione delle strategie.
 > Da inserire come sotto-fase di Fase 3, dopo il completamento di `StrategiesPage`.
@@ -1389,7 +1389,7 @@
 
 ---
 
-## �🔴 Fase 4 — Execution Engine
+## 🔴 Fase 4 — Execution Engine
 
 > Struttura: `synthtrade/backend/app/execution/` + `synthtrade/backend/app/scheduler/`
 
@@ -2661,60 +2661,7 @@ Wrapparlo in `to_thread` lo rende non-bloccante per il loop asincrono di FastAPI
 **Priorità:** Bloccante
 **File:** `synthtrade/backend/app/core/strategy_generator.py`
 
-**Cosa fare:** Sostituire il blocco del for loop che conteneva i `random.uniform()`:
-
-```python
-results: list[StrategyParams] = []
-for template_name in filtered_templates:
-    template_data = TEMPLATES[template_name]
-    param_grid = template_data["params"]
-    keys = list(param_grid.keys())
-    combos = list(product(*param_grid.values()))
-
-    for pair, tf, combo in product(pairs, timeframes, combos):
-        ohlcv = ohlcv_cache.get((pair, tf))
-        if ohlcv is None or ohlcv.empty:
-            continue
-
-        params_dict = dict(zip(keys, combo))
-        try:
-            signal_fn = lambda df, t=template_name, p=params_dict: SIGNAL_MAP[t](df, p)
-            bt = run_backtest(ohlcv, signal_fn)
-            score = compute_score(bt)
-            if score is None:
-                continue  # Non supera soglie qualità — scartata, mai mostrata
-
-            budget = float(req.budget_eur) if req.budget_eur > 0 else 100.0
-            title = f"{template_data['title']} — {pair} {tf}"
-            now = datetime.now(timezone.utc)
-
-            variant = StrategyParams(
-                template=template_name,
-                pair=pair, timeframe=tf,
-                params=params_dict,
-                budget_eur=budget,
-                title=title,
-                description=template_data["description"],
-                score=score,
-                estimated_profit_pct=round(bt.pnl_pct, 4),
-                estimated_profit_eur=round(budget * bt.pnl_pct / 100, 4),
-                backtest_pnl=bt.pnl_pct,
-                backtest_win_rate=bt.win_rate,
-                backtest_sharpe=bt.sharpe,
-                backtest_drawdown=bt.max_drawdown_pct,
-                backtest_trades=bt.num_trades,
-                data_source=f"binance_{tf}_90d",
-                custom_name=req.custom_name or title,
-                created_at=now.isoformat(),
-                expires_at=(now + timedelta(days=7)).isoformat(),
-            )
-            results.append(variant)
-        except Exception as e:
-            logger.warning(f"Backtest fallito {template_name}/{pair}/{tf}: {e}")
-
-logger.info(f"Generator: {len(results)} strategie superano i filtri")
-return sorted(results, key=lambda x: x.score, reverse=True)[:req.max_strategies]
-```
+**Cosa fare:** Sostituire il blocco del for loop che conteneva i `random.uniform()`.
 
 **Eliminare completamente:**
 - Tutto il blocco `score = 70.0 + random.uniform(0, 25.0)`
@@ -2985,6 +2932,441 @@ FROM strategies WHERE status = 'PENDING';
 **Completato:** 2026-05-12  
 **Scope:** `generate_for_request` restituisce `(strategies, empty_hint)`, `pipeline.py` salva `message`.
 
+---
+
+## 🎯 Fase 8 — Strategie Multi-Asset (Portfolio Diversificato)
+
+> Feature: aggiungere supporto per strategie che operano su più asset contemporaneamente con allocazione percentuale del capitale in base al rischio. Badge "📊 Multi" / "📈 Single" nella pagina Strategie. Stesso flusso di approvazione/esecuzione.
+
+### TASK-PORTFOLIO-001 — Modelli: PortfolioAllocation + PortfolioBacktestResult
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/backend/app/execution/schemas.py`
+
+**Cosa fare:**
+- Creare dataclass `PortfolioAllocation(asset: str, weight: float, template: str | None, params: dict | None)`
+- Creare `PortfolioBacktestResult(pnl_pct, sharpe, max_drawdown, num_trades, individual_results: list[BacktestResult])`
+- Aggiungere campo opzionale `allocations: list[PortfolioAllocation] | None = None` a `StrategyParams`
+- Se `allocations` è None → strategia single-asset (comportamento attuale)
+- Se popolato → strategia multi-asset
+
+**Criteri di successo:**
+- `StrategyParams` accetta sia `allocations=None` (single) che `allocations=[...]` (multi)
+- `PortfolioBacktestResult` contiene metriche aggregate e risultati individuali
+- Test unitari per entrambi i dataclass
+
+---
+
+### TASK-PORTFOLIO-002 — Backtest Multi-Asset
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/backend/app/core/backtester.py`
+
+**Cosa fare:**
+- Implementare `run_portfolio_backtest(ohlcv_dict: dict[str, pd.DataFrame], allocations: list[PortfolioAllocation], capital: float) -> PortfolioBacktestResult`
+- Per ogni asset: fetch OHLCV, esegui segnale, calcola P&L pesato per weight
+- Sharpe combinato come media pesata degli Sharpe individuali
+- Drawdown sul capitale totale (equity curve combinata)
+- P&L totale = somma(P&L_i * weight_i)
+
+**🔴 Test:**
+- `test_portfolio_backtest_returns_aggregate_metrics`: verifica P&L, Sharpe, DD calcolati correttamente
+- `test_portfolio_backtest_individual_results`: verifica che `individual_results` contenga un risultato per ogni asset
+- `test_portfolio_backtest_single_asset_matches_single`: con una sola allocazione al 100%, deve dare stesso risultato di `run_backtest`
+
+**Criteri di successo:**
+- P&L combinato = media pesata dei P&L individuali (± 0.01%)
+- equity_curve combinata = somma pesata delle equity curve
+- Drawdown calcolato sulla equity_curve combinata
+
+---
+
+### TASK-PORTFOLIO-003 — Calcolatore Allocazione Risk-Weighted
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/backend/app/core/portfolio_allocator.py` (nuovo)
+
+**Cosa fare:**
+- `allocate_by_criteria(assets: list[str], risk_level: str, num_assets: int) -> list[PortfolioAllocation]`
+- **Low risk**: più peso a BTC/BNB (meno volatili), meno a altcoin
+- **Medium risk**: pesi proporzionali a capitalizzazione di mercato (più BTC, meno AVAX/DOT)
+- **High risk**: più peso a SOL/AVAX (più volatili e potenziale crescita)
+- Se l'utente specifica `symbols` esplicitamente → usa solo quelli, distribuisci uniformemente
+- Se `num_assets > len(assets)` → usa tutti quelli disponibili
+
+**🔴 Test:**
+- `test_allocate_low_risk_gives_more_weight_to_btc`
+- `test_allocate_high_risk_gives_more_weight_to_volatile`
+- `test_allocate_with_custom_symbols_uses_only_those`
+- `test_allocate_respects_num_assets_limit`
+
+**Criteri di successo:**
+- Somma dei pesi = 1.0 (±0.01)
+- Numero di allocazioni = `num_assets` o meno se non ci sono abbastanza asset
+- Ogni weight è tra 0.0 e 1.0
+
+---
+
+### TASK-PORTFOLIO-004 — Generatore Strategie Portfolio
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/backend/app/core/strategy_generator.py`
+
+**Cosa fare:**
+- Aggiungere `generate_portfolio_strategies(req: StrategyRequest, num_assets: int) -> Tuple[List[StrategyParams], Optional[str]]`
+- Se `req.symbols` specificato → usa quelli. Altrimenti usa default ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT"]
+- Calcola allocazione con `allocate_by_criteria()`
+- Per ogni template filtrato: applica lo stesso segnale a tutti gli asset
+- Esegui `run_portfolio_backtest()` e calcola score
+- Se score è None → scarta
+- Restituisce strategie con `allocations` popolato
+
+**🔴 Test:**
+- `test_generate_portfolio_returns_portfolio_strategies`: verifica che le strategie abbiano `allocations` popolato
+- `test_generate_portfolio_all_allocations_sum_to_one`: somma pesi ≈ 1.0
+- `test_generate_portfolio_respects_max_strategies`: non supera `req.max_strategies`
+
+**Criteri di successo:**
+- Ogni strategia multi-asset ha `allocations` con somma pesi = 1.0
+- Score calcolato su backtest combinato
+- Stesso flusso di salvataggio su DB (TASK-PORTFOLIO-005)
+
+---
+
+### TASK-PORTFOLIO-005 — Pipeline e API: supporto flag multi-asset
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/backend/app/execution/schemas.py`, `synthtrade/backend/app/api/pipeline.py`
+
+**Cosa fare:**
+- Aggiungere campi a `StrategyRequest`:
+  - `multi_asset: bool = False` — flag per attivare generazione multi-asset
+  - `num_assets: int = 1` — numero di asset (1 = single-asset, 2-10 = portfolio)
+- In `run_generation_task()`:
+  - Se `multi_asset=True` e `num_assets > 1` → chiama `generate_portfolio_strategies()`
+  - Altrimenti → comportamento attuale
+- Salvataggio su Supabase: campo `allocations JSONB` (se multi-asset) o `NULL` (se single)
+
+**🔴 Test:**
+- `test_pipeline_with_multi_asset_flag_generates_portfolio`
+- `test_pipeline_without_flag_behaves_as_before`
+- `test_pipeline_with_num_assets_1_behaves_as_single`
+
+**Criteri di successo:**
+- Con `multi_asset=False` → identico comportamento attuale
+- Con `multi_asset=True, num_assets=3` → strategie con 3 allocazioni
+- DB salva correttamente il campo `allocations`
+
+---
+
+### TASK-PORTFOLIO-006 — DB Migration 009: campo allocations su strategies
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/supabase/migrations/009_add_allocations.sql`
+
+**Cosa fare:**
+```sql
+ALTER TABLE strategies ADD COLUMN allocations JSONB DEFAULT NULL;
+CREATE INDEX idx_strategies_allocations ON strategies USING gin (allocations) WHERE allocations IS NOT NULL;
+```
+
+**Criteri di successo:**
+- Migration applicabile su Supabase Cloud
+- Record esistenti con `allocations = NULL` continuano a funzionare
+- Query su strategie multi-asset funzionano con filtro `WHERE allocations IS NOT NULL`
+
+---
+
+### TASK-PORTFOLIO-007 — Frontend: badge Multi/Single nelle card strategia
+
+**Status:** Pending
+**Priorità:** Media
+**File:** `synthtrade/frontend/synthtrade-ui/src/app/pages/strategies/`
+
+**Cosa fare:**
+- Nella card strategia, se `strategy.allocations` è popolato → mostra badge "📊 Multi" (es. "📊 BTC 40% + ETH 30% + SOL 20% + BNB 10%")
+- Se `allocations` è null/undefined → mostra badge "📈 Single" (comportamento attuale)
+- Nel tooltip/dettaglio espanso: mostra lista asset con percentuali
+
+**🔴 Test:**
+- `test_strategy_card_shows_multi_badge_when_allocations_present`
+- `test_strategy_card_shows_single_badge_when_no_allocations`
+- `test_strategy_card_multi_shows_asset_breakdown`
+
+**Criteri di successo:**
+- Strategie multi-asset chiaramente distinguibili visivamente
+- Composizione visibile senza dover espandere la card
+
+---
+
+### TASK-PORTFOLIO-008 — Frontend: checkbox + slider nel form di generazione
+
+**Status:** Pending
+**Priorità:** Media
+**File:** `synthtrade/frontend/synthtrade-ui/src/app/shared/components/strategy-request-form/`
+
+**Cosa fare:**
+- Aggiungere checkbox "Strategia Multi-Asset" nel form di generazione
+- Se checkbox attiva: mostra slider "Numero Asset" (1-10, default 5)
+- Se checkbox disattiva: slider nascosto, comportamento attuale
+- Passare `multi_asset` e `num_assets` nel `StrategyRequest` inviato all'API
+
+**🔴 Test:**
+- `test_form_hides_num_assets_slider_when_multi_asset_off`
+- `test_form_shows_slider_when_multi_asset_on`
+- `test_form_submit_includes_multi_asset_and_num_assets`
+
+**Criteri di successo:**
+- Utente può scegliere se generare single o multi-asset
+- Numero asset chiaramente selezionabile
+- Valori passati correttamente all'API
+
+---
+
+## 🧠 Fase 9 — AI Learning Engine + Scheduler Notturno
+
+> Feature: sistema di memoria che impara dalle strategie passate per migliorare la selezione futura, con scheduler notturno che pre-genera strategie mentre l'utente non usa il sistema.
+
+### TASK-LEARN-001 — Migration 010: tabella strategy_performance su Supabase
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/supabase/migrations/010_add_strategy_performance.sql`
+
+**Cosa fare:**
+```sql
+CREATE TABLE strategy_performance (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    template TEXT NOT NULL,
+    pair TEXT NOT NULL,
+    timeframe TEXT NOT NULL,
+    params JSONB NOT NULL DEFAULT '{}',
+    score FLOAT NOT NULL DEFAULT 0.0,
+    pnl_pct FLOAT,
+    sharpe FLOAT,
+    drawdown FLOAT,
+    num_trades INT DEFAULT 0,
+    user_approved BOOLEAN DEFAULT NULL,
+    generation_count INT DEFAULT 1,
+    approval_count INT DEFAULT 0,
+    first_generated_at TIMESTAMP DEFAULT NOW(),
+    last_generated_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(template, pair, timeframe, params)
+);
+CREATE INDEX idx_performance_template_pair_tf ON strategy_performance(template, pair, timeframe);
+```
+
+**Criteri di successo:**
+- Migration applicabile su Supabase Cloud
+- Vincolo UNIQUE su (template, pair, timeframe, params) evita duplicati
+- Indice per query rapide per template/pair/timeframe
+
+---
+
+### TASK-LEARN-002 — TemplatePerformanceRegistry
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/backend/app/core/performance_registry.py` (nuovo)
+
+**Cosa fare:**
+- Classe `TemplatePerformanceRegistry` con metodi:
+  - `record_generation(template, pair, tf, params, score, pnl, sharpe, dd, trades)`: upsert su strategy_performance
+  - `record_approval(template, pair, tf, params, approved: bool)`: aggiorna `user_approved`, `approval_count`
+  - `should_avoid(template, pair, tf, params) -> bool`: True se score medio < 0.3 su 10+ generazioni
+  - `should_promote(template, pair, tf, params) -> bool`: True se score medio > 0.7 su 5+ generazioni
+  - `get_best_params(template, pair, tf) -> dict | None`: parametri con score più alto registrato
+  - `get_template_stats(template, pair, tf) -> dict`: statistiche aggregate
+- Cache in-memory (dict) con refresh periodico da Supabase ogni 5 minuti
+
+**🔴 Test:**
+- `test_record_generation_upserts_correctly`
+- `test_should_avoid_returns_true_for_low_performing`
+- `test_should_promote_returns_true_for_high_performing`
+- `test_get_best_params_returns_highest_score`
+- `test_cache_refreshes_from_db`
+
+**Criteri di successo:**
+- Dopo 10+ registrazioni con score < 0.3, `should_avoid()` ritorna True
+- Dopo 5+ registrazioni con score > 0.7, `should_promote()` ritorna True
+- Cache evita chiamate DB frequenti
+
+---
+
+### TASK-LEARN-003 — Generatore Intelligente con Memoria
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/backend/app/core/strategy_generator.py`
+
+**Cosa fare:**
+- Integrare `TemplatePerformanceRegistry` in `generate_for_request()`:
+  1. In `_filter_templates_by_constraints()`: escludere anche combinazioni con `should_avoid()=True`
+  2. Nel loop backtest: per combinazioni con `should_promote()=True`, provare parametri aggiuntivi (da `get_best_params()`)
+  3. Dopo ogni backtest: chiamare `registry.record_generation()`
+- Aggiungere `ai_note` nelle strategie restituite (es. "Questa combinazione ha funzionato bene in passato con score 0.75")
+
+**🔴 Test:**
+- `test_generator_skips_avoided_combinations`: verificare che combinazioni con should_avoid=True non vengano generate
+- `test_generator_tries_best_params_for_promoted`: verificare che i parametri migliori vengano provati
+- `test_generator_records_performance`: verificare che record_generation() venga chiamato per ogni backtest
+
+**Criteri di successo:**
+- Zero combinazioni "evitate" nelle strategie generate
+- Combinazioni "promosse" hanno più varianti di parametri
+- Ogni generazione aggiorna il registry
+
+---
+
+### TASK-LEARN-004 — Param Optimization Automatica
+
+**Status:** Pending
+**Priorità:** Media
+**File:** `synthtrade/backend/app/core/strategy_generator.py` o nuovo file `app/core/param_optimizer.py`
+
+**Cosa fare:**
+- Funzione `optimize_params(template: str, pair: str, tf: str, base_params: dict, current_score: float, ohlcv: pd.DataFrame) -> list[dict]`
+- Se `current_score > 0.6`: prova parametri più fini attorno ai valori attuali (es. se ema_fast=10, prova [8,9,10,11,12])
+- Se `current_score > 0.8`: prova griglia ancora più densa
+- Backtest veloce su 30gg per ogni variante
+- Restituisce lista di dict parametri ordinati per score decrescente
+- Salva i migliori nel registry
+
+**🔴 Test:**
+- `test_optimize_params_returns_finer_grid_for_high_score`
+- `test_optimize_params_results_are_sorted_by_score`
+- `test_optimize_params_does_not_run_for_low_score`
+
+**Criteri di successo:**
+- Per score > 0.6: almeno 2x parametri in più rispetto alla griglia base
+- Per score > 0.8: almeno 3x parametri
+- Per score < 0.6: nessuna ottimizzazione
+
+---
+
+### TASK-LEARN-005 — Migration 011: tabella pre_generated_strategies
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/supabase/migrations/011_add_pre_generated_strategies.sql`
+
+**Cosa fare:**
+```sql
+CREATE TABLE pre_generated_strategies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    risk_level TEXT NOT NULL,
+    num_assets INT NOT NULL DEFAULT 1,
+    strategy JSONB NOT NULL,
+    score FLOAT NOT NULL DEFAULT 0.0,
+    generated_at TIMESTAMP DEFAULT NOW(),
+    expires_at TIMESTAMP NOT NULL
+);
+CREATE INDEX idx_pre_gen_risk_level ON pre_generated_strategies(risk_level, num_assets);
+CREATE INDEX idx_pre_gen_expires ON pre_generated_strategies(expires_at);
+```
+
+**Criteri di successo:**
+- Migration applicabile su Supabase Cloud
+- Indice su (risk_level, num_assets) per query rapide
+- Indice su expires_at per cleanup automatico
+
+---
+
+### TASK-LEARN-006 — Scheduler Notturno (Nightly Generation)
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/backend/app/scheduler/jobs.py`
+
+**Cosa fare:**
+- Aggiungere `async def run_nightly_generation_job()`:
+  1. Log "Nightly generation started"
+  2. Per ogni risk_level in ["low", "medium", "high"]:
+     - Per num_assets in [1, 3, 5] (single, medium portfolio, large portfolio):
+       - Crea `StrategyRequest` con quel risk_level e num_assets
+       - Chiama `generate_for_request()` o `generate_portfolio_strategies()`
+       - Prendi top 5 strategie (per score)
+       - Salva in `pre_generated_strategies` con `expires_at = now + 24h`
+  3. Aggiorna `TemplatePerformanceRegistry` con nuovi backtest
+  4. Log "Nightly generation completed: X strategie pre-generate"
+- Registrare il job nello scheduler: `scheduler.add_job(run_nightly_generation_job, "cron", hour=2, minute=0, id="nightly_gen")`
+
+**🔴 Test:**
+- `test_nightly_generation_creates_pre_generated_strategies`
+- `test_nightly_generation_strategies_have_24h_expiry`
+- `test_nightly_generation_covers_all_risk_levels`
+
+**Criteri di successo:**
+- Ogni notte alle 02:00 vengono generate strategie per tutti i risk_level
+- Le strategie hanno `expires_at = now + 24h`
+- Il registry viene aggiornato
+
+---
+
+### TASK-LEARN-007 — API Pre-generated Strategies
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/backend/app/api/pipeline.py`
+
+**Cosa fare:**
+- Nuovo endpoint `GET /api/pipeline/pre-generated?risk_level=medium&num_assets=1`
+- Query su `pre_generated_strategies` con filtro risk_level, num_assets, expires_at > now
+- Se ci sono strategie valide (non scadute):
+  - Restituiscile immediatamente con `is_pre_generated: true`
+  - In background: avvia `run_nightly_generation_job()` per aggiornare la cache
+- Se non ci sono o sono scadute:
+  - Restituisci `{ "pre_generated": [], "fallback": true }`
+  - Il frontend avvia generazione on-demand normalmente
+
+**🔴 Test:**
+- `test_pre_generated_returns_cached_strategies`
+- `test_pre_generated_returns_empty_when_none_available`
+- `test_pre_generated_filters_by_risk_level_and_num_assets`
+
+**Criteri di successo:**
+- Se ci sono strategie pre-generate valide → risposta immediata (nessuna attesa)
+- Flag `is_pre_generated: true` distingue da generazione on-demand
+- Se scadute → fallback a generazione normale
+
+---
+
+### TASK-LEARN-008 — Frontend: mostra pre-generate con badge ⚡
+
+**Status:** Pending
+**Priorità:** Alta
+**File:** `synthtrade/frontend/synthtrade-ui/src/app/pages/strategies/strategies.page.ts`
+
+**Cosa fare:**
+- All'avvio della pagina Strategie, chiamare `GET /api/pipeline/pre-generated?risk_level=...&num_assets=...`
+- Se ci sono strategie pre-generate:
+  - Mostrale immediatamente (zero spinner, zero attesa)
+  - Badge "⚡ Pre-generata" sulle card
+  - Messaggio "Strategie pronte — generate stanotte alle 02:00"
+  - Bottone "Genera nuove" per forzare rigenerazione on-demand
+- Se non ci sono: comportamento attuale (mostra welcome card o carica da DB)
+
+**🔴 Test:**
+- `test_page_loads_pre_generated_strategies_first`
+- `test_pre_generated_shows_flash_badge`
+- `test_page_falls_back_to_normal_generation_when_no_pre_generated`
+
+**Criteri di successo:**
+- Utente vede strategie immediatamente all'apertura della pagina (zero tempo di attesa)
+- Badge ⚡ chiaramente visibile
+- Bottone "Genera nuove" funziona come oggi
+
+---
+
+## 📋 Task Storici Completati (pre-Fase 8)
+
+> I task da TASK-AUDIT-009 a TASK-AUDIT-010 sono stati completati e documentati nelle sezioni precedenti.
 
 ### TASK-AUDIT-009 — Fix: Soglie Ranker Troppo Restrittive per Mercato Crypto
 
@@ -3022,4 +3404,3 @@ FROM strategies WHERE status = 'PENDING';
 - QUALITY_EMPTY_MESSAGE aggiornato con nuove soglie
 
 **Risultato finale**: 5 strategie generate con P&L medio +16.78%, drawdown 11.1%, trades medio 16 — realistico per crypto. ✅
-

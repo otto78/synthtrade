@@ -8,17 +8,36 @@ Idee, feature future e miglioramenti non ancora strutturati come task.
 
 ## 🔥 Idee Prioritarie
 
-### [IDEA-001] — Live trading (Fase 6+)
-**Descrizione:** Passare da paper trading a ordini reali su Binance
-**Requisiti da chiarire:**
-- [ ] Gestione errori ordini parzialmente eseguiti
-- [ ] Riconciliazione posizioni aperte al restart
-- [ ] `OrderTracker` già pronto dalla Fase 4 — collegare a exchange reale
-**Dipendenze:** Fase 6 hardening completata, smoke test superati
+### [FEATURE-MULTI] — Strategie Multi-Asset (Portfolio Diversificato)
 
-### [IDEA-002] — Multi-pair support
-**Descrizione:** Estendere il generatore a ETH/USDT, SOL/USDT oltre BTC/USDT
-**Effort stimato:** 2–4 ore (parametrizzare `PAIRS` in `strategy_generator.py`)
+**Descrizione:** Aggiungere supporto per strategie che operano su più asset contemporaneamente con allocazione percentuale del capitale in base al rischio di ogni asset. Oggi ogni strategia opera su un singolo pair (es. BTC/USDT). Un portfolio strategy alloca il budget su 2-10 asset con pesi calcolati in base a volatilità/Sharpe/correlazione.
+
+**Cosa cambia:**
+- `StrategyParams` avrà un campo opzionale `allocations: list[PortfolioAllocation]`
+- Se `allocations` è None → strategia single-asset (comportamento attuale)
+- Se popolato → strategia multi-asset con specifica di (asset, weight, signal_params)
+- Backtest multi-asset: esegue il segnale su ogni asset indipendentemente, P&L pesato
+- Frontend: badge "📊 Multi" / "📈 Single" nella pagina Strategie
+- Form di generazione: checkbox "Multi-Asset" + slider numero asset (1-10)
+- Una volta approvate: stesso flusso di oggi (nessuna distinzione in "Approvate"/"Attive")
+
+**Task associati:** TASK-PORTFOLIO-001 → 008
+
+---
+
+### [FEATURE-LEARN] — AI Learning Engine + Scheduler Notturno
+
+**Descrizione:** Aggiungere un sistema di memoria che impara dalle strategie generate in passato per migliorare la selezione futura, più uno scheduler notturno che pre-genera strategie mentre l'utente non usa il sistema.
+
+**Cosa serve:**
+- `TemplatePerformanceRegistry`: traccia per ogni combinazione (template, pair, timeframe, params) lo score medio storico e quante volte è stata approvata
+- Generatore "intelligente": esclude automaticamente combinazioni che storicamente hanno performato male, e prova parametri più fini per quelle promettenti
+- Scheduler notturno (02:00): genera strategie per tutti i risk_level e num_assets, salva le migliori nella tabella `pre_generated_strategies`
+- API `GET /api/pipeline/pre-generated`: se ci sono strategie pre-generate valide → restituiscile subito (zero attesa), altrimenti genera on-demand
+- Feedback loop: approvazione/rifiuto utente aggiorna il registry in tempo reale
+- Badge frontend "⚡ Pre-generata" se la strategia viene dalla cache notturna
+
+**Task associati:** TASK-LEARN-001 → 008
 
 ---
 
@@ -61,4 +80,4 @@ Idee, feature future e miglioramenti non ancora strutturati come task.
 
 ---
 
-**Ultima modifica:** 2025-01-17 — Amazon Q
+**Ultima modifica:** 2026-05-13 — Cline

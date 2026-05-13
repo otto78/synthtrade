@@ -9,6 +9,7 @@ import { StrategyRequestFormComponent } from '../../shared/components/strategy-r
 import { GenerationProgressComponent } from '../../shared/components/generation-progress/generation-progress.component';
 import { NgClass, KeyValuePipe, DecimalPipe, CurrencyPipe, DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
+import { HttpErrorResponse } from '@angular/common/http';
 import { switchMap } from 'rxjs';
 import { animate, style, transition, trigger } from '@angular/animations';
 
@@ -65,9 +66,16 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
         @if (activeTab() === 'GENERAZIONE') {
           <div class="generation-container">
 
+            @if (generationError()) {
+              <div class="generation-alert">{{ generationError() }}</div>
+            }
+
             <!-- Progress bar se generazione in corso -->
             @if (generationId()) {
-              <app-generation-progress [status]="generationStatus()" />
+              <app-generation-progress
+                [status]="generationStatus()"
+                [detailMessage]="generationDetailMessage()"
+                [resultCount]="generationResultCount()" />
             }
 
             <!-- Intestazione + bottone Genera Nuove Strategie se ci sono strategie candidate -->
@@ -444,6 +452,12 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
     @keyframes spin { to { transform: rotate(360deg); } }
     .loading-text { color: var(--text-secondary); font-size: 14px; }
 
+    .generation-alert {
+      margin-bottom: 16px; padding: 12px 16px; border-radius: 8px;
+      font-size: 14px; color: var(--text-primary);
+      background: rgba(246, 70, 93, 0.08); border: 1px solid rgba(246, 70, 93, 0.35);
+    }
+
     /* Nome personalizzato */
     .strategy-custom-name { display: block; font-size: 14px; font-weight: 700; color: var(--accent-primary); margin-bottom: 2px; }
     .strategy-custom-name-small { display: block; font-size: 13px; font-weight: 600; color: var(--accent-primary); margin-bottom: 2px; }
@@ -468,6 +482,11 @@ export class StrategiesPage implements OnInit {
   // Generation State
   generationId = signal<string | null>(null);
   generationStatus = signal<GenerationProgressStatus>('pending');
+  /** Errore sul POST /generate (nessun generation_id). */
+  generationError = signal<string | null>(null);
+  /** Messaggio da GET status (backend) o errore polling. */
+  generationDetailMessage = signal<string | null>(null);
+  generationResultCount = signal<number | null>(null);
   
   // Dialogs
   pendingReject = signal<Strategy | null>(null);
@@ -525,37 +544,88 @@ export class StrategiesPage implements OnInit {
   }
 
   onGenerate(req: StrategyRequest) {
-    this.pipelineService.generateStrategies(req).subscribe(res => {
-      this.generationId.set(res.generation_id);
-      this.generationStatus.set('running');
-      this.pollStatus(res.generation_id);
+    this.generationError.set(null);
+    this.generationDetailMessage.set(null);
+    this.generationResultCount.set(null);
+    this.pipelineService.generateStrategies(req).subscribe({
+      next: (res) => {
+        this.generationId.set(res.generation_id);
+        this.generationStatus.set('running');
+        this.pollStatus(res.generation_id);
+      },
+      error: (err: HttpErrorResponse) => {
+        this.generationError.set(this.formatPipelineHttpError(err));
+      },
     });
   }
 
   pollStatus(id: string) {
     this.pipelineService.pollGenerationStatus(id).subscribe({
       next: (status: GenerationStatus) => {
-        this.generationStatus.set(status.status);
-        if (status.status === 'completed' && status.results) {
-          const mappedResults = status.results.map(s => ({
-            ...s,
-            estimated_profit_pct: Number(s.estimated_profit_pct) || 0,
-            estimated_profit_eur: Number(s.estimated_profit_eur) || 0,
-            budget_eur: Number(s.budget_eur) || 100
-          }));
-          this.generatedStrategies.set(mappedResults);
-          // Ricarica dal DB per sincronizzare
-          this.loadStrategies();
+        const st = status.status as GenerationProgressStatus;
+        this.generationStatus.set(st);
+        if (st === 'failed' && status.error) {
+          this.generationDetailMessage.set(status.error);
+        } else if (status.message) {
+          this.generationDetailMessage.set(status.message);
+        }
+        if (st === 'completed') {
+          const n = status.results?.length ?? 0;
+          this.generationResultCount.set(n);
+          if (n > 0) {
+            this.generationDetailMessage.set(null);
+          }
+          if (status.results) {
+            const mappedResults = status.results.map((s) => ({
+              ...s,
+              estimated_profit_pct: Number(s.estimated_profit_pct) || 0,
+              estimated_profit_eur: Number(s.estimated_profit_eur) || 0,
+              budget_eur: Number(s.budget_eur) || 100,
+            }));
+            this.generatedStrategies.set(mappedResults);
+            this.loadStrategies();
+          }
         }
       },
-      error: () => this.generationStatus.set('failed')
+      error: () => {
+        this.generationStatus.set('failed');
+        this.generationDetailMessage.set(
+          'Impossibile verificare lo stato della generazione. Controlla la rete e riprova.'
+        );
+        this.generationResultCount.set(null);
+      },
     });
+  }
+
+  private formatPipelineHttpError(err: HttpErrorResponse): string {
+    if (err.status === 401) {
+      return 'Sessione scaduta o non autenticato. Effettua di nuovo il login.';
+    }
+    if (err.status === 0) {
+      return 'Impossibile contattare il server. Verifica che il backend sia avviato e che la porta sia corretta.';
+    }
+    const body = err.error as { detail?: string | unknown[] } | null;
+    const d = body?.detail;
+    if (typeof d === 'string') return d;
+    if (Array.isArray(d)) {
+      return d
+        .map((x) =>
+          typeof x === 'object' && x !== null && 'msg' in x
+            ? String((x as { msg?: string }).msg)
+            : String(x)
+        )
+        .join('. ');
+    }
+    return err.message || 'Errore durante l\'avvio della generazione.';
   }
 
   resetGeneration() {
     this.generationId.set(null);
     this.generationStatus.set('pending');
     this.generatedStrategies.set([]);
+    this.generationDetailMessage.set(null);
+    this.generationResultCount.set(null);
+    this.generationError.set(null);
     this.loadStrategies();
   }
 

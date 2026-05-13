@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { GenerationProgressStatus } from '../../../core/models/strategy.model';
 import { NgClass } from '@angular/common';
 
@@ -14,7 +14,9 @@ import { NgClass } from '@angular/common';
           @if (status() === 'running' || status() === 'pending') {
             <div class="spinner"></div>
           } @else if (status() === 'completed') {
-            <span class="icon success">✓</span>
+            <span class="icon" [class.success]="successCompletion()" [class.warn]="!successCompletion()">
+              {{ successCompletion() ? '✓' : 'ⓘ' }}
+            </span>
           } @else {
             <span class="icon error">!</span>
           }
@@ -38,7 +40,13 @@ import { NgClass } from '@angular/common';
         </div>
       }
 
-      @if (status() === 'completed') {
+      @if (detailMessage()) {
+        <div class="detail-message" [class.detail-message--warn]="status() === 'completed' && !successCompletion()">
+          {{ detailMessage() }}
+        </div>
+      }
+
+      @if (status() === 'completed' && successCompletion()) {
         <div class="completion-banner">
           <span class="celebration">✨</span>
           <span>Abbiamo trovato le migliori opportunità per il tuo profilo!</span>
@@ -66,7 +74,19 @@ import { NgClass } from '@angular/common';
 
     .icon { font-size: 24px; font-weight: bold; }
     .icon.success { color: var(--color-buy); }
+    .icon.warn { color: var(--accent-primary); }
     .icon.error { color: var(--color-sell); }
+
+    .detail-message {
+      margin-top: 16px; padding: 12px 14px; border-radius: 8px;
+      font-size: 13px; line-height: 1.45; color: var(--text-secondary);
+      background: rgba(255,255,255,0.04); border: 1px solid var(--border-default);
+    }
+    .detail-message--warn {
+      border-color: rgba(240, 185, 11, 0.35);
+      background: rgba(240, 185, 11, 0.06);
+      color: var(--text-primary);
+    }
 
     .text-group { display: flex; flex-direction: column; gap: 4px; }
     .status-title { font-size: 18px; font-weight: 700; color: var(--text-primary); }
@@ -91,24 +111,43 @@ import { NgClass } from '@angular/common';
 })
 export class GenerationProgressComponent {
   status = input.required<GenerationProgressStatus>();
+  /** Messaggio da backend (vuoto / errore / filtri qualità). */
+  detailMessage = input<string | null>(null);
+  /** Numero strategie generate; se 0 con completed → UI neutra (HALU-FE-04). */
+  resultCount = input<number | null>(null);
+
+  successCompletion = computed(() => {
+    const st = this.status();
+    if (st !== 'completed') return false;
+    const n = this.resultCount();
+    return n != null && n > 0;
+  });
 
   statusLabel(): string {
+    const st = this.status();
+    if (st === 'completed' && !this.successCompletion()) {
+      return 'Generazione terminata';
+    }
     const labels: Record<string, string> = {
       pending: 'Inizializzazione AI',
       running: 'Elaborazione in corso',
       completed: 'Generazione Completata',
       failed: 'Errore di Generazione'
     };
-    return labels[this.status()] || this.status();
+    return labels[st] || st;
   }
 
   statusDescription(): string {
+    const st = this.status();
+    if (st === 'completed' && !this.successCompletion()) {
+      return 'Nessuna strategia supera i criteri oppure i dati di mercato non sono disponibili. Leggi il messaggio qui sotto.';
+    }
     const desc: Record<string, string> = {
       pending: 'Stiamo preparando i modelli per la tua richiesta...',
       running: 'Analizzando pattern storici e ottimizzando i parametri...',
       completed: 'Le strategie sono pronte per essere revisionate.',
       failed: 'Non è stato possibile completare la richiesta. Riprova tra poco.'
     };
-    return desc[this.status()] || '';
+    return desc[st] || '';
   }
 }

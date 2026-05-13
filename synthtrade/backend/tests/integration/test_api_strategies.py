@@ -12,7 +12,7 @@ client = TestClient(app)
 def token(monkeypatch):
     from app import config
     config.settings.APP_PASSWORD = "testpass"
-    r = client.post("/auth/login", json={"password": "testpass"})
+    r = client.post("/api/auth/login", json={"password": "testpass"})
     return r.json()["access_token"]
 
 
@@ -65,14 +65,14 @@ def mock_db_update(select_data, updated_status):
 
 def test_list_strategies_returns_list(auth):
     with patch("app.api.strategies.get_supabase", return_value=mock_db_list([STRATEGY_SUMMARY])):
-        r = client.get("/strategies", headers=auth)
+        r = client.get("/api/strategies", headers=auth)
     assert r.status_code == 200
     assert isinstance(r.json(), list)
 
 
 def test_list_strategies_contains_required_fields(auth):
     with patch("app.api.strategies.get_supabase", return_value=mock_db_list([STRATEGY_SUMMARY])):
-        r = client.get("/strategies", headers=auth)
+        r = client.get("/api/strategies", headers=auth)
     item = r.json()[0]
     for field in ("id", "title", "score", "status"):
         assert field in item
@@ -81,14 +81,14 @@ def test_list_strategies_contains_required_fields(auth):
 def test_list_strategies_filter_by_status(auth):
     pending = {**STRATEGY_SUMMARY, "status": "PENDING"}
     with patch("app.api.strategies.get_supabase", return_value=mock_db_list([pending])):
-        r = client.get("/strategies?strategy_status=PENDING", headers=auth)
+        r = client.get("/api/strategies?strategy_status=PENDING", headers=auth)
     assert r.status_code == 200
     assert all(s["status"] == "PENDING" for s in r.json())
 
 
 def test_list_strategies_empty(auth):
     with patch("app.api.strategies.get_supabase", return_value=mock_db_list([])):
-        r = client.get("/strategies", headers=auth)
+        r = client.get("/api/strategies", headers=auth)
     assert r.status_code == 200
     assert r.json() == []
 
@@ -97,7 +97,7 @@ def test_list_strategies_empty(auth):
 
 def test_get_strategy_returns_detail(auth):
     with patch("app.api.strategies.get_supabase", return_value=mock_db_detail([STRATEGY_DETAIL])):
-        r = client.get("/strategies/trend_00001", headers=auth)
+        r = client.get("/api/strategies/trend_00001", headers=auth)
     assert r.status_code == 200
     data = r.json()
     assert data["id"] == "trend_00001"
@@ -108,7 +108,7 @@ def test_get_strategy_returns_detail(auth):
 
 def test_get_strategy_not_found_returns_404(auth):
     with patch("app.api.strategies.get_supabase", return_value=mock_db_detail([])):
-        r = client.get("/strategies/nonexistent", headers=auth)
+        r = client.get("/api/strategies/nonexistent", headers=auth)
     assert r.status_code == 404
 
 
@@ -117,7 +117,7 @@ def test_get_strategy_not_found_returns_404(auth):
 def test_approve_pending_strategy(auth):
     pending = {**STRATEGY_SUMMARY, "status": "PENDING"}
     with patch("app.api.strategies.get_supabase", return_value=mock_db_update([pending], "APPROVED")):
-        r = client.post("/strategies/trend_00001/approve", headers=auth)
+        r = client.post("/api/strategies/trend_00001/approve", headers=auth)
     assert r.status_code == 200
     assert r.json()["status"] == "APPROVED"
 
@@ -125,13 +125,13 @@ def test_approve_pending_strategy(auth):
 def test_approve_non_pending_returns_409(auth):
     active = {**STRATEGY_SUMMARY, "status": "ACTIVE"}
     with patch("app.api.strategies.get_supabase", return_value=mock_db_update([active], "APPROVED")):
-        r = client.post("/strategies/trend_00001/approve", headers=auth)
+        r = client.post("/api/strategies/trend_00001/approve", headers=auth)
     assert r.status_code == 409
 
 
 def test_approve_nonexistent_returns_404(auth):
     with patch("app.api.strategies.get_supabase", return_value=mock_db_update([], "APPROVED")):
-        r = client.post("/strategies/nonexistent/approve", headers=auth)
+        r = client.post("/api/strategies/nonexistent/approve", headers=auth)
     assert r.status_code == 404
 
 
@@ -140,19 +140,19 @@ def test_approve_nonexistent_returns_404(auth):
 def test_reject_strategy(auth):
     pending = {**STRATEGY_SUMMARY, "status": "PENDING"}
     with patch("app.api.strategies.get_supabase", return_value=mock_db_update([pending], "REJECTED")):
-        r = client.post("/strategies/trend_00001/reject", headers=auth)
+        r = client.post("/api/strategies/trend_00001/reject", headers=auth)
     assert r.status_code == 200
     assert r.json()["status"] == "REJECTED"
 
 
 def test_reject_nonexistent_returns_404(auth):
     with patch("app.api.strategies.get_supabase", return_value=mock_db_update([], "REJECTED")):
-        r = client.post("/strategies/nonexistent/reject", headers=auth)
+        r = client.post("/api/strategies/nonexistent/reject", headers=auth)
     assert r.status_code == 404
 
 
 # ── Auth guard ────────────────────────────────────────────────────────
 
 def test_strategies_without_token_returns_401():
-    r = client.get("/strategies")
+    r = client.get("/api/strategies")
     assert r.status_code == 401

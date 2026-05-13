@@ -12,7 +12,7 @@ client = TestClient(app)
 def auth(monkeypatch):
     from app import config
     config.settings.APP_PASSWORD = "testpass"
-    r = client.post("/auth/login", json={"password": "testpass"})
+    r = client.post("/api/auth/login", json={"password": "testpass"})
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
@@ -38,33 +38,33 @@ def make_db(data=None):
 
 def test_logs_returns_list(auth):
     with patch("app.api.logs.get_supabase", return_value=make_db([LOG_1, LOG_2])):
-        r = client.get("/logs", headers=auth)
+        r = client.get("/api/logs", headers=auth)
     assert r.status_code == 200
     assert isinstance(r.json(), list)
 
 
 def test_logs_pagination_limit(auth):
     with patch("app.api.logs.get_supabase", return_value=make_db([LOG_1])):
-        r = client.get("/logs?limit=1&offset=0", headers=auth)
+        r = client.get("/api/logs?limit=1&offset=0", headers=auth)
     assert r.status_code == 200
 
 
 def test_logs_pagination_offset(auth):
     with patch("app.api.logs.get_supabase", return_value=make_db([LOG_2])):
-        r = client.get("/logs?limit=10&offset=1", headers=auth)
+        r = client.get("/api/logs?limit=10&offset=1", headers=auth)
     assert r.status_code == 200
 
 
 def test_logs_filter_by_action(auth):
     with patch("app.api.logs.get_supabase", return_value=make_db([LOG_1])):
-        r = client.get("/logs?action=BUY", headers=auth)
+        r = client.get("/api/logs?action=BUY", headers=auth)
     assert r.status_code == 200
 
 
 def test_logs_most_recent_first(auth):
     logs = [LOG_2, LOG_1]  # già ordinati decrescenti dal mock
     with patch("app.api.logs.get_supabase", return_value=make_db(logs)):
-        r = client.get("/logs", headers=auth)
+        r = client.get("/api/logs", headers=auth)
     data = r.json()
     if len(data) >= 2:
         assert data[0]["created_at"] >= data[1]["created_at"]
@@ -72,14 +72,14 @@ def test_logs_most_recent_first(auth):
 
 def test_logs_empty(auth):
     with patch("app.api.logs.get_supabase", return_value=make_db([])):
-        r = client.get("/logs", headers=auth)
+        r = client.get("/api/logs", headers=auth)
     assert r.status_code == 200
     assert r.json() == []
 
 
 def test_logs_items_have_required_fields(auth):
     with patch("app.api.logs.get_supabase", return_value=make_db([LOG_1])):
-        r = client.get("/logs", headers=auth)
+        r = client.get("/api/logs", headers=auth)
     item = r.json()[0]
     for field in ("id", "action", "created_at"):
         assert field in item
@@ -89,14 +89,14 @@ def test_logs_items_have_required_fields(auth):
 
 def test_logs_export_returns_csv_content_type(auth):
     with patch("app.api.logs.get_supabase", return_value=make_db([LOG_1, LOG_2])):
-        r = client.get("/logs/export", headers=auth)
+        r = client.get("/api/logs/export", headers=auth)
     assert r.status_code == 200
     assert "text/csv" in r.headers["content-type"]
 
 
 def test_logs_export_has_csv_header(auth):
     with patch("app.api.logs.get_supabase", return_value=make_db([LOG_1])):
-        r = client.get("/logs/export", headers=auth)
+        r = client.get("/api/logs/export", headers=auth)
     first_line = r.text.split("\n")[0]
     assert "action" in first_line
     assert "created_at" in first_line
@@ -104,7 +104,7 @@ def test_logs_export_has_csv_header(auth):
 
 def test_logs_export_empty_still_returns_csv(auth):
     with patch("app.api.logs.get_supabase", return_value=make_db([])):
-        r = client.get("/logs/export", headers=auth)
+        r = client.get("/api/logs/export", headers=auth)
     assert r.status_code == 200
     assert "text/csv" in r.headers["content-type"]
 
@@ -112,10 +112,10 @@ def test_logs_export_empty_still_returns_csv(auth):
 # ── Auth guard ────────────────────────────────────────────────────────
 
 def test_logs_without_token_returns_401():
-    r = client.get("/logs")
+    r = client.get("/api/logs")
     assert r.status_code == 401
 
 
 def test_logs_export_without_token_returns_401():
-    r = client.get("/logs/export")
+    r = client.get("/api/logs/export")
     assert r.status_code == 401

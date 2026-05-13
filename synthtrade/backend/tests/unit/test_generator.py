@@ -69,7 +69,7 @@ async def test_generate_for_request_full_data(mock_ohlcv):
     with patch("app.core.strategy_generator.fetch_ohlcv", return_value=mock_ohlcv), \
          patch("app.core.strategy_generator.enrich_request_with_ai",
                new_callable=AsyncMock, return_value=req):
-        variants = await generate_for_request(req)
+        variants, _ = await generate_for_request(req)
     
     assert len(variants) > 0
     for v in variants:

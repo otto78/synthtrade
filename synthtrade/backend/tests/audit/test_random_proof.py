@@ -57,8 +57,8 @@ async def test_same_request_produces_different_scores(base_request, mock_ohlcv):
     with patch("app.core.strategy_generator.fetch_ohlcv", return_value=mock_ohlcv), \
          patch("app.core.strategy_generator.enrich_request_with_ai",
                new_callable=AsyncMock, return_value=base_request):
-        results_1 = await generate_for_request(base_request)
-        results_2 = await generate_for_request(base_request)
+        results_1, _ = await generate_for_request(base_request)
+        results_2, _ = await generate_for_request(base_request)
 
     assert results_1, "Nessuna strategia generata al primo run"
     assert results_2, "Nessuna strategia generata al secondo run"
@@ -84,8 +84,8 @@ async def test_estimated_profit_is_not_random(base_request, mock_ohlcv):
     with patch("app.core.strategy_generator.fetch_ohlcv", return_value=mock_ohlcv), \
          patch("app.core.strategy_generator.enrich_request_with_ai",
                new_callable=AsyncMock, return_value=base_request):
-        results_1 = await generate_for_request(base_request)
-        results_2 = await generate_for_request(base_request)
+        results_1, _ = await generate_for_request(base_request)
+        results_2, _ = await generate_for_request(base_request)
 
     profits_1 = sorted([r.estimated_profit_pct for r in results_1])
     profits_2 = sorted([r.estimated_profit_pct for r in results_2])
@@ -107,7 +107,7 @@ async def test_score_is_in_correct_range(base_request, mock_ohlcv):
     with patch("app.core.strategy_generator.fetch_ohlcv", return_value=mock_ohlcv), \
          patch("app.core.strategy_generator.enrich_request_with_ai",
                new_callable=AsyncMock, return_value=base_request):
-        results = await generate_for_request(base_request)
+        results, _ = await generate_for_request(base_request)
 
     assert results, "Nessuna strategia generata"
 
@@ -130,7 +130,7 @@ async def test_backtest_fields_populated(base_request, mock_ohlcv):
     with patch("app.core.strategy_generator.fetch_ohlcv", return_value=mock_ohlcv), \
          patch("app.core.strategy_generator.enrich_request_with_ai",
                new_callable=AsyncMock, return_value=base_request):
-        results = await generate_for_request(base_request)
+        results, _ = await generate_for_request(base_request)
 
     for r in results:
         assert r.backtest_trades > 0, (

@@ -1,8 +1,12 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, interval, switchMap, takeWhile } from 'rxjs';
+import { Observable, timer } from 'rxjs';
+import { exhaustMap, takeWhile, timeout } from 'rxjs/operators';
 import { environment } from '../../../environments/environment';
 import { StrategyRequest, GenerationStatus } from '../models/strategy.model';
+
+/** Timeout singola richiesta GET stato (evita hang silenziosi). */
+const STATUS_POLL_REQUEST_MS = 60_000;
 
 @Injectable({ providedIn: 'root' })
 export class PipelineService {
@@ -17,14 +21,18 @@ export class PipelineService {
   }
 
   /**
-   * TASK-154: Polling dello stato della generazione
+   * HALU-FE-02: Polling stato — primo tick immediato, una richiesta alla volta (no cancel da switchMap).
    */
   pollGenerationStatus(generationId: string): Observable<GenerationStatus> {
-    return interval(3000).pipe(
-      switchMap(() => this.http.get<GenerationStatus>(`${this.base}/generate/${generationId}/status`)),
+    return timer(0, 3000).pipe(
+      exhaustMap(() =>
+        this.http
+          .get<GenerationStatus>(`${this.base}/generate/${generationId}/status`)
+          .pipe(timeout(STATUS_POLL_REQUEST_MS))
+      ),
       takeWhile(
         (status) => status.status === 'pending' || status.status === 'running',
-        true // include the final status that breaks the condition
+        true
       )
     );
   }

@@ -23,7 +23,7 @@ def test_get_exchange_status_success(auth_header, monkeypatch):
     # Mocking BinanceExchangeAdapter class instantiation
     monkeypatch.setattr("app.api.exchange.BinanceExchangeAdapter", lambda **kwargs: mock_adapter)
     
-    response = client.get("/exchange/status", headers=auth_header)
+    response = client.get("/api/exchange/status", headers=auth_header)
     assert response.status_code == 200
     data = response.json()
     assert data["mode"] in ["testnet", "live"]

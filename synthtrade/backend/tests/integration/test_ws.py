@@ -13,14 +13,14 @@ client = TestClient(app)
 def token(monkeypatch):
     from app import config
     config.settings.APP_PASSWORD = "testpass"
-    r = client.post("/auth/login", json={"password": "testpass"})
+    r = client.post("/api/auth/login", json={"password": "testpass"})
     return r.json()["access_token"]
 
 
 # ── Connessione senza token → chiude con 1008 ─────────────────────────
 
 def test_ws_no_token_closes_with_1008():
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect("/api/ws") as ws:
         data = ws.receive_json()
         assert data["code"] == 1008
 
@@ -28,7 +28,7 @@ def test_ws_no_token_closes_with_1008():
 # ── Connessione con token invalido → chiude con 1008 ─────────────────
 
 def test_ws_invalid_token_closes_with_1008():
-    with client.websocket_connect("/ws?token=invalidtoken") as ws:
+    with client.websocket_connect("/api/ws?token=invalidtoken") as ws:
         data = ws.receive_json()
         assert data["code"] == 1008
 
@@ -36,7 +36,7 @@ def test_ws_invalid_token_closes_with_1008():
 # ── Connessione valida → riceve ping entro la connessione ─────────────
 
 def test_ws_valid_token_receives_ping(token):
-    with client.websocket_connect(f"/ws?token={token}") as ws:
+    with client.websocket_connect(f"/api/ws?token={token}") as ws:
         data = ws.receive_json()
         assert data["type"] == "ping"
 
@@ -46,7 +46,7 @@ def test_ws_valid_token_receives_ping(token):
 def test_ws_broadcast_price(token):
     from app.api.ws import manager
 
-    with client.websocket_connect(f"/ws?token={token}") as ws:
+    with client.websocket_connect(f"/api/ws?token={token}") as ws:
         ws.receive_json()  # consuma il ping iniziale
 
         import asyncio

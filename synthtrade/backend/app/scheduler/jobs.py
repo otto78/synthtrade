@@ -53,4 +53,8 @@ def setup_scheduler(engine=None) -> AsyncIOScheduler:
     scheduler.add_job(monitor_wrapper, "interval", args=[engine],
                       seconds=30, id="monitor")
     scheduler.add_job(heartbeat_job, "interval", seconds=10, id="heartbeat")
+    # TASK-408: run_active_strategies_job verrà aggiunto qui
+    # scheduler.add_job(run_active_strategies_job, "interval", args=[engine],
+    #                   minutes=settings.SCHEDULER_SIGNAL_INTERVAL_MIN,
+    #                   id="active_strategies")
     return scheduler

@@ -10,6 +10,7 @@ class ExchangeNetworkError(Exception): pass
 
 class ExchangeProtocol(Protocol):
     async def get_balance(self) -> float: ...
+    async def get_holdings(self) -> Dict[str, float]: ...
     async def get_ticker_price(self, symbol: str) -> float: ...
     async def place_market_order(self, symbol: str, side: str, quantity: float) -> Dict[str, Any]: ...
     async def close_position(self, symbol: str, side: str, quantity: float) -> Dict[str, Any]: ...
@@ -19,6 +20,7 @@ class ExchangeProtocol(Protocol):
 class BinanceExchangeAdapter:
     """
     TASK-082, TASK-083: Implementazione BinanceExchangeAdapter via CCXT
+    TASK-413: Aggiunto get_holdings()
     """
     def __init__(self, api_key: str, secret: str, testnet: bool = True, client=None):
         if client:
@@ -30,13 +32,30 @@ class BinanceExchangeAdapter:
                 "enableRateLimit": True,
                 "options": {
                     "defaultType": "spot",
-                }
+                },
             })
             self.client.set_sandbox_mode(testnet)
         self._filters_cache = {}
 
     async def close(self):
         await self.client.close()
+
+    async def get_holdings(self) -> Dict[str, float]:
+        """
+        TASK-413: Restituisce saldo libero di tutte le asset nel wallet.
+        Esclude asset con balance = 0.
+        Esempio: { "BTC": 0.015, "ETH": 0.5, "USDT": 1200.0 }
+        """
+        try:
+            balance = await self.client.fetch_balance()
+            free = balance.get("free", {})
+            return {asset: float(qty) for asset, qty in free.items() if float(qty or 0) > 0}
+        except ccxt.AuthenticationError as e:
+            raise ExchangeAuthError(f"Auth error: {e}")
+        except ccxt.NetworkError as e:
+            raise ExchangeNetworkError(f"Network error: {e}")
+        except Exception as e:
+            raise ExchangeOrderError(str(e))
 
     async def get_balance(self) -> float:
         try:
@@ -88,11 +107,11 @@ class BinanceExchangeAdapter:
         """
         if symbol in self._filters_cache:
             return self._filters_cache[symbol]
-            
+
         markets = await self.client.load_markets()
         if symbol not in markets:
             raise ValueError(f"Symbol {symbol} not found on Binance")
-            
+
         market = markets[symbol]
         filters = {
             "stepSize": market["precision"]["amount"],

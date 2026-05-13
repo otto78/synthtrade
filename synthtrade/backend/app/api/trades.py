@@ -3,7 +3,7 @@ from typing import Optional
 from app.dependencies import get_current_user
 from app.db.supabase_client import get_supabase
 
-router = APIRouter(prefix="/api/trades", tags=["trades"])
+router = APIRouter(prefix="/trades", tags=["trades"])
 
 
 @router.get("")

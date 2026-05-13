@@ -25,11 +25,43 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     setup_logging()
     logger.info("🚀 SynthTrade API starting...")
-    
-    sched = setup_scheduler()
+
+    # TASK-409: Singleton ExecutionEngine — istanziato una sola volta, condiviso da scheduler e API
+    from app.execution.exchange import BinanceExchangeAdapter
+    from app.execution.risk_manager import RiskManager, RiskConfig
+    from app.execution.order_tracker import OrderTracker
+    from app.execution.execution_engine import ExecutionEngine
+
+    exchange = BinanceExchangeAdapter(
+        api_key=settings.BINANCE_API_KEY,
+        secret=settings.BINANCE_SECRET_KEY,
+        testnet=settings.BINANCE_TESTNET,
+    )
+    risk_config = RiskConfig(
+        max_concurrent_positions=settings.MAX_CONCURRENT_POSITIONS,
+        max_exposure_per_symbol_pct=settings.MAX_EXPOSURE_PER_SYMBOL_PCT,
+        max_drawdown_pct=settings.MAX_DRAWDOWN_PCT,
+        default_position_size_pct=settings.DEFAULT_POSITION_SIZE_PCT,
+        default_stop_loss_pct=settings.DEFAULT_STOP_LOSS_PCT,
+        default_take_profit_pct=settings.DEFAULT_TAKE_PROFIT_PCT,
+    )
+    engine = ExecutionEngine(
+        risk_manager=RiskManager(config=risk_config),
+        order_tracker=OrderTracker(),
+        exchange=exchange,
+    )
+
+    # Rende l'engine disponibile via request.app.state.engine
+    app.state.engine = engine
+    app.state.exchange = exchange
+
+    sched = setup_scheduler(engine=engine)
     sched.start()
+    logger.info("✅ ExecutionEngine singleton pronto (testnet=%s)", settings.BINANCE_TESTNET)
     yield
     sched.shutdown(wait=False)
+    await exchange.close()
+    logger.info("🛑 SynthTrade API stopped")
 
 
 app = FastAPI(title="SynthTrade API", version="0.1.0", lifespan=lifespan)

@@ -29,16 +29,14 @@ async def run_generation_task(generation_id: str, req: StrategyRequest):
         })
 
         # TASK-041/047: Generate strategies with real backtest
-        strategies = await generate_for_request(req)
+        strategies, empty_hint = await generate_for_request(req)
 
-        # TASK-FIX-007: Handle empty list with user message
+        # TASK-FIX-007 / HALU-BE-02: Handle empty list with user message (quality vs market data)
         if not strategies:
             generations[generation_id]["status"] = "completed"
             generations[generation_id]["results"] = []
-            generations[generation_id]["message"] = (
-                "Nessuna strategia ha superato i criteri di qualità sui dati storici "
-                "(Sharpe > 0.5, Drawdown < 15%, PnL > 2%, Trades > 30 in 90 giorni). "
-                "Prova con un orizzonte temporale più lungo o un livello di rischio diverso."
+            generations[generation_id]["message"] = empty_hint or (
+                "Nessuna strategia disponibile. Modifica i parametri e riprova."
             )
             await manager.broadcast({
                 "type": "generation_complete",

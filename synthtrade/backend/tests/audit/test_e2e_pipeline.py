@@ -55,8 +55,8 @@ async def test_generate_for_request_uses_backtest(mock_ohlcv):
     with patch("app.core.strategy_generator.fetch_ohlcv", return_value=mock_ohlcv), \
          patch("app.core.strategy_generator.enrich_request_with_ai",
                new_callable=AsyncMock, return_value=req):
-        results_1 = await generate_for_request(req)
-        results_2 = await generate_for_request(req)
+        results_1, _ = await generate_for_request(req)
+        results_2, _ = await generate_for_request(req)
 
     assert results_1, "Nessuna strategia generata al primo run"
     assert results_2, "Nessuna strategia generata al secondo run"
@@ -111,7 +111,7 @@ async def test_pipeline_rejects_low_quality_strategies(mock_ohlcv):
     with patch("app.core.strategy_generator.fetch_ohlcv", return_value=mock_ohlcv), \
          patch("app.core.strategy_generator.enrich_request_with_ai",
                new_callable=AsyncMock, return_value=req):
-        results = await generate_for_request(req)
+        results, _ = await generate_for_request(req)
 
     # Tutte le strategie restituite devono avere score > 0
     assert len(results) <= 10, f"max_strategies=10, got {len(results)}"

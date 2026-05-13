@@ -29,7 +29,7 @@ def test_start_generation_unauthorized():
         "risk_level": "medium"
     }
     # No auth header
-    response = client.post("/pipeline/generate", json=req_data)
+    response = client.post("/api/pipeline/generate", json=req_data)
     assert response.status_code == 401
 
 def test_start_generation_success(auth_header):
@@ -43,7 +43,7 @@ def test_start_generation_success(auth_header):
         "risk_level": "medium",
         "max_strategies": 5
     }
-    response = client.post("/pipeline/generate", json=req_data, headers=auth_header)
+    response = client.post("/api/pipeline/generate", json=req_data, headers=auth_header)
     assert response.status_code == 202
     data = response.json()
     assert "generation_id" in data
@@ -60,11 +60,11 @@ def test_get_generation_status(auth_header):
         "asset_class": "crypto",
         "risk_level": "medium"
     }
-    resp_start = client.post("/pipeline/generate", json=req_data, headers=auth_header)
+    resp_start = client.post("/api/pipeline/generate", json=req_data, headers=auth_header)
     gen_id = resp_start.json()["generation_id"]
     
     # 2. Get status
-    resp_status = client.get(f"/pipeline/generate/{gen_id}/status", headers=auth_header)
+    resp_status = client.get(f"/api/pipeline/generate/{gen_id}/status", headers=auth_header)
     assert resp_status.status_code == 200
     status_data = resp_status.json()
     assert "status" in status_data

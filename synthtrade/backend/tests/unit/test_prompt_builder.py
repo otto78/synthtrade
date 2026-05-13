@@ -3,7 +3,7 @@ from app.ai.prompt_builder import build_prompt, build_system_prompt
 from app.ai.schemas import (
     EvalPromptInput, MarketContext, OhlcvSummary, StrategyContext
 )
-from datetime import datetime
+from datetime import datetime, UTC
 
 
 def make_input() -> EvalPromptInput:
@@ -58,3 +58,4 @@ def test_build_system_prompt_contains_analyst_role():
     system = build_system_prompt()
     assert "quantitativ" in system.lower() or "analyst" in system.lower()
     assert "JSON" in system
+

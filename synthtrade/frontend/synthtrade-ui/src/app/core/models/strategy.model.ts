@@ -63,10 +63,12 @@ export interface StrategyRequest {
 export type GenerationProgressStatus = 'pending' | 'running' | 'completed' | 'failed';
 
 export interface GenerationStatus {
-  generation_id: string;
+  generation_id?: string;
   status: GenerationProgressStatus;
   results?: Strategy[];
   error?: string;
+  /** Messaggio backend (es. 0 strategie: filtri qualità vs dati mercato mancanti) */
+  message?: string;
 }
 
 export interface MonitorData {

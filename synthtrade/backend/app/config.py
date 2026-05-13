@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     DEFAULT_STOP_LOSS_PCT: float = 0.02
     DEFAULT_TAKE_PROFIT_PCT: float = 0.04
     SCHEDULER_PIPELINE_INTERVAL_MIN: int = 60
+    SCHEDULER_SIGNAL_INTERVAL_MIN: int = 5   # Frequenza tick per strategie ACTIVE
 
     # Backend
     BACKEND_HOST: str = "0.0.0.0"

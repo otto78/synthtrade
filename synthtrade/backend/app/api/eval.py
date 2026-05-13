@@ -5,7 +5,7 @@ from app.ai.cache import EvalCache
 from app.config import settings
 import logging
 
-router = APIRouter(prefix="/api/strategies", tags=["eval"])
+router = APIRouter(prefix="/strategies", tags=["eval"])
 logger = logging.getLogger(__name__)
 
 

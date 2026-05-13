@@ -1,4 +1,4 @@
-# SynthTrade — TASKS
+﻿# SynthTrade — TASKS
 
 > Aggiornato automaticamente. Metodologia TDD: 🔴 Red → 🟢 Green → 🔵 Refactor
 
@@ -3404,3 +3404,432 @@ CREATE INDEX idx_pre_gen_expires ON pre_generated_strategies(expires_at);
 - QUALITY_EMPTY_MESSAGE aggiornato con nuove soglie
 
 **Risultato finale**: 5 strategie generate con P&L medio +16.78%, drawdown 11.1%, trades medio 16 — realistico per crypto. ✅
+---
+
+## EPIC-400 — Execution Epic: Attivazione, Esecuzione e Stop
+
+> Implementazione del ciclo di vita completo di una strategia attiva.
+> Gap: POST /activate esiste ma non fa nulla di operativo. ExecutionEngine,
+> BinanceExchangeAdapter e OrderTracker esistono ma non sono collegati al
+> lifecycle della strategia. Mancano: allocazione capitale, signal loop,
+> endpoint stop, WS events per trade, P&L live.
+>
+> Critical Path MVP: TASK-404 -> TASK-405 -> TASK-400/401 -> TASK-402 ->
+> TASK-403 -> TASK-406/407 -> TASK-408 -> TASK-409 -> TASK-411/412 ->
+> TASK-414 -> TASK-415 -> TASK-417 -> TASK-418 -> TASK-422 -> TASK-423
+>
+> **Regola:** Ogni task segue TDD (🔴 Red → 🟢 Green → 🔵 Refactor).
+
+---
+
+### Fase A — Allocazione Capitale all'Attivazione
+
+### TASK-400 — Test: test_capital_allocator.py
+
+**Status:** Pending
+**Priorita:** Critica
+
+Testare CapitalAllocator.allocate(strategy, available_usdt, holdings):
+- con pair="BTC/USDT" e budget_eur=500, calcola la quantita BTC da comprare
+- se l'utente ha gia BTC sufficienti, restituisce lista vuota (nessun trade iniziale)
+- strategia multi-crypto (60% BTC, 40% ETH): calcola trade per entrambe in proporzione
+- se budget insufficiente per MIN_NOTIONAL, solleva BudgetTooSmallError
+
+---
+
+### TASK-401 — Implementare execution/capital_allocator.py
+
+**Status:** In Progress
+**Priorita:** Critica
+
+Classe CapitalAllocator con metodo:
+  allocate(strategy, available_usdt, holdings) -> list[InitialTradeRequest]
+- Legge strategy["params"]["allocation"] per simboli e percentuali;
+  se assente usa strategy["pair"] al 100%
+- Confronta con holdings per evitare acquisti inutili
+- Restituisce InitialTradeRequest(symbol, side="buy", usdt_amount)
+  per ogni crypto da acquistare
+
+---
+
+### TASK-402 — Estendere POST /api/strategies/{id}/activate
+
+**Status:** In Progress
+**Priorita:** Critica
+
+Dopo aver settato status = ACTIVE:
+1. Recupera budget_eur dalla strategia
+2. Chiama exchange.get_balance() per USDT disponibile
+3. Chiama exchange.get_holdings() per crypto gia possedute
+4. Chiama CapitalAllocator.allocate()
+5. Per ogni InitialTradeRequest: chiama exchange.place_market_order()
+   e salva su DB con trade_type = "INITIAL_ALLOCATION"
+6. Salva activated_at = now() e initial_capital_usdt sulla strategia
+7. In caso di errore exchange: rollback a status = APPROVED con messaggio errore
+
+---
+
+### TASK-403 — Test: activate con fondi insufficienti
+
+**Status:** In Progress
+**Priorita:** Alta
+
+Se available_usdt < budget_eur * 0.95, restituisce 422 Unprocessable Entity:
+  { "error": "insufficient_funds", "available": X, "required": Y }
+La strategia rimane APPROVED.
+
+---
+
+### TASK-404 — Migration DB: nuovi campi su strategies (Migration 008)
+
+**Status:** Done ✅
+**Completato:** 2026-05-13
+**Priorita:** Critica
+
+Aggiungere alla tabella strategies:
+- activated_at TIMESTAMP
+- stopped_at TIMESTAMP
+- initial_capital_usdt FLOAT
+- current_value_usdt FLOAT (aggiornato dal monitor job)
+- allocation_trades JSONB (snapshot trade iniziali)
+- last_tick_at TIMESTAMP (timestamp ultimo tick scheduler)
+
+NOTA: coordinare numerazione con Migration 009 gia definita in TASK-PORTFOLIO-006
+(rinumerare questa come 008 e quella come 010).
+
+---
+
+### TASK-405 — Migration DB: campo trade_type su trades
+
+**Status:** Done ✅
+**Completato:** 2026-05-13
+**Priorita:** Alta
+
+Aggiungere trade_type VARCHAR DEFAULT 'SIGNAL' alla tabella trades:
+- 'INITIAL_ALLOCATION': acquisto iniziale all'attivazione
+- 'SIGNAL': trade piazzato dall'engine su segnale tecnico
+- 'STOP_CLOSE': chiusura forzata allo stop della strategia
+
+---
+
+### Fase B — Loop di Esecuzione Segnali
+
+### TASK-406 — Implementare execution/strategy_runner.py
+
+**Status:** Pending
+**Priorita:** Critica
+
+Classe StrategyRunner con metodo async run_tick(strategy: dict) -> None:
+- Legge template, pair/allocation, params dalla strategia
+- Scarica OHLCV recenti (N candles necessari agli indicatori)
+- Calcola segnale tramite SIGNAL_MAP[template](df, params)
+- Se segnale positivo, chiama engine.process_signal()
+- Aggiorna last_tick_at su DB
+- Logga ogni tick (segnale, azione) sulla tabella logs
+
+---
+
+### TASK-407 — Test: test_strategy_runner.py con mock exchange
+
+**Status:** Pending
+**Priorita:** Alta
+
+- Segnale BUY: place_market_order viene chiamato
+- Segnale neutro: nessun ordine piazzato
+- Errore exchange: il tick non fa crashare il runner
+- last_tick_at aggiornato su DB ad ogni tick
+
+---
+
+### TASK-408 — Scheduler: aggiungere job run_active_strategies_job
+
+**Status:** Pending
+**Priorita:** Critica
+
+In scheduler/jobs.py:
+- Legge da DB strategie con status = "ACTIVE"
+- Per ognuna chiama StrategyRunner(engine).run_tick(strategy)
+- Concorrenza via asyncio.gather(return_exceptions=True)
+- Intervallo configurabile via settings.SCHEDULER_SIGNAL_INTERVAL_MIN
+- Registrato in setup_scheduler()
+
+---
+
+### TASK-409 — Singleton ExecutionEngine nel lifespan di main.py
+
+**Status:** In Progress
+**Priorita:** Alta
+
+Nel lifespan, istanziare una sola volta:
+  BinanceExchangeAdapter, RiskManager, OrderTracker, ExecutionEngine
+Disponibile via app.state o Depends().
+Elimina il problema attuale di engine=None nello scheduler.
+
+---
+
+### TASK-410 — RiskManager: position size basata su budget strategia
+
+**Status:** Pending
+**Priorita:** Alta
+
+calculate_position_size() accetta strategy_budget_usdt opzionale.
+Calcola la size come percentuale di quello (non del balance totale).
+
+---
+
+### Fase C — Stop Strategia
+
+### TASK-411 — Endpoint POST /api/strategies/{id}/stop
+
+**Status:** In Progress
+**Priorita:** Critica
+
+1. Verifica che la strategia sia ACTIVE
+2. Recupera tutti i trade status="OPEN" con strategy_id=id
+3. Per ogni trade: exchange.close_position() + aggiorna DB
+   (status=CLOSED, exit_price, pnl_pct, trade_type=STOP_CLOSE, closed_at)
+4. Aggiorna strategia: status=STOPPED, stopped_at, current_value_usdt
+5. Broadcast WS: { type: "strategy_stopped", strategy_id, final_pnl_pct }
+6. Best-effort: errori su singole chiusure non bloccano le altre
+
+---
+
+### TASK-412 — Test: POST /api/strategies/{id}/stop
+
+**Status:** In Progress
+**Priorita:** Alta
+
+- Tutti i trade OPEN vengono chiusi
+- Strategia gia STOPPED: 409 Conflict
+- Strategia non ACTIVE: 422 Unprocessable Entity
+- Errore exchange su una chiusura: gli altri chiusi comunque
+- WS strategy_stopped inviato dopo la chiusura
+
+---
+
+### TASK-413 — GET /api/exchange/holdings e BinanceExchangeAdapter.get_holdings()
+
+**Status:** In Progress
+**Priorita:** Alta
+
+Nuovo endpoint + metodo adapter che restituisce saldo di tutte le crypto:
+  { "BTC": 0.015, "ETH": 0.5, "USDT": 1200.0 }
+Usa fetch_balance()["free"] di ccxt.
+
+---
+
+### Fase D — P&L Real-time e WebSocket
+
+### TASK-414 — WS: nuovi tipi di messaggio per trade e strategia
+
+**Status:** Pending
+**Priorita:** Critica
+
+Nuovi broadcast in ConnectionManager e WsMessageType:
+- trade_opened: { type, strategy_id, trade_id, symbol, direction, price, quantity }
+- trade_closed: { type, strategy_id, trade_id, pnl_pct, exit_price }
+- strategy_pnl_updated: { type, strategy_id, current_pnl_pct, current_pnl_eur, current_value_usdt }
+- strategy_stopped: { type, strategy_id, final_pnl_pct, final_value_usdt }
+Broadcast aggiunti in OrderTracker.open_position(), close_position() e monitor job.
+
+---
+
+### TASK-415 — Monitor job: calcolo P&L live e broadcast per strategie ACTIVE
+
+**Status:** Pending
+**Priorita:** Alta
+
+Estendere monitor_positions_job:
+1. Per ogni strategia ACTIVE: recupera trade OPEN, chiama get_ticker_price()
+2. Calcola P&L unrealizzato per ogni posizione
+3. Somma al P&L dei trade CLOSED -> current_pnl_pct su initial_capital_usdt
+4. Aggiorna current_value_usdt su DB
+5. Broadcast WS strategy_pnl_updated
+
+---
+
+### TASK-416 — GET /api/strategies/active/pnl
+
+**Status:** Pending
+**Priorita:** Alta
+
+Snapshot P&L per tutte le strategie ACTIVE. Per ognuna:
+  id, title, initial_capital_usdt, current_value_usdt,
+  pnl_eur, pnl_pct, open_trades_count, activated_at, last_tick_at
+
+---
+
+### TASK-417 — GET /api/trades/active — trade aperti con JOIN strategia
+
+**Status:** Pending
+**Priorita:** Critica
+
+JOIN tra trades e strategies. Per ogni trade OPEN restituisce:
+  trade_id, strategy_id, strategy_title, symbol, direction,
+  entry_price, current_price (live), unrealized_pnl_pct, quantity, opened_at
+
+---
+
+### Fase E — Frontend: Pagina Active Trades
+
+### TASK-418 — Refactor active-trade.page.ts: tutti i trade multi-strategia
+
+**Status:** Pending
+**Priorita:** Critica
+
+- Rimuovere dipendenza da "una singola strategia attiva"
+- GET /api/trades/active per snapshot iniziale
+- WS trade_opened -> aggiunge riga in real-time
+- WS trade_closed -> rimuove/aggiorna riga in real-time
+- Trade raggruppati per strategia (sezioni con header collassabili)
+- Stato vuoto se nessun trade aperto
+
+---
+
+### TASK-419 — Componente ActiveTradeRowComponent
+
+**Status:** Pending
+**Priorita:** Alta
+
+Standalone component per singolo trade aperto:
+- Input: trade: ActiveTrade
+- P&L unrealizzato aggiornato da WS price (filtrato per symbol)
+- Badge BUY (verde) / SELL (rosso)
+- Animazione flash su cambio P&L
+- Calcola valore posizione in EUR in real-time
+
+---
+
+### TASK-420 — WS Service frontend: nuovi tipi trade_opened, trade_closed, strategy_pnl_updated
+
+**Status:** Pending
+**Priorita:** Alta
+
+Aggiungere a WsMessageType enum e modelli:
+  TradeOpenedPayload, TradeClosedPayload, StrategyPnlPayload, StrategyStoppedPayload
+
+---
+
+### TASK-421 — Test: active-trade.page.spec.ts aggiornato
+
+**Status:** Pending
+**Priorita:** Media
+
+- WS trade_opened: lista aggiornata
+- WS trade_closed: trade rimosso dalla lista
+- Trade raggruppati correttamente per strategia
+- Stato vuoto visualizzato quando lista vuota
+
+---
+
+### Fase F — Frontend: P&L Live nella Pagina Strategie
+
+### TASK-422 — P&L live per strategie ACTIVE in strategies.page.ts
+
+**Status:** Pending
+**Priorita:** Critica
+
+Per le strategie con status = "ACTIVE":
+- GET /api/strategies/active/pnl all'inizializzazione
+- WS strategy_pnl_updated aggiorna valori in real-time
+- Mostra: capitale iniziale, valore attuale, P&L EUR e %, badge LIVE pulsante
+- Verde se P&L > 0, rosso se P&L < 0
+
+---
+
+### TASK-423 — Bottone "Stop" collegato a POST /api/strategies/{id}/stop
+
+**Status:** Pending
+**Priorita:** Critica
+
+Dialog di conferma esistente (TASK-323) collegato all'endpoint reale:
+- Loading state durante la chiamata
+- Al completamento: aggiorna status -> STOPPED, mostra notifica P&L finale
+- WS strategy_stopped gestito per aggiornamento da altre sessioni
+
+---
+
+### TASK-424 — Badge "LIVE" e indicatori visivi strategia in esecuzione
+
+**Status:** Pending
+**Priorita:** Media
+
+Per ogni strategia ACTIVE nella strategies page:
+- Badge "LIVE" con animazione pulse verde
+- Tooltip con last_tick_at formattato ("Ultimo segnale: 3 min fa")
+- Contatore segnali generati oggi
+
+---
+
+### Fase G — Multi-Crypto Allocation
+
+### TASK-425 — Schema params.allocation per strategie multi-simbolo
+
+**Status:** Pending
+**Priorita:** Alta
+
+Formato JSON per strategie multi-asset:
+  { "allocation": [{ "symbol": "BTC/USDT", "pct": 60 }, { "symbol": "ETH/USDT", "pct": 40 }], ... }
+Aggiornare StrategyCreate Pydantic schema.
+Coordinare con TASK-PORTFOLIO-005 (stesso dominio).
+
+---
+
+### TASK-426 — StrategyRunner multi-simbolo
+
+**Status:** Pending
+**Priorita:** Alta
+
+run_tick() itera su tutti i simboli in allocation.
+Genera segnali indipendenti per ogni simbolo.
+Rispetta la percentuale di budget per il calcolo della position size.
+
+---
+
+### TASK-427 — Frontend: selezione multi-crypto nel form generazione
+
+**Status:** Pending
+**Priorita:** Media
+
+Form con aggiunta di piu crypto e slider percentuale per ognuna.
+Validazione: somma = 100%.
+Preview capitale allocato per crypto.
+Coordinare con TASK-PORTFOLIO-008.
+
+---
+
+### Fase H — Stabilizzazione e Test E2E
+
+### TASK-428 — Test integrazione: flusso completo activate -> tick -> stop
+
+**Status:** Pending
+**Priorita:** Alta
+
+Con exchange mockato, verificare:
+1. activate -> trade iniziali salvati su DB
+2. Scheduler tick -> segnale -> trade SIGNAL su DB
+3. Monitor -> prezzo -> chiusura take-profit, P&L calcolato
+4. stop -> trade residui chiusi -> STOPPED, WS events verificati
+
+---
+
+### TASK-429 — Gestione errori e retry per exchange failures nel signal loop
+
+**Status:** Pending
+**Priorita:** Alta
+
+asyncio.gather(return_exceptions=True) nel job.
+Errore loggato su DB con level="ERROR".
+Broadcast WS engine_error: { type, strategy_id, error_code, message }.
+Strategia rimane ACTIVE (errore transitorio).
+
+---
+
+### TASK-430 — Dashboard: KPI globali strategie attive e trade aperti
+
+**Status:** Pending
+**Priorita:** Media
+
+Aggiungere a GET /api/dashboard/stats:
+  active_strategies_count, open_trades_count, total_active_pnl_pct
+Visualizzare come KPI card con aggiornamento WS.

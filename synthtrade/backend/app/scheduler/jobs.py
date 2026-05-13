@@ -46,6 +46,28 @@ async def heartbeat_job() -> None:
         logger.error(f"Heartbeat job error: {e}")
 
 
+async def run_active_strategies_job(engine=None) -> None:
+    """
+    TASK-408: Esegue run_tick() su tutte le strategie ACTIVE.
+    """
+    if engine is None:
+        return
+    try:
+        from app.db.supabase_client import get_supabase
+        from app.execution.strategy_runner import StrategyRunner
+        db = get_supabase()
+        res = db.table("strategies").select("*").eq("status", "ACTIVE").execute()
+        active_strategies = res.data or []
+        if not active_strategies:
+            return
+        runner = StrategyRunner(engine)
+        import asyncio
+        await asyncio.gather(*[runner.run_tick(s) for s in active_strategies], return_exceptions=True)
+        logger.info(f"Active strategies job: {len(active_strategies)} strategie processate")
+    except Exception as e:
+        logger.error(f"Active strategies job error: {e}")
+
+
 def setup_scheduler(engine=None) -> AsyncIOScheduler:
     scheduler.add_job(run_pipeline_job, "interval",
                       minutes=settings.SCHEDULER_PIPELINE_INTERVAL_MIN,
@@ -53,8 +75,7 @@ def setup_scheduler(engine=None) -> AsyncIOScheduler:
     scheduler.add_job(monitor_wrapper, "interval", args=[engine],
                       seconds=30, id="monitor")
     scheduler.add_job(heartbeat_job, "interval", seconds=10, id="heartbeat")
-    # TASK-408: run_active_strategies_job verrà aggiunto qui
-    # scheduler.add_job(run_active_strategies_job, "interval", args=[engine],
-    #                   minutes=settings.SCHEDULER_SIGNAL_INTERVAL_MIN,
-    #                   id="active_strategies")
+    scheduler.add_job(run_active_strategies_job, "interval", args=[engine],
+                      minutes=settings.SCHEDULER_SIGNAL_INTERVAL_MIN,
+                      id="active_strategies")
     return scheduler

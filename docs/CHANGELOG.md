@@ -7,6 +7,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.2.1] — 2026-05-13
+
+### Changed
+- **Ranker**: Soglie più realistiche per crypto — min_trades=15 (era 8), max_drawdown=40% (era 22%), min_sharpe=0.0 (era 0.3), min_pnl=0% (era 2%)
+- **Generator**: lookback=60gg (era 180), pairs default BTC/ETH/SOL/BNB (era solo BTC), timeframes 1h/4h (rimosso 15m)
+- QUALITY_EMPTY_MESSAGE aggiornato con nuove soglie
+
+### Fixed
+- **Profitti irrealistici**: RSI 4h con 6 trades e Sharpe 27+ non passa più i filtri (min_trades=15)
+- **Diagnosi completa**: Analisi su 8 asset (BTC, ETH, SOL, BNB, ADA, DOT, LINK, AVAX) con 180gg ha confermato che solo RSI 1h su altcoin è profittevole
+- Test pipeline: 5 strategie generate con P&L medio +16.78%, drawdown 11.1%, trades 16 — realistico per crypto
+
+---
+
 ## [0.9.0] — 2026-05-06
 
 ### Added

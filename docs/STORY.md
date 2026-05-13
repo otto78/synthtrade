@@ -279,4 +279,24 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
 
-**Ultima modifica:** 2026-05-12 — Cline (v1.2.0 Fix Allucinazioni)
+### v1.2.1 — 2026-05-13
+
+**Milestone:** 🔴 Fix Profitti Irrealistici — Soglie Ranker Ottimizzate
+
+**Completato:**
+- ✅ **Diagnosi profitti irrealistici**: Analisi su 8 asset top marketcap (BTC, ETH, SOL, BNB, ADA, DOT, LINK, AVAX) con 180gg di dati
+- ✅ **Scoperta chiave**: Timeframe 15m perde su TUTTI gli asset (-43% a -60%). Solo RSI 1h su altcoin è profittevole (+10-20%). RSI 4h produce Sharpe 27+ con soli 5-9 trades — artefatto statistico che causava profitti "finti"
+- ✅ **Ranker**: min_trades 8→15, min_sharpe 0.3→0.0, max_drawdown 22.0→40.0, min_pnl 2%→0%
+- ✅ **Generator**: lookback 180→60gg, pairs default BTC/ETH/SOL/BNB, timeframes rimosso 15m
+- ✅ **Test pipeline**: 5 strategie con P&L medio +16.78%, drawdown 11.1%, trades 16 — realistico per crypto
+
+**Decisioni chiave:**
+- 60 giorni di lookback sono sufficienti per significatività statistica (vs 180 che includeva trend obsoleti)
+- Quattro asset default (BTC, ETH, SOL, BNB) aumentano le opportunità di trovare strategie valide
+- Timeframe 1h è il miglior compromesso segnale/rumore per crypto
+- Soglia min_trades=15 garantisce significatività statistica senza escludere strategie valide
+- max_drawdown=40% riflette la volatilità reale delle crypto (drawdown 30-40% è normale)
+
+---
+
+**Ultima modifica:** 2026-05-13 — Cline (v1.2.1 Fix Profitti Irrealistici)

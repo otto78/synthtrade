@@ -191,7 +191,7 @@ export class DashboardPage implements OnInit, OnDestroy {
     );
     this.sub.add(
       this.wsService.on<Partial<DashboardStats>>(WsMessageType.StatsUpdate).subscribe(msg => {
-        if (msg.payload) this.stats.update(s => ({ ...s, ...msg.payload }));
+        if (msg.payload) this.stats.update(s => ({ ...s, ...msg.payload! }));
       })
     );
   }

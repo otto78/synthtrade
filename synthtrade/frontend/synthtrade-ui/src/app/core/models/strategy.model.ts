@@ -1,4 +1,4 @@
-export type StrategyStatus = 'PENDING' | 'APPROVED' | 'ACTIVE' | 'REJECTED' | 'EXPIRED';
+export type StrategyStatus = 'PENDING' | 'APPROVED' | 'ACTIVE' | 'REJECTED' | 'EXPIRED' | 'STOPPED';
 
 export interface StrategyMetrics {
   pnl_pct: number;

@@ -11,9 +11,10 @@ export enum WsMessageType {
   StrategyPnlUpdated = 'strategy_pnl_updated',
 }
 
-export interface WsMessage<T = unknown> {
+export interface WsMessage<T = any> {
   type: WsMessageType | string;
-  [key: string]: any;
+  payload?: T;
+  [key: string]: any; // Keep index signature for generic access if needed
 }
 
 export interface WsPricePayload {

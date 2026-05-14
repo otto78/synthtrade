@@ -43,8 +43,25 @@ def _get_exchange() -> ccxt.Exchange:
         "apiKey": settings.BINANCE_API_KEY,
         "secret": settings.BINANCE_SECRET_KEY,
         "enableRateLimit": True,
+        "timeout": 5000,  # 5 secondi timeout per ogni chiamata HTTP (evita blocchi lunghi)
+        "options": {"defaultType": "spot"}
     })
-    if not settings.BINANCE_TESTNET:
+    if settings.BINANCE_TESTNET:
+        ex.set_sandbox_mode(True)
+        # Forza gli URL per evitare redirect su Future (bug CCXT 4.3.90+)
+        vision_url = "https://testnet.binance.vision/api/v3"
+        ex.urls["api"] = {
+            "public": vision_url,
+            "private": vision_url,
+            "v3": vision_url,
+            "v1": vision_url,
+            "sapi": vision_url,
+            "fapiPublic": vision_url,
+            "fapiPrivate": vision_url,
+            "dapiPublic": vision_url,
+            "dapiPrivate": vision_url,
+        }
+    else:
         ex.set_sandbox_mode(False)
     return ex
 
@@ -130,23 +147,55 @@ def get_total_balance_eur() -> dict:
 
 def _convert_to_eur(exchange: ccxt.Exchange, asset: str, qty: float) -> float | None:
     """Prova a convertire qty di asset in EUR, tentando EUR -> USDT -> BTC."""
+    if asset == "EUR":
+        return qty
+
+    # 1. Conversione diretta in EUR o inversa (es. EUR/SOL)
     try:
         ticker = exchange.fetch_ticker(f"{asset}/EUR")
         return qty * float(ticker["last"])
     except Exception:
-        pass
+        try:
+            ticker = exchange.fetch_ticker(f"EUR/{asset}")
+            return qty / float(ticker["last"])
+        except Exception:
+            pass
+
+    # 2. Conversione via USDT
     try:
-        ticker = exchange.fetch_ticker(f"{asset}/USDT")
-        usdt_val = qty * float(ticker["last"])
-        eur_ticker = exchange.fetch_ticker("USDT/EUR")
-        return usdt_val * float(eur_ticker["last"])
+        # Se l'asset è già USDT, dobbiamo solo convertire USDT in EUR
+        if asset == "USDT":
+            usdt_val = qty
+        else:
+            ticker = exchange.fetch_ticker(f"{asset}/USDT")
+            usdt_val = qty * float(ticker["last"])
+        
+        # Prova USDT/EUR o EUR/USDT
+        try:
+            ticker = exchange.fetch_ticker("USDT/EUR")
+            return usdt_val * float(ticker["last"])
+        except Exception:
+            ticker = exchange.fetch_ticker("EUR/USDT")
+            return usdt_val / float(ticker["last"])
     except Exception:
         pass
+
+    # 3. Conversione via BTC
     try:
-        ticker = exchange.fetch_ticker(f"{asset}/BTC")
-        btc_val = qty * float(ticker["last"])
-        eur_ticker = exchange.fetch_ticker("BTC/EUR")
-        return btc_val * float(eur_ticker["last"])
-    except Exception as e:
-        logger.debug(f"Cannot convert {asset} to EUR: {e}")
-        return None
+        if asset == "BTC":
+            btc_val = qty
+        else:
+            ticker = exchange.fetch_ticker(f"{asset}/BTC")
+            btc_val = qty * float(ticker["last"])
+            
+        try:
+            ticker = exchange.fetch_ticker("BTC/EUR")
+            return btc_val * float(ticker["last"])
+        except Exception:
+            ticker = exchange.fetch_ticker("EUR/BTC")
+            return btc_val / float(ticker["last"])
+    except Exception:
+        pass
+
+    logger.debug(f"Cannot convert {asset} to EUR")
+    return None

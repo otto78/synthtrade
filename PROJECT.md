@@ -304,6 +304,31 @@ synthtrade/                               ← root monorepo
 │   ├── pytest.ini
 │   └── Dockerfile
 │
+---
+
+## 🚀 Deployment & Infrastruttura (Produzione)
+
+L'architettura di produzione è progettata per la massima resilienza e sicurezza, separando il database gestito dal calcolo computazionale.
+
+### 🌐 Cloud Providers
+- **Database & Auth**: [Supabase Cloud](https://supabase.com/) (PostgreSQL + GoTrue + Realtime).
+- **Backend (FastAPI)**: [Render](https://render.com/) o VPS (DigitalOcean/Hetzner) con Docker.
+- **Frontend (Angular)**: [Vercel](https://vercel.com/) o Render (Static Site).
+
+### 🛠️ Stack di Deployment
+- **Containerizzazione**: Docker multi-stage (Backend) e Nginx (Frontend).
+- **Reverse Proxy**: Nginx con SSL (Certbot/Let's Encrypt).
+- **CI/CD**: GitHub Actions per test automatizzati e build di produzione.
+- **Monitoring**: Sentry (Error tracking) + Supabase Logs.
+
+### 🔒 Security Hardening
+- **Row Level Security (RLS)**: Enforced su tutte le tabelle Supabase.
+- **Secrets Management**: Variabili d'ambiente iniettate a runtime via CI/CD, mai nel codice.
+- **CORS**: Policy restrittive limitate ai domini di produzione.
+- **Rate Limiting**: Implementato a livello di Nginx e FastAPI.
+
+---
+
 ├── frontend/                             ← Angular app
 │   ├── src/
 │   │   ├── app/
@@ -1711,7 +1736,7 @@ def build_market_context(ohlcv_df) -> dict:
 
 ---
 
-### ⚫ Fase 6 — Hardening & Deploy (2–3 giorni)
+### ⚫ Fase 6 — Produzione & Deployment (2–3 giorni)
 
 - [ ] 🔴 **Test `test_rate_limiting.py`:** 1200+ chiamate Binance → exchange rispetta `enableRateLimit`
 - [ ] Error handling globale su tutti i moduli core: nessuna eccezione non gestita
@@ -1778,4 +1803,4 @@ Questi fix sono verificati e documentati nello script `synthtrade/backend/test_b
 
 ---
 
-> **Prossimo step:** Fase 0 — setup monorepo + migration Supabase + `GET /health` verde. Tutto il resto si costruisce su questi mattoni.
+> **Prossimo step:** Fase 8 — Portfolio multi-asset e migrazione allocazioni. Implementazione dello Scheduler Notturno per la generazione automatica delle strategie.

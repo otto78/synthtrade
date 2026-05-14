@@ -1,4 +1,4 @@
-﻿﻿# SynthTrade — TASKS
+﻿# SynthTrade — TASKS
 ﻿# SynthTrade — TASKS
 
 > Aggiornato automaticamente. Metodologia TDD: 🔴 Red → 🟢 Green → 🔵 Refactor
@@ -1671,390 +1671,81 @@
 
 ---
 
-## ⚫ Fase 6 — Hardening & Deploy
+## ⚫ Fase 6 — Produzione & Deployment (v1.3.0)
+
+> Obiettivo: Migrazione dall'ambiente di sviluppo/testnet a un ambiente di produzione resiliente, sicuro e monitorato.
+> Architettura: Supabase Cloud (DB/Auth) + Render/VPS (Backend Docker) + Render/Vercel (Frontend Static).
+
+### 6.1 Infrastruttura & Cloud Setup
+### TASK-252 — Setup Progetto Supabase Produzione
+- Configurazione progetto su Supabase Cloud (Region: West Europe)
+- Recupero credenziali di produzione (URL, Anon Key, Service Role)
+- **Status:** Done ✅
+- **Completato:** 2026-05-14
+
+### TASK-253 — Migrazione Schema DB e Seed Iniziale
+- Applicazione di tutte le migrazioni (001-013) sull'istanza di produzione
+- Caricamento dati di base (Seed) per configurazioni globali
+- **Status:** Done ✅
+- **Completato:** 2026-05-14
+
+### TASK-254 — Configurazione Variabili d'Ambiente (Secrets)
+- Configurazione dei segreti su Render/VPS per Backend (API Keys Binance Live, OpenRouter, Supabase)
+- Configurazione environment statico per Frontend
+- **Status:** Pending
+- **Priorità:** Alta
+
+### 6.2 Hardening & Sicurezza
+### TASK-255 — Audit Row Level Security (RLS)
+- Verifica che TUTTE le tabelle (strategies, trades, logs) abbiano RLS attivo
+- Implementazione policy: `auth.uid() = user_id` per ogni operazione
+- Test di "leakage" tra utenti diversi
+- **Status:** Pending
+- **Priorità:** Critica
+
+### TASK-256 — Protezione API e Rate Limiting
+- Configurazione Nginx/Cloudflare per limitare le richieste agli endpoint sensibili (/auth, /pipeline)
+- Disabilitazione registrazione pubblica su Supabase Auth (solo admin invite)
+- **Status:** Pending
+- **Priorità:** Media
+
+### TASK-257 — Gestione Sessioni e JWT
+- Configurazione durata token JWT e refresh token strategy
+- Implementazione logout centralizzato (invalidation)
+- **Status:** Pending
+- **Priorità:** Media
+
+### 6.3 Docker & CI/CD
+### TASK-264 — Dockerizzazione Backend (Immagine Production)
+- Creazione `Dockerfile.prod` multi-stage (builder + runtime slim)
+- Ottimizzazione size immagine e rimozione tool di build
+- Esecuzione come utente non-root
+- **Status:** Pending
+- **Priorità:** Alta
+
+### TASK-273 — Pipeline CI/CD (GitHub Actions)
+- Automatizzazione test asincroni (pytest) ad ogni push
+- Build automatica immagine Docker e push su registry
+- Deploy automatico su branch `main`
+- **Status:** Pending
+- **Priorità:** Media
+
+### 6.4 Rilascio & Monitoraggio
+### TASK-305 — Deploy Backend su Render/VPS
+- Configurazione Web Service con auto-deploy
+- Setup Healthcheck (`/health`) per zero-downtime deployment
+- **Status:** Pending
+- **Priorità:** Alta
+
+### TASK-309 — Smoke Test Post-Deploy (Checklist Finale)
+- Verifica connettività Binance Live (saldo reale, ticker)
+- Verifica integrità WebSocket in produzione
+- Verifica persistenza dati su Supabase Cloud
+- **Status:** Pending
+- **Priorità:** Critica
+
+---
 
-> Architettura target: **Supabase Cloud** + **VPS Linux** con Docker + Nginx + HTTPS.
-
-### 6.0 Supabase — Produzione
-### TASK-252 — Creare progetto Supabase Cloud (region EU)
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-253 — Eseguire 4 migration SQL + seed.sql
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-254 — Verificare schema tabelle
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-255 — Copiare `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-
-#### RLS
-### TASK-256 — Abilitare RLS su `strategies`, `trades`, `operation_logs`, `ohlcv_cache`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-257 — Policy `SELECT/INSERT/UPDATE/DELETE` solo per `auth.uid() = user_id`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-258 — Testare policy con `SET LOCAL role = anon`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-
-#### Realtime
-### TASK-259 — Abilitare Realtime su `operation_logs`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-260 — Verificare eventi `INSERT` trasmessi correttamente
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-
-#### Auth
-### TASK-261 — Disabilitare registrazione pubblica
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-262 — Creare utente admin manualmente
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-263 — Configurare JWT expiry in linea con backend
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-
-### 6.1 Docker — Hardening Immagini
-
-#### Backend multi-stage
-### TASK-264 — Stage `builder`: `python:3.12-slim`, virtualenv isolato
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-265 — Stage `runtime`: immagine pulita, solo virtualenv + codice
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-266 — Utente non-root `appuser`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-267 — Nessun `pip`, `gcc`, cache `apt`, `.pyc` nell'immagine finale
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-268 — `HEALTHCHECK`: `curl -f http://localhost:8000/health || exit 1`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-269 — `.dockerignore`: `__pycache__`, `*.pyc`, `.env`, `tests/`, `.git/`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-
-#### Frontend multi-stage
-### TASK-270 — Stage `builder`: `node:20-alpine`, `npm ci` + `ng build --configuration production`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-271 — Stage `runtime`: `nginx:alpine`, solo `dist/`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-272 — `nginx.conf`: SPA fallback, cache headers, gzip
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-
-### 6.2 docker-compose Produzione
-### TASK-273 — `docker-compose.prod.yml`: backend + frontend + nginx, nessun port binding diretto
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-274 — Network `internal` bridge isolata
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-275 — Volume named per certificati SSL (`certbot_certs`)
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-276 — Logging `json-file` con `max-size: 10m`, `max-file: 3`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-277 — `.env.prod.example` con tutti i nomi variabili (senza valori)
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-
-### 6.3 Nginx — Reverse Proxy & HTTPS
-### TASK-278 — Redirect 301 HTTP → HTTPS
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-279 — `location /api/` → proxy_pass `backend:8000`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-280 — `location /ws/` → proxy_pass con upgrade WebSocket
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-281 — `location /` → proxy_pass `frontend:80`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-282 — Headers sicurezza: `X-Frame-Options`, `X-Content-Type-Options`, `HSTS`, `CSP`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-283 — Rate limiting su `/api/auth/` (5 req/min per IP)
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-284 — `ssl-params.conf` con TLS 1.2+, no SSLv3
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-
-#### Certbot / Let's Encrypt
-### TASK-285 — Servizio `certbot` in `docker-compose.prod.yml`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-286 — `scripts/init-letsencrypt.sh` (staging → production)
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-287 — `scripts/renew-certs.sh` (nginx reload, no downtime)
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-
-### 6.4 VPS — Provisioning
-### TASK-288 — `[provider]` VPS: Ubuntu 24.04 LTS, 2 vCPU / 4 GB RAM / 40 GB SSD
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-289 — `[provider]` SSH key, firewall porte 22/80/443, DNS record A
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-290 — Utente non-root `deploy` con sudo
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-291 — Disabilitare login SSH root
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-292 — UFW: `allow 22,80,443/tcp`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-293 — Installare Docker + Docker Compose plugin
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-294 — `unattended-upgrades` per aggiornamenti sicurezza automatici
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-
-### 6.5 Logging Strutturato
-### TASK-295 — Installare `python-json-logger`
-
-**Status:** Done ✅  
-**Completato:** 2026-05-06
-**Data:** 2026-05-06
-
-### TASK-296 — `core/logging.py` con `setup_logging()` e `JsonFormatter`
-
-**Status:** Done ✅  
-**Completato:** 2026-05-06
-**Data:** 2026-05-06
-
-### TASK-297 — Chiamare `setup_logging()` nel lifespan di `main.py`
-
-**Status:** Done ✅  
-**Completato:** 2026-05-06
-**Data:** 2026-05-06
-
-### TASK-298 — Sostituire tutti i `print()` con `logger = logging.getLogger(__name__)`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-299 — Middleware FastAPI con `request_id` (UUID) in ogni log
-
-**Status:** Done ✅  
-**Completato:** 2026-05-06
-**Data:** 2026-05-06
-
-
-### 6.6 Error Handling Globale
-### TASK-300 — `core/exceptions.py`: `SynthTradeError`, `RiskViolationError`, `ModelUnavailableError`, `OrderExecutionError`
-
-**Status:** Done ✅  
-**Completato:** 2026-05-06
-**Data:** 2026-05-06
-
-### TASK-301 — Handler globale `Exception` → `{"error": "internal_server_error", "request_id": "..."}`
-
-**Status:** Done ✅  
-**Completato:** 2026-05-06
-**Data:** 2026-05-06
-
-### TASK-302 — Handler `HTTPException` con `request_id`
-
-**Status:** Done ✅  
-**Completato:** 2026-05-06
-**Data:** 2026-05-06
-
-### TASK-303 — Handler `RequestValidationError` con errori Pydantic leggibili
-
-**Status:** Done ✅  
-**Completato:** 2026-05-06
-**Data:** 2026-05-06
-
-### TASK-304 — Nessun stack trace esposto in produzione
-
-**Status:** Done ✅  
-**Completato:** 2026-05-06
-**Data:** 2026-05-06
-
-
-### 6.7 Deploy & Script di Rilascio
-### TASK-305 — `scripts/deploy.sh`: git pull → build → up -d → image prune
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-306 — `scripts/rollback.sh`: riavvia immagine tag precedente
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-307 — Cron job rinnovo SSL: `0 3 * * *`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-308 — Backup DB: verificare retention Supabase Cloud
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-
-### 6.8 Smoke Test Post-Deploy
-### TASK-309 — `scripts/smoke_test.sh`:
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-  - `GET /health` → 200 `{"status": "ok"}`
-  - `POST /api/auth/login` → JWT token
-  - `GET /api/strategies` con token → 200
-  - `GET /api/dashboard/stats` con token → 200
-  - WebSocket `wss://` → heartbeat ricevuto
-  - Certificato SSL valido
-### TASK-310 — `smoke_test.sh` integrato in `deploy.sh` con rollback automatico su fallimento
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-
-### 6.9 Checklist Pre-Go-Live
-### TASK-311 — Nessuna variabile `.env` hardcodata (`grep -r "SECRET\|PASSWORD\|API_KEY"`)
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-312 — `DEBUG=False`, `ENVIRONMENT=production`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-313 — CORS: `allow_origins` lista esplicita, no `*`
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-314 — Tutte le tabelle Supabase con RLS abilitato
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-315 — Nessun endpoint pubblico senza autenticazione
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-316 — `ng build --configuration production` senza warning critici
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-317 — `docker compose -f docker-compose.prod.yml config` senza errori
-
-**Status:** In Progress  
-**Data:** 2026-05-06
-
-### TASK-318 — Smoke test completato con tutti i check verdi
-
-**Status:** In Progress  
-**Data:** 2026-05-06
 
 ---
 

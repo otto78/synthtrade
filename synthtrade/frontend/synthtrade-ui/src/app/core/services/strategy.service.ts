@@ -34,6 +34,10 @@ export class StrategyService {
     return this.http.post<{ id: string; status: string }>(`${this.base}/${id}/activate`, {});
   }
 
+  stop(id: string): Observable<{ id: string; status: string; closed_trades: number }> {
+    return this.http.post<{ id: string; status: string; closed_trades: number }>(`${this.base}/${id}/stop`, {});
+  }
+
   deleteStrategy(id: string): Observable<{ id: string; status: string }> {
     return this.http.delete<{ id: string; status: string }>(`${this.base}/${id}`);
   }

@@ -3740,7 +3740,7 @@ Per le strategie con status = "ACTIVE":
 
 ### TASK-423 — Bottone "Stop" collegato a POST /api/strategies/{id}/stop
 
-**Status:** Pending
+**Status:** Done
 **Priorita:** Critica
 
 Dialog di conferma esistente (TASK-323) collegato all'endpoint reale:
@@ -3752,7 +3752,7 @@ Dialog di conferma esistente (TASK-323) collegato all'endpoint reale:
 
 ### TASK-424 — Badge "LIVE" e indicatori visivi strategia in esecuzione
 
-**Status:** Pending
+**Status:** Done
 **Priorita:** Media
 
 Per ogni strategia ACTIVE nella strategies page:

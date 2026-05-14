@@ -230,6 +230,7 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
                     </div>
 
                     <div class="active-status">
+                      <span class="live-badge">LIVE</span>
                       <span class="pulse-dot"></span>
                       In Esecuzione
                     </div>
@@ -258,7 +259,12 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
                         @if (s.custom_name) {
                           <span class="acc-custom-name">{{ s.custom_name }}</span>
                         }
-                        <span class="acc-title">{{ s.title }}</span>
+                        <div class="acc-title-row">
+                          <span class="acc-title">{{ s.title }}</span>
+                          @if (s.status === 'STOPPED') {
+                            <span class="stopped-badge">STOPPED</span>
+                          }
+                        </div>
                         <div class="acc-meta">
                           <span class="tag">{{ s.pair }}</span>
                           <span class="date">{{ s.updated_at | date:'dd MMM yyyy' }}</span>
@@ -400,7 +406,9 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
     .active-info { flex: 1; }
     .active-title { display: block; font-size: 16px; font-weight: 600; color: var(--text-primary); }
     .active-meta { font-size: 13px; color: var(--text-secondary); font-family: monospace; }
-    .active-status { display: flex; align-items: center; gap: 8px; color: var(--color-buy); font-size: 14px; font-weight: 600; }
+    
+    .active-status { display: flex; align-items: center; gap: 12px; color: var(--color-buy); font-size: 14px; font-weight: 600; }
+    .live-badge { background: var(--color-buy); color: #000; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; letter-spacing: 1px; }
     .pulse-dot { width: 8px; height: 8px; background: var(--color-buy); border-radius: 50%; animation: pulse 1.5s infinite; }
     @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
     
@@ -421,7 +429,9 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
     .accordion-header:hover { background: rgba(255,255,255,0.02); }
     
     .acc-info { display: flex; flex-direction: column; gap: 4px; }
+    .acc-title-row { display: flex; align-items: center; gap: 12px; }
     .acc-title { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+    .stopped-badge { background: rgba(255,255,255,0.1); color: var(--text-secondary); font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 4px; text-transform: uppercase; border: 1px solid rgba(255,255,255,0.05); }
     .acc-meta { display: flex; align-items: center; gap: 12px; }
     .acc-meta .tag { font-size: 11px; color: var(--text-secondary); font-family: monospace; background: rgba(0,0,0,0.2); padding: 2px 8px; border-radius: 4px; }
     .acc-meta .date { font-size: 11px; color: var(--text-muted); }
@@ -540,10 +550,10 @@ export class StrategiesPage implements OnInit, OnDestroy {
     // Listener per P&L aggiornato
     this.sub.add(
       this.wsService.on<WsStrategyPnlUpdatedPayload>(WsMessageType.StrategyPnlUpdated).subscribe(msg => {
-        if (msg.strategy_id) {
+        if (msg['strategy_id']) {
           this.pnlData.update(map => ({
             ...map,
-            [msg.strategy_id]: msg as unknown as WsStrategyPnlUpdatedPayload
+            [msg['strategy_id']]: msg as unknown as WsStrategyPnlUpdatedPayload
           }));
         }
       })
@@ -552,7 +562,7 @@ export class StrategiesPage implements OnInit, OnDestroy {
     // Listener per strategia fermata
     this.sub.add(
       this.wsService.on<WsStrategyStoppedPayload>(WsMessageType.StrategyStopped).subscribe(msg => {
-        if (msg.strategy_id) {
+        if (msg['strategy_id']) {
           this.loadStrategies(); // Ricarica tutto per spostare nei completati
         }
       })
@@ -791,7 +801,7 @@ export class StrategiesPage implements OnInit, OnDestroy {
   doStop(): void {
     const s = this.pendingStop();
     if (!s || !s.id) return;
-    this.strategyService.reject(s.id).subscribe(() => {
+    this.strategyService.stop(s.id).subscribe(() => {
       this.loadStrategies();
       this.pendingStop.set(null);
     });

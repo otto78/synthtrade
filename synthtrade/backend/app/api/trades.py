@@ -26,3 +26,17 @@ def get_open_positions(_: str = Depends(get_current_user)):
     res = db.table("trades").select("*").eq("status", "OPEN") \
             .order("executed_at", desc=True).execute()
     return res.data
+
+
+@router.get("/active")
+def get_active_trades_with_join(_: str = Depends(get_current_user)):
+    """
+    TASK-417: GET /api/trades/active con JOIN
+    Restituisce trade attivi (status=OPEN) con dettagli della strategia associata
+    """
+    db = get_supabase()
+    res = db.table("trades").select("*") \
+            .eq("status", "OPEN") \
+            .join("strategies", "strategies.id", "trades.strategy_id") \
+            .order("executed_at", desc=True).execute()
+    return res.data

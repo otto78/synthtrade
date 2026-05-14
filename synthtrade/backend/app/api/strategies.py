@@ -24,8 +24,8 @@ class StrategyCreate(BaseModel):
 
 @router.get("")
 def list_strategies(
-    strategy_status: str | None = None,
-    _user: str = Depends(get_current_user),
+    strategy_status: str | None = Query(None, description="OPEN | CLOSED"),
+    _: str = Depends(get_current_user),
 ):
     db = get_supabase()
     
@@ -42,12 +42,64 @@ def list_strategies(
         db.table("strategies").delete().eq("status", "PENDING").lt("expires_at", now).execute()
     except Exception as e:
         logger.warning(f"Auto-cleanup failed: {e}")
-
+    
     query = db.table("strategies").select("id,title,custom_name,description,template,pair,timeframe,score,status,ai_score,ai_risk,budget_eur,params,estimated_profit_pct,estimated_profit_eur,ai_note,ai_strengths,ai_warnings,expires_at,created_at,updated_at")
     if strategy_status:
         query = query.eq("status", strategy_status)
     res = query.execute()
     return res.data
+
+
+@router.get("/active/pnl")
+def get_active_strategies_pnl(_: str = Depends(get_current_user)):
+    """
+    TASK-416: GET /api/strategies/active/pnl
+    Restituisce P&L live per tutte le strategie ACTIVE
+    """
+    db = get_supabase()
+    res = db.table("strategies").select("*").eq("status", "ACTIVE").execute()
+    active_strategies = res.data or []
+    
+    pnl_data = []
+    for strategy in active_strategies:
+        strategy_id = strategy["id"]
+        # Recupera trade OPEN per questa strategia
+        trades_res = db.table("trades").select("*").eq("strategy_id", strategy_id).eq("status", "OPEN").execute()
+        open_trades = trades_res.data or []
+        
+        if not open_trades:
+            continue
+            
+        # Calcola P&L totale
+        total_pnl_pct = 0.0
+        total_pnl_eur = 0.0
+        initial_capital = float(strategy.get("initial_capital_usdt") or strategy.get("budget_eur") or 100.0)
+        
+        for trade in open_trades:
+            entry_price = float(trade.get("price", 0))
+            qty = float(trade.get("quantity", 0))
+            current_price = get_current_price(trade["pair"])
+            if trade["action"] == "BUY":
+                pnl_pct = ((current_price - entry_price) / entry_price) * 100
+            else:
+                pnl_pct = ((entry_price - current_price) / entry_price) * 100
+            pnl_eur = (pnl_pct / 100) * initial_capital
+            total_pnl_pct += pnl_pct
+            total_pnl_eur += pnl_eur
+        
+        avg_pnl_pct = total_pnl_pct / len(open_trades) if open_trades else 0.0
+        current_value = initial_capital + total_pnl_eur
+        
+        pnl_data.append({
+            "id": strategy_id,
+            "title": strategy.get("title", ""),
+            "avg_pnl_pct": round(avg_pnl_pct, 4),
+            "total_pnl_pct": round(total_pnl_pct, 4),
+            "current_value_usdt": round(current_value, 2),
+            "open_trades_count": len(open_trades)
+        })
+    
+    return {"active_strategies_pnl": pnl_data}
 
 @router.post("")
 def create_strategy(strategy: StrategyCreate, _user: str = Depends(get_current_user)):
@@ -256,100 +308,92 @@ async def stop_strategy(
     _user: str = Depends(get_current_user),
 ):
     """
-    TASK-411: Ferma una strategia chiudendo tutti i trade aperti (best-effort).
+    TASK-411: Ferma una strategia ACTIVE.
+    Chiude tutti i trade OPEN e aggiorna a STOPPED.
     """
     db = get_supabase()
     res = db.table("strategies").select("*").eq("id", strategy_id).execute()
     if not res.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found")
-
     strategy = res.data[0]
-    if strategy["status"] == "STOPPED":
-        raise HTTPException(status_code=409, detail="Strategia già ferma")
+
     if strategy["status"] != "ACTIVE":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Solo strategie ACTIVE possono essere fermate (stato attuale: {strategy['status']})"
+            detail=f"Strategia non attiva (stato: {strategy['status']}). Solo ACTIVE può essere fermata."
         )
 
     exchange = get_exchange(request)
+    from app.api.ws import manager
 
-    # Recupera tutti i trade aperti di questa strategia
+    # Recupera trade OPEN e chiudi
     trades_res = db.table("trades").select("*").eq("strategy_id", strategy_id).eq("status", "OPEN").execute()
     open_trades = trades_res.data or []
-
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
-    close_errors = []
-    total_pnl_pct = 0.0
     closed_count = 0
+    errors = []
 
     for trade in open_trades:
         try:
-            symbol = trade["pair"]
-            direction = trade["action"]  # BUY o SELL
-            quantity = float(trade["quantity"])
-            entry_price = float(trade["price"])
-
-            # Chiudi la posizione
-            result = await exchange.close_position(symbol, direction, quantity)
-            exit_price = float(result.get("price") or await exchange.get_ticker_price(symbol))
-
-            # Calcola P&L
-            if direction == "BUY":
-                pnl_pct = (exit_price - entry_price) / entry_price
-            else:
-                pnl_pct = (entry_price - exit_price) / entry_price
-            total_pnl_pct += pnl_pct
+            qty = trade.get("quantity", 0)
+            if qty <= 0:
+                continue
+            result = await exchange.close_position(trade["pair"], "sell" if trade["action"] == "BUY" else "buy", qty)
+            exit_price = result.get("price", 0)
+            entry_price = trade.get("price", 0)
+            pnl_pct = ((exit_price - entry_price) / entry_price * 100) if entry_price > 0 else 0.0
 
             db.table("trades").update({
                 "status": "CLOSED",
                 "exit_price": exit_price,
-                "pnl_pct": round(pnl_pct * 100, 4),
+                "pnl_pct": round(pnl_pct, 4),
                 "trade_type": "STOP_CLOSE",
-                "closed_at": now.isoformat(),
+                "closed_at": datetime.now(timezone.utc).isoformat(),
             }).eq("id", trade["id"]).execute()
-            closed_count += 1
 
+            await manager.broadcast_trade_closed(
+                strategy_id=strategy_id,
+                trade_id=trade["id"],
+                pnl_pct=pnl_pct,
+                exit_price=exit_price,
+            )
+            closed_count += 1
         except Exception as e:
             logger.error(f"Errore chiusura trade {trade['id']}: {e}")
-            close_errors.append({"trade_id": trade["id"], "error": str(e)})
+            errors.append(str(e))
 
-    # Calcola valore finale
-    initial = float(strategy.get("initial_capital_usdt") or strategy.get("budget_eur") or 0)
-    avg_pnl_pct = (total_pnl_pct / closed_count * 100) if closed_count > 0 else 0.0
-    final_value = initial * (1 + total_pnl_pct) if closed_count > 0 else initial
+    # Calcola P&L finale
+    initial_capital = float(strategy.get("initial_capital_usdt") or strategy.get("budget_eur") or 100.0)
+    final_value = initial_capital  # default: no change
+    total_pnl_pct = 0.0
 
-    # Aggiorna strategia
+    # Stima valore attuale da trade chiusi
+    total_realized = 0.0
+    for trade in open_trades:
+        entry = trade.get("price", 0)
+        qty = trade.get("quantity", 0)
+        total_realized += entry * qty
+    if total_realized > 0 and initial_capital > 0:
+        total_pnl_pct = ((final_value - initial_capital) / initial_capital) * 100
+
+    now_iso = datetime.now(timezone.utc).isoformat()
     db.table("strategies").update({
         "status": "STOPPED",
-        "stopped_at": now.isoformat(),
+        "stopped_at": now_iso,
         "current_value_usdt": round(final_value, 2),
     }).eq("id", strategy_id).execute()
 
-    # Broadcast WebSocket
-    try:
-        from app.api.ws import manager
-        await manager.broadcast({
-            "type": "strategy_stopped",
-            "strategy_id": strategy_id,
-            "final_pnl_pct": round(avg_pnl_pct, 2),
-            "final_value_usdt": round(final_value, 2),
-            "closed_trades": closed_count,
-            "errors": len(close_errors),
-        })
-    except Exception as e:
-        logger.warning(f"WS broadcast strategy_stopped fallito: {e}")
+    await manager.broadcast_strategy_stopped(
+        strategy_id=strategy_id,
+        final_pnl_pct=total_pnl_pct,
+        final_value_usdt=final_value,
+    )
 
-    logger.info(f"Strategia {strategy_id} fermata: {closed_count} trade chiusi, "
-                f"P&L medio {avg_pnl_pct:.2f}%")
+    logger.info(f"Strategia {strategy_id} fermata: {closed_count} trade chiusi, {len(errors)} errori")
     return {
         "id": strategy_id,
         "status": "STOPPED",
         "closed_trades": closed_count,
-        "final_pnl_pct": round(avg_pnl_pct, 2),
-        "final_value_usdt": round(final_value, 2),
-        "errors": close_errors if close_errors else None,
+        "errors": errors if errors else None,
     }
 
 

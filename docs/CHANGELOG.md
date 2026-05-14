@@ -1,4 +1,4 @@
-# Changelog — SynthTrade
+no sempre una divresificazion# Changelog — SynthTrade
 
 All notable changes to this project will be documented in this file.
 

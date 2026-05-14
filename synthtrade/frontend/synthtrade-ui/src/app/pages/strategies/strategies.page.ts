@@ -1,6 +1,8 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { StrategyService } from '../../core/services/strategy.service';
 import { PipelineService } from '../../core/services/pipeline.service';
+import { WsService } from '../../core/services/ws.service';
+import { WsMessageType, WsStrategyPnlUpdatedPayload, WsStrategyStoppedPayload } from '../../core/models/ws-message.model';
 import { Strategy, StrategyRequest, GenerationStatus, GenerationProgressStatus, StrategyCreateDto } from '../../core/models/strategy.model';
 import { BadgeStatusComponent } from '../../shared/components/badge-status/badge-status.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
@@ -10,7 +12,7 @@ import { GenerationProgressComponent } from '../../shared/components/generation-
 import { NgClass, KeyValuePipe, DecimalPipe, CurrencyPipe, DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
-import { switchMap } from 'rxjs';
+import { Subscription, switchMap } from 'rxjs';
 import { animate, style, transition, trigger } from '@angular/animations';
 
 type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
@@ -219,6 +221,14 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
                       <span class="active-title">{{ s.title }}</span>
                       <span class="active-meta">{{ s.pair }} · {{ s.timeframe }}</span>
                     </div>
+                    
+                    <div class="active-pnl-live">
+                      <span class="pnl-label">P&L Live</span>
+                      <span class="pnl-value" [ngClass]="{ positive: (getPnlFor(s.id!)?.current_pnl_pct ?? 0) > 0, negative: (getPnlFor(s.id!)?.current_pnl_pct ?? 0) < 0 }">
+                        {{ getPnlFor(s.id!)?.current_pnl_pct || 0 | number:'1.2-2' }}%
+                      </span>
+                    </div>
+
                     <div class="active-status">
                       <span class="pulse-dot"></span>
                       In Esecuzione
@@ -393,6 +403,13 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
     .active-status { display: flex; align-items: center; gap: 8px; color: var(--color-buy); font-size: 14px; font-weight: 600; }
     .pulse-dot { width: 8px; height: 8px; background: var(--color-buy); border-radius: 50%; animation: pulse 1.5s infinite; }
     @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+    
+    .active-pnl-live { text-align: right; padding-right: 24px; border-right: 1px solid var(--border-default); }
+    .pnl-label { display: block; font-size: 9px; color: var(--text-secondary); text-transform: uppercase; }
+    .pnl-value { font-size: 18px; font-weight: 700; font-family: monospace; }
+    .positive { color: var(--color-buy); }
+    .negative { color: var(--color-sell); }
+
     .btn-view { background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border-default); padding: 6px 16px; border-radius: 6px; cursor: pointer; }
     .btn-stop { background: rgba(246,70,93,0.1); color: var(--color-sell); border: 1px solid var(--color-sell); padding: 6px 16px; border-radius: 6px; cursor: pointer; }
 
@@ -465,10 +482,12 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
     .acc-custom-name { display: block; font-size: 13px; font-weight: 600; color: var(--accent-primary); margin-bottom: 2px; }
   `]
 })
-export class StrategiesPage implements OnInit {
+export class StrategiesPage implements OnInit, OnDestroy {
   private strategyService = inject(StrategyService);
   private pipelineService = inject(PipelineService);
+  private wsService = inject(WsService);
   private router = inject(Router);
+  private sub = new Subscription();
 
   readonly tabs: Tab[] = ['GENERAZIONE', 'APPROVATE', 'ATTIVE', 'COMPLETATE'];
   activeTab = signal<Tab>('GENERAZIONE');
@@ -476,6 +495,7 @@ export class StrategiesPage implements OnInit {
   // State
   strategies = signal<Strategy[]>([]);
   generatedStrategies = signal<Strategy[]>([]);
+  pnlData = signal<Record<string, WsStrategyPnlUpdatedPayload>>({});
   loading = signal(true);
   checkingSaved = signal(true);
   
@@ -497,7 +517,7 @@ export class StrategiesPage implements OnInit {
   pending = computed(() => this.strategies().filter(s => s.status === 'PENDING'));
   approved = computed(() => this.strategies().filter(s => s.status === 'APPROVED'));
   active = computed(() => this.strategies().filter(s => s.status === 'ACTIVE'));
-  completed = computed(() => this.strategies().filter(s => s.status === 'EXPIRED'));
+  completed = computed(() => this.strategies().filter(s => s.status === 'EXPIRED' || s.status === 'STOPPED'));
 
   countForTab(tab: Tab): number {
     if (tab === 'GENERAZIONE') return this.pending().length;
@@ -509,6 +529,38 @@ export class StrategiesPage implements OnInit {
 
   ngOnInit(): void {
     this.loadStrategies();
+    this.setupWsListeners();
+  }
+
+  ngOnDestroy(): void {
+    this.sub.unsubscribe();
+  }
+
+  private setupWsListeners() {
+    // Listener per P&L aggiornato
+    this.sub.add(
+      this.wsService.on<WsStrategyPnlUpdatedPayload>(WsMessageType.StrategyPnlUpdated).subscribe(msg => {
+        if (msg.strategy_id) {
+          this.pnlData.update(map => ({
+            ...map,
+            [msg.strategy_id]: msg as unknown as WsStrategyPnlUpdatedPayload
+          }));
+        }
+      })
+    );
+
+    // Listener per strategia fermata
+    this.sub.add(
+      this.wsService.on<WsStrategyStoppedPayload>(WsMessageType.StrategyStopped).subscribe(msg => {
+        if (msg.strategy_id) {
+          this.loadStrategies(); // Ricarica tutto per spostare nei completati
+        }
+      })
+    );
+  }
+
+  getPnlFor(id: string): WsStrategyPnlUpdatedPayload | null {
+    return this.pnlData()[id] || null;
   }
 
   loadStrategies() {

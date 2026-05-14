@@ -3727,7 +3727,7 @@ Aggiungere a WsMessageType enum e modelli:
 
 ### TASK-422 — P&L live per strategie ACTIVE in strategies.page.ts
 
-**Status:** Pending
+**Status:** Done
 **Priorita:** Critica
 
 Per le strategie con status = "ACTIVE":

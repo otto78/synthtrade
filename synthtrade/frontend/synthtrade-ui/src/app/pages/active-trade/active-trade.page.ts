@@ -1,11 +1,17 @@
 import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { Strategy } from '../../core/models/strategy.model';
-import { NgClass, DatePipe } from '@angular/common';
+import { NgClass, DatePipe, DecimalPipe } from '@angular/common';
 import { Subscription, interval, startWith, switchMap } from 'rxjs';
 import { DashboardService } from '../../core/services/dashboard.service';
 import { StrategyService } from '../../core/services/strategy.service';
 import { WsService } from '../../core/services/ws.service';
-import { WsMessageType, WsPricePayload } from '../../core/models/ws-message.model';
+import { 
+  WsMessageType, 
+  WsPricePayload, 
+  WsStrategyPnlUpdatedPayload, 
+  WsTradeOpenedPayload, 
+  WsTradeClosedPayload 
+} from '../../core/models/ws-message.model';
 import { EmptyStateComponent } from '../../shared/components/empty-state/empty-state.component';
 import { PriceTickerComponent } from '../../shared/components/price-ticker/price-ticker.component';
 import { SignedNumberPipe } from '../../shared/pipes/signed-number.pipe';
@@ -13,6 +19,7 @@ import { SignedNumberPipe } from '../../shared/pipes/signed-number.pipe';
 interface ActiveTradeMonitorData {
   stats?: {
     total_pnl_pct: number;
+    total_pnl_eur: number;
     win_rate: number;
     active_trades: number;
     equity_curve: number[];
@@ -30,7 +37,7 @@ interface ActiveTradeMonitorData {
 @Component({
   selector: 'app-active-trade',
   standalone: true,
-  imports: [NgClass, EmptyStateComponent, PriceTickerComponent, SignedNumberPipe, DatePipe],
+  imports: [NgClass, EmptyStateComponent, PriceTickerComponent, SignedNumberPipe, DatePipe, DecimalPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (!activeStrategy()) {
@@ -66,13 +73,14 @@ interface ActiveTradeMonitorData {
             <span class="kpi-label">P&L Totale</span>
             <div class="kpi-main" [ngClass]="{ positive: (monitorData()?.stats?.total_pnl_pct ?? 0) > 0, negative: (monitorData()?.stats?.total_pnl_pct ?? 0) < 0 }">
               {{ monitorData()?.stats?.total_pnl_pct || 0 | signedNumber }}%
+              <span class="pnl-eur">({{ monitorData()?.stats?.total_pnl_eur || 0 | number:'1.2-2' }}€)</span>
             </div>
           </div>
 
           <div class="kpi-card">
             <span class="kpi-label">Win Rate</span>
             <div class="kpi-main highlight">
-              {{ monitorData()?.stats?.win_rate || 0 }}%
+              {{ monitorData()?.stats?.win_rate || 0 | number:'1.0-1' }}%
             </div>
           </div>
 
@@ -84,7 +92,7 @@ interface ActiveTradeMonitorData {
           </div>
         </div>
 
-        <!-- Sezione Grafico (Placeholder per ora) -->
+        <!-- Sezione Grafico -->
         <div class="chart-section">
           <div class="section-header">
             <h3>Equity Curve (Performance Storica)</h3>
@@ -155,6 +163,7 @@ interface ActiveTradeMonitorData {
     .kpi-main.highlight { color: var(--accent-primary); }
     .positive { color: var(--color-buy); }
     .negative { color: var(--color-sell); }
+    .pnl-eur { font-size: 14px; opacity: 0.7; margin-left: 8px; }
 
     .section-header { margin-bottom: 16px; }
     .section-header h3 { font-size: 18px; color: var(--text-primary); margin: 0; }
@@ -199,9 +208,10 @@ export class ActiveTradePage implements OnInit, OnDestroy {
       this.dashboardService.getStats().subscribe(data => {
         this.activeStrategy.set(data.active_strategy);
         
-        // 2. Se c'è una strategia attiva, avvia il polling del monitoraggio (ogni 5 secondi)
+        // 2. Se c'è una strategia attiva, avvia il polling del monitoraggio (ogni 5 secondi come fallback)
         if (data.active_strategy?.id) {
           this.startMonitoring(data.active_strategy.id);
+          this.setupWsListeners(data.active_strategy.id);
         }
       })
     );
@@ -209,20 +219,67 @@ export class ActiveTradePage implements OnInit, OnDestroy {
     // 3. Prezzi real-time via WebSocket
     this.sub.add(
       this.wsService.on<WsPricePayload>(WsMessageType.Price).subscribe(msg => {
-        if (msg.payload) this.currentPrice.set(msg.payload.price);
+        if (msg['pair'] === this.activeStrategy()?.pair) {
+           this.currentPrice.set(msg['price']);
+        }
+      })
+    );
+  }
+
+  private setupWsListeners(strategyId: string) {
+    // P&L Update
+    this.sub.add(
+      this.wsService.on<WsStrategyPnlUpdatedPayload>(WsMessageType.StrategyPnlUpdated).subscribe(msg => {
+        if (msg['strategy_id'] === strategyId) {
+          this.monitorData.update(current => {
+            if (!current) return current;
+            return {
+              ...current,
+              stats: {
+                ...current.stats!,
+                total_pnl_pct: msg['current_pnl_pct'],
+                total_pnl_eur: msg['current_pnl_eur'],
+              }
+            };
+          });
+        }
+      })
+    );
+
+    // Trade Opened
+    this.sub.add(
+      this.wsService.on<WsTradeOpenedPayload>(WsMessageType.TradeOpened).subscribe(msg => {
+        if (msg['strategy_id'] === strategyId) {
+          this.refreshMonitorData(strategyId);
+        }
+      })
+    );
+
+    // Trade Closed
+    this.sub.add(
+      this.wsService.on<WsTradeClosedPayload>(WsMessageType.TradeClosed).subscribe(msg => {
+        if (msg['strategy_id'] === strategyId) {
+          this.refreshMonitorData(strategyId);
+        }
       })
     );
   }
 
   private startMonitoring(id: string) {
     this.sub.add(
-      interval(5000).pipe(
+      interval(10000).pipe(
         startWith(0),
         switchMap(() => this.strategyService.getMonitorData(id))
       ).subscribe(data => {
         this.monitorData.set(data);
       })
     );
+  }
+
+  private refreshMonitorData(id: string) {
+    this.strategyService.getMonitorData(id).subscribe(data => {
+      this.monitorData.set(data);
+    });
   }
 
   ngOnDestroy(): void { this.sub.unsubscribe(); }

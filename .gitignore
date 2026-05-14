@@ -27,6 +27,7 @@ supabase/.temp/
 
 # Loom Framework
 .task-backups/
+.loom-backup*/
 *.bak
 
 # IDE

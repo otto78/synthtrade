@@ -14,9 +14,29 @@ exchange = ccxt.binance({
     "enableRateLimit": True,
 })
 
-# Se non e testnet, disabilita sandbox
-if not settings.BINANCE_TESTNET:
-    exchange.set_sandbox_mode(False)
+# Forzatura Spot Testnet
+if settings.BINANCE_TESTNET:
+    exchange.set_sandbox_mode(True)
+    vision_url = "https://testnet.binance.vision/api/v3"
+    
+    # Invece di cancellare, sovrascriviamo TUTTO con vision_url
+    # per superare i check interni di ccxt
+    for key in list(exchange.urls['api'].keys()):
+        exchange.urls['api'][key] = vision_url
+    
+    exchange.options['defaultType'] = 'spot'
+
+print(f"Final URLs: {exchange.urls['api']}")
+print()
+
+print(f"CCXT Version: {ccxt.__version__}")
+print(f"Exchange ID: {exchange.id}")
+print(f"Sandbox Mode: {exchange.urls.get('api')}")
+print()
+
+print(f"Public URL: {exchange.urls['api']['public']}")
+print(f"Private URL: {exchange.urls['api']['private']}")
+print()
 
 # Test 1: Ticker pubblico
 try:

@@ -2,8 +2,32 @@ import ccxt
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 from app.db.supabase_client import get_supabase
+from app.config import settings
 
-exchange = ccxt.binance({"enableRateLimit": True})
+# Inizializzazione exchange configurata per Spot Testnet se necessario
+exchange = ccxt.binance({
+    "apiKey": settings.BINANCE_API_KEY,
+    "secret": settings.BINANCE_SECRET_KEY,
+    "enableRateLimit": True,
+    "options": {"defaultType": "spot"}
+})
+
+if settings.BINANCE_TESTNET:
+    exchange.set_sandbox_mode(True)
+    vision_url = "https://testnet.binance.vision/api/v3"
+    exchange.urls["api"] = {
+        "public": vision_url,
+        "private": vision_url,
+        "v3": vision_url,
+        "v1": vision_url,
+        "sapi": vision_url,
+        "fapiPublic": vision_url,
+        "fapiPrivate": vision_url,
+        "dapiPublic": vision_url,
+        "dapiPrivate": vision_url,
+    }
+else:
+    exchange.set_sandbox_mode(False)
 
 OHLCV_COLS = ["open", "high", "low", "close", "volume"]
 

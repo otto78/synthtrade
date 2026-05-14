@@ -34,7 +34,23 @@ class BinanceExchangeAdapter:
                     "defaultType": "spot",
                 },
             })
-            self.client.set_sandbox_mode(testnet)
+            if testnet:
+                self.client.set_sandbox_mode(True)
+                # Forza gli URL per evitare redirect su Future (bug CCXT 4.3.90+)
+                vision_url = "https://testnet.binance.vision/api/v3"
+                self.client.urls["api"] = {
+                    "public": vision_url,
+                    "private": vision_url,
+                    "v3": vision_url,
+                    "v1": vision_url,
+                    "sapi": vision_url,
+                    "fapiPublic": vision_url,
+                    "fapiPrivate": vision_url,
+                    "dapiPublic": vision_url,
+                    "dapiPrivate": vision_url,
+                }
+            else:
+                self.client.set_sandbox_mode(False)
         self._filters_cache = {}
 
     async def close(self):

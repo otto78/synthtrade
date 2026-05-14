@@ -1742,4 +1742,40 @@ def build_market_context(ohlcv_df) -> dict:
 
 ---
 
+## 🛠️ Note di Configurazione & Troubleshooting
+
+### Binance Testnet Setup
+Per testare l'attivazione e l'esecuzione delle strategie senza fondi reali, è necessario utilizzare la **Binance Spot Testnet**.
+- **URL ufficiale**: [testnet.binance.vision](https://testnet.binance.vision/)
+- **Credenziali**: Generare una **HMAC Key** (Spot/Margin).
+- **Variabili `.env` richieste**:
+  ```env
+  BINANCE_API_KEY=...
+  BINANCE_SECRET_KEY=...
+  BINANCE_TESTNET=true
+  PAPER_TRADING=true
+  ```
+
+### Troubleshooting CCXT (Spot vs Future)
+Nelle versioni recenti di CCXT (es. 4.3.90), l'inizializzazione di `ccxt.binance()` in modalità sandbox potrebbe reindirizzare erroneamente le richieste verso gli endpoint Future (`testnet.binancefuture.com`), causando errori di autenticazione o "Not Found" per chiavi generate solo per la Spot.
+
+**Soluzione corretta:**
+```python
+exchange = ccxt.binance({
+    "apiKey": ...,
+    "secret": ...,
+    "options": {"defaultType": "spot"}  # Forza Spot
+})
+exchange.set_sandbox_mode(True)
+```
+Se il problema persiste, è possibile sovrascrivere manualmente gli URL nel client:
+```python
+if settings.BINANCE_TESTNET:
+    exchange.urls['api']['public'] = "https://testnet.binance.vision/api/v3"
+    exchange.urls['api']['private'] = "https://testnet.binance.vision/api/v3"
+```
+Questi fix sono verificati e documentati nello script `synthtrade/backend/test_binance.py`.
+
+---
+
 > **Prossimo step:** Fase 0 — setup monorepo + migration Supabase + `GET /health` verde. Tutto il resto si costruisce su questi mattoni.

@@ -784,9 +784,16 @@ export class StrategiesPage implements OnInit, OnDestroy {
 
   startStrategy(s: Strategy) {
     if (!s.id) return;
-    this.strategyService.activate(s.id).subscribe(() => {
-      this.loadStrategies();
-      this.activeTab.set('ATTIVE');
+    this.strategyService.activate(s.id).subscribe({
+      next: () => {
+        this.loadStrategies();
+        this.activeTab.set('ATTIVE');
+      },
+      error: (err) => {
+        console.error('Errore attivazione:', err);
+        const msg = err.error?.detail?.message || err.error?.detail || 'Errore durante l\'attivazione';
+        alert(`Impossibile attivare la strategia: ${msg}`);
+      }
     });
   }
 

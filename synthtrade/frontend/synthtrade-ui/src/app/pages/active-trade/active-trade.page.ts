@@ -1,37 +1,44 @@
-import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
-import { Strategy } from '../../core/models/strategy.model';
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, inject, signal, computed } from '@angular/core';
 import { NgClass, DatePipe, DecimalPipe } from '@angular/common';
-import { Subscription, interval, startWith, switchMap } from 'rxjs';
+import { Subscription, switchMap, forkJoin, of, catchError, map } from 'rxjs';
 import { DashboardService } from '../../core/services/dashboard.service';
-import { StrategyService } from '../../core/services/strategy.service';
+import { StrategyService, ActivePnlItem, MonitorStrategyInfo } from '../../core/services/strategy.service';
 import { WsService } from '../../core/services/ws.service';
-import { 
-  WsMessageType, 
-  WsPricePayload, 
-  WsStrategyPnlUpdatedPayload, 
-  WsTradeOpenedPayload, 
-  WsTradeClosedPayload 
+import {
+  WsMessageType,
+  WsStrategyPnlUpdatedPayload,
+  WsStrategyStoppedPayload,
+  WsTradeOpenedPayload,
+  WsTradeClosedPayload
 } from '../../core/models/ws-message.model';
 import { EmptyStateComponent } from '../../shared/components/empty-state/empty-state.component';
 import { PriceTickerComponent } from '../../shared/components/price-ticker/price-ticker.component';
 import { SignedNumberPipe } from '../../shared/pipes/signed-number.pipe';
 
-interface ActiveTradeMonitorData {
-  stats?: {
-    total_pnl_pct: number;
-    total_pnl_eur: number;
-    win_rate: number;
-    active_trades: number;
-    equity_curve: number[];
-  };
-  recent_trades?: {
-    id: string;
-    executed_at: string;
-    symbol: string;
-    side: string;
-    pnl_pct: number;
-    status: string;
-  }[];
+interface TradeDetail {
+  id: string;
+  executed_at: string;
+  symbol: string;
+  side: string;
+  pnl_pct: number;
+  price: number;
+  quantity: number;
+  status: string;
+  trade_type: string;
+  strategy_id: string;
+}
+
+interface StrategyActiveInfo {
+  id: string;
+  title: string;
+  pair: string;
+  timeframe: string;
+  initial_capital_usdt: number;
+  pnl_pct: number;
+  pnl_eur: number;
+  open_trades: TradeDetail[];
+  closed_trades: TradeDetail[];
+  equity_curve: number[];
 }
 
 @Component({
@@ -40,122 +47,145 @@ interface ActiveTradeMonitorData {
   imports: [NgClass, EmptyStateComponent, PriceTickerComponent, SignedNumberPipe, DatePipe, DecimalPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    @if (!activeStrategy()) {
+    @if (strategies().length === 0) {
       <app-empty-state message="Nessun trade attivo" icon="📊" />
     } @else {
       <div class="active-trade">
-        <!-- Header con Stato e Titolo -->
-        <div class="trade-header">
-          <div class="title-row">
-            <span class="trade-title">{{ activeStrategy()?.title }}</span>
-            <div class="status-indicator">
-              <span class="pulse-dot"></span>
-              MONITORAGGIO ATTIVO
-            </div>
-          </div>
-          <span class="trade-pair">{{ activeStrategy()?.pair }} · {{ activeStrategy()?.timeframe }}</span>
-        </div>
+        <h1 class="page-title">📈 Trade Attivi ({{ strategies().length }} strategie attive)</h1>
 
-        <!-- KPIs Principali -->
+        <!-- KPIs Globali -->
         <div class="kpi-grid">
           <div class="kpi-card">
-            <span class="kpi-label">Prezzo Attuale</span>
-            <div class="kpi-main">
-              @if (currentPrice() > 0) {
-                <app-price-ticker [price]="currentPrice()" />
-              } @else {
-                <span class="loading-placeholder">...</span>
+            <span class="kpi-label">Strategie Attive</span>
+            <div class="kpi-main highlight">{{ strategies().length }}</div>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Trade Aperti Totali</span>
+            <div class="kpi-main highlight">{{ totalOpenTrades() }}</div>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">P&L Cumulativo</span>
+            <div class="kpi-main" [ngClass]="{ positive: totalPnl() > 0, negative: totalPnl() < 0 }">
+              {{ totalPnl() | number:'1.2-2' }}%
+            </div>
+          </div>
+        </div>
+
+        <!-- Lista Strategie Attive -->
+        <div class="strategies-list">
+          @for (s of strategies(); track s.id) {
+            <div class="strategy-section">
+              <div class="section-header">
+                <div class="section-title-row">
+                  <span class="section-title">{{ s.title }}</span>
+                  <span class="section-meta">{{ s.pair }} · {{ s.timeframe }}</span>
+                </div>
+                <div class="section-stats">
+                  <div class="ss-item">
+                    <span class="ss-label">Capitale</span>
+                    <span class="ss-value">{{ s.initial_capital_usdt | number:'1.0-0' }} USDT</span>
+                  </div>
+                  <div class="ss-item">
+                    <span class="ss-label">P&L</span>
+                    <span class="ss-value" [ngClass]="{ positive: s.pnl_pct > 0, negative: s.pnl_pct < 0 }">
+                      {{ s.pnl_pct | number:'1.2-2' }}%
+                    </span>
+                  </div>
+                  <div class="ss-item">
+                    <span class="ss-label">Trade Aperti</span>
+                    <span class="ss-value highlight">{{ s.open_trades.length }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Open Trades Table -->
+              @if (s.open_trades.length > 0) {
+                <div class="trades-section">
+                  <h4 class="subsection-title">🟢 Trade Aperti</h4>
+                  <div class="trades-table">
+                    <div class="table-header">
+                      <span>Data</span>
+                      <span>Asset</span>
+                      <span>Direzione</span>
+                      <span>Q.tà</span>
+                      <span>Prezzo Entry</span>
+                      <span>P&L</span>
+                      <span>Stato</span>
+                    </div>
+                    @for (trade of s.open_trades; track trade.id) {
+                      <div class="table-row">
+                        <span class="cell-date">{{ trade.executed_at | date:'dd/MM HH:mm' }}</span>
+                        <span class="cell-asset">{{ trade.symbol }}</span>
+                        <span class="cell-side" [ngClass]="trade.side.toLowerCase()">{{ trade.side }}</span>
+                        <span class="cell-qty">{{ trade.quantity | number:'1.4-6' }}</span>
+                        <span class="cell-price">{{ trade.price | number:'1.2-8' }}</span>
+                        <span class="cell-pnl" [ngClass]="{ positive: trade.pnl_pct > 0, negative: trade.pnl_pct < 0 }">
+                          {{ trade.pnl_pct | number:'1.2-2' }}%
+                        </span>
+                        <span class="cell-status">
+                          <span class="status-dot open"></span>
+                          {{ trade.status }}
+                        </span>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+
+              <!-- Closed Trades Table -->
+              @if (s.closed_trades.length > 0) {
+                <div class="trades-section">
+                  <h4 class="subsection-title">🔵 Trade Chiusi</h4>
+                  <div class="trades-table">
+                    <div class="table-header">
+                      <span>Data</span>
+                      <span>Asset</span>
+                      <span>Direzione</span>
+                      <span>P&L</span>
+                      <span>Tipo</span>
+                      <span>Stato</span>
+                    </div>
+                    @for (trade of s.closed_trades; track trade.id) {
+                      <div class="table-row">
+                        <span class="cell-date">{{ trade.executed_at | date:'dd/MM HH:mm' }}</span>
+                        <span class="cell-asset">{{ trade.symbol }}</span>
+                        <span class="cell-side" [ngClass]="trade.side.toLowerCase()">{{ trade.side }}</span>
+                        <span class="cell-pnl" [ngClass]="{ positive: trade.pnl_pct > 0, negative: trade.pnl_pct < 0 }">
+                          {{ trade.pnl_pct | number:'1.2-2' }}%
+                        </span>
+                        <span class="cell-type">{{ trade.trade_type }}</span>
+                        <span class="cell-status">
+                          <span class="status-dot closed"></span>
+                          {{ trade.status }}
+                        </span>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+
+              <!-- Equity Curve -->
+              @if (s.equity_curve.length > 1) {
+                <div class="chart-section">
+                  <h4 class="subsection-title">📈 Equity Curve</h4>
+                  <div class="equity-viz">
+                    <div class="curve-points">
+                      @for (point of s.equity_curve; track $index) {
+                        <div class="point-bar" [style.height.%]="point" [title]="point.toFixed(2) + '%'"></div>
+                      }
+                    </div>
+                  </div>
+                </div>
               }
             </div>
-          </div>
-          
-          <div class="kpi-card">
-            <span class="kpi-label">P&L Totale</span>
-            <div class="kpi-main" [ngClass]="{ positive: (monitorData()?.stats?.total_pnl_pct ?? 0) > 0, negative: (monitorData()?.stats?.total_pnl_pct ?? 0) < 0 }">
-              {{ monitorData()?.stats?.total_pnl_pct || 0 | signedNumber }}%
-              <span class="pnl-eur">({{ monitorData()?.stats?.total_pnl_eur || 0 | number:'1.2-2' }}€)</span>
-            </div>
-          </div>
-
-          <div class="kpi-card">
-            <span class="kpi-label">Win Rate</span>
-            <div class="kpi-main highlight">
-              {{ monitorData()?.stats?.win_rate || 0 | number:'1.0-1' }}%
-            </div>
-          </div>
-
-          <div class="kpi-card">
-            <span class="kpi-label">Trade Aperti</span>
-            <div class="kpi-main highlight">
-              {{ monitorData()?.stats?.active_trades || 0 }}
-            </div>
-          </div>
-        </div>
-
-        <!-- Sezione Grafico -->
-        <div class="chart-section">
-          <div class="section-header">
-            <h3>Equity Curve (Performance Storica)</h3>
-          </div>
-          <div class="equity-viz">
-            @if ((monitorData()?.stats?.equity_curve?.length ?? 0) > 0) {
-              <div class="curve-points">
-                @for (point of monitorData()?.stats?.equity_curve; track $index) {
-                  <div class="point-bar" [style.height.%]="point" [title]="point + '%'"></div>
-                }
-              </div>
-            } @else {
-              <div class="empty-chart">Dati storici insufficienti per il grafico</div>
-            }
-          </div>
-        </div>
-
-        <!-- Lista Trade Recenti -->
-        <div class="trades-section">
-          <div class="section-header">
-            <h3>Operazioni Recenti</h3>
-          </div>
-          <div class="trades-table">
-            <div class="table-header">
-              <span>Data</span>
-              <span>Asset</span>
-              <span>Direzione</span>
-              <span>P&L</span>
-              <span>Stato</span>
-            </div>
-            @for (trade of monitorData()?.recent_trades; track trade.id) {
-              <div class="table-row">
-                <span class="cell-date">{{ trade.executed_at | date:'dd/MM HH:mm' }}</span>
-                <span class="cell-asset">{{ trade.symbol }}</span>
-                <span class="cell-side" [ngClass]="trade.side.toLowerCase()">{{ trade.side }}</span>
-                <span class="cell-pnl" [ngClass]="{ positive: trade.pnl_pct > 0, negative: trade.pnl_pct < 0 }">
-                  {{ trade.pnl_pct | signedNumber }}%
-                </span>
-                <span class="cell-status">
-                  <span class="status-dot" [ngClass]="trade.status.toLowerCase()"></span>
-                  {{ trade.status }}
-                </span>
-              </div>
-            } @empty {
-              <div class="empty-table">In attesa del primo segnale operativo...</div>
-            }
-          </div>
+          }
         </div>
       </div>
     }
   `,
   styles: [`
     .active-trade { padding: 24px; max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px; }
-    
-    .trade-header { border-bottom: 1px solid var(--border-default); padding-bottom: 16px; }
-    .title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .trade-title { font-size: 24px; font-weight: 700; color: var(--text-primary); }
-    .trade-pair { font-size: 14px; color: var(--text-secondary); font-family: monospace; }
-    
-    .status-indicator { display: flex; align-items: center; gap: 8px; color: var(--color-buy); font-size: 12px; font-weight: 700; background: rgba(14,203,129,0.1); padding: 4px 12px; border-radius: 20px; }
-    .pulse-dot { width: 8px; height: 8px; background: var(--color-buy); border-radius: 50%; animation: pulse 1.5s infinite; }
-    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(14,203,129,0.4); } 70% { box-shadow: 0 0 0 10px rgba(14,203,129,0); } 100% { box-shadow: 0 0 0 0 rgba(14,203,129,0); } }
-
+    .page-title { font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0; }
     .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
     .kpi-card { background: var(--bg-card); border: 1px solid var(--border-default); padding: 20px; border-radius: 12px; }
     .kpi-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; display: block; }
@@ -163,24 +193,27 @@ interface ActiveTradeMonitorData {
     .kpi-main.highlight { color: var(--accent-primary); }
     .positive { color: var(--color-buy); }
     .negative { color: var(--color-sell); }
-    .pnl-eur { font-size: 14px; opacity: 0.7; margin-left: 8px; }
-
-    .section-header { margin-bottom: 16px; }
-    .section-header h3 { font-size: 18px; color: var(--text-primary); margin: 0; }
-
-    .chart-section { background: var(--bg-card); border: 1px solid var(--border-default); padding: 24px; border-radius: 16px; }
-    .equity-viz { height: 150px; display: flex; align-items: flex-end; gap: 4px; padding-top: 20px; border-bottom: 1px solid var(--border-default); }
-    .point-bar { flex: 1; background: var(--accent-primary); opacity: 0.6; border-radius: 2px 2px 0 0; min-width: 10px; transition: height 0.3s ease; }
-    .point-bar:hover { opacity: 1; }
-    .empty-chart { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); font-style: italic; }
-
-    .trades-section { background: var(--bg-card); border: 1px solid var(--border-default); padding: 24px; border-radius: 16px; }
+    .strategies-list { display: flex; flex-direction: column; gap: 24px; }
+    .strategy-section { background: var(--bg-card); border: 1px solid var(--border-default); border-radius: 16px; padding: 24px; }
+    .section-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border-default); }
+    .section-title-row { display: flex; flex-direction: column; gap: 4px; }
+    .section-title { font-size: 18px; font-weight: 700; color: var(--text-primary); }
+    .section-meta { font-size: 13px; color: var(--text-secondary); font-family: monospace; }
+    .section-stats { display: flex; gap: 24px; }
+    .ss-item { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+    .ss-label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; }
+    .ss-value { font-size: 15px; font-weight: 700; font-family: monospace; }
+    .ss-value.highlight { color: var(--accent-primary); }
+    .subsection-title { font-size: 14px; font-weight: 600; color: var(--text-secondary); margin: 0 0 12px 0; }
+    .trades-section { margin-bottom: 20px; }
     .trades-table { display: flex; flex-direction: column; }
-    .table-header { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr 1fr; padding: 12px; border-bottom: 1px solid var(--border-default); color: var(--text-secondary); font-size: 12px; font-weight: 600; }
-    .table-row { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr 1fr; padding: 16px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); align-items: center; transition: background 0.2s; }
+    .table-header { display: grid; grid-template-columns: 1.2fr 1fr 0.8fr 0.8fr 1fr 1fr 0.8fr; padding: 12px; border-bottom: 1px solid var(--border-default); color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+    .table-row { display: grid; grid-template-columns: 1.2fr 1fr 0.8fr 0.8fr 1fr 1fr 0.8fr; padding: 16px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); align-items: center; transition: background 0.2s; }
     .table-row:hover { background: rgba(255,255,255,0.02); }
     .cell-date { color: var(--text-secondary); font-size: 13px; }
     .cell-asset { font-weight: 600; color: var(--text-primary); }
+    .cell-qty, .cell-type { font-family: monospace; font-size: 13px; color: var(--text-primary); }
+    .cell-price { font-family: monospace; font-size: 13px; color: var(--text-primary); }
     .cell-side { font-size: 12px; font-weight: 700; text-transform: uppercase; }
     .cell-side.buy { color: var(--color-buy); }
     .cell-side.sell { color: var(--color-sell); }
@@ -189,7 +222,11 @@ interface ActiveTradeMonitorData {
     .status-dot { width: 6px; height: 6px; border-radius: 50%; }
     .status-dot.open { background: var(--color-buy); box-shadow: 0 0 8px var(--color-buy); }
     .status-dot.closed { background: var(--text-secondary); }
-    .empty-table { padding: 40px; text-align: center; color: var(--text-secondary); font-style: italic; }
+    .chart-section { margin-top: 8px; }
+    .equity-viz { height: 100px; display: flex; align-items: flex-end; gap: 2px; padding-top: 12px; border-bottom: 1px solid var(--border-default); }
+    .curve-points { display: flex; align-items: flex-end; gap: 2px; height: 100%; width: 100%; }
+    .point-bar { flex: 1; background: var(--accent-primary); opacity: 0.6; border-radius: 2px 2px 0 0; min-width: 4px; transition: height 0.3s ease; }
+    .point-bar:hover { opacity: 1; }
   `]
 })
 export class ActiveTradePage implements OnInit, OnDestroy {
@@ -198,88 +235,139 @@ export class ActiveTradePage implements OnInit, OnDestroy {
   private wsService = inject(WsService);
   private sub = new Subscription();
 
-  activeStrategy = signal<Partial<Strategy> | null>(null);
-  monitorData = signal<ActiveTradeMonitorData | null>(null);
-  currentPrice = signal(0);
+  strategies = signal<StrategyActiveInfo[]>([]);
+  private currentStrategies: StrategyActiveInfo[] = [];
+
+  totalOpenTrades = computed(() =>
+    this.strategies().reduce((acc, s) => acc + s.open_trades.length, 0)
+  );
+
+  totalPnl = computed(() => {
+    const list = this.strategies();
+    if (list.length === 0) return 0;
+    return list.reduce((acc, s) => acc + s.pnl_pct, 0) / list.length;
+  });
 
   ngOnInit(): void {
-    // 1. Carica info base strategia attiva
-    this.sub.add(
-      this.dashboardService.getStats().subscribe(data => {
-        this.activeStrategy.set(data.active_strategy);
-        
-        // 2. Se c'è una strategia attiva, avvia il polling del monitoraggio (ogni 5 secondi come fallback)
-        if (data.active_strategy?.id) {
-          this.startMonitoring(data.active_strategy.id);
-          this.setupWsListeners(data.active_strategy.id);
-        }
-      })
-    );
+    this.loadActiveStrategies();
+    this.setupWsListeners();
+  }
 
-    // 3. Prezzi real-time via WebSocket
+  private loadActiveStrategies() {
     this.sub.add(
-      this.wsService.on<WsPricePayload>(WsMessageType.Price).subscribe(msg => {
-        if (msg['pair'] === this.activeStrategy()?.pair) {
-           this.currentPrice.set(msg['price']);
-        }
+      this.strategyService.getActivePnl().pipe(
+        switchMap(response => {
+          const pnlItems: ActivePnlItem[] = response?.active_strategies_pnl || [];
+          if (pnlItems.length === 0) {
+            return of([] as MonitorStrategyInfo[]);
+          }
+          return forkJoin(
+            pnlItems.map(item =>
+              this.strategyService.getMonitorData(item.id).pipe(
+                catchError(() => of(null))
+              )
+            )
+          ).pipe(
+            map((results: (MonitorStrategyInfo | null)[]) =>
+              results.filter((r): r is MonitorStrategyInfo => r !== null)
+            )
+          );
+        }),
+        catchError(() => of([] as MonitorStrategyInfo[]))
+      ).subscribe(monitorData => {
+        this.currentStrategies = monitorData.map(m => this.buildStrategyInfo(m));
+        this.strategies.set(this.currentStrategies);
       })
     );
   }
 
-  private setupWsListeners(strategyId: string) {
-    // P&L Update
+  private buildStrategyInfo(monitor: MonitorStrategyInfo): StrategyActiveInfo {
+    const openTrades: TradeDetail[] = (monitor.recent_trades || [])
+      .filter(t => t.status === 'OPEN')
+      .map(t => ({
+        id: t.id,
+        executed_at: t.executed_at,
+        symbol: t.pair || t.symbol || '',
+        side: t.action || t.side || '',
+        pnl_pct: t.pnl_pct || 0,
+        price: t.price || 0,
+        quantity: t.quantity || 0,
+        status: t.status,
+        trade_type: t.trade_type || 'SIGNAL',
+        strategy_id: t.strategy_id || monitor.strategy?.id || ''
+      }));
+
+    const closedTrades: TradeDetail[] = (monitor.recent_trades || [])
+      .filter(t => t.status === 'CLOSED')
+      .map(t => ({
+        id: t.id,
+        executed_at: t.executed_at,
+        symbol: t.pair || t.symbol || '',
+        side: t.action || t.side || '',
+        pnl_pct: t.pnl_pct || 0,
+        price: t.price || 0,
+        quantity: t.quantity || 0,
+        status: t.status,
+        trade_type: t.trade_type || 'SIGNAL',
+        strategy_id: t.strategy_id || monitor.strategy?.id || ''
+      }));
+
+    return {
+      id: monitor.strategy?.id || '',
+      title: monitor.strategy?.title || '',
+      pair: monitor.strategy?.pair || '',
+      timeframe: monitor.strategy?.timeframe || '',
+      initial_capital_usdt: monitor.stats?.total_pnl_eur
+        ? Math.abs(monitor.stats.total_pnl_eur / ((monitor.stats.total_pnl_pct || 1) / 100))
+        : 0,
+      pnl_pct: monitor.stats?.total_pnl_pct || 0,
+      pnl_eur: monitor.stats?.total_pnl_eur || 0,
+      open_trades: openTrades,
+      closed_trades: closedTrades,
+      equity_curve: monitor.stats?.equity_curve || [100]
+    };
+  }
+
+  private setupWsListeners(): void {
     this.sub.add(
       this.wsService.on<WsStrategyPnlUpdatedPayload>(WsMessageType.StrategyPnlUpdated).subscribe(msg => {
-        if (msg['strategy_id'] === strategyId) {
-          this.monitorData.update(current => {
-            if (!current) return current;
-            return {
-              ...current,
-              stats: {
-                ...current.stats!,
-                total_pnl_pct: msg['current_pnl_pct'],
-                total_pnl_eur: msg['current_pnl_eur'],
-              }
-            };
-          });
+        const sid = msg['strategy_id'] as string | undefined;
+        if (!sid) return;
+        this.strategies.update(list =>
+          list.map(s => {
+            if (s.id === sid) {
+              return {
+                ...s,
+                pnl_pct: (msg['current_pnl_pct'] as number | undefined) ?? s.pnl_pct,
+                pnl_eur: (msg['current_pnl_eur'] as number | undefined) ?? s.pnl_eur,
+              };
+            }
+            return s;
+          })
+        );
+      })
+    );
+
+    this.sub.add(
+      this.wsService.on<WsTradeOpenedPayload>(WsMessageType.TradeOpened).subscribe(() => {
+        this.loadActiveStrategies();
+      })
+    );
+
+    this.sub.add(
+      this.wsService.on<WsTradeClosedPayload>(WsMessageType.TradeClosed).subscribe(() => {
+        this.loadActiveStrategies();
+      })
+    );
+
+    this.sub.add(
+      this.wsService.on<WsStrategyStoppedPayload>(WsMessageType.StrategyStopped).subscribe(msg => {
+        const sid = msg['strategy_id'] as string | undefined;
+        if (sid) {
+          this.strategies.update(list => list.filter(s => s.id !== sid));
         }
       })
     );
-
-    // Trade Opened
-    this.sub.add(
-      this.wsService.on<WsTradeOpenedPayload>(WsMessageType.TradeOpened).subscribe(msg => {
-        if (msg['strategy_id'] === strategyId) {
-          this.refreshMonitorData(strategyId);
-        }
-      })
-    );
-
-    // Trade Closed
-    this.sub.add(
-      this.wsService.on<WsTradeClosedPayload>(WsMessageType.TradeClosed).subscribe(msg => {
-        if (msg['strategy_id'] === strategyId) {
-          this.refreshMonitorData(strategyId);
-        }
-      })
-    );
-  }
-
-  private startMonitoring(id: string) {
-    this.sub.add(
-      interval(10000).pipe(
-        startWith(0),
-        switchMap(() => this.strategyService.getMonitorData(id))
-      ).subscribe(data => {
-        this.monitorData.set(data);
-      })
-    );
-  }
-
-  private refreshMonitorData(id: string) {
-    this.strategyService.getMonitorData(id).subscribe(data => {
-      this.monitorData.set(data);
-    });
   }
 
   ngOnDestroy(): void { this.sub.unsubscribe(); }

@@ -328,4 +328,20 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 **Decisioni chiave:**
 - Il drawdown viene ora calcolato dal punto di massimo profitto raggiunto (Peak-to-Trough) anziché dal capitale iniziale, garantendo una protezione più robusta dei profitti accumulati.
 
-**Ultima modifica:** 2026-05-14 — Gemini CLI (Completamento Epica Execution & Monitoraggio Real-time)
+### v1.2.4 — 2026-05-14
+
+**Milestone:** Fix Operativi Testnet — Dashboard, Trade View, Stop
+
+**Completato:**
+- ✅ **Bug 1 — Dashboard pending**: Aggiunto timeout (15s) + fallback OFFLINE in `dashboard.service.ts`. La dashboard ora non resta più bloccata su "loading" se il backend è lento/offline.
+- ✅ **Bug 2 — Trade attivi non visibili**: Riscritta `active-trade.page.ts` per supportare MULTIPLE strategie attive con caricamento dati via `GET /api/strategies/active/pnl` e `GET /api/monitor/{id}`. Aggiunte interfacce `ActivePnlItem`, `MonitorStrategyInfo` in `strategy.service.ts`. Fix calcolo P&L cumulativo in `monitor.py`.
+- ✅ **Bug 3 — Stop non chiude trade su DB**: La chiusura trade su DB ora avviene SEMPRE, indipendentemente dal successo/failure di `exchange.close_position()`. Se exchange fallisce, mantiene il prezzo entry e P&L=0, ma i trade passano comunque a status CLOSED.
+
+**Decisioni chiave:**
+- La dashboard deve essere resiliente al fallimento del backend — timeout + fallback anziché loading infinito
+- I trade vengono chiusi su DB **sempre**, anche se l'exchange non risponde, per evitare trade orfani
+- La pagina Active Trades ora supporta n strategie attive in contemporanea, non più una sola
+
+---
+
+**Ultima modifica:** 2026-05-14 — Cline (Fix Operativi Testnet: Dashboard Pending, Trade Multi-Strategia, Stop Forzato)

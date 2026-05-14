@@ -31,14 +31,27 @@ def get_strategy_monitor(strategy_id: str, _user: str = Depends(get_current_user
     winning_trades = [t for t in closed_trades if (t.get("pnl_pct") or 0) > 0]
     
     win_rate = (len(winning_trades) / len(closed_trades) * 100) if closed_trades else 0
-    total_pnl_pct = sum((t.get("pnl_pct") or 0) for t in trades)
+    # Calcola P&L cumulativo corretto (non somma lineare)
+    # pnl_pct è già una percentuale (es. 0.05 = 5%), usiamo log returns per cumulare
+    import math
+    cumulative_pnl = 100.0  # Base 100
+    for t in reversed(trades):
+        pnl = t.get("pnl_pct") or 0.0
+        if pnl != 0:
+            cumulative_pnl *= (1 + pnl)
+    total_pnl_pct = cumulative_pnl - 100.0  # Es: 115.0 - 100.0 = 15.0%
     
-    # 4. Costruisci equity curve basata sui trade (semplificata per ora)
-    equity_curve = [100.0] # Base 100
+    # TASK-415: Calcola PnL in EUR (approssimato sul budget iniziale)
+    budget_usdt = strategy.get("initial_capital_usdt") or strategy.get("budget_eur") or 100.0
+    total_pnl_eur = budget_usdt * (total_pnl_pct / 100.0)
+
+    # 4. Costruisci equity curve basata sui trade
+    equity_curve = [100.0]  # Base 100
     current_equity = 100.0
-    for t in reversed(trades): # Dal più vecchio al più recente
-        if t["status"] == "CLOSED":
-            current_equity *= (1 + (t.get("pnl_pct") or 0))
+    for t in reversed(trades):  # Dal più vecchio al più recente
+        pnl = t.get("pnl_pct") or 0.0
+        if t["status"] == "CLOSED" and pnl != 0:
+            current_equity *= (1 + pnl)
             equity_curve.append(round(current_equity, 2))
 
     return {
@@ -50,11 +63,12 @@ def get_strategy_monitor(strategy_id: str, _user: str = Depends(get_current_user
             "timeframe": strategy["timeframe"]
         },
         "stats": {
-            "total_pnl_pct": round(total_pnl_pct * 100, 2),
+            "total_pnl_pct": round(total_pnl_pct, 2),
+            "total_pnl_eur": round(total_pnl_eur, 2),
             "win_rate": round(win_rate, 2),
             "total_trades": total_trades,
             "active_trades": len([t for t in trades if t["status"] == "OPEN"]),
             "equity_curve": equity_curve
         },
-        "recent_trades": trades[:10] # Ultimi 10 trade
+        "recent_trades": trades[:20]  # Ultimi 20 trade
     }

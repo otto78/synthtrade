@@ -3837,6 +3837,41 @@ Aggiungere a GET /api/dashboard/stats:
   active_strategies_count, open_trades_count, total_active_pnl_pct
 Visualizzare come KPI card con aggiornamento WS.
 
+### TASK-431 — Fix Bug Operativi: Dashboard Pending, Trade non Visibili, Stop non chiude Trade
+
+**Status:** Done ✅
+**Completato:** 2026-05-14
+**Priorita:** Critica
+
+**Bug 1 — Dashboard "pending"**: Il service `dashboard.service.ts` non aveva timeout/fallback. Se il backend era offline o lento, `shareReplay(1)` bloccava la UI in stato "loading".
+
+**Fix**: Aggiunto `timeout(15s)` + `catchError` che restituisce stato OFFLINE con valori a zero.
+
+**File modificati:**
+- `synthtrade/frontend/synthtrade-ui/src/app/core/services/dashboard.service.ts`
+
+---
+
+**Bug 2 — Trade attivi non visibili dopo attivazione strategia**: La pagina `active-trade.page.ts` assumeva UNA singola strategia attiva e usava dati da dashboard senza caricare i trade reali dal monitor endpoint.
+
+**Fix**: Riscritta pagina per supportare MULTIPLE strategie attive, caricando dati via `GET /api/strategies/active/pnl` + `GET /api/monitor/{id}` per ogni strategia. Aggiunte interfacce `ActivePnlItem`, `MonitorStrategyInfo` in `strategy.service.ts`.
+
+**File modificati:**
+- `synthtrade/frontend/synthtrade-ui/src/app/pages/active-trade/active-trade.page.ts`
+- `synthtrade/frontend/synthtrade-ui/src/app/core/services/strategy.service.ts`
+- `synthtrade/backend/app/api/monitor.py` (fix calcolo P&L cumulativo)
+
+---
+
+**Bug 3 — Stop strategia non chiude trade su DB**: Quando `exchange.close_position()` falliva (es. testnet non raggiungibile), l'exception impediva l'update dello status trade su DB, lasciandoli OPEN per sempre.
+
+**Fix**: La chiusura trade su DB ora avviene SEMPRE, indipendentemente dal successo/failure di `exchange.close_position()`. Se exchange fallisce, mantiene il prezzo entry e P&L=0.
+
+**File modificati:**
+- `synthtrade/backend/app/api/strategies.py`
+
+---
+
 ## 🛠️ Fase 8 — Fix Operativi Testnet (v1.2.4)
 
 ### TASK-415 — Monitor API: Aggiunta P&L in EUR

@@ -210,11 +210,17 @@ async def activate_strategy(
     try:
         available_usdt = await exchange.get_balance()
         holdings = await exchange.get_holdings()
+        logger.info(f"Activation check for {strategy_id}: available={available_usdt}, required={budget_usdt}")
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Exchange non raggiungibile: {e}")
+        logger.error(f"Exchange connectivity/auth error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, 
+            detail={"error": "exchange_error", "message": str(e)}
+        )
 
     # TASK-403: Verifica fondi sufficienti (tolleranza 5%)
     if available_usdt < budget_usdt * 0.95:
+        logger.warning(f"Insufficient funds for {strategy_id}: {available_usdt} < {budget_usdt}")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
@@ -341,15 +347,26 @@ async def stop_strategy(
     errors = []
 
     for trade in open_trades:
+        qty = trade.get("quantity", 0)
+        if qty <= 0:
+            continue
+        entry_price = trade.get("price", 0)
+        exit_price = entry_price  # default: prezzo entry = nessun P&L
+        pnl_pct = 0.0
         try:
-            qty = trade.get("quantity", 0)
-            if qty <= 0:
-                continue
-            result = await exchange.close_position(trade["pair"], "sell" if trade["action"] == "BUY" else "buy", qty)
-            exit_price = result.get("price", 0)
-            entry_price = trade.get("price", 0)
+            result = await exchange.close_position(
+                trade["pair"],
+                "sell" if trade["action"] == "BUY" else "buy",
+                qty
+            )
+            exit_price = result.get("price", 0) or result.get("average", 0) or entry_price
             pnl_pct = ((exit_price - entry_price) / entry_price * 100) if entry_price > 0 else 0.0
+        except Exception as e:
+            logger.error(f"Errore chiusura trade {trade['id']} su exchange: {e}. Forzatura chiusura su DB.")
+            errors.append(str(e))
 
+        # FORZA la chiusura su DB ANCHE se exchange fallisce (Bug 3: trade restavano OPEN)
+        try:
             db.table("trades").update({
                 "status": "CLOSED",
                 "exit_price": exit_price,
@@ -366,7 +383,7 @@ async def stop_strategy(
             )
             closed_count += 1
         except Exception as e:
-            logger.error(f"Errore chiusura trade {trade['id']}: {e}")
+            logger.error(f"Errore aggiornamento DB trade {trade['id']}: {e}")
             errors.append(str(e))
 
     # Calcola P&L finale

@@ -7,6 +7,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.2.3] — 2026-05-14
+
+### Added
+- **Execution Phase A**: Completata l'attivazione operativa delle strategie.
+- **CapitalAllocator**: Implementata logica di calcolo quote basata sul budget e allocazione percentuale.
+- **Strategy Activation**: L'endpoint `/activate` ora esegue ordini MARKET reali (su Testnet), inizializza il capitale e trasmette eventi via WebSocket.
+- **Strategy Stopping**: L'endpoint `/stop` ora chiude tutte le posizioni aperte, aggiorna lo stato a STOPPED e notifica il frontend.
+- **Real-time Updates**: Implementato il broadcasting WebSocket per `trade_opened`, `trade_closed`, `strategy_stopped` e `strategy_pnl_updated`.
+- **Live P&L Tracking**: Aggiunto endpoint `/active/pnl` e monitor job per il calcolo e la notifica in tempo reale delle performance delle strategie attive.
+- **Advanced Trade Join**: Endpoint `/trades/active` che restituisce i trade aperti con i dettagli completi della strategia associata via resource embedding di Supabase.
+- **Holdings Tracking**: Endpoint `/exchange/holdings` per monitorare i saldi reali dell'exchange.
+- **ExecutionEngine**: Architettura singleton integrata nel ciclo di vita dell'applicazione con supporto al broadcasting real-time.
+
+### Fixed
+- **Insufficient Funds**: Gestione errore 422 durante l'attivazione se il saldo USDT su Binance è inferiore al budget richiesto.
+- **API Robustness**: Risolti bug di importazione e regressioni negli endpoint delle strategie.
+- **Frontend Type Safety**: Aggiornati i modelli WebSocket per supportare i nuovi payload operativi.
+
 ## [1.2.1] — 2026-05-13
 
 ### Changed

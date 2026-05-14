@@ -1,7 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from app.dependencies import get_current_user, get_exchange
+from app.api.ws import manager
 from app.db.supabase_client import get_supabase
+from app.core.market_data import get_current_price
 from app.execution.capital_allocator import CapitalAllocator, BudgetTooSmallError
+from app.execution.quantity_calculator import calculate_quantity
 from pydantic import BaseModel
 import logging
 import uuid
@@ -185,14 +188,8 @@ async def activate_strategy(
     strategy_id: str,
     request: Request,
     _user: str = Depends(get_current_user),
+    exchange = Depends(get_exchange),
 ):
-    """
-    TASK-402: Attiva una strategia con allocazione capitale reale.
-    1. Verifica stato (deve essere APPROVED o PENDING)
-    2. Controlla fondi USDT disponibili
-    3. Alloca capitale acquistando le crypto necessarie
-    4. Salva activated_at e initial_capital_usdt
-    """
     db = get_supabase()
     res = db.table("strategies").select("*").eq("id", strategy_id).execute()
     if not res.data:
@@ -207,7 +204,6 @@ async def activate_strategy(
                    f"Richiesto: {allowed_statuses}"
         )
 
-    exchange = get_exchange(request)
     budget_usdt = float(strategy.get("budget_eur") or 100.0)
 
     # 1. Controlla fondi disponibili
@@ -249,7 +245,6 @@ async def activate_strategy(
         try:
             # Calcola quantità: usdt_amount / prezzo corrente
             price = await exchange.get_ticker_price(trade_req.symbol)
-            from app.execution.quantity_calculator import calculate_quantity
             filters = await exchange.get_symbol_filters(trade_req.symbol)
             qty = calculate_quantity(
                 budget_usdt=trade_req.usdt_amount,
@@ -269,7 +264,20 @@ async def activate_strategy(
                 "paper": True,
                 "executed_at": now.isoformat(),
             }
-            db.table("trades").insert(trade_row).execute()
+            db_res = db.table("trades").insert(trade_row).execute()
+            
+            # TASK-414: Broadcast real-time
+            if db_res.data:
+                trade_id = db_res.data[0]["id"]
+                await manager.broadcast_trade_opened(
+                    strategy_id=strategy_id,
+                    trade_id=trade_id,
+                    symbol=trade_req.symbol,
+                    direction=trade_req.side.upper(),
+                    price=trade_row["price"],
+                    quantity=trade_row["quantity"]
+                )
+                
             allocation_trades.append({"symbol": trade_req.symbol, "pct": trade_req.pct,
                                       "usdt": trade_req.usdt_amount, "qty": qty, "price": price})
 

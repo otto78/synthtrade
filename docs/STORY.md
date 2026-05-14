@@ -299,6 +299,23 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
 
+## [1.2.3] — 2026-05-14
+
+**Milestone:** Completamento Epica Execution & Monitoraggio Real-time
+
+**Completato:**
+- ✅ **TASK-400 - 403**: Implementazione `CapitalAllocator` e attivazione operativa delle strategie con acquisto asset su Binance.
+- ✅ **TASK-414 - 416**: Monitoraggio real-time via WebSocket. Broadcasting automatico di eventi di trade e aggiornamento live del P&L.
+- ✅ **TASK-417**: Endpoint `/trades/active` con join strategie via resource embedding di Supabase per una visualizzazione avanzata.
+- ✅ **TASK-406 - 413**: Finalizzazione motore di esecuzione (`StrategyRunner`, `ExecutionEngine`, `OrderTracker`) e gestione dello stop operativo.
+
+**Decisioni chiave:**
+- Utilizzo della Dependency Injection in FastAPI per migliorare la testabilità degli endpoint critici.
+- Broadcasting proattivo dal motore di esecuzione per garantire una UI sempre sincronizzata.
+- Unificazione del formato dei messaggi WS per semplificare il consumo lato frontend.
+
+---
+
 ### v1.2.2 — 2026-05-14
 
 **Milestone:** Implementazione Peak-to-Trough Drawdown (TASK-415)
@@ -311,4 +328,4 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 **Decisioni chiave:**
 - Il drawdown viene ora calcolato dal punto di massimo profitto raggiunto (Peak-to-Trough) anziché dal capitale iniziale, garantendo una protezione più robusta dei profitti accumulati.
 
-**Ultima modifica:** 2026-05-13 — Cline (v1.2.1 Fix Profitti Irrealistici)
+**Ultima modifica:** 2026-05-14 — Gemini CLI (Completamento Epica Execution & Monitoraggio Real-time)

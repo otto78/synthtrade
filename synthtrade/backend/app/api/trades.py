@@ -35,8 +35,6 @@ def get_active_trades_with_join(_: str = Depends(get_current_user)):
     Restituisce trade attivi (status=OPEN) con dettagli della strategia associata
     """
     db = get_supabase()
-    res = db.table("trades").select("*") \
-            .eq("status", "OPEN") \
-            .join("strategies", "strategies.id", "trades.strategy_id") \
+    res = db.table("trades").select("*, strategies(*)").eq("status", "OPEN") \
             .order("executed_at", desc=True).execute()
     return res.data

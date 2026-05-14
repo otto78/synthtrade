@@ -15,6 +15,35 @@ class ExecutionEngine:
         self.logger = logger or logging.getLogger(__name__)
         self.signal_resolver = signal_resolver
 
+    async def _broadcast_trade_opened(self, strategy_id: str, trade_id: str,
+                                      symbol: str, direction: str, price: float,
+                                      quantity: float):
+        try:
+            from app.api.ws import manager
+            await manager.broadcast_trade_opened(
+                strategy_id=strategy_id,
+                trade_id=trade_id,
+                symbol=symbol,
+                direction=direction,
+                price=price,
+                quantity=quantity
+            )
+        except Exception as e:
+            self.logger.warning(f"Failed to broadcast trade_opened: {e}")
+
+    async def _broadcast_trade_closed(self, strategy_id: str, trade_id: str,
+                                      pnl_pct: float, exit_price: float):
+        try:
+            from app.api.ws import manager
+            await manager.broadcast_trade_closed(
+                strategy_id=strategy_id,
+                trade_id=trade_id,
+                pnl_pct=pnl_pct,
+                exit_price=exit_price
+            )
+        except Exception as e:
+            self.logger.warning(f"Failed to broadcast trade_closed: {e}")
+
     async def process_signal(self, signal: Signal, balance: float,
                              open_positions: list[PositionSnapshot],
                              current_drawdown_pct: float) -> None:
@@ -45,8 +74,17 @@ class ExecutionEngine:
             return
 
         if result.status == "FILLED":
-            self.order_tracker.open_position(request, result)
+            pos = self.order_tracker.open_position(request, result)
             self.logger.info(f"Position opened: {result.order_id}")
+            # TASK-414: Broadcast real-time
+            await self._broadcast_trade_opened(
+                strategy_id=signal.strategy_id,
+                trade_id=pos.trade_id,
+                symbol=signal.symbol,
+                direction=signal.direction,
+                price=result.price or signal.price,
+                quantity=result.quantity or check.position_size
+            )
         else:
             self.logger.warning(f"Order not filled: {result.status} — {result.message}")
 
@@ -67,5 +105,12 @@ class ExecutionEngine:
                        else (position.entry_price - current_price) / position.entry_price * 100)
             self.order_tracker.close_position(position.trade_id, current_price, pnl_pct)
             self.logger.info(f"Position closed: {position.trade_id} pnl={pnl_pct:.2f}%")
+            # TASK-414: Broadcast real-time
+            await self._broadcast_trade_closed(
+                strategy_id=position.strategy_id,
+                trade_id=position.trade_id,
+                pnl_pct=pnl_pct,
+                exit_price=current_price
+            )
         except Exception as e:
             self.logger.error(f"Exchange error on close_order: {e}")

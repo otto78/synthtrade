@@ -78,16 +78,13 @@ async def monitor_pnl_job(engine=None) -> None:
             avg_pnl_pct = total_pnl_pct / len(open_trades) if open_trades else 0.0
             current_value = initial_capital + total_pnl_eur
 
-            # Broadcast su WS
-            await manager.broadcast({
-                "type": "strategy_pnl_update",
-                "strategy_id": strategy_id,
-                "avg_pnl_pct": round(avg_pnl_pct, 4),
-                "total_pnl_pct": round(total_pnl_pct, 4),
-                "current_value_usdt": round(current_value, 2),
-                "open_trades_count": len(open_trades),
-                "timestamp": datetime.now(UTC).isoformat(),
-            })
+            # Broadcast su WS (TASK-414/416)
+            await manager.broadcast_strategy_pnl_updated(
+                strategy_id=strategy_id,
+                current_pnl_pct=total_pnl_pct,
+                current_pnl_eur=total_pnl_eur,
+                current_value_usdt=current_value
+            )
 
             # Aggiorna DB con current_value
             db.table("strategies").update({

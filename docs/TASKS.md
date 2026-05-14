@@ -1,3 +1,4 @@
+﻿﻿# SynthTrade — TASKS
 ﻿# SynthTrade — TASKS
 
 > Aggiornato automaticamente. Metodologia TDD: 🔴 Red → 🟢 Green → 🔵 Refactor
@@ -3426,7 +3427,7 @@ CREATE INDEX idx_pre_gen_expires ON pre_generated_strategies(expires_at);
 
 ### TASK-400 — Test: test_capital_allocator.py
 
-**Status:** Pending
+**Status:** Done
 **Priorita:** Critica
 
 Testare CapitalAllocator.allocate(strategy, available_usdt, holdings):
@@ -3439,7 +3440,7 @@ Testare CapitalAllocator.allocate(strategy, available_usdt, holdings):
 
 ### TASK-401 — Implementare execution/capital_allocator.py
 
-**Status:** In Progress
+**Status:** Done
 **Priorita:** Critica
 
 Classe CapitalAllocator con metodo:
@@ -3454,7 +3455,7 @@ Classe CapitalAllocator con metodo:
 
 ### TASK-402 — Estendere POST /api/strategies/{id}/activate
 
-**Status:** In Progress
+**Status:** Done
 **Priorita:** Critica
 
 Dopo aver settato status = ACTIVE:
@@ -3471,7 +3472,7 @@ Dopo aver settato status = ACTIVE:
 
 ### TASK-403 — Test: activate con fondi insufficienti
 
-**Status:** In Progress
+**Status:** Done
 **Priorita:** Alta
 
 Se available_usdt < budget_eur * 0.95, restituisce 422 Unprocessable Entity:
@@ -3516,7 +3517,7 @@ Aggiungere trade_type VARCHAR DEFAULT 'SIGNAL' alla tabella trades:
 
 ### TASK-406 — Implementare execution/strategy_runner.py
 
-**Status:** Pending
+**Status:** Done
 **Priorita:** Critica
 
 Classe StrategyRunner con metodo async run_tick(strategy: dict) -> None:
@@ -3531,7 +3532,7 @@ Classe StrategyRunner con metodo async run_tick(strategy: dict) -> None:
 
 ### TASK-407 — Test: test_strategy_runner.py con mock exchange
 
-**Status:** Pending
+**Status:** Done
 **Priorita:** Alta
 
 - Segnale BUY: place_market_order viene chiamato
@@ -3543,7 +3544,7 @@ Classe StrategyRunner con metodo async run_tick(strategy: dict) -> None:
 
 ### TASK-408 — Scheduler: aggiungere job run_active_strategies_job
 
-**Status:** Pending
+**Status:** Done
 **Priorita:** Critica
 
 In scheduler/jobs.py:
@@ -3557,7 +3558,7 @@ In scheduler/jobs.py:
 
 ### TASK-409 — Singleton ExecutionEngine nel lifespan di main.py
 
-**Status:** In Progress
+**Status:** Done
 **Priorita:** Alta
 
 Nel lifespan, istanziare una sola volta:
@@ -3568,8 +3569,8 @@ Elimina il problema attuale di engine=None nello scheduler.
 ---
 
 ### TASK-410 — RiskManager: position size basata su budget strategia
-
-**Status:** Pending
+**Status:** Done ✅
+**Completato:** 2026-05-14
 **Priorita:** Alta
 
 calculate_position_size() accetta strategy_budget_usdt opzionale.
@@ -3581,7 +3582,7 @@ Calcola la size come percentuale di quello (non del balance totale).
 
 ### TASK-411 — Endpoint POST /api/strategies/{id}/stop
 
-**Status:** In Progress
+**Status:** Done
 **Priorita:** Critica
 
 1. Verifica che la strategia sia ACTIVE
@@ -3596,7 +3597,7 @@ Calcola la size come percentuale di quello (non del balance totale).
 
 ### TASK-412 — Test: POST /api/strategies/{id}/stop
 
-**Status:** In Progress
+**Status:** Done
 **Priorita:** Alta
 
 - Tutti i trade OPEN vengono chiusi
@@ -3609,7 +3610,7 @@ Calcola la size come percentuale di quello (non del balance totale).
 
 ### TASK-413 — GET /api/exchange/holdings e BinanceExchangeAdapter.get_holdings()
 
-**Status:** In Progress
+**Status:** Done
 **Priorita:** Alta
 
 Nuovo endpoint + metodo adapter che restituisce saldo di tutte le crypto:
@@ -3622,7 +3623,7 @@ Usa fetch_balance()["free"] di ccxt.
 
 ### TASK-414 — WS: nuovi tipi di messaggio per trade e strategia
 
-**Status:** Pending
+**Status:** Done
 **Priorita:** Critica
 
 Nuovi broadcast in ConnectionManager e WsMessageType:
@@ -3635,8 +3636,8 @@ Broadcast aggiunti in OrderTracker.open_position(), close_position() e monitor j
 ---
 
 ### TASK-415 — Monitor job: calcolo P&L live e broadcast per strategie ACTIVE
-
-**Status:** Pending
+**Status:** Done ✅
+**Completato:** 2026-05-14
 **Priorita:** Alta
 
 Estendere monitor_positions_job:
@@ -3650,7 +3651,7 @@ Estendere monitor_positions_job:
 
 ### TASK-416 — GET /api/strategies/active/pnl
 
-**Status:** Pending
+**Status:** Done
 **Priorita:** Alta
 
 Snapshot P&L per tutte le strategie ACTIVE. Per ognuna:
@@ -3661,7 +3662,7 @@ Snapshot P&L per tutte le strategie ACTIVE. Per ognuna:
 
 ### TASK-417 — GET /api/trades/active — trade aperti con JOIN strategia
 
-**Status:** Pending
+**Status:** Done
 **Priorita:** Critica
 
 JOIN tra trades e strategies. Per ogni trade OPEN restituisce:
@@ -3702,7 +3703,7 @@ Standalone component per singolo trade aperto:
 
 ### TASK-420 — WS Service frontend: nuovi tipi trade_opened, trade_closed, strategy_pnl_updated
 
-**Status:** Pending
+**Status:** Done
 **Priorita:** Alta
 
 Aggiungere a WsMessageType enum e modelli:
@@ -3766,6 +3767,8 @@ Per ogni strategia ACTIVE nella strategies page:
 ### TASK-425 — Schema params.allocation per strategie multi-simbolo
 
 **Status:** Pending
+**Status:** Done ✅
+**Completato:** 2026-05-14
 **Priorita:** Alta
 
 Formato JSON per strategie multi-asset:

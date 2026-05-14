@@ -6,24 +6,19 @@
 
 ### Da: Cline → prossima sessione
 
-**Data:** 2026-05-12
+**Data:** 2026-05-14
 
-**Contesto:** Completato il Fix Allucinazioni (v1.2.0). `generate_for_request()` ora usa backtest reale su dati Binance invece di random.uniform(). TUTTI i 21 test PASS.
+**Contesto:** Completata la **Fase A dell'Epica Execution (EPIC-400)**. Le strategie ora possono essere attivate operativamente con esecuzione di ordini reali e allocazione del capitale su Binance.
 
 ---
 
-### ✅ FIX COMPLETATO (sessione 2026-05-12)
-
-**Fix Allucinazioni (TASK-FIX-001 → 011)** — PRIORITÀ ASSOLUTA
+### ✅ FASE COMPLETATA: Execution Phase A (2026-05-14)
 
 **Cosa è stato fatto:**
-- `strategy_generator.py` riscritto: rimosso `import random`, `random.uniform()`, `random.choice()`, `random.shuffle()`
-- `generate_for_request()` ora: fetch OHLCV da Binance (90gg) → backtest reale → compute_score → filtraggio
-- `StrategyParams` aggiornato: `ai_score` → `score` (range [0,1]), nuovi campi backtest (backtest_pnl, win_rate, sharpe, drawdown, trades, data_source)
-- Nomi deterministici (template + pair), rimossi nomi casuali tipo "Il Seguace"
-- `pipeline.py`: salva `backtest` completo nel DB, WS progress events, gestione lista vuota
-- `test_random_proof.py`: ora test PASS (determinismo verificato, score range [0,1])
-- Nuovo `test_e2e_pipeline.py`: test E2E con mock OHLCV (21/21 test PASS)
+- Implementato `execution/capital_allocator.py` per il calcolo delle quote iniziali.
+- Esteso `POST /api/strategies/{id}/activate` per integrare l'esecuzione degli ordini tramite `ccxt`.
+- Aggiunto controllo `insufficient_funds` (TASK-403) con rollback dello stato.
+- Allineato lo schema DB (Migration 008 e 009) per tracciare `activated_at` e `initial_capital_usdt`.
 
 ---
 
@@ -37,14 +32,10 @@
 - ✅ Fase 1 — Core Engine
 - ✅ Fase 2 — Backend API
 - ✅ Fase 3 — Frontend Angular (116 test)
-- ✅ Fase 4 — Execution Engine (49 test)
+- ✅ Fase 4 — Execution Engine (Phase A Ready)
 - ✅ **Fase 5 — AI Evaluator** (51 test)
-  - 5.0 Config + Schemas
-  - 5.1 ContextBuilder (7) · 5.2 PromptBuilder (6) · 5.3 ModelClient (7)
-  - 5.4 EvalParser (8) · 5.5 EvalCache (4) · 5.6 Evaluator (7)
-  - 5.7 API eval endpoint (4) · 5.8 Pipeline AI (4) · 5.9 Integration (5)
 
-**Totale test:** 214 backend + 116 frontend = 330
+**Totale test:** 230 backend + 116 frontend = 346
 
 **In corso:** Fase 6 — Hardening & Deploy
 

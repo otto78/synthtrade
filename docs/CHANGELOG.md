@@ -7,6 +7,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.2.4] — 2026-05-14
+
+### Fixed
+- **Binance Balance Conversion**: Risolto il bug nel calcolo del saldo totale in EUR su Testnet. Ora il sistema gestisce correttamente la coppia inversa `EUR/USDT` e converte accuratamente il saldo USDT in EUR per la dashboard.
+- **Monitor API**: Aggiunto il campo `total_pnl_eur` alla risposta dell'API di monitoraggio, permettendo al frontend di mostrare il profitto reale della strategia attiva.
+- **Frontend Error Handling**: Implementata la gestione degli errori durante l'attivazione della strategia nel frontend, con notifiche alert per l'utente in caso di fallimento (es. fondi insufficienti).
+
 ## [1.2.3] — 2026-05-14
 
 ### Added

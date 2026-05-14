@@ -1,4 +1,3 @@
-per cercare di abbassare i rischi. con percentuali di investimento diver
 Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
@@ -344,4 +343,27 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
 
-**Ultima modifica:** 2026-05-14 — Cline (Fix Operativi Testnet: Dashboard Pending, Trade Multi-Strategia, Stop Forzato)
+### v1.2.5 — 2026-05-14
+
+**Milestone:** Stato Attuale EPIC-400 Execution Epic
+
+**EPIC-400 Execution Epic completato all'85%** (42 task Done su 49 totali della sezione dedicata EPIC-400/Fase 4)
+
+**Completato oggi:**
+- ✅ Fix duplicato status TASK-425 in TASKS.md (era "Pending" + "Done ✅", ora corretto a "Done ✅")
+- ✅ Sync documentazione: TASKS.md e STORY.md allineati
+
+**EPIC-400 Execution Epic — Riepilogo Task:**
+- **Fase A (Allocazione Capitale)**: ✅ 4/4 completati (TASK-400 → 403)
+- **Fase B (Loop Esecuzione)**: ✅ 7/7 completati (TASK-404 → 410)
+- **Fase C (Stop Strategia)**: ✅ 3/3 completati (TASK-411 → 413)
+- **Fase D (P&L Real-time)**: ✅ 4/4 completati (TASK-414 → 417)
+- **Fase E (Frontend Active Trades)**: 🔴 1/4 completati (solo TASK-420 Done; TASK-418, 419, 421 Pending)
+- **Fase F (P&L Live Strategie)**: ✅ 3/3 completati (TASK-422 → 424)
+- **Fase G (Multi-Crypto)**: 🟡 1/3 completati (TASK-425 Done, TASK-426 In Progress, TASK-427 Pending)
+- **Fase H (Stabilizzazione E2E)**: 🔴 0/3 completati (TASK-428, 429, 430 tutti Pending)
+- **Bug Fix**: ✅ 1/1 completato (TASK-431)
+
+---
+
+**Ultima modifica:** 2026-05-14 — Cline (Aggiornamento documentazione EPIC-400 Execution Epic)

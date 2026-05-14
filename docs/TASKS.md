@@ -3766,7 +3766,6 @@ Per ogni strategia ACTIVE nella strategies page:
 
 ### TASK-425 — Schema params.allocation per strategie multi-simbolo
 
-**Status:** Pending
 **Status:** Done ✅
 **Completato:** 2026-05-14
 **Priorita:** Alta
@@ -3780,7 +3779,7 @@ Coordinare con TASK-PORTFOLIO-005 (stesso dominio).
 
 ### TASK-426 — StrategyRunner multi-simbolo
 
-**Status:** Pending
+**Status:** In Progress
 **Priorita:** Alta
 
 run_tick() itera su tutti i simboli in allocation.

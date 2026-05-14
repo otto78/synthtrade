@@ -1,4 +1,4 @@
-
+per cercare di abbassare i rischi. con percentuali di investimento diver
 Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
@@ -298,5 +298,17 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - max_drawdown=40% riflette la volatilità reale delle crypto (drawdown 30-40% è normale)
 
 ---
+
+### v1.2.2 — 2026-05-14
+
+**Milestone:** Implementazione Peak-to-Trough Drawdown (TASK-415)
+
+**Completato:**
+- ✅ **Migration 009**: Aggiunta colonna `peak_equity_usdt` alla tabella `strategies`.
+- ✅ **OrderTracker**: Implementato `get_realized_pnl` e potenziato `get_open_positions` per filtri per strategia.
+- ✅ **StrategyRunner**: Integrato calcolo dinamico dell'equity (Realized + Unrealized PnL) e aggiornamento automatico del picco massimo per un calcolo accurato del Drawdown.
+
+**Decisioni chiave:**
+- Il drawdown viene ora calcolato dal punto di massimo profitto raggiunto (Peak-to-Trough) anziché dal capitale iniziale, garantendo una protezione più robusta dei profitti accumulati.
 
 **Ultima modifica:** 2026-05-13 — Cline (v1.2.1 Fix Profitti Irrealistici)

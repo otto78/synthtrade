@@ -1,10 +1,15 @@
 """
-TASK-406: StrategyRunner
-Esegue un tick per una singola strategia ACTIVE:
-- Scarica OHLCV recenti
-- Calcola il segnale tecnico
-- Se positivo, chiama ExecutionEngine.process_signal()
-- Aggiorna last_tick_at e logga su DB
+strategy_runner.py
+------------------
+Core logic to execute a single tick for an ACTIVE strategy.
+
+Responsibilities:
+- Fetch recent OHLCV data.
+- Compute technical signals based on strategy templates.
+- Delegate signal processing to ExecutionEngine if a signal is triggered.
+- Update strategy metadata (last_tick_at) in the database.
+
+Key Dependencies: market_data, indicators, execution_engine, supabase_client
 """
 import logging
 from datetime import datetime, timezone
@@ -18,7 +23,7 @@ from app.execution.order_tracker import OrderTracker
 
 logger = logging.getLogger(__name__)
 
-# Mappa template → funzione segnale (stessa di run_pipeline.py)
+# Template mapping -> Signal function (aligned with run_pipeline.py)
 SIGNAL_MAP = {
     "trend_ema": lambda df, p: signal_ema_crossover(df, p["ema_fast"], p["ema_slow"]),
     "mean_reversion_rsi": lambda df, p: signal_rsi_reversion(
@@ -27,14 +32,14 @@ SIGNAL_MAP = {
     "breakout_bb": lambda df, p: signal_breakout_bb(df, p["bb_period"], p["bb_std"]),
 }
 
-# Numero di candle necessari per il calcolo degli indicatori
+# Minimum candles required for reliable indicator calculation
 LOOKBACK_CANDLES = 200
 
 
 def _extract_symbols(strategy: dict) -> list[str]:
     """
-    Estrae la lista di simboli su cui operare.
-    Supporta sia il formato single (strategy["pair"]) che multi-asset (params.allocation).
+    Extracts the list of symbols to operate on.
+    Supports both single pair (strategy["pair"]) and multi-asset (params.allocation).
     """
     params = strategy.get("params") or {}
     allocation = params.get("allocation")
@@ -44,7 +49,7 @@ def _extract_symbols(strategy: dict) -> list[str]:
 
 
 def _signal_to_direction(signal_value: int) -> str | None:
-    """Converte il segnale numerico (-1, 0, 1) in direzione stringa."""
+    """Converts numeric signal (-1, 0, 1) to string direction."""
     if signal_value == 1:
         return "BUY"
     if signal_value == -1:
@@ -54,8 +59,8 @@ def _signal_to_direction(signal_value: int) -> str | None:
 
 class StrategyRunner:
     """
-    TASK-406: Esegue il loop di segnali per una strategia ACTIVE.
-    Una sola istanza per l'intera app, riceve l'engine singleton dal lifespan.
+    Executes the signal loop for an ACTIVE strategy.
+    Injected with the ExecutionEngine singleton during app lifespan.
     """
 
     def __init__(self, engine: ExecutionEngine):
@@ -64,12 +69,12 @@ class StrategyRunner:
 
     async def run_tick(self, strategy: dict) -> None:
         """
-        Esegue un singolo tick per la strategia:
-        1. Per ogni simbolo della strategia, scarica OHLCV e calcola segnale
-        2. Se segnale positivo, delega a ExecutionEngine.process_signal()
-        3. Aggiorna last_tick_at su DB
+        Executes a single tick for the given strategy:
+        1. For each symbol, fetch OHLCV and compute signals.
+        2. If a signal is generated, delegate to ExecutionEngine.process_signal().
+        3. Update last_tick_at in the database.
 
-        Non propaga eccezioni: errori vengono loggati e il tick viene saltato.
+        Exceptions are caught and logged to prevent the entire loop from failing.
         """
         strategy_id = strategy["id"]
         template = strategy.get("template", "")
@@ -77,7 +82,7 @@ class StrategyRunner:
         timeframe = strategy.get("timeframe", "1h")
 
         if template not in SIGNAL_MAP:
-            logger.warning(f"[{strategy_id}] Template '{template}' non supportato, skip")
+            logger.warning(f"[{strategy_id}] Template '{template}' not supported, skipping.")
             return
 
         signal_fn = SIGNAL_MAP[template]
@@ -85,23 +90,23 @@ class StrategyRunner:
 
         for symbol in symbols:
             try:
-                # 1. Scarica OHLCV recenti
+                # 1. Fetch recent OHLCV
                 df = fetch_ohlcv(symbol, timeframe, days=3)
                 if df is None or len(df) < 50:
-                    logger.warning(f"[{strategy_id}] OHLCV insufficienti per {symbol}, skip")
+                    logger.warning(f"[{strategy_id}] Insufficient OHLCV for {symbol}, skipping.")
                     continue
 
-                # 2. Calcola segnale
+                # 2. Compute signal
                 raw_signal = signal_fn(df, params)
-                # I segnali restituiscono una Series pandas: prendiamo l'ultimo valore
+                # Signals return a pandas Series: take the latest value
                 last_signal = int(raw_signal.iloc[-1]) if hasattr(raw_signal, "iloc") else int(raw_signal)
                 direction = _signal_to_direction(last_signal)
 
                 if direction is None:
-                    logger.debug(f"[{strategy_id}] Segnale neutro per {symbol}, nessun ordine")
+                    logger.debug(f"[{strategy_id}] Neutral signal for {symbol}, no order.")
                     continue
 
-                # 3. Costruisce il Signal e lo passa all'engine
+                # 3. Build Signal and pass it to the engine
                 current_price = float(df["close"].iloc[-1])
                 signal = Signal(
                     strategy_id=strategy_id,
@@ -112,26 +117,60 @@ class StrategyRunner:
                     timestamp=datetime.now(timezone.utc),
                 )
 
-                # Recupera posizioni aperte e drawdown per il risk check
-                open_positions = self.engine.order_tracker.get_open_positions(symbol)
-                current_drawdown = 0.0  # TODO: calcolo drawdown da TASK-415
+                # --- DRAWDOWN CALCULATION (TASK-415) ---
+
+                # Retrieve all open positions for this strategy to calculate global unrealized PnL
+                strategy_positions = self.engine.order_tracker.get_open_positions(strategy_id=strategy_id)
+
+                unrealized_pnl_usdt = 0.0
+                for pos in strategy_positions:
+                    # Use current_price if it matches the current symbol, otherwise fetch ticker from exchange
+                    pos_price = current_price if pos.symbol == symbol else await self.engine.exchange.get_ticker_price(pos.symbol)
+                    unrealized_pnl_usdt += self.engine.order_tracker.update_unrealized_pnl(
+                        pos.entry_price, pos_price, pos.quantity, pos.direction
+                    )
+
+                realized_pnl_usdt = self.engine.order_tracker.get_realized_pnl(strategy_id)
+                total_pnl_usdt = realized_pnl_usdt + unrealized_pnl_usdt
+
+                initial_capital = float(strategy.get("initial_capital_usdt") or strategy.get("budget_eur") or 100.0)
+                current_equity = initial_capital + total_pnl_usdt
+
+                # Peak-to-Trough logic:
+                # The peak is either the initial capital, the stored peak, or the current equity
+                stored_peak = strategy.get("peak_equity_usdt")
+                peak_equity = max(initial_capital, float(stored_peak) if stored_peak else 0.0, current_equity)
+
+                # Update peak_equity_usdt in the local dictionary so it can be saved at the end of the tick
+                strategy["peak_equity_usdt"] = peak_equity
+
+                # Calculate current drawdown percentage relative to the peak equity
+                current_drawdown_pct = 0.0
+                if current_equity < peak_equity:
+                    current_drawdown_pct = ((peak_equity - current_equity) / peak_equity) * 100
+
+                # --------------------------------------
 
                 budget_usdt = float(strategy.get("initial_capital_usdt") or strategy.get("budget_eur") or 100.0)
                 await self.engine.process_signal(
                     signal=signal,
                     balance=budget_usdt,
-                    open_positions=open_positions,
-                    current_drawdown_pct=current_drawdown,
+                    open_positions=strategy_positions,
+                    current_drawdown_pct=current_drawdown_pct,
                 )
-                logger.info(f"[{strategy_id}] Segnale {direction} su {symbol} @ {current_price:.4f} processato")
+                logger.info(f"[{strategy_id}] Signal {direction} on {symbol} @ {current_price:.4f} processed.")
 
             except Exception as e:
-                logger.error(f"[{strategy_id}] Errore tick su {symbol}: {e}", exc_info=True)
-                # Continua con i prossimi simboli (best-effort)
+                logger.error(f"[{strategy_id}] Tick error on {symbol}: {e}", exc_info=True)
+                # Continue with remaining symbols (best-effort)
 
-        # 4. Aggiorna last_tick_at
+        # 4. Update last_tick_at metadata
         try:
             now_iso = datetime.now(timezone.utc).isoformat()
-            self.db.table("strategies").update({"last_tick_at": now_iso}).eq("id", strategy_id).execute()
+            update_data = {
+                "last_tick_at": now_iso,
+                "peak_equity_usdt": strategy.get("peak_equity_usdt")
+            }
+            self.db.table("strategies").update(update_data).eq("id", strategy_id).execute()
         except Exception as e:
-            logger.warning(f"[{strategy_id}] Errore aggiornamento last_tick_at: {e}")
+            logger.warning(f"[{strategy_id}] Error updating last_tick_at: {e}")

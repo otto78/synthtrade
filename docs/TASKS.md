@@ -3836,3 +3836,24 @@ Strategia rimane ACTIVE (errore transitorio).
 Aggiungere a GET /api/dashboard/stats:
   active_strategies_count, open_trades_count, total_active_pnl_pct
 Visualizzare come KPI card con aggiornamento WS.
+
+## 🛠️ Fase 8 — Fix Operativi Testnet (v1.2.4)
+
+### TASK-415 — Monitor API: Aggiunta P&L in EUR
+- Implementazione calcolo `total_pnl_eur` basato sul budget della strategia.
+- Esposizione del campo nell'endpoint `/api/monitor/{id}`.
+**Status:** Done ✅
+**Completato:** 2026-05-14
+
+### TASK-416 — Fix Conversione EUR su Binance Testnet
+- Aggiornamento `_convert_to_eur` per gestire la coppia inversa `EUR/USDT`.
+- Rimozione dipendenza da coppia `USDT/EUR` non presente su Testnet.
+**Status:** Done ✅
+**Completato:** 2026-05-14
+
+### TASK-417 — Frontend: Error Handling Attivazione
+- Aggiunta gestione `error` nel subscribe di `activate()` in `strategies.page.ts`.
+- Notifica alert con dettaglio errore (es. insufficient_funds).
+**Status:** Done ✅
+**Completato:** 2026-05-14
+

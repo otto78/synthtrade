@@ -11,7 +11,8 @@
 > **Obiettivo:** Chiudere tutti i task lasciati in sospeso nelle fasi precedenti per garantire un sistema "perfettamente funzionante" prima del deploy.
 
 ### TASK-038 — Refactor `MarketData` (Service pattern)
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-15
 **Priorità:** Alta  
 **Dettagli:**
 - Creazione di un `MarketDataService` centralizzato.

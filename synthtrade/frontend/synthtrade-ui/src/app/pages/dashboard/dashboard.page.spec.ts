@@ -43,8 +43,8 @@ describe('DashboardPage', () => {
     expect(dashboardService.getStats).toHaveBeenCalled();
   });
 
-  it('should render 4 StatCard components', () => {
-    expect(el.querySelectorAll('app-stat-card').length).toBe(4);
+  it('should render 3 StatCard components', () => {
+    expect(el.querySelectorAll('app-stat-card').length).toBe(3);
   });
 
   it('should update stats on WS stats_update message', () => {

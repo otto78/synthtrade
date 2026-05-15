@@ -1,12 +1,12 @@
 from datetime import datetime, UTC
 from typing import Literal
-from app.db.supabase_client import get_supabase
+from app.db.repositories.trade_repository import TradeRepository
 from app.execution.schemas import OrderRequest, OrderResult, PositionSnapshot
 
 
 class OrderTracker:
-    def __init__(self):
-        self.db = get_supabase()
+    def __init__(self, repo: TradeRepository):
+        self.repo = repo
 
     def open_position(self, request: OrderRequest, result: OrderResult) -> str:
         data = {
@@ -21,54 +21,34 @@ class OrderTracker:
             "paper": request.paper,
             "executed_at": datetime.now(UTC).isoformat(),
         }
-        res = self.db.table("trades").insert(data).execute()
-        return res.data[0]["id"]
+        new_trade = self.repo.insert(data)
+        return new_trade.id
 
     def close_position(self, trade_id: str, exit_price: float, pnl_pct: float) -> None:
-        self.db.table("trades").update({
+        self.repo.update(trade_id, {
             "status": "CLOSED",
             "exit_price": exit_price,
             "pnl_pct": pnl_pct,
             "closed_at": datetime.now(UTC).isoformat(),
-        }).eq("id", trade_id).execute()
+        })
 
     def get_open_positions(self, symbol: str | None = None, strategy_id: str | None = None) -> list[PositionSnapshot]:
         """
         Retrieves open positions, optionally filtered by symbol or strategy.
         """
-        query = self.db.table("trades").select("*").eq("status", "OPEN")
-        if symbol:
-            query = query.eq("pair", symbol)
-        if strategy_id:
-            query = query.eq("strategy_id", strategy_id)
-
-        res = query.execute()
-        rows = res.data
-        return [self._row_to_snapshot(r) for r in rows]
+        trades = self.repo.get_open_positions(symbol=symbol, strategy_id=strategy_id)
+        return [self._row_to_snapshot(t) for t in trades]
 
     def get_realized_pnl(self, strategy_id: str) -> float:
         """
         Calculates the total realized PnL in USDT for a strategy by summing
         up (entry_value * pnl_pct) for all its CLOSED trades.
         """
-        res = self.db.table("trades").select("price, quantity, pnl_pct").eq("strategy_id", strategy_id).eq("status", "CLOSED").execute()
+        trades = self.repo.get_closed_trades_by_strategy(strategy_id)
         total_realized = 0.0
-        for row in res.data:
-            entry_value = row["price"] * row["quantity"]
-            pnl_pct = row.get("pnl_pct") or 0.0
-            total_realized += entry_value * (pnl_pct / 100.0)
-        return total_realized
-
-    def get_realized_pnl(self, strategy_id: str) -> float:
-        """
-        Calculates the total realized PnL in USDT for a strategy by summing
-        up (entry_value * pnl_pct) for all its CLOSED trades.
-        """
-        res = self.db.table("trades").select("price, quantity, pnl_pct").eq("strategy_id", strategy_id).eq("status", "CLOSED").execute()
-        total_realized = 0.0
-        for row in res.data:
-            entry_value = row["price"] * row["quantity"]
-            pnl_pct = row.get("pnl_pct") or 0.0
+        for trade in trades:
+            entry_value = trade.price * trade.quantity
+            pnl_pct = trade.pnl_pct or 0.0
             total_realized += entry_value * (pnl_pct / 100.0)
         return total_realized
 
@@ -79,15 +59,15 @@ class OrderTracker:
             return (current_price - entry_price) * quantity
         return (entry_price - current_price) * quantity
 
-    def _row_to_snapshot(self, row: dict) -> PositionSnapshot:
+    def _row_to_snapshot(self, trade) -> PositionSnapshot:
         return PositionSnapshot(
-            trade_id=row["id"],
-            strategy_id=row["strategy_id"],
-            symbol=row["pair"],
-            direction=row["action"],
-            entry_price=row["price"],
-            quantity=row["quantity"],
-            stop_loss=row.get("stop_loss", 0.0),
-            take_profit=row.get("take_profit", 0.0),
-            opened_at=datetime.fromisoformat(row["executed_at"]),
+            trade_id=trade.id,
+            strategy_id=trade.strategy_id,
+            symbol=trade.pair,
+            direction=trade.action,
+            entry_price=trade.price,
+            quantity=trade.quantity,
+            stop_loss=trade.model_dump().get("stop_loss", 0.0),
+            take_profit=trade.model_dump().get("take_profit", 0.0),
+            opened_at=trade.executed_at,
         )

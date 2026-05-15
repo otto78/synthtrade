@@ -5,6 +5,7 @@ import { StrategiesPage } from './strategies.page';
 import { StrategyService } from '../../core/services/strategy.service';
 import { PipelineService } from '../../core/services/pipeline.service';
 import { WsService } from '../../core/services/ws.service';
+import { GenerationWsService } from '../../core/services/generation-ws.service';
 import { of, Subject } from 'rxjs';
 import { Strategy } from '../../core/models/strategy.model';
 import { HttpClient } from '@angular/common/http';
@@ -36,8 +37,12 @@ describe('StrategiesPage', () => {
   let wsService: jest.Mocked<WsService>;
   let wsSubject: Subject<any>;
 
+  let generationWsService: jest.Mocked<GenerationWsService>;
+  let generationWsSubject: Subject<any>;
+
   beforeEach(async () => {
     wsSubject = new Subject();
+    generationWsSubject = new Subject();
     strategyService = {
       getStrategies: jest.fn().mockReturnValue(of(mockStrategies)),
       approve: jest.fn().mockReturnValue(of({ id: '2', status: 'APPROVED' })),
@@ -54,6 +59,9 @@ describe('StrategiesPage', () => {
     wsService = {
       on: jest.fn().mockReturnValue(wsSubject.asObservable()),
     } as any;
+    generationWsService = {
+      onGenerationComplete: jest.fn().mockReturnValue(generationWsSubject.asObservable()),
+    } as any;
 
     await TestBed.configureTestingModule({
       imports: [StrategiesPage],
@@ -62,6 +70,7 @@ describe('StrategiesPage', () => {
         { provide: StrategyService, useValue: strategyService },
         { provide: PipelineService, useValue: pipelineService },
         { provide: WsService, useValue: wsService },
+        { provide: GenerationWsService, useValue: generationWsService },
         { provide: HttpClient, useValue: { get: jest.fn(), post: jest.fn(), delete: jest.fn() } },
         { provide: Router, useValue: { navigate: jest.fn() } },
       ],
@@ -79,6 +88,8 @@ describe('StrategiesPage', () => {
   });
 
   it('should show empty state when no strategies', async () => {
+    // Reset the testing module to allow reconfiguration for this isolated case
+    await TestBed.resetTestingModule();
     const emptyStrategyService = {
       getStrategies: jest.fn().mockReturnValue(of([])),
       approve: jest.fn().mockReturnValue(of({ id: '1', status: 'APPROVED' })),
@@ -111,6 +122,11 @@ describe('StrategiesPage', () => {
     fixture = TestBed.createComponent(StrategiesPage);
     fixture.detectChanges();
     el = fixture.nativeElement;
+    
+    // Cambia tab ad APPROVATE per vedere l'empty state (nel tab GENERAZIONE c'è la welcome-card)
+    fixture.componentInstance.activeTab.set('APPROVATE');
+    fixture.detectChanges();
+    
     expect(el.querySelector('app-empty-state')).toBeTruthy();
   });
 
@@ -133,5 +149,19 @@ describe('StrategiesPage', () => {
     rejectBtn.click();
     fixture.detectChanges();
     expect(el.querySelector('app-confirm-dialog')).toBeTruthy();
+  });
+
+  it('should update UI on generation_complete WS message', () => {
+    const comp = fixture.componentInstance as any;
+    // start generation to set generationId and status
+    comp.onGenerate({} as any);
+    // simulate WS generation_complete
+    generationWsSubject.next({
+      type: 'generation_complete',
+      payload: { generation_id: 'gen1', count: 2 },
+    });
+    fixture.detectChanges();
+    expect(comp.generationResultCount()).toBe(2);
+    expect(comp.generationStatus()).toBe('completed');
   });
 });

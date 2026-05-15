@@ -103,8 +103,8 @@ class StrategyRunner:
                 direction = _signal_to_direction(last_signal)
 
                 if direction is None:
-                    logger.debug(f"[{strategy_id}] Neutral signal for {symbol}, no order.")
-                    continue
+                    logger.debug(f"[{strategy_id}] Neutral signal for {symbol}, proceeding with placeholder.")
+                    direction = "HOLD"
 
                 # 3. Build Signal and pass it to the engine
                 current_price = float(df["close"].iloc[-1])
@@ -151,7 +151,21 @@ class StrategyRunner:
 
                 # --------------------------------------
 
-                budget_usdt = float(strategy.get("initial_capital_usdt") or strategy.get("budget_eur") or 100.0)
+                # Calcola il budget per questo simbolo in base all'allocazione (percentuale) se presente
+                total_budget = float(strategy.get("initial_capital_usdt") or strategy.get("budget_eur") or 100.0)
+                allocation = params.get("allocation") or []
+                # Determina la percentuale di allocazione per il simbolo corrente
+                pct = None
+                if isinstance(allocation, list) and allocation:
+                    for a in allocation:
+                        if a.get("symbol") == symbol and isinstance(a.get("pct"), (int, float)):
+                            pct = a["pct"]
+                            break
+                # Se non è stata trovata un'allocazione specifica, distribuisci equamente il budget tra i simboli
+                if pct is None:
+                    # Se ci sono più simboli, assegna una quota uguale; altrimenti 100%
+                    pct = 100.0 / len(symbols) if len(symbols) > 0 else 100.0
+                budget_usdt = total_budget * (pct / 100.0)
                 await self.engine.process_signal(
                     signal=signal,
                     balance=budget_usdt,

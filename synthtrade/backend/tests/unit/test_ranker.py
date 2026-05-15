@@ -30,18 +30,20 @@ def test_score_none_if_too_few_trades():
 
 
 def test_score_none_if_drawdown_too_high():
-    result = make_result(max_drawdown_pct=20.0)
+    # max_drawdown = 40.0, set result 50.0 > 40.0
+    result = make_result(max_drawdown_pct=50.0)
     assert compute_score(result) is None
-
 
 def test_score_none_if_sharpe_too_low():
-    result = make_result(sharpe=0.2)
+    # min_sharpe = 0.0, set result -0.5 < 0.0
+    result = make_result(sharpe=-0.5)
     assert compute_score(result) is None
-
 
 def test_score_none_if_pnl_too_low():
-    result = make_result(pnl_pct=1.0)
+    # min_pnl = 0.0, set result -1.0 < 0.0
+    result = make_result(pnl_pct=-1.0)
     assert compute_score(result) is None
+
 
 
 # ── Strategia valida ──────────────────────────────────────────────────

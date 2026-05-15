@@ -31,6 +31,11 @@ async def lifespan(app: FastAPI):
     from app.execution.risk_manager import RiskManager, RiskConfig
     from app.execution.order_tracker import OrderTracker
     from app.execution.execution_engine import ExecutionEngine
+    from app.db.repositories.trade_repository import TradeRepository
+    from app.db.supabase_client import get_supabase
+
+    db = get_supabase()
+    trade_repo = TradeRepository(db)
 
     exchange = BinanceExchangeAdapter(
         api_key=settings.BINANCE_API_KEY,
@@ -47,7 +52,7 @@ async def lifespan(app: FastAPI):
     )
     engine = ExecutionEngine(
         risk_manager=RiskManager(config=risk_config),
-        order_tracker=OrderTracker(),
+        order_tracker=OrderTracker(repo=trade_repo),
         exchange=exchange,
     )
 

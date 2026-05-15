@@ -6,9 +6,9 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Generator, Tuple
 from app.execution.schemas import StrategyRequest
 from app.ai.request_enricher import enrich_request_with_ai
-from app.core.market_data import fetch_ohlcv
+from app.services.market_data_service import MarketDataService
 from app.core.backtester import run_backtest, BacktestResult
-from app.core.ranker import compute_score, RankConfig
+from app.core.ranker import Ranker, RankConfig
 from app.core.indicators import signal_ema_crossover, signal_rsi_reversion, signal_breakout_bb
 
 logger = logging.getLogger("synthtrade.generator")
@@ -126,7 +126,7 @@ class StrategyParams:
             object.__setattr__(self, 'description', TEMPLATES[self.template]['description'])
 
 
-async def generate_for_request(req: StrategyRequest) -> Tuple[List[StrategyParams], Optional[str]]:
+async def generate_for_request(req: StrategyRequest, md_service: MarketDataService) -> Tuple[List[StrategyParams], Optional[str]]:
     """
     TASK-FIX-003/004: Generatore con backtest reale su dati storici Binance.
     Nessun random.uniform(), nessun nome casuale.
@@ -152,7 +152,7 @@ async def generate_for_request(req: StrategyRequest) -> Tuple[List[StrategyParam
             key = (pair, tf)
             try:
                 ohlcv_cache[key] = await asyncio.to_thread(
-                    fetch_ohlcv, pair, tf, lookback_days
+                    md_service.get_ohlcv, pair, tf, lookback_days
                 )
                 n_candles = len(ohlcv_cache[key])
                 logger.info(f"OHLCV: {pair} {tf} — {n_candles} candele")
@@ -184,7 +184,11 @@ async def generate_for_request(req: StrategyRequest) -> Tuple[List[StrategyParam
             try:
                 signal_fn = lambda df, t=template_name, p=params_dict: SIGNAL_MAP[t](df, p)
                 bt = run_backtest(ohlcv, signal_fn)
-                score = compute_score(bt)
+                
+                # TASK-FIX: Uso della nuova classe Ranker
+                ranker = Ranker(RankConfig(risk_level=req.risk_level or "medium"))
+                score = ranker.compute_score(bt)
+                
                 if score is None:
                     continue  # Non supera soglie qualità — scartata
 

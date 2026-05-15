@@ -2,8 +2,10 @@ import logging
 import asyncio
 from datetime import date
 from fastapi import APIRouter, Depends
-from app.dependencies import get_current_user
 from app.db.supabase_client import get_supabase
+from app.dependencies import get_current_user, get_strategy_repo, get_trade_repo
+from app.db.repositories.strategy_repository import StrategyRepository
+from app.db.repositories.trade_repository import TradeRepository
 from app.core.binance_balance import get_total_balance_eur
 
 logger = logging.getLogger(__name__)
@@ -13,24 +15,20 @@ BALANCE_TIMEOUT = 8  # secondi massimi per fetch del saldo Binance
 
 
 @router.get("")
-async def get_dashboard(_user: str = Depends(get_current_user)):
-    db = get_supabase()
+async def get_dashboard(
+    _user: str = Depends(get_current_user),
+    strategy_repo: StrategyRepository = Depends(get_strategy_repo),
+    trade_repo: TradeRepository = Depends(get_trade_repo),
+):
     today = date.today().isoformat()
 
-    trades = (db.table("trades")
-               .select("pnl_pct,cost_eur")
-               .gte("executed_at", today)
-               .execute()).data or []
+    trades = trade_repo.get_since(today)
 
     pnl_today = round(
-        sum((t.get("pnl_pct") or 0) * (t.get("cost_eur") or 0) for t in trades), 4
+        sum(t.pnl_eur or 0 for t in trades), 4
     )
 
-    active = (db.table("strategies")
-               .select("id,title,score,status,pair,timeframe,budget_eur,ai_risk")
-               .eq("status", "ACTIVE")
-               .limit(1)
-               .execute()).data
+    active_strategy = strategy_repo.get_one_active()
 
     # Saldo Binance con timeout esplicito (async) per non bloccare la dashboard
     balance_eur = 0.0
@@ -67,18 +65,17 @@ async def get_dashboard(_user: str = Depends(get_current_user)):
         "balance_breakdown": balance_breakdown,
         "balance_assets": balance_assets,
         "pnl_today": pnl_today,
-        "active_strategy": active[0] if active else None,
+        "active_strategy": active_strategy,
         "engine_status": "RUNNING",
     }
 
 
 @router.get("/equity-history")
-def get_equity_history(_user: str = Depends(get_current_user)):
-    db = get_supabase()
-    rows = (db.table("trades")
-             .select("executed_at,cost_eur,pnl_pct")
-             .order("executed_at")
-             .execute()).data or []
+def get_equity_history(
+    _user: str = Depends(get_current_user),
+    trade_repo: TradeRepository = Depends(get_trade_repo),
+):
+    rows = trade_repo.get_history()
 
     return [
         {

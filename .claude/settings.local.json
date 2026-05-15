@@ -8,7 +8,10 @@
   "permissions": {
     "allow": [
       "Bash(pytest:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(npm test:*)",
+      "Bash(npm ci:*)",
+      "Bash(npm install:*)"
     ]
   }
 }

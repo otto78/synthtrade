@@ -74,12 +74,12 @@ class ExecutionEngine:
             return
 
         if result.status == "FILLED":
-            pos = self.order_tracker.open_position(request, result)
+            trade_id = self.order_tracker.open_position(request, result)
             self.logger.info(f"Position opened: {result.order_id}")
             # TASK-414: Broadcast real-time
             await self._broadcast_trade_opened(
                 strategy_id=signal.strategy_id,
-                trade_id=pos.trade_id,
+                trade_id=trade_id,
                 symbol=signal.symbol,
                 direction=signal.direction,
                 price=result.price or signal.price,

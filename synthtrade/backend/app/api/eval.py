@@ -53,15 +53,29 @@ def refresh_eval(strategy_id: str, background_tasks: BackgroundTasks,
 
 
 async def _run_eval_background(strategy_id: str) -> None:
+    from app.dependencies import get_market_data_service
     from app.db.supabase_client import get_supabase
-    from app.core.market_data import fetch_ohlcv
+    from app.db.repositories.ohlcv_repository import OhlcvRepository
+    from app.execution.exchange import BinanceExchangeAdapter
+    from app.config import settings
+
     try:
         db = get_supabase()
         res = db.table("strategies").select("*").eq("id", strategy_id).execute()
         if not res.data:
             return
         strategy = res.data[0]
-        ohlcv = fetch_ohlcv(strategy["pair"], strategy["timeframe"])
+        
+        # Setup temporary dependencies for service
+        repo = OhlcvRepository(db)
+        exchange = BinanceExchangeAdapter(
+            api_key=settings.BINANCE_API_KEY,
+            secret=settings.BINANCE_SECRET_KEY,
+            testnet=settings.BINANCE_TESTNET,
+        )
+        md_service = MarketDataService(repo, exchange)
+        
+        ohlcv = md_service.get_ohlcv(strategy["pair"], strategy["timeframe"])
         evaluator = build_evaluator()
         await evaluator.evaluate_strategy(strategy, ohlcv)
     except Exception as e:

@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, Any
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, status
 from app.dependencies import get_current_user
+from app.db.supabase_client import get_supabase
 from app.execution.schemas import StrategyRequest
 from app.core.strategy_generator import generate_for_request
 from app.db.supabase_client import get_supabase

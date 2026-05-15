@@ -1,53 +1,56 @@
-import os
 from pathlib import Path
+from typing import List
+from pydantic import computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Get the directory where this file is located (synthtrade/backend/app)
 # Then go up one level to find the .env file in synthtrade/backend/
 BASE_DIR = Path(__file__).resolve().parent.parent
-ENV_FILE = BASE_DIR / ".env"
+ENV_FILE = BASE_DIR / '.env'
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(ENV_FILE),
-        env_file_encoding="utf-8",
+        env_file_encoding='utf-8',
         case_sensitive=False,
-        extra="ignore"
+        extra='ignore'
     )
 
     # Supabase
-    SUPABASE_URL: str = ""
-    SUPABASE_ANON_KEY: str = ""
-    SUPABASE_SERVICE_ROLE_KEY: str = ""
+    SUPABASE_URL: str = ''
+    SUPABASE_ANON_KEY: str = ''
+    SUPABASE_SERVICE_ROLE_KEY: str = ''
 
     # Binance
-    BINANCE_API_KEY: str = ""
-    BINANCE_SECRET_KEY: str = ""
+    BINANCE_API_KEY: str = ''
+    BINANCE_SECRET_KEY: str = ''
     BINANCE_TESTNET: bool = True
 
+    @computed_field
     @property
     def binance_base_url(self) -> str:
-        return "https://testnet.binance.vision" if self.BINANCE_TESTNET else "https://api.binance.com"
+        return 'https://testnet.binance.vision' if self.BINANCE_TESTNET else 'https://api.binance.com'
 
+    @computed_field
     @property
     def binance_ws_base_url(self) -> str:
-        return "wss://testnet.binance.vision/ws" if self.BINANCE_TESTNET else "wss://stream.binance.com:9443/ws"
+        return 'wss://testnet.binance.vision/ws' if self.BINANCE_TESTNET else 'wss://stream.binance.com:9443/ws'
 
     # Auth
-    APP_PASSWORD: str = "changeme"
-    JWT_SECRET: str = "dev-secret-change-in-prod"
+    APP_PASSWORD: str = 'changeme'
+    JWT_SECRET: str = 'dev-secret-change-in-prod'
     JWT_EXPIRE_MINUTES: int = 1440
 
     # AI cascade
-    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_API_KEY: str = ''
     AI_CASCADE_TIMEOUT: float = 12.0
     AI_CASCADE_MAX_RETRIES: int = 2
 
     # AI Evaluator (Fase 5)
-    AI_API_KEY: str = ""
-    AI_API_BASE_URL: str = "https://openrouter.ai/api/v1"
-    AI_CASCADE_MODELS: str = "google/gemini-2.0-flash-exp:free,meta-llama/llama-3.1-8b-instruct:free,mistralai/mistral-7b-instruct:free"
-    AI_FALLBACK_MODEL: str = "anthropic/claude-haiku-4"
+    AI_API_KEY: str = ''
+    AI_API_BASE_URL: str = 'https://openrouter.ai/api/v1'
+    AI_CASCADE_MODELS: str = 'google/gemini-2.0-flash-exp:free,meta-llama/llama-3.1-8b-instruct:free,mistralai/mistral-7b-instruct:free'
+    AI_FALLBACK_MODEL: str = 'anthropic/claude-haiku-4'
     AI_MAX_TOKENS: int = 1024
     AI_TEMPERATURE: float = 0.2
     AI_TIMEOUT_SECONDS: float = 30.0
@@ -57,9 +60,10 @@ class Settings(BaseSettings):
     PIPELINE_AI_EVAL_TOP_N: int = 10
     MAX_CONCURRENT_EVALS: int = 3
 
+    @computed_field
     @property
-    def ai_cascade_models_list(self) -> list[str]:
-        return [m.strip() for m in self.AI_CASCADE_MODELS.split(",") if m.strip()]
+    def ai_cascade_models_list(self) -> List[str]:
+        return [m.strip() for m in self.AI_CASCADE_MODELS.split(',') if m.strip()]
 
     # Engine
     EXECUTION_INTERVAL_SECONDS: int = 300
@@ -79,14 +83,14 @@ class Settings(BaseSettings):
     SCHEDULER_SIGNAL_INTERVAL_MIN: int = 5   # Frequenza tick per strategie ACTIVE
 
     # Backend
-    BACKEND_HOST: str = "0.0.0.0"
+    BACKEND_HOST: str = '0.0.0.0'
     BACKEND_PORT: int = 8008
-    CORS_ORIGINS: str = "http://localhost:4208"
-    LOG_LEVEL: str = "INFO"
+    CORS_ORIGINS: str = 'http://localhost:4208'
+    LOG_LEVEL: str = 'INFO'
 
+    @computed_field
     @property
-    def cors_origins_list(self) -> list[str]:
-        return [o.strip() for o in self.CORS_ORIGINS.split(",")]
-
+    def cors_origins_list(self) -> List[str]:
+        return [o.strip() for o in self.CORS_ORIGINS.split(',')]
 
 settings = Settings()

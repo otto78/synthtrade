@@ -2,9 +2,10 @@ import logging
 from datetime import datetime, timedelta, timezone
 from app.core.strategy_generator import generate_all_variants, build_strategy_id, TEMPLATES
 from app.core.indicators import signal_ema_crossover, signal_rsi_reversion, signal_breakout_bb
+from app.core.market_data import fetch_ohlcv
 from app.core.backtester import run_backtest
 from app.core.ranker import compute_score
-from app.core.market_data import fetch_ohlcv
+from app.services.market_data_service import MarketDataService
 from app.db.supabase_client import get_supabase
 from app.config import settings
 
@@ -20,6 +21,15 @@ SIGNAL_MAP = {
 
 
 def build_evaluator():
+    # Wrapper for tests that patch fetch_ohlcv directly on this module
+    # Expose fetch_ohlcv from market_data for compatibility
+    from app.core.market_data import fetch_ohlcv as _fetch_ohlcv
+    def fetch_ohlcv(symbol, timeframe, days):
+        return _fetch_ohlcv(symbol, timeframe, days)
+    globals()['fetch_ohlcv'] = fetch_ohlcv
+    # get_supabase is already imported above; ensure it's available for patching
+    globals()['get_supabase'] = get_supabase
+
     from app.ai.model_client import ModelClient
     from app.ai.evaluator import Evaluator
     from app.ai.cache import EvalCache
@@ -37,6 +47,7 @@ def build_evaluator():
 
 
 async def run_pipeline(
+    md_service: MarketDataService,
     pairs: list[str] = ["BTC/USDT"],
     timeframes: list[str] = ["5m", "15m"],
     days: int = 180,
@@ -51,7 +62,7 @@ async def run_pipeline(
         try:
             cache_key = (strategy.pair, strategy.timeframe)
             if cache_key not in ohlcv_cache:
-                ohlcv_cache[cache_key] = fetch_ohlcv(strategy.pair, strategy.timeframe, days=days)
+                ohlcv_cache[cache_key] = md_service.get_ohlcv(strategy.pair, strategy.timeframe, days=days)
             ohlcv = ohlcv_cache[cache_key]
 
             signal_fn = lambda df, p=strategy.params, t=strategy.template: SIGNAL_MAP[t](df, p)

@@ -61,3 +61,13 @@ Questo file contiene lo storico di tutti i task completati, spostati qui da `TAS
 **Completato:** 2026-05-14
 
 ... [Tutti i task dell'Epic 400 gi√† completati] ...
+
+## ??? Fase 6 ó Stabilizzazione & Completamento (Debito Tecnico) [Aggiornamento 2026-05-15]
+
+### TASK-015 ó Refactor config.py (Pydantic Settings)
+**Status:** Done ?
+**Completato:** 2026-05-15
+
+### TASK-033 ó Refactor supabase_client.py (Singleton/Dependency)
+**Status:** Done ?
+**Completato:** 2026-05-15

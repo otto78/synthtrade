@@ -137,6 +137,52 @@ async def test_run_tick_ohlcv_error(mock_engine, mock_db):
 
 @pytest.mark.asyncio
 async def test_run_tick_updates_last_tick_at(mock_engine, mock_ohlcv, mock_db):
+    """Verifica aggiornamento last_tick_at su DB."""
+    with patch("app.execution.strategy_runner.fetch_ohlcv", return_value=mock_ohlcv):
+        runner = StrategyRunner(mock_engine)
+        strategy = {
+            "id": "test-tick",
+            "template": "mean_reversion_rsi",
+            "pair": "BTC/USDT",
+            "timeframe": "1h",
+            "params": {"rsi_period": 14, "rsi_oversold": 25, "rsi_overbought": 70},
+            "budget_eur": 1000,
+        }
+        await runner.run_tick(strategy)
+        # Verifica che update su DB sia stato chiamato
+        mock_db.table.assert_called_with("strategies")
+
+@pytest.mark.asyncio
+async def test_run_tick_allocation_budget(mock_engine, mock_ohlcv, mock_db):
+    """Testa che il budget sia calcolato in base all'allocazione percentuale per ciascun simbolo."""
+    with patch("app.execution.strategy_runner.fetch_ohlcv", return_value=mock_ohlcv):
+        runner = StrategyRunner(mock_engine)
+        strategy = {
+            "id": "test-alloc",
+            "template": "mean_reversion_rsi",
+            "timeframe": "1h",
+            "params": {
+                "rsi_period": 14,
+                "rsi_oversold": 25,
+                "rsi_overbought": 70,
+                "allocation": [
+                    {"symbol": "BTC/USDT", "pct": 60},
+                    {"symbol": "ETH/USDT", "pct": 40},
+                ],
+            },
+            "budget_eur": 1000,
+        }
+        await runner.run_tick(strategy)
+        # Il metodo process_signal dovrebbe essere stato chiamato due volte, una per ogni simbolo
+        assert mock_engine.process_signal.call_count == 2
+        # Verifica i valori di budget passati a process_signal per ciascun simbolo
+        calls = mock_engine.process_signal.call_args_list
+        # Primo call (BTC/USDT) budget = 1000 * 0.60 = 600
+        _, kwargs1 = calls[0]
+        assert pytest.approx(kwargs1["balance"], 0.01) == 600
+        # Secondo call (ETH/USDT) budget = 1000 * 0.40 = 400
+        _, kwargs2 = calls[1]
+        assert pytest.approx(kwargs2["balance"], 0.01) == 400
     """Dopo il tick, last_tick_at deve essere aggiornato su DB."""
     with patch("app.execution.strategy_runner.fetch_ohlcv", return_value=mock_ohlcv):
         runner = StrategyRunner(mock_engine)

@@ -5,17 +5,12 @@ from app.core.strategy_generator import (
     build_strategy_id,
     StrategyParams,
     TEMPLATES,
+    generate_for_request
 )
-
+from app.execution.schemas import StrategyRequest
+from unittest.mock import patch, AsyncMock, MagicMock
 
 def test_generate_at_least_200_variants():
-    # TEMPLATES ha 3 entry, pairs 1, timeframes 2 -> 3 * 1 * 2 = 6 combinazioni base.
-    # Ogni combinazione ha il prodotto dei parametri nel grid.
-    # trend_ema: 2*2*2*2 = 16
-    # mean_reversion_rsi: 1*2*2*1*2 = 8
-    # breakout_bb: 1*2*1*2 = 4
-    # Totale combinazioni parametri: 16 + 8 + 4 = 28
-    # Totale varianti: 28 * 1 (pair) * 2 (timeframes) = 56
     variants = list(generate_all_variants())
     assert len(variants) >= 50
 
@@ -27,7 +22,6 @@ def test_each_variant_has_required_fields():
         assert s.timeframe
         assert isinstance(s.params, dict)
         assert len(s.params) > 0
-        # TASK-181: Verifica campi regressione
         assert s.title, f"Missing title for {s.template}"
         assert s.description, f"Missing description for {s.template}"
         assert s.budget_eur > 0, f"Invalid budget for {s.template}"
@@ -35,7 +29,6 @@ def test_each_variant_has_required_fields():
 
 @pytest.fixture
 def mock_ohlcv():
-    """OHLCV sintetica con 20 cicli bull/bear per generare 30+ EMA crossover."""
     import numpy as np
     rng = np.random.default_rng(123)
     n = 8000
@@ -44,20 +37,17 @@ def mock_ohlcv():
     prices = 50000 + np.sin(t) * 3000 + rng.standard_normal(n) * 800
     prices = np.maximum(prices, 10000)
     return pd.DataFrame({
+        "ts": pd.date_range("2024-01-01", periods=n, freq="1h"),
         "open": prices * 0.998,
         "high": prices * 1.004,
         "low":  prices * 0.996,
         "close": prices,
         "volume": np.abs(np.ones(n) * 5.0 + rng.standard_normal(n) * 1),
-    }, index=pd.date_range("2024-01-01", periods=n, freq="1h"))
+    })
 
 
 @pytest.mark.asyncio
 async def test_generate_for_request_full_data(mock_ohlcv):
-    from unittest.mock import patch, AsyncMock
-    from app.execution.schemas import StrategyRequest
-    from app.core.strategy_generator import generate_for_request
-    
     req = StrategyRequest(
         budget_eur=500.0,
         duration_days=30,
@@ -65,19 +55,22 @@ async def test_generate_for_request_full_data(mock_ohlcv):
         risk_level="medium",
         max_strategies=5
     )
-    
-    with patch("app.core.strategy_generator.fetch_ohlcv", return_value=mock_ohlcv), \
-         patch("app.core.strategy_generator.enrich_request_with_ai",
+
+    mock_md_service = MagicMock()
+    mock_md_service.get_ohlcv.return_value = mock_ohlcv
+
+    with patch("app.core.strategy_generator.enrich_request_with_ai",
                new_callable=AsyncMock, return_value=req):
-        variants, _ = await generate_for_request(req)
+        results, hint = await generate_for_request(req, mock_md_service)
     
-    assert len(variants) > 0
-    for v in variants:
+    assert len(results) > 0
+    assert hint is None
+    for v in results:
         assert v.title
         assert v.description
         assert v.budget_eur == 500.0
-        assert v.score > 0  # score da compute_score() nel range (0, 1]
-        assert v.backtest_trades > 0  # backtest eseguito
+        assert v.score > 0
+        assert v.backtest_trades > 0
 
 
 def test_strategy_id_is_deterministic():

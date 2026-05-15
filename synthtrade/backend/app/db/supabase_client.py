@@ -66,6 +66,7 @@ class _DummyTable:
     def __init__(self, name: str) -> None:
         self._name = name
         self._last_data: Any = None
+        self._single = False
 
     def select(self, *_, **__) -> "_DummyTable":
         return self
@@ -80,6 +81,10 @@ class _DummyTable:
         return self
 
     def order(self, *_, **__) -> "_DummyTable":
+        return self
+
+    def single(self) -> "_DummyTable":
+        self._single = True
         return self
 
     def update(self, data: Any, *_, **__) -> "_DummyTable":
@@ -102,6 +107,7 @@ class _DummyTable:
 
     def execute(self) -> _DummyResult:
         # If we just did an insert/update, return that data as a list
+        data_to_return = []
         if self._last_data is not None:
             # Ensure it's a list for compatibility with .data[0]
             data_to_return = self._last_data if isinstance(self._last_data, list) else [self._last_data]
@@ -110,8 +116,12 @@ class _DummyTable:
                 if isinstance(item, dict) and "id" not in item:
                     import uuid
                     item["id"] = str(uuid.uuid4())
-            return _DummyResult(data_to_return)
-        return _DummyResult()
+        
+        if self._single:
+            # Return first item or None if empty
+            return _DummyResult(data_to_return[0] if data_to_return else None)  # type: ignore
+
+        return _DummyResult(data_to_return)
 
 
 class _DummyClient:

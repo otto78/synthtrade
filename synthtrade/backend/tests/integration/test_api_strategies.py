@@ -6,7 +6,23 @@ from app.main import app
 client = TestClient(app)
 
 
-# ── Fixture token ─────────────────────────────────────────────────────
+# ── Fixtures ─────────────────────────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def mock_db_fixture():
+    # Salviamo gli override originali
+    original_overrides = app.dependency_overrides.copy()
+    
+    def get_mock_db():
+        # Questo verrà configurato dai singoli test
+        return getattr(pytest, "_current_mock_db", MagicMock())
+    
+    from app.dependencies import get_db
+    app.dependency_overrides[get_db] = get_mock_db
+    yield
+    # Ripristiniamo gli override originali
+    app.dependency_overrides = original_overrides
+
 
 @pytest.fixture
 def token(monkeypatch):
@@ -25,14 +41,14 @@ def auth(token):
 
 STRATEGY_SUMMARY = {
     "id": "trend_00001", "title": "EMA Trend BTC 5m",
+    "pair": "BTC/USDT", "timeframe": "5m", "params": {}, "budget_eur": 500.0,
     "score": 0.72, "status": "PENDING",
     "ai_score": 0.81, "ai_risk": "LOW",
 }
 
 STRATEGY_DETAIL = {
     **STRATEGY_SUMMARY,
-    "template": "trend_ema", "pair": "BTC/USDT", "timeframe": "5m",
-    "params": {"ema_fast": 20, "ema_slow": 50},
+    "template": "trend_ema",
     "equity_curve": [1000.0, 1010.0, 1020.0],
     "ai_note": "Strategia solida su trend rialzista",
     "backtest": {"pnl_pct": 8.2, "sharpe": 1.4, "win_rate": 0.6, "max_drawdown_pct": 5.1, "num_trades": 42},
@@ -41,6 +57,7 @@ STRATEGY_DETAIL = {
 
 def mock_db_list(data):
     mock = MagicMock()
+    # Mocking chain for get_all and filter
     mock.table.return_value.select.return_value.execute.return_value.data = data
     mock.table.return_value.select.return_value.eq.return_value.execute.return_value.data = data
     return mock
@@ -48,13 +65,16 @@ def mock_db_list(data):
 
 def mock_db_detail(data):
     mock = MagicMock()
+    # Mocking chain for get_by_id
     mock.table.return_value.select.return_value.eq.return_value.execute.return_value.data = data
     return mock
 
 
 def mock_db_update(select_data, updated_status):
     mock = MagicMock()
+    # get_by_id call
     mock.table.return_value.select.return_value.eq.return_value.execute.return_value.data = select_data
+    # update call
     mock.table.return_value.update.return_value.eq.return_value.execute.return_value.data = [
         {**select_data[0], "status": updated_status}
     ] if select_data else []
@@ -64,15 +84,15 @@ def mock_db_update(select_data, updated_status):
 # ── GET /strategies ───────────────────────────────────────────────────
 
 def test_list_strategies_returns_list(auth):
-    with patch("app.api.strategies.get_supabase", return_value=mock_db_list([STRATEGY_SUMMARY])):
-        r = client.get("/api/strategies", headers=auth)
+    pytest._current_mock_db = mock_db_list([STRATEGY_SUMMARY])
+    r = client.get("/api/strategies", headers=auth)
     assert r.status_code == 200
     assert isinstance(r.json(), list)
 
 
 def test_list_strategies_contains_required_fields(auth):
-    with patch("app.api.strategies.get_supabase", return_value=mock_db_list([STRATEGY_SUMMARY])):
-        r = client.get("/api/strategies", headers=auth)
+    pytest._current_mock_db = mock_db_list([STRATEGY_SUMMARY])
+    r = client.get("/api/strategies", headers=auth)
     item = r.json()[0]
     for field in ("id", "title", "score", "status"):
         assert field in item
@@ -80,15 +100,15 @@ def test_list_strategies_contains_required_fields(auth):
 
 def test_list_strategies_filter_by_status(auth):
     pending = {**STRATEGY_SUMMARY, "status": "PENDING"}
-    with patch("app.api.strategies.get_supabase", return_value=mock_db_list([pending])):
-        r = client.get("/api/strategies?strategy_status=PENDING", headers=auth)
+    pytest._current_mock_db = mock_db_list([pending])
+    r = client.get("/api/strategies?strategy_status=PENDING", headers=auth)
     assert r.status_code == 200
     assert all(s["status"] == "PENDING" for s in r.json())
 
 
 def test_list_strategies_empty(auth):
-    with patch("app.api.strategies.get_supabase", return_value=mock_db_list([])):
-        r = client.get("/api/strategies", headers=auth)
+    pytest._current_mock_db = mock_db_list([])
+    r = client.get("/api/strategies", headers=auth)
     assert r.status_code == 200
     assert r.json() == []
 
@@ -96,8 +116,8 @@ def test_list_strategies_empty(auth):
 # ── GET /strategies/{id} ──────────────────────────────────────────────
 
 def test_get_strategy_returns_detail(auth):
-    with patch("app.api.strategies.get_supabase", return_value=mock_db_detail([STRATEGY_DETAIL])):
-        r = client.get("/api/strategies/trend_00001", headers=auth)
+    pytest._current_mock_db = mock_db_detail([STRATEGY_DETAIL])
+    r = client.get("/api/strategies/trend_00001", headers=auth)
     assert r.status_code == 200
     data = r.json()
     assert data["id"] == "trend_00001"
@@ -107,8 +127,8 @@ def test_get_strategy_returns_detail(auth):
 
 
 def test_get_strategy_not_found_returns_404(auth):
-    with patch("app.api.strategies.get_supabase", return_value=mock_db_detail([])):
-        r = client.get("/api/strategies/nonexistent", headers=auth)
+    pytest._current_mock_db = mock_db_detail([])
+    r = client.get("/api/strategies/nonexistent", headers=auth)
     assert r.status_code == 404
 
 
@@ -116,22 +136,22 @@ def test_get_strategy_not_found_returns_404(auth):
 
 def test_approve_pending_strategy(auth):
     pending = {**STRATEGY_SUMMARY, "status": "PENDING"}
-    with patch("app.api.strategies.get_supabase", return_value=mock_db_update([pending], "APPROVED")):
-        r = client.post("/api/strategies/trend_00001/approve", headers=auth)
+    pytest._current_mock_db = mock_db_update([pending], "APPROVED")
+    r = client.post("/api/strategies/trend_00001/approve", headers=auth)
     assert r.status_code == 200
     assert r.json()["status"] == "APPROVED"
 
 
 def test_approve_non_pending_returns_409(auth):
     active = {**STRATEGY_SUMMARY, "status": "ACTIVE"}
-    with patch("app.api.strategies.get_supabase", return_value=mock_db_update([active], "APPROVED")):
-        r = client.post("/api/strategies/trend_00001/approve", headers=auth)
+    pytest._current_mock_db = mock_db_update([active], "APPROVED")
+    r = client.post("/api/strategies/trend_00001/approve", headers=auth)
     assert r.status_code == 409
 
 
 def test_approve_nonexistent_returns_404(auth):
-    with patch("app.api.strategies.get_supabase", return_value=mock_db_update([], "APPROVED")):
-        r = client.post("/api/strategies/nonexistent/approve", headers=auth)
+    pytest._current_mock_db = mock_db_update([], "APPROVED")
+    r = client.post("/api/strategies/nonexistent/approve", headers=auth)
     assert r.status_code == 404
 
 
@@ -139,15 +159,15 @@ def test_approve_nonexistent_returns_404(auth):
 
 def test_reject_strategy(auth):
     pending = {**STRATEGY_SUMMARY, "status": "PENDING"}
-    with patch("app.api.strategies.get_supabase", return_value=mock_db_update([pending], "REJECTED")):
-        r = client.post("/api/strategies/trend_00001/reject", headers=auth)
+    pytest._current_mock_db = mock_db_update([pending], "REJECTED")
+    r = client.post("/api/strategies/trend_00001/reject", headers=auth)
     assert r.status_code == 200
     assert r.json()["status"] == "REJECTED"
 
 
 def test_reject_nonexistent_returns_404(auth):
-    with patch("app.api.strategies.get_supabase", return_value=mock_db_update([], "REJECTED")):
-        r = client.post("/api/strategies/nonexistent/reject", headers=auth)
+    pytest._current_mock_db = mock_db_update([], "REJECTED")
+    r = client.post("/api/strategies/nonexistent/reject", headers=auth)
     assert r.status_code == 404
 
 

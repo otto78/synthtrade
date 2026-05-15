@@ -69,6 +69,9 @@ class _DummyTable:
     def order(self, *_, **__) -> "_DummyTable":
         return self
 
+    def single(self) -> "_DummyTable":
+        return self
+
     def update(self, *_, **__) -> "_DummyTable":
         return self
 

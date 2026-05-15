@@ -64,6 +64,29 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - Le strategie generate vengono salvate su DB subito per garantire persistenza tra navigazioni e sessioni
 - La cleanup PENDING scadute cancella i record, mentre ACTIVE scadute diventano EXPIRED per tracciabilità
 
+### v1.2.6 — 2026-05-15
+
+**Milestone:** Refactor Supabase Client & Dependency Injection (TASK-033)
+
+**Completato:**
+- ✅ **Supabase Singleton**: Il client Supabase è ora un singleton gestito con `@lru_cache` in `app/db/supabase_client.py`.
+- ✅ **FastAPI Dependency**: Implementata la dependency `get_db` in `app/dependencies.py` per iniettare il client nelle route.
+- ✅ **Fix Dummy Client**: Potenziato il `_DummyTable` per supportare il metodo `.single()`, risolvendo crash negli endpoint di metriche durante i test.
+- ✅ **Test di regressione**: Risolti problemi di importazione e formato delle risposte nei test di integrazione (`test_pipeline_metrics.py`).
+
+**Decisioni chiave:**
+- Utilizzo della Dependency Injection di FastAPI come standard per l'accesso al database, facilitando il testing e il mocking.
+- Unificazione del comportamento dei dummy client tra lo stub di root e quello del backend.
+
+### v1.2.7 — 2026-05-15
+
+**Milestone:** MarketData Service Refactor - OhlcvRepository (TASK-038)
+
+**Completato:**
+- ✅ **OhlcvRepository**: Creazione di un repository dedicato per la tabella `ohlcv_cache` in `app/db/repositories/`.
+- ✅ **Dependency Injection**: Aggiunta di `get_ohlcv_repo` in `app/dependencies.py`.
+- ✅ **Test di copertura**: Test unitari per il repository (`tests/test_task_038.py`) con mock Supabase.
+
 ---
 
 ## 🎯 Roadmap

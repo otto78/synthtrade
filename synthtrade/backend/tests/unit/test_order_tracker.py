@@ -15,20 +15,27 @@ def make_order_request(symbol="BTC/USDT", strategy_id="s1"):
 @pytest.fixture
 def mock_db():
     db = MagicMock()
-    db.table.return_value.insert.return_value.execute.return_value.data = [{"id": "trade-1"}]
-    db.table.return_value.update.return_value.eq.return_value.execute.return_value.data = [{"id": "trade-1"}]
-    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
-        {"id": "trade-1", "strategy_id": "s1", "pair": "BTC/USDT", "action": "BUY",
-         "price": 60000.0, "quantity": 0.01, "stop_loss": 58800.0, "take_profit": 62400.0,
-         "status": "OPEN", "executed_at": datetime.now(UTC).isoformat()}
-    ]
+    full_trade = {
+        "id": "trade-1", "strategy_id": "s1", "pair": "BTC/USDT", "action": "BUY",
+        "price": 60000.0, "quantity": 0.01, "stop_loss": 58800.0, "take_profit": 62400.0,
+        "status": "OPEN", "executed_at": datetime.now(UTC).isoformat()
+    }
+    db.table.return_value.insert.return_value.execute.return_value.data = [full_trade]
+    db.table.return_value.update.return_value.eq.return_value.execute.return_value.data = [full_trade]
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [full_trade]
     return db
 
 
+from app.db.repositories.trade_repository import TradeRepository
+
 @pytest.fixture
-def tracker(mock_db):
-    with patch("app.execution.order_tracker.get_supabase", return_value=mock_db):
-        yield OrderTracker()
+def repo(mock_db):
+    return TradeRepository(mock_db)
+
+
+@pytest.fixture
+def tracker(repo):
+    return OrderTracker(repo=repo)
 
 
 def test_open_position_inserts_to_supabase(tracker, mock_db):

@@ -1,4 +1,5 @@
 export enum WsMessageType {
+  GenerationComplete = 'generation_complete',
   Ping = 'ping',
   Price = 'price',
   EngineStatus = 'engine_status',

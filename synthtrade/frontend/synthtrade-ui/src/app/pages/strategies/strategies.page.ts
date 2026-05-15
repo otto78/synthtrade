@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, inject
 import { StrategyService } from '../../core/services/strategy.service';
 import { PipelineService } from '../../core/services/pipeline.service';
 import { WsService } from '../../core/services/ws.service';
+import { GenerationWsService } from '../../core/services/generation-ws.service';
 import { WsMessageType, WsStrategyPnlUpdatedPayload, WsStrategyStoppedPayload } from '../../core/models/ws-message.model';
 import { Strategy, StrategyRequest, GenerationStatus, GenerationProgressStatus, StrategyCreateDto } from '../../core/models/strategy.model';
 import { BadgeStatusComponent } from '../../shared/components/badge-status/badge-status.component';
@@ -496,6 +497,7 @@ export class StrategiesPage implements OnInit, OnDestroy {
   private strategyService = inject(StrategyService);
   private pipelineService = inject(PipelineService);
   private wsService = inject(WsService);
+  private generationWsService = inject(GenerationWsService);
   private router = inject(Router);
   private sub = new Subscription();
 
@@ -564,6 +566,18 @@ export class StrategiesPage implements OnInit, OnDestroy {
       this.wsService.on<WsStrategyStoppedPayload>(WsMessageType.StrategyStopped).subscribe(msg => {
         if (msg['strategy_id']) {
           this.loadStrategies(); // Ricarica tutto per spostare nei completati
+        }
+      })
+    );
+
+    // Listener per completamento generazione
+    this.sub.add(
+      this.generationWsService.onGenerationComplete().subscribe(msg => {
+        const payload = msg.payload as any;
+        if (payload && payload.generation_id === this.generationId()) {
+          this.generationResultCount.set(payload.count);
+          this.generationStatus.set('completed');
+          this.loadStrategies();
         }
       })
     );

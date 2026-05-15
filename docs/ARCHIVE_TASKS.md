@@ -62,12 +62,21 @@ Questo file contiene lo storico di tutti i task completati, spostati qui da `TAS
 
 ... [Tutti i task dell'Epic 400 già completati] ...
 
-## ??? Fase 6 � Stabilizzazione & Completamento (Debito Tecnico) [Aggiornamento 2026-05-15]
+## ??? Fase 6 � Stabilizzazione & Completamento (Debito Tecnico) [Aggiornamento 2026-05-15]
 
-### TASK-015 � Refactor config.py (Pydantic Settings)
+### TASK-015 � Refactor config.py (Pydantic Settings)
 **Status:** Done ?
 **Completato:** 2026-05-15
 
-### TASK-033 � Refactor supabase_client.py (Singleton/Dependency)
-**Status:** Done ?
+### TASK-041 — Refactor Ranker con Pydantic e configurazione dinamica
+**Status:** Done ✅  
 **Completato:** 2026-05-15
+
+### TASK-068 — Refactor StrategyGenerator (performance & service integration)
+**Status:** Done ✅  
+**Completato:** 2026-05-15
+
+### TASK-069 — Refactor StopLossManager (Service pattern)
+**Status:** Done ✅  
+**Completato:** 2026-05-15
+

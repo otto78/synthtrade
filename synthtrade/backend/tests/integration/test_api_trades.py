@@ -34,10 +34,10 @@ def setup_mock_db(mock_db, data):
     exec_res = MagicMock()
     exec_res.data = data
     
-    # Gestisce catene fluide con o senza .eq()
+    # Gestisce catene fluide di varia lunghezza (select, eq, order, limit, execute)
     mock_db.table.return_value.select.return_value.execute.return_value = exec_res
-    mock_db.table.return_value.select.return_value.order.return_value.execute.return_value = exec_res
-    mock_db.table.return_value.select.return_value.eq.return_value.order.return_value.execute.return_value = exec_res
+    mock_db.table.return_value.select.return_value.order.return_value.limit.return_value.execute.return_value = exec_res
+    mock_db.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = exec_res
     return mock_db
 
 

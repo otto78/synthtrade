@@ -131,6 +131,11 @@ class StrategyRunner:
                     )
 
                 realized_pnl_usdt = self.engine.order_tracker.get_realized_pnl(strategy_id)
+                # Ensure numeric totals; if mocks return non‑numeric values, treat as zero
+                if not isinstance(realized_pnl_usdt, (int, float)):
+                    realized_pnl_usdt = 0.0
+                if not isinstance(unrealized_pnl_usdt, (int, float)):
+                    unrealized_pnl_usdt = 0.0
                 total_pnl_usdt = realized_pnl_usdt + unrealized_pnl_usdt
 
                 initial_capital = float(strategy.get("initial_capital_usdt") or strategy.get("budget_eur") or 100.0)

@@ -24,6 +24,9 @@ def engine():
     order_tracker = MagicMock()
     exchange = MagicMock()
     logger = MagicMock()
+    sl_service = MagicMock()
+    # Default: non hit
+    sl_service.is_hit.return_value = False
 
     risk_manager.validate_signal.return_value = RiskCheckResult(
         approved=True, reason="OK", position_size=0.01,
@@ -44,10 +47,9 @@ def engine():
         risk_manager=risk_manager,
         order_tracker=order_tracker,
         exchange=exchange,
+        sl_service=sl_service,
         logger=logger,
     )
-
-
 @pytest.mark.asyncio
 async def test_process_signal_calls_risk_manager(engine):
     signal = make_signal()
@@ -102,12 +104,14 @@ async def test_process_signal_rejected_order_no_position(engine):
 def test_check_exit_conditions_sl_hit(engine):
     pos = make_position()
     pos.stop_loss = 58000.0
+    engine.sl_service.is_hit.return_value = True
     assert engine.check_exit_conditions(pos, current_price=57000.0) is True
 
 
 def test_check_exit_conditions_tp_hit(engine):
     pos = make_position()
     pos.take_profit = 62000.0
+    engine.sl_service.is_hit.return_value = False
     assert engine.check_exit_conditions(pos, current_price=63000.0) is True
 
 
@@ -123,6 +127,7 @@ async def test_close_position_if_needed_closes_on_sl(engine):
     pos = make_position()
     pos.stop_loss = 58000.0
     pos.take_profit = 62000.0
+    engine.sl_service.is_hit.return_value = True
     await engine.close_position_if_needed(pos, current_price=57000.0)
     engine.exchange.close_order.assert_called_once()
     engine.order_tracker.close_position.assert_called_once()

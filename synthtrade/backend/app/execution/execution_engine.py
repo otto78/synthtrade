@@ -4,14 +4,15 @@ from app.execution.schemas import (
 )
 from app.execution.risk_manager import RiskManager
 from app.execution.order_tracker import OrderTracker
-
+from app.services.stop_loss_service import StopLossService
 
 class ExecutionEngine:
     def __init__(self, risk_manager: RiskManager, order_tracker: OrderTracker,
-                 exchange, logger=None, signal_resolver=None):
+                 exchange, sl_service: StopLossService, logger=None, signal_resolver=None):
         self.risk_manager = risk_manager
         self.order_tracker = order_tracker
         self.exchange = exchange
+        self.sl_service = sl_service
         self.logger = logger or logging.getLogger(__name__)
         self.signal_resolver = signal_resolver
 
@@ -90,9 +91,10 @@ class ExecutionEngine:
 
     def check_exit_conditions(self, position: PositionSnapshot,
                               current_price: float) -> bool:
+        sl_hit = self.sl_service.is_hit(current_price, position.stop_loss, position.direction)
         if position.direction == "BUY":
-            return current_price <= position.stop_loss or current_price >= position.take_profit
-        return current_price >= position.stop_loss or current_price <= position.take_profit
+            return sl_hit or current_price >= position.take_profit
+        return sl_hit or current_price <= position.take_profit
 
     async def close_position_if_needed(self, position: PositionSnapshot,
                                        current_price: float) -> None:

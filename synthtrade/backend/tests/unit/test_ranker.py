@@ -1,5 +1,5 @@
 import pytest
-from app.core.ranker import compute_score, rank_strategies, RankConfig
+from app.core.ranker import Ranker, rank_strategies, RankConfig
 from app.core.backtester import BacktestResult
 
 

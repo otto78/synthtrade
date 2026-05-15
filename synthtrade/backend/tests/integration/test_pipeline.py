@@ -1,7 +1,10 @@
 import pytest
 import pandas as pd
 import numpy as np
+import asyncio
 from unittest.mock import MagicMock, patch, call
+from app.core.run_pipeline import run_pipeline
+from app.services.market_data_service import MarketDataService
 
 
 def make_ohlcv(n: int = 300) -> pd.DataFrame:
@@ -13,72 +16,59 @@ def make_ohlcv(n: int = 300) -> pd.DataFrame:
     })
 
 
+@pytest.fixture
+def mock_md_service():
+    service = MagicMock(spec=MarketDataService)
+    service.get_ohlcv.return_value = make_ohlcv()
+    return service
+
+
+@pytest.fixture
+def mock_db():
+    return MagicMock()
+
+
 # ── Test: solo strategie con score > 0 vengono salvate ───────────────
 
-def test_pipeline_saves_only_scored_strategies():
-    mock_db = MagicMock()
-    ohlcv = make_ohlcv()
-
-    with patch("app.core.run_pipeline.fetch_ohlcv", return_value=ohlcv), \
-         patch("app.core.run_pipeline.get_supabase", return_value=mock_db):
-
-        from app.core.run_pipeline import run_pipeline
-        import asyncio
-        saved = asyncio.run(run_pipeline(pairs=["BTC/USDT"], timeframes=["5m"], ai_eval=False))
+@pytest.mark.asyncio
+async def test_pipeline_saves_only_scored_strategies(mock_md_service, mock_db):
+    with patch("app.core.run_pipeline.get_supabase", return_value=mock_db):
+        saved = await run_pipeline(mock_md_service, pairs=["BTC/USDT"], timeframes=["5m"], ai_eval=False)
 
     assert isinstance(saved, int)
     assert saved >= 0
 
 
-def test_pipeline_returns_count_of_saved_strategies():
-    mock_db = MagicMock()
-    ohlcv = make_ohlcv()
-
-    with patch("app.core.run_pipeline.fetch_ohlcv", return_value=ohlcv), \
-         patch("app.core.run_pipeline.get_supabase", return_value=mock_db):
-
-        from app.core.run_pipeline import run_pipeline
-        import asyncio
-        count = asyncio.run(run_pipeline(pairs=["BTC/USDT"], timeframes=["5m"], ai_eval=False))
+@pytest.mark.asyncio
+async def test_pipeline_returns_count_of_saved_strategies(mock_md_service, mock_db):
+    with patch("app.core.run_pipeline.get_supabase", return_value=mock_db):
+        count = await run_pipeline(mock_md_service, pairs=["BTC/USDT"], timeframes=["5m"], ai_eval=False)
 
     assert count >= 0
 
 
-def test_pipeline_upserts_to_supabase_when_strategies_found():
-    mock_db = MagicMock()
-    ohlcv = make_ohlcv()
-
-    with patch("app.core.run_pipeline.fetch_ohlcv", return_value=ohlcv), \
-         patch("app.core.run_pipeline.get_supabase", return_value=mock_db):
-
-        from app.core.run_pipeline import run_pipeline
-        import asyncio
-        count = asyncio.run(run_pipeline(pairs=["BTC/USDT"], timeframes=["5m"], ai_eval=False))
+@pytest.mark.asyncio
+async def test_pipeline_upserts_to_supabase_when_strategies_found(mock_md_service, mock_db):
+    with patch("app.core.run_pipeline.get_supabase", return_value=mock_db):
+        count = await run_pipeline(mock_md_service, pairs=["BTC/USDT"], timeframes=["5m"], ai_eval=False)
 
     if count > 0:
         mock_db.table.return_value.upsert.assert_called()
 
 
-def test_pipeline_no_error_on_50_strategies():
+@pytest.mark.asyncio
+async def test_pipeline_no_error_on_50_strategies(mock_md_service, mock_db):
     """Pipeline non deve sollevare eccezioni su un batch reale."""
-    mock_db = MagicMock()
-    ohlcv = make_ohlcv()
-
-    with patch("app.core.run_pipeline.fetch_ohlcv", return_value=ohlcv), \
-         patch("app.core.run_pipeline.get_supabase", return_value=mock_db):
-
-        from app.core.run_pipeline import run_pipeline
-        import asyncio
+    with patch("app.core.run_pipeline.get_supabase", return_value=mock_db):
         try:
-            asyncio.run(run_pipeline(pairs=["BTC/USDT"], timeframes=["5m"], ai_eval=False))
+            await run_pipeline(mock_md_service, pairs=["BTC/USDT"], timeframes=["5m"], ai_eval=False)
         except Exception as e:
             pytest.fail(f"Pipeline ha sollevato un'eccezione: {e}")
 
 
-def test_pipeline_skips_strategy_on_exception():
+@pytest.mark.asyncio
+async def test_pipeline_skips_strategy_on_exception(mock_md_service, mock_db):
     """Un errore su una singola strategia non blocca il resto della pipeline."""
-    mock_db = MagicMock()
-    ohlcv = make_ohlcv()
     call_count = {"n": 0}
 
     def flaky_backtest(df, signal_fn, **kwargs):
@@ -88,13 +78,10 @@ def test_pipeline_skips_strategy_on_exception():
         from app.core.backtester import run_backtest as real_backtest
         return real_backtest(df, signal_fn, **kwargs)
 
-    with patch("app.core.run_pipeline.fetch_ohlcv", return_value=ohlcv), \
-         patch("app.core.run_pipeline.get_supabase", return_value=mock_db), \
+    with patch("app.core.run_pipeline.get_supabase", return_value=mock_db), \
          patch("app.core.run_pipeline.run_backtest", side_effect=flaky_backtest):
 
-        from app.core.run_pipeline import run_pipeline
-        import asyncio
         try:
-            asyncio.run(run_pipeline(pairs=["BTC/USDT"], timeframes=["5m"], ai_eval=False))
+            await run_pipeline(mock_md_service, pairs=["BTC/USDT"], timeframes=["5m"], ai_eval=False)
         except Exception as e:
             pytest.fail(f"Pipeline non deve propagare eccezioni singole: {e}")

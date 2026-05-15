@@ -4,12 +4,19 @@ from app.core.strategy_generator import generate_all_variants, build_strategy_id
 from app.core.indicators import signal_ema_crossover, signal_rsi_reversion, signal_breakout_bb
 from app.core.market_data import fetch_ohlcv
 from app.core.backtester import run_backtest
-from app.core.ranker import compute_score
+from app.core.ranker import Ranker
 from app.services.market_data_service import MarketDataService
 from app.db.supabase_client import get_supabase
 from app.config import settings
 
 logger = logging.getLogger("synthtrade.pipeline")
+
+# Expose symbols for test patching
+# These assignments make `fetch_ohlcv` and `get_supabase` available as attributes of this module
+# so that `patch("app.core.run_pipeline.fetch_ohlcv")` works even though the real implementation
+# lives in other modules.
+globals()['fetch_ohlcv'] = fetch_ohlcv
+globals()['get_supabase'] = get_supabase
 
 SIGNAL_MAP = {
     "trend_ema": lambda df, p: signal_ema_crossover(df, p["ema_fast"], p["ema_slow"]),
@@ -67,7 +74,7 @@ async def run_pipeline(
 
             signal_fn = lambda df, p=strategy.params, t=strategy.template: SIGNAL_MAP[t](df, p)
             result = run_backtest(ohlcv, signal_fn)
-            score = compute_score(result)
+            score = Ranker().compute_score(result)
 
             if score is None:
                 continue

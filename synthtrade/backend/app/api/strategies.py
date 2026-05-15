@@ -170,6 +170,9 @@ def approve_strategy(
         return {"id": strategy_id, "status": "APPROVED"}
     except Exception as e:
         logger.error(f"Error during strategy approval: {str(e)}", exc_info=True)
+        # Se è già una HTTPException, rilanciamola
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 @router.post("/{strategy_id}/reject")

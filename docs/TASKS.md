@@ -12,7 +12,8 @@
 
 ### TASK-035 — Refactor `StrategyRepository`
 
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-15
 **Priorità:** Alta  
 **Dettagli:**
 - Isolare la logica CRUD delle strategie.

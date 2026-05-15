@@ -10,22 +10,8 @@
 
 > **Obiettivo:** Chiudere tutti i task lasciati in sospeso nelle fasi precedenti per garantire un sistema "perfettamente funzionante" prima del deploy.
 
-### TASK-015 — Refactor `config.py` (Pydantic Settings)
-**Status:** In Progress  
-**Priorità:** Media  
-**Dettagli:**
-- Migrare completamente alla gestione dei settings via Pydantic `BaseSettings`.
-- Validazione rigorosa delle variabili d'ambiente (API Keys, DB URLs).
-- Supporto per `.env` multipli (dev, prod).
-
-### TASK-033 — Refactor `supabase_client.py` (Singleton/Dependency)
-**Status:** In Progress  
-**Priorità:** Alta  
-**Dettagli:**
-- Implementare il client Supabase come singleton per evitare connessioni multiple.
-- Utilizzare la Dependency Injection di FastAPI per iniettare il client nelle route.
-
 ### TASK-035 — Refactor `StrategyRepository`
+
 **Status:** In Progress  
 **Priorità:** Alta  
 **Dettagli:**
@@ -111,13 +97,6 @@
 **Priorità:** Alta  
 **Dettagli:** Gestire correttamente la sottoscrizione ai dati del backend e i casi di errore/timeout.
 
-### TASK-195 — Sottoscriversi al messaggio WS `generation_complete`
-**Status:** In Progress  
-**Priorità:** Media
-
-### TASK-197 — 🔴 Test: messaggio WS `generation_complete` aggiorna lista senza ricaricare
-**Status:** In Progress  
-**Priorità:** Media
 
 ### TASK-209 — 🔵 Refactor: `RiskConfig` dataclass iniettabile nei test
 **Status:** In Progress  

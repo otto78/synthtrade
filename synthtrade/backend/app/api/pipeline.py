@@ -18,7 +18,17 @@ router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 generations: Dict[str, Dict[str, Any]] = {}
 
 async def run_generation_task(generation_id: str, req: StrategyRequest):
+    # Initialize timing metrics
+    generation_start = datetime.now(timezone.utc)
+    phases = {}
+    generations[generation_id]["metrics"] = {"start": generation_start.isoformat(), "phases": phases}
     generations[generation_id]["status"] = "running"
+    # Persist start timestamp in DB
+    db = get_supabase()
+    db.table("generation_metrics").insert({
+        "generation_id": generation_id,
+        "start_timestamp": generation_start.isoformat(),
+    }).execute()
     try:
         # TASK-FIX-006: WS progress — fetching market data
         await manager.broadcast({
@@ -27,6 +37,7 @@ async def run_generation_task(generation_id: str, req: StrategyRequest):
             "phase": "fetching_market_data",
             "message": "Scaricamento dati storici Binance (90 giorni)...",
         })
+        phases["fetching_market_data"] = datetime.now(timezone.utc).isoformat()
 
         # TASK-041/047: Generate strategies with real backtest
         strategies, empty_hint = await generate_for_request(req)
@@ -52,6 +63,7 @@ async def run_generation_task(generation_id: str, req: StrategyRequest):
             "phase": "saving",
             "message": f"Backtest completato: {len(strategies)} strategie valide. Salvataggio...",
         })
+        phases["saving"] = datetime.now(timezone.utc).isoformat()
 
         db = get_supabase()
         now = datetime.now(timezone.utc)
@@ -125,6 +137,17 @@ async def run_generation_task(generation_id: str, req: StrategyRequest):
 
         generations[generation_id]["status"] = "completed"
         generations[generation_id]["results"] = strategies_data
+        # Record end time for saving phase
+        phases["saving"] = datetime.now(timezone.utc).isoformat()
+        # Record overall end time
+        generations[generation_id]["metrics"]["end"] = datetime.now(timezone.utc).isoformat()
+        # Persist end timestamp and phases in DB
+        db.table("generation_metrics").update({
+            "end_timestamp": generations[generation_id]["metrics"]["end"],
+            "phases": phases
+        }).eq("generation_id", generation_id).execute()
+        # Log metrics
+        logger.info(f"Generation {generation_id} completed. Metrics: {generations[generation_id]['metrics']}")
 
         # TASK-053: Broadcast WS completion
         await manager.broadcast({
@@ -174,3 +197,30 @@ async def get_generation_status(
         raise HTTPException(status_code=404, detail="Generation not found")
 
     return generations[generation_id]
+
+
+# ---------------------------------------------------------------------
+# Metrics endpoint (Task #2)
+# ---------------------------------------------------------------------
+@router.get("/metrics/{generation_id}")
+async def get_generation_metrics(
+    generation_id: str,
+    _user: str = Depends(get_current_user)  # authentication required
+):
+    """Return timing and phase metrics for a pipeline generation.
+
+    Reads the `generation_metrics` table that is populated by the
+    background generation task.  If the requested `generation_id` does not
+    exist, a 404 error is raised.
+    """
+    db = get_supabase()
+    res = (
+        db.table("generation_metrics")
+        .select("generation_id,start_timestamp,end_timestamp,phases")
+        .eq("generation_id", generation_id)
+        .single()
+        .execute()
+    )
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Metrics not found for this generation")
+    return res.data

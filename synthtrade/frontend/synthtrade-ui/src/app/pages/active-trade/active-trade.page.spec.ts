@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActiveTradePage } from './active-trade.page';
 import { StrategyService } from '../../core/services/strategy.service';
@@ -12,6 +13,7 @@ describe('ActiveTradePage', () => {
   let el: HTMLElement;
   let strategyService: jest.Mocked<StrategyService>;
   let wsService: jest.Mocked<WsService>;
+  let dashboardService: jest.Mocked<DashboardService>;
   let wsSubject: Subject<any>;
 
   const mockPnlResponse = {
@@ -46,12 +48,16 @@ describe('ActiveTradePage', () => {
     wsService = {
       on: jest.fn().mockReturnValue(wsSubject.asObservable()),
     } as any;
+    dashboardService = {
+      getDashboardStats: jest.fn().mockReturnValue(of({})),
+    } as any;
 
     await TestBed.configureTestingModule({
       imports: [ActiveTradePage],
       providers: [
         { provide: StrategyService, useValue: strategyService },
         { provide: WsService, useValue: wsService },
+        { provide: DashboardService, useValue: dashboardService },
         { provide: HttpClient, useValue: { get: jest.fn() } },
       ],
     }).compileComponents();
@@ -109,7 +115,7 @@ describe('ActiveTradePage', () => {
     expect(spy).toHaveBeenCalled();
   });
 
-  // Test 8: P&L total computed correctly
+  // Test 8: P&L total computed correctly (average of all strategies)
   it('should compute total P&L correctly', () => {
     const pnl = fixture.componentInstance.totalPnl();
     expect(pnl).toBe(4.0);

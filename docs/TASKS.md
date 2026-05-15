@@ -10,16 +10,6 @@
 
 > **Obiettivo:** Chiudere tutti i task lasciati in sospeso nelle fasi precedenti per garantire un sistema "perfettamente funzionante" prima del deploy.
 
-### TASK-035 — Refactor `StrategyRepository`
-
-**Status:** Done ✅  
-**Completato:** 2026-05-15
-**Priorità:** Alta  
-**Dettagli:**
-- Isolare la logica CRUD delle strategie.
-- Implementare mapping robusto tra i tipi Supabase e i modelli Pydantic.
-- Aggiungere caching per le strategie più richieste.
-
 ### TASK-038 — Refactor `MarketData` (Service pattern)
 **Status:** In Progress  
 **Priorità:** Alta  

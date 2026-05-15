@@ -32,7 +32,8 @@
 **Priorità:** Media
 
 ### TASK-068 — Refactor `StrategyGenerator`
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-15
 **Priorità:** Alta  
 **Dettagli:**
 - Ottimizzazione della generazione delle varianti di parametri.

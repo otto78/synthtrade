@@ -1,4 +1,4 @@
-﻿# SynthTrade — TASKS
+# SynthTrade — TASKS
 ﻿# SynthTrade — TASKS
 
 > Aggiornato automaticamente. Metodologia TDD: 🔴 Red → 🟢 Green → 🔵 Refactor
@@ -1674,7 +1674,7 @@
 ## ⚫ Fase 6 — Produzione & Deployment (v1.3.0)
 
 > Obiettivo: Migrazione dall'ambiente di sviluppo/testnet a un ambiente di produzione resiliente, sicuro e monitorato.
-> Architettura: Supabase Cloud (DB/Auth) + Render/VPS (Backend Docker) + Render/Vercel (Frontend Static).
+> Architettura Scelta: **All-in-One Docker VPS** (Supabase Cloud per i dati + VPS Linux per l'intero stack applicativo).
 
 ### 6.1 Infrastruttura & Cloud Setup
 ### TASK-252 — Setup Progetto Supabase Produzione
@@ -1690,8 +1690,8 @@
 - **Completato:** 2026-05-14
 
 ### TASK-254 — Configurazione Variabili d'Ambiente (Secrets)
-- Configurazione dei segreti su Render/VPS per Backend (API Keys Binance Live, OpenRouter, Supabase)
-- Configurazione environment statico per Frontend
+- Configurazione dei segreti sul VPS per Backend (API Keys Binance Live, OpenRouter, Supabase)
+- Configurazione variabili build-time per Frontend (Production API URL)
 - **Status:** Pending
 - **Priorità:** Alta
 
@@ -1715,18 +1715,29 @@
 - **Status:** Pending
 - **Priorità:** Media
 
-### 6.3 Docker & CI/CD
+### 6.3 Docker & CI/CD (Unified Stack)
 ### TASK-264 — Dockerizzazione Backend (Immagine Production)
 - Creazione `Dockerfile.prod` multi-stage (builder + runtime slim)
 - Ottimizzazione size immagine e rimozione tool di build
-- Esecuzione come utente non-root
 - **Status:** Pending
 - **Priorità:** Alta
 
+### TASK-265 — Dockerizzazione Frontend (Angular + Nginx)
+- Creazione `frontend/Dockerfile` multi-stage (node builder + nginx runtime)
+- Configurazione Nginx interno per gestire il fallback SPA (routing Angular)
+- **Status:** Pending
+- **Priorità:** Alta
+
+### TASK-266 — Orchestrazione docker-compose.prod.yml
+- Configurazione servizi: `backend`, `frontend`, `nginx-proxy`, `certbot`
+- Rete interna isolata e gestione volumi per certificati SSL
+- **Status:** Pending
+- **Priorità:** Critica
+
 ### TASK-273 — Pipeline CI/CD (GitHub Actions)
 - Automatizzazione test asincroni (pytest) ad ogni push
-- Build automatica immagine Docker e push su registry
-- Deploy automatico su branch `main`
+- Build automatica immagini Docker e push su registry
+- Trigger deploy automatico sul VPS tramite Webhook o SSH
 - **Status:** Pending
 - **Priorità:** Media
 

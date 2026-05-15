@@ -308,24 +308,22 @@ synthtrade/                               ← root monorepo
 
 ## 🚀 Deployment & Infrastruttura (Produzione)
 
-L'architettura di produzione è progettata per la massima resilienza e sicurezza, separando il database gestito dal calcolo computazionale.
+L'architettura di produzione è progettata per la massima resilienza e semplicità operativa, utilizzando un approccio **All-in-One Docker** su VPS.
 
 ### 🌐 Cloud Providers
-- **Database & Auth**: [Supabase Cloud](https://supabase.com/) (PostgreSQL + GoTrue + Realtime).
-- **Backend (FastAPI)**: [Render](https://render.com/) o VPS (DigitalOcean/Hetzner) con Docker.
-- **Frontend (Angular)**: [Vercel](https://vercel.com/) o Render (Static Site).
+- **Database & Auth**: [Supabase Cloud](https://supabase.com/) (Gestito).
+- **Compute (Stack Completo)**: [Hetzner](https://www.hetzner.com/) / [DigitalOcean](https://www.digitalocean.com/) VPS (Linux Ubuntu).
 
-### 🛠️ Stack di Deployment
-- **Containerizzazione**: Docker multi-stage (Backend) e Nginx (Frontend).
-- **Reverse Proxy**: Nginx con SSL (Certbot/Let's Encrypt).
-- **CI/CD**: GitHub Actions per test automatizzati e build di produzione.
-- **Monitoring**: Sentry (Error tracking) + Supabase Logs.
+### 🛠️ Stack di Deployment (Unified)
+- **Frontend & Backend**: Entrambi containerizzati e orchestrati via `docker-compose.prod.yml`.
+- **Nginx Unified Gateway**: Un unico entry point che serve i file statici della UI e agisce da Reverse Proxy per le API, eliminando complessità di CORS e routing.
+- **SSL**: Certbot / Let's Encrypt integrato nel loop di Docker Compose.
+- **CI/CD**: GitHub Actions per build immagini e deploy automatico via SSH.
 
 ### 🔒 Security Hardening
-- **Row Level Security (RLS)**: Enforced su tutte le tabelle Supabase.
-- **Secrets Management**: Variabili d'ambiente iniettate a runtime via CI/CD, mai nel codice.
-- **CORS**: Policy restrittive limitate ai domini di produzione.
-- **Rate Limiting**: Implementato a livello di Nginx e FastAPI.
+- **Network Isolation**: Rete Docker interna per la comunicazione tra Frontend e Backend.
+- **Secrets Management**: Variabili d'ambiente iniettate solo sul server di produzione (no `.env` nel repo).
+- **Rate Limiting**: Configurato a livello di Nginx Gateway.
 
 ---
 

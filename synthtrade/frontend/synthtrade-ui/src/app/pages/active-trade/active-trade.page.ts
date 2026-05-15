@@ -12,8 +12,8 @@ import {
   WsTradeClosedPayload
 } from '../../core/models/ws-message.model';
 import { EmptyStateComponent } from '../../shared/components/empty-state/empty-state.component';
-import { PriceTickerComponent } from '../../shared/components/price-ticker/price-ticker.component';
 import { SignedNumberPipe } from '../../shared/pipes/signed-number.pipe';
+import { ActiveTradeRowComponent, ActiveTradeRowData } from '../../shared/components/active-trade-row/active-trade-row.component';
 
 interface TradeDetail {
   id: string;
@@ -44,7 +44,7 @@ interface StrategyActiveInfo {
 @Component({
   selector: 'app-active-trade',
   standalone: true,
-  imports: [NgClass, EmptyStateComponent, PriceTickerComponent, SignedNumberPipe, DatePipe, DecimalPipe],
+  imports: [NgClass, EmptyStateComponent, SignedNumberPipe, DatePipe, DecimalPipe, ActiveTradeRowComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (strategies().length === 0) {
@@ -98,7 +98,7 @@ interface StrategyActiveInfo {
                 </div>
               </div>
 
-              <!-- Open Trades Table -->
+              <!-- Open Trades Table — usando ActiveTradeRowComponent -->
               @if (s.open_trades.length > 0) {
                 <div class="trades-section">
                   <h4 class="subsection-title">🟢 Trade Aperti</h4>
@@ -110,23 +110,10 @@ interface StrategyActiveInfo {
                       <span>Q.tà</span>
                       <span>Prezzo Entry</span>
                       <span>P&L</span>
-                      <span>Stato</span>
+                      <span>Valore</span>
                     </div>
                     @for (trade of s.open_trades; track trade.id) {
-                      <div class="table-row">
-                        <span class="cell-date">{{ trade.executed_at | date:'dd/MM HH:mm' }}</span>
-                        <span class="cell-asset">{{ trade.symbol }}</span>
-                        <span class="cell-side" [ngClass]="trade.side.toLowerCase()">{{ trade.side }}</span>
-                        <span class="cell-qty">{{ trade.quantity | number:'1.4-6' }}</span>
-                        <span class="cell-price">{{ trade.price | number:'1.2-8' }}</span>
-                        <span class="cell-pnl" [ngClass]="{ positive: trade.pnl_pct > 0, negative: trade.pnl_pct < 0 }">
-                          {{ trade.pnl_pct | number:'1.2-2' }}%
-                        </span>
-                        <span class="cell-status">
-                          <span class="status-dot open"></span>
-                          {{ trade.status }}
-                        </span>
-                      </div>
+                      <app-active-trade-row [tradeData]="toActiveTradeRowData(trade, s)" />
                     }
                   </div>
                 </div>
@@ -207,7 +194,7 @@ interface StrategyActiveInfo {
     .subsection-title { font-size: 14px; font-weight: 600; color: var(--text-secondary); margin: 0 0 12px 0; }
     .trades-section { margin-bottom: 20px; }
     .trades-table { display: flex; flex-direction: column; }
-    .table-header { display: grid; grid-template-columns: 1.2fr 1fr 0.8fr 0.8fr 1fr 1fr 0.8fr; padding: 12px; border-bottom: 1px solid var(--border-default); color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+    .table-header { display: grid; grid-template-columns: 1.2fr 1fr 0.6fr 0.8fr 1fr 1fr 1fr; padding: 12px; border-bottom: 1px solid var(--border-default); color: var(--text-secondary); font-size: 12px; font-weight: 600; }
     .table-row { display: grid; grid-template-columns: 1.2fr 1fr 0.8fr 0.8fr 1fr 1fr 0.8fr; padding: 16px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); align-items: center; transition: background 0.2s; }
     .table-row:hover { background: rgba(255,255,255,0.02); }
     .cell-date { color: var(--text-secondary); font-size: 13px; }
@@ -368,6 +355,22 @@ export class ActiveTradePage implements OnInit, OnDestroy {
         }
       })
     );
+  }
+
+  /** Converte TradeDetail in ActiveTradeRowData per il componente riutilizzabile */
+  toActiveTradeRowData(trade: TradeDetail, strategy: StrategyActiveInfo): ActiveTradeRowData {
+    return {
+      id: trade.id,
+      strategy_id: strategy.id,
+      strategy_title: strategy.title,
+      symbol: trade.symbol,
+      side: (trade.side === 'SELL' ? 'SELL' : 'BUY') as 'BUY' | 'SELL',
+      entry_price: trade.price,
+      current_price: trade.price,
+      unrealized_pnl_pct: trade.pnl_pct,
+      quantity: trade.quantity,
+      opened_at: trade.executed_at,
+    };
   }
 
   ngOnDestroy(): void { this.sub.unsubscribe(); }

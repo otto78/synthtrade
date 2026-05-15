@@ -45,7 +45,8 @@
 **Priorità:** Alta
 
 ### TASK-070 — Refactor `TradeExecutor`
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-15
 **Priorità:** Alta
 
 ### TASK-130 — Refactor Dashboard: cache con `shareReplay(1)` + invalidazione dopo 30s

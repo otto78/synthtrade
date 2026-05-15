@@ -20,7 +20,8 @@
 - Implementazione di un sistema di "backoff" per i rate limit delle API.
 
 ### TASK-041 — Refactor `Ranker`
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-15
 **Priorità:** Media  
 **Dettagli:**
 - Ottimizzazione del calcolo dello score (Sharpe, PnL, Drawdown).

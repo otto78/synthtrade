@@ -40,7 +40,8 @@
 - Miglioramento della stabilità durante la generazione massiva.
 
 ### TASK-069 — Refactor `StopLossManager`
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-15
 **Priorità:** Alta
 
 ### TASK-070 — Refactor `TradeExecutor`

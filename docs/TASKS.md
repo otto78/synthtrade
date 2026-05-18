@@ -153,7 +153,8 @@
 **Dettagli:** Risolvere il `KeyError: 'detail'` causato dal formato di risposta 422 non allineato tra router e test.
 
 ### TASK-502 — Fix `test_api_pipeline.py` (Status Check)
-**Status:** To Do  
+**Status:** Done ✅  
+**Completato:** 2026-05-18
 **Priorità:** Media  
 **Dettagli:** Risolvere il fallimento di `test_get_generation_status` dovuto a discrepanze nel mock dello stato della pipeline.
 

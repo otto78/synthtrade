@@ -18,12 +18,6 @@
 **Status:** In Progress  
 **Priorità:** Media
 
-### TASK-175 — Installare e configurare Playwright (Frontend E2E)
-**Status:** In Progress  
-**Priorità:** Alta  
-**Dettagli:**
-- Setup dell'ambiente di test Playwright.
-- Configurazione dei browser (Chromium, Firefox) per i test cross-browser.
 
 ### TASK-176 — 🔴 E2E `auth.spec.ts` (login errato → errore; login corretto → /dashboard)
 **Status:** To Do  

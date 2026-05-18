@@ -177,3 +177,14 @@ Questo file contiene lo storico di tutti i task completati, spostati qui da `TAS
 **Priorità:** Media  
 **Dettagli:** Verificare la coerenza dei dati nel database dopo una generazione massiva.
 
+### TASK-175 — Installare e configurare Playwright (Frontend E2E)
+**Status:** Done ✅  
+**Completato:** 2026-05-18
+**Priorità:** Alta  
+**Dettagli:**
+- Setup dell'ambiente di test Playwright completato.
+- Configurazione dei browser Chromium e Firefox per i test cross‑browser.
+- Aggiunto script `test:e2e` e configurazione Playwright.
+- Test di prova creato in `e2e/strategies.spec.ts`.
+
+

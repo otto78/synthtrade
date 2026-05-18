@@ -43,7 +43,7 @@
 **Priorità:** Media
 
 ### TASK-250 — 🟢 Broadcast WS `eval_complete` con strategy_id, verdict, score
-**Status:** In Progress  
+**Status:** Done ✅
 **Priorità:** Media
 
 ---

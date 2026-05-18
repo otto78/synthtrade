@@ -159,7 +159,8 @@
 **Dettagli:** Risolvere il fallimento di `test_get_generation_status` dovuto a discrepanze nel mock dello stato della pipeline.
 
 ### TASK-503 — Fix `test_execution_integration.py` (Signal Flow)
-**Status:** To Do  
+**Status:** Done ✅  
+**Completato:** 2026-05-18
 **Priorità:** Alta  
 **Dettagli:** Ripristinare i test di integrazione del ciclo operativo (signal -> trade) che falliscono dopo l'introduzione di `ExecutionEngine`.
 

@@ -165,7 +165,8 @@
 **Dettagli:** Ripristinare i test di integrazione del ciclo operativo (signal -> trade) che falliscono dopo l'introduzione di `ExecutionEngine`.
 
 ### TASK-504 — Fix Unit Tests: `test_ranker.py` (compute_score NameError)
-**Status:** To Do  
+**Status:** Done ✅  
+**Completato:** 2026-05-18
 **Priorità:** Alta  
 **Dettagli:** Aggiornare tutti i test unitari del Ranker per utilizzare la nuova classe `Ranker` e `RankConfig` invece della funzione deprecata.
 

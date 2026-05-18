@@ -15,7 +15,7 @@
 **Priorità:** Media
 
 ### TASK-130 — Refactor Dashboard: cache con `shareReplay(1)` + invalidazione dopo 30s
-**Status:** In Progress  
+**Status:** Done ✅  
 **Priorità:** Media  
 **Dettagli:**
 - Implementare `shareReplay(1)` nel `DashboardService` per evitare chiamate ridondanti.

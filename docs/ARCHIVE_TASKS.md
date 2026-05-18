@@ -80,3 +80,10 @@ Questo file contiene lo storico di tutti i task completati, spostati qui da `TAS
 **Status:** Done ✅  
 **Completato:** 2026-05-15
 
+### TASK-038 — Refactor MarketData (Service pattern centralizzato)
+**Status:** Done ✅  
+**Completato:** 2026-05-15
+
+### TASK-070 — Refactor TradeExecutor (Supporto per ExecutionEngine)
+**Status:** Done ✅  
+**Completato:** 2026-05-15

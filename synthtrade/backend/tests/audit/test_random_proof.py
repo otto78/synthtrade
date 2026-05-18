@@ -14,7 +14,7 @@ Esecuzione:
 import pytest
 import pandas as pd
 import numpy as np
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, MagicMock
 from app.core.strategy_generator import generate_for_request
 from app.execution.schemas import StrategyRequest
 
@@ -49,16 +49,22 @@ def mock_ohlcv():
     }, index=pd.date_range("2024-01-01", periods=n, freq="1h"))
 
 
+@pytest.fixture
+def mock_md_service(mock_ohlcv):
+    service = MagicMock()
+    service.get_ohlcv.return_value = mock_ohlcv
+    return service
+
+
 @pytest.mark.asyncio
-async def test_same_request_produces_different_scores(base_request, mock_ohlcv):
+async def test_same_request_produces_different_scores(base_request, mock_md_service):
     """
     DOPO IL FIX: Due chiamate identiche producono score IDENTICI.
     """
-    with patch("app.core.strategy_generator.fetch_ohlcv", return_value=mock_ohlcv), \
-         patch("app.core.strategy_generator.enrich_request_with_ai",
+    with patch("app.core.strategy_generator.enrich_request_with_ai",
                new_callable=AsyncMock, return_value=base_request):
-        results_1, _ = await generate_for_request(base_request)
-        results_2, _ = await generate_for_request(base_request)
+        results_1, _ = await generate_for_request(base_request, mock_md_service)
+        results_2, _ = await generate_for_request(base_request, mock_md_service)
 
     assert results_1, "Nessuna strategia generata al primo run"
     assert results_2, "Nessuna strategia generata al secondo run"
@@ -77,15 +83,14 @@ async def test_same_request_produces_different_scores(base_request, mock_ohlcv):
 
 
 @pytest.mark.asyncio
-async def test_estimated_profit_is_not_random(base_request, mock_ohlcv):
+async def test_estimated_profit_is_not_random(base_request, mock_md_service):
     """
     DOPO IL FIX: I profitti stimati sono deterministici e basati su backtest.
     """
-    with patch("app.core.strategy_generator.fetch_ohlcv", return_value=mock_ohlcv), \
-         patch("app.core.strategy_generator.enrich_request_with_ai",
+    with patch("app.core.strategy_generator.enrich_request_with_ai",
                new_callable=AsyncMock, return_value=base_request):
-        results_1, _ = await generate_for_request(base_request)
-        results_2, _ = await generate_for_request(base_request)
+        results_1, _ = await generate_for_request(base_request, mock_md_service)
+        results_2, _ = await generate_for_request(base_request, mock_md_service)
 
     profits_1 = sorted([r.estimated_profit_pct for r in results_1])
     profits_2 = sorted([r.estimated_profit_pct for r in results_2])
@@ -100,14 +105,13 @@ async def test_estimated_profit_is_not_random(base_request, mock_ohlcv):
 
 
 @pytest.mark.asyncio
-async def test_score_is_in_correct_range(base_request, mock_ohlcv):
+async def test_score_is_in_correct_range(base_request, mock_md_service):
     """
     DOPO IL FIX: score è nel range [0, 1] (da compute_score), non [70, 99].
     """
-    with patch("app.core.strategy_generator.fetch_ohlcv", return_value=mock_ohlcv), \
-         patch("app.core.strategy_generator.enrich_request_with_ai",
+    with patch("app.core.strategy_generator.enrich_request_with_ai",
                new_callable=AsyncMock, return_value=base_request):
-        results, _ = await generate_for_request(base_request)
+        results, _ = await generate_for_request(base_request, mock_md_service)
 
     assert results, "Nessuna strategia generata"
 
@@ -123,14 +127,13 @@ async def test_score_is_in_correct_range(base_request, mock_ohlcv):
 
 
 @pytest.mark.asyncio
-async def test_backtest_fields_populated(base_request, mock_ohlcv):
+async def test_backtest_fields_populated(base_request, mock_md_service):
     """
     DOPO IL FIX: backtest_pnl == estimated_profit_pct, backtest_trades > 0.
     """
-    with patch("app.core.strategy_generator.fetch_ohlcv", return_value=mock_ohlcv), \
-         patch("app.core.strategy_generator.enrich_request_with_ai",
+    with patch("app.core.strategy_generator.enrich_request_with_ai",
                new_callable=AsyncMock, return_value=base_request):
-        results, _ = await generate_for_request(base_request)
+        results, _ = await generate_for_request(base_request, mock_md_service)
 
     for r in results:
         assert r.backtest_trades > 0, (

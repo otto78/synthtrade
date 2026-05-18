@@ -44,6 +44,7 @@ def build_engine(order_result_status="FILLED", open_positions=None):
         risk_manager=risk_manager,
         order_tracker=order_tracker,
         exchange=exchange,
+        sl_service=MagicMock(),
         logger=MagicMock(),
     )
     return engine

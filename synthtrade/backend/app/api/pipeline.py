@@ -3,11 +3,11 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, status
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, get_market_data_service
+from app.services.market_data_service import MarketDataService
 from app.db.supabase_client import get_supabase
 from app.execution.schemas import StrategyRequest
 from app.core.strategy_generator import generate_for_request
-from app.db.supabase_client import get_supabase
 from app.api.ws import manager
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 # In production, this should be in Redis or DB
 generations: Dict[str, Dict[str, Any]] = {}
 
-async def run_generation_task(generation_id: str, req: StrategyRequest):
+async def run_generation_task(generation_id: str, req: StrategyRequest, md_service: MarketDataService):
     # Initialize timing metrics
     generation_start = datetime.now(timezone.utc)
     phases = {}
@@ -41,7 +41,7 @@ async def run_generation_task(generation_id: str, req: StrategyRequest):
         phases["fetching_market_data"] = datetime.now(timezone.utc).isoformat()
 
         # TASK-041/047: Generate strategies with real backtest
-        strategies, empty_hint = await generate_for_request(req)
+        strategies, empty_hint = await generate_for_request(req, md_service)
 
         # TASK-FIX-007 / HALU-BE-02: Handle empty list with user message (quality vs market data)
         if not strategies:
@@ -170,6 +170,7 @@ async def run_generation_task(generation_id: str, req: StrategyRequest):
 async def start_generation(
     req: StrategyRequest,
     background_tasks: BackgroundTasks,
+    md_service: MarketDataService = Depends(get_market_data_service),
     _user: str = Depends(get_current_user) # TASK-051
 ):
     """
@@ -182,7 +183,7 @@ async def start_generation(
         "results": []
     }
 
-    background_tasks.add_task(run_generation_task, generation_id, req)
+    background_tasks.add_task(run_generation_task, generation_id, req, md_service)
 
     return {"generation_id": generation_id, "status": "pending"}
 

@@ -16,10 +16,12 @@ describe('DashboardPage', () => {
     wsSubject = new Subject();
     dashboardService = {
       getStats: jest.fn().mockReturnValue(of({
-        balance: 10000,
+        balance_eur: 10000,
+        balance_breakdown: {},
+        balance_assets: [],
         pnl_today: 250,
-        active_positions: 2,
-        total_trades: 45,
+        active_strategy: null,
+        engine_status: 'RUNNING'
       })),
     } as any;
     wsService = {
@@ -48,9 +50,9 @@ describe('DashboardPage', () => {
   });
 
   it('should update stats on WS stats_update message', () => {
-    wsSubject.next({ type: WsMessageType.StatsUpdate, payload: { balance: 11000 } });
+    wsSubject.next({ type: WsMessageType.StatsUpdate, payload: { balance_eur: 11000 } });
     fixture.detectChanges();
-    expect(fixture.componentInstance.stats().balance).toBe(11000);
+    expect(fixture.componentInstance.stats().balance_eur).toBe(11000);
   });
 
   it('should pass loading=true to StatCards when loading', () => {

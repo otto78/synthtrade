@@ -28,6 +28,8 @@ def mock_engine():
     engine.process_signal = AsyncMock(return_value=None)
     engine.order_tracker = MagicMock()
     engine.order_tracker.get_open_positions = MagicMock(return_value=[])
+    engine.exchange = MagicMock()
+    engine.exchange.get_ticker_price = AsyncMock(return_value=100.0)
     return engine
 
 
@@ -155,7 +157,9 @@ async def test_run_tick_updates_last_tick_at(mock_engine, mock_ohlcv, mock_db):
 @pytest.mark.asyncio
 async def test_run_tick_allocation_budget(mock_engine, mock_ohlcv, mock_db):
     """Testa che il budget sia calcolato in base all'allocazione percentuale per ciascun simbolo."""
-    with patch("app.execution.strategy_runner.fetch_ohlcv", return_value=mock_ohlcv):
+    mock_signal = MagicMock(return_value=pd.Series([1]))
+    with patch.dict("app.execution.strategy_runner.SIGNAL_MAP", {"mean_reversion_rsi": mock_signal}), \
+         patch("app.execution.strategy_runner.fetch_ohlcv", return_value=mock_ohlcv):
         runner = StrategyRunner(mock_engine)
         strategy = {
             "id": "test-alloc",
@@ -183,17 +187,47 @@ async def test_run_tick_allocation_budget(mock_engine, mock_ohlcv, mock_db):
         # Secondo call (ETH/USDT) budget = 1000 * 0.40 = 400
         _, kwargs2 = calls[1]
         assert pytest.approx(kwargs2["balance"], 0.01) == 400
-    """Dopo il tick, last_tick_at deve essere aggiornato su DB."""
-    with patch("app.execution.strategy_runner.fetch_ohlcv", return_value=mock_ohlcv):
+
+@pytest.mark.asyncio
+async def test_run_tick_symbol_isolation(mock_engine, mock_ohlcv, mock_db):
+    """Testa che le open_positions passate all'engine siano filtrate per simbolo."""
+    from app.execution.schemas import PositionSnapshot
+    
+    mock_engine.order_tracker.get_open_positions.return_value = [
+        PositionSnapshot(trade_id="1", strategy_id="test-iso", symbol="BTC/USDT", direction="BUY", entry_price=50000, quantity=1, stop_loss=40000, take_profit=60000, opened_at=datetime.now(timezone.utc)),
+        PositionSnapshot(trade_id="2", strategy_id="test-iso", symbol="ETH/USDT", direction="SELL", entry_price=3000, quantity=10, stop_loss=3500, take_profit=2500, opened_at=datetime.now(timezone.utc)),
+    ]
+
+    mock_signal = MagicMock(return_value=pd.Series([1]))
+    with patch.dict("app.execution.strategy_runner.SIGNAL_MAP", {"mean_reversion_rsi": mock_signal}), \
+         patch("app.execution.strategy_runner.fetch_ohlcv", return_value=mock_ohlcv):
         runner = StrategyRunner(mock_engine)
         strategy = {
-            "id": "test-tick",
+            "id": "test-iso",
             "template": "mean_reversion_rsi",
-            "pair": "BTC/USDT",
             "timeframe": "1h",
-            "params": {"rsi_period": 14, "rsi_oversold": 25, "rsi_overbought": 70},
+            "params": {
+                "rsi_period": 14,
+                "rsi_oversold": 25,
+                "rsi_overbought": 70,
+                "allocation": [
+                    {"symbol": "BTC/USDT", "pct": 60},
+                    {"symbol": "ETH/USDT", "pct": 40},
+                ],
+            },
             "budget_eur": 1000,
         }
         await runner.run_tick(strategy)
-        # Verifica che update su DB sia stato chiamato
-        mock_db.table.assert_called_with("strategies")
+        
+        assert mock_engine.process_signal.call_count == 2
+        calls = mock_engine.process_signal.call_args_list
+        
+        # BTC/USDT call should only see BTC position
+        _, kwargs1 = calls[0]
+        assert len(kwargs1["open_positions"]) == 1
+        assert kwargs1["open_positions"][0].symbol == "BTC/USDT"
+        
+        # ETH/USDT call should only see ETH position
+        _, kwargs2 = calls[1]
+        assert len(kwargs2["open_positions"]) == 1
+        assert kwargs2["open_positions"][0].symbol == "ETH/USDT"

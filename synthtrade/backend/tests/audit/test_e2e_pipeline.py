@@ -12,7 +12,7 @@ Esecuzione:
 import pytest
 import pandas as pd
 import numpy as np
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, MagicMock
 from app.core.strategy_generator import generate_for_request
 from app.execution.schemas import StrategyRequest
 
@@ -35,8 +35,15 @@ def mock_ohlcv():
     }, index=pd.date_range("2024-01-01", periods=n, freq="1h"))
 
 
+@pytest.fixture
+def mock_md_service(mock_ohlcv):
+    service = MagicMock()
+    service.get_ohlcv.return_value = mock_ohlcv
+    return service
+
+
 @pytest.mark.asyncio
-async def test_generate_for_request_uses_backtest(mock_ohlcv):
+async def test_generate_for_request_uses_backtest(mock_ohlcv, mock_md_service):
     """
     E2E: generate_for_request() deve:
     1. Chiamare fetch_ohlcv() (dati storici)
@@ -52,11 +59,10 @@ async def test_generate_for_request_uses_backtest(mock_ohlcv):
         max_strategies=3,
     )
 
-    with patch("app.core.strategy_generator.fetch_ohlcv", return_value=mock_ohlcv), \
-         patch("app.core.strategy_generator.enrich_request_with_ai",
+    with patch("app.core.strategy_generator.enrich_request_with_ai",
                new_callable=AsyncMock, return_value=req):
-        results_1, _ = await generate_for_request(req)
-        results_2, _ = await generate_for_request(req)
+        results_1, _ = await generate_for_request(req, mock_md_service)
+        results_2, _ = await generate_for_request(req, mock_md_service)
 
     assert results_1, "Nessuna strategia generata al primo run"
     assert results_2, "Nessuna strategia generata al secondo run"
@@ -95,7 +101,7 @@ async def test_generate_for_request_uses_backtest(mock_ohlcv):
 
 
 @pytest.mark.asyncio
-async def test_pipeline_rejects_low_quality_strategies(mock_ohlcv):
+async def test_pipeline_rejects_low_quality_strategies(mock_ohlcv, mock_md_service):
     """
     E2E: Le strategie che non superano le soglie del ranker devono essere
     escluse (score=None) e non mostrate all'utente.
@@ -108,10 +114,9 @@ async def test_pipeline_rejects_low_quality_strategies(mock_ohlcv):
         max_strategies=10,
     )
 
-    with patch("app.core.strategy_generator.fetch_ohlcv", return_value=mock_ohlcv), \
-         patch("app.core.strategy_generator.enrich_request_with_ai",
+    with patch("app.core.strategy_generator.enrich_request_with_ai",
                new_callable=AsyncMock, return_value=req):
-        results, _ = await generate_for_request(req)
+        results, _ = await generate_for_request(req, mock_md_service)
 
     # Tutte le strategie restituite devono avere score > 0
     assert len(results) <= 10, f"max_strategies=10, got {len(results)}"

@@ -8,28 +8,17 @@
 
 ## 🛠️ Fase 6 — Stabilizzazione & Completamento (Debito Tecnico)
 
-> **Obiettivo:** Chiudere tutti i task lasciati in sospeso nelle fasi precedenti per garantire un sistema "perfettamente funzionante" prima del deploy.
+> **Obiettivo:** Chiudere tutti i task lasciati in sospeso nelle fases precedenti per garantire un sistema "perfettamente funzionante" prima del deploy.
 
 ### TASK-067 — Refactor `RankConfig`
 **Status:** In Progress  
 **Priorità:** Media
 
-### TASK-130 — Refactor Dashboard: cache con `shareReplay(1)` + invalidazione dopo 30s
-**Status:** Done ✅  
-**Priorità:** Media  
-**Dettagli:**
-- Implementare `shareReplay(1)` nel `DashboardService` per evitare chiamate ridondanti.
-- Aggiungere logica di invalidazione per forzare il refresh dei dati.
-
 ### TASK-169 — Refactor: `StrategyListComponent` + `StrategyRowComponent`
 **Status:** In Progress  
 **Priorità:** Media
 
-### TASK-174 — Refactor: `LogFiltersComponent` + query params sync
-**Status:** In Progress  
-**Priorità:** Media
-
-### TASK-175 — Installare e configurare Playwright
+### TASK-175 — Installare e configurare Playwright (Frontend E2E)
 **Status:** In Progress  
 **Priorità:** Alta  
 **Dettagli:**
@@ -37,22 +26,25 @@
 - Configurazione dei browser (Chromium, Firefox) per i test cross-browser.
 
 ### TASK-176 — 🔴 E2E `auth.spec.ts` (login errato → errore; login corretto → /dashboard)
-**Status:** In Progress  
+**Status:** To Do  
 **Priorità:** Alta
 
 ### TASK-177 — 🔴 E2E `strategies.spec.ts` (attivazione e disattivazione end-to-end)
-**Status:** In Progress  
+**Status:** To Do  
 **Priorità:** Alta
 
 ### TASK-178 — 🔴 E2E `logs.spec.ts` (filtro level aggiorna lista)
-**Status:** In Progress  
+**Status:** To Do  
 **Priorità:** Alta
+
+### TASK-186 — Unit Test `dashboard.page.spec.ts`
+**Status:** To Do  
+**Priorità:** Media
 
 ### TASK-187 — 🟢 Fix `dashboard.page.ts` e `dashboard.service.ts`
 **Status:** To Do  
 **Priorità:** Alta  
 **Dettagli:** Gestire correttamente la sottoscrizione ai dati del backend e i casi di errore/timeout.
-
 
 ### TASK-209 — 🔵 Refactor: `RiskConfig` dataclass iniettabile nei test
 **Status:** In Progress  
@@ -90,6 +82,10 @@
 **Status:** In Progress  
 **Priorità:** Media
 
+### TASK-421 — Unit Test `active-trade.page.spec.ts`
+**Status:** To Do  
+**Priorità:** Media
+
 ---
 
 ## 📈 EPIC-400 — Pipeline di Esecuzione (Finalizzazione)
@@ -113,15 +109,6 @@
 - Badge BUY/SELL con animazioni flash al cambio prezzo.
 - Calcolo valore posizione in EUR in tempo reale.
 
-### TASK-426 — StrategyRunner multi-simbolo
-**Status:** Done ✅  
-**Completato:** 2026-05-18
-**Priorità:** Alta  
-**Dettagli:**
-- `run_tick()` deve iterare su tutti i simboli in `allocation`.
-- Generazione segnali indipendenti per ogni simbolo.
-- Rispetto delle percentuali di budget per il calcolo della position size.
-
 ### TASK-427 — Frontend: selezione multi-crypto nel form generazione
 **Status:** To Do  
 **Priorità:** Media  
@@ -139,82 +126,6 @@
 **Priorità:** Media  
 **Dettagli:** Aggiunta di `active_strategies_count` e `total_active_pnl_pct` alle statistiche dashboard.
 
----
-
-## 🧪 Test Suite Stabilization & Quality Assurance
-
-> **Obiettivo:** Ripristinare l'integrità della suite di test (Backend & Frontend) e garantire il determinismo del sistema.
-> Stato attuale: **23 test falliti** nel backend dopo il refactoring architetturale.
-
-### TASK-501 — Fix `test_activate_strategy.py` (Insufficient Funds)
-**Status:** Done ✅  
-**Completato:** 2026-05-18
-**Priorità:** Alta  
-**Dettagli:** Risolvere il `KeyError: 'detail'` causato dal formato di risposta 422 non allineato tra router e test.
-
-### TASK-502 — Fix `test_api_pipeline.py` (Status Check)
-**Status:** Done ✅  
-**Completato:** 2026-05-18
-**Priorità:** Media  
-**Dettagli:** Risolvere il fallimento di `test_get_generation_status` dovuto a discrepanze nel mock dello stato della pipeline.
-
-### TASK-503 — Fix `test_execution_integration.py` (Signal Flow)
-**Status:** Done ✅  
-**Completato:** 2026-05-18
-**Priorità:** Alta  
-**Dettagli:** Ripristinare i test di integrazione del ciclo operativo (signal -> trade) che falliscono dopo l'introduzione di `ExecutionEngine`.
-
-### TASK-504 — Fix Unit Tests: `test_ranker.py` (compute_score NameError)
-**Status:** Done ✅  
-**Completato:** 2026-05-18
-**Priorità:** Alta  
-**Dettagli:** Aggiornare tutti i test unitari del Ranker per utilizzare la nuova classe `Ranker` e `RankConfig` invece della funzione deprecata.
-
-### TASK-AUDIT-001 — Verifica connettività API: Binance e OpenRouter
-**Status:** To Do  
-**Priorità:** Alta  
-**File:** `synthtrade/backend/tests/test_connectivity.py`
-**Dettagli:** Verificare connettività reale con chiavi di test/read-only.
-
-### TASK-AUDIT-002 — Prova del Random (Verifica Allucinazioni)
-**Status:** Failed ❌  
-**Priorità:** Critica  
-**Dettagli:** `tests/audit/test_random_proof.py` fallisce con AttributeErrors. Necessario refactoring per testare il determinismo della nuova pipeline.
-
-### TASK-AUDIT-003 — Test AI Evaluator reale
-**Status:** To Do  
-**Priorità:** Alta  
-**Dettagli:** Inviare dati OHLCV reali a OpenRouter e validare il parsing del verdetto AI.
-
-### TASK-AUDIT-004 — Verifica backtest con dati OHLCV reali
-**Status:** To Do  
-**Priorità:** Alta  
-**Dettagli:** Garantire che il backtest produca gli stessi risultati caricando OHLCV da file vs API.
-
-### TASK-AUDIT-005 — Confronto DB: strategie manuali vs automatiche
-**Status:** To Do  
-**Priorità:** Media  
-**Dettagli:** Verificare la coerenza dei dati nel database dopo una generazione massiva.
-
-### TASK-175 — Setup Playwright (Frontend E2E)
-**Status:** In Progress  
-**Priorità:** Alta
-
-### TASK-176 — E2E `auth.spec.ts`
-**Status:** To Do  
-**Priorità:** Alta
-
-### TASK-177 — E2E `strategies.spec.ts`
-**Status:** To Do  
-**Priorità:** Alta
-
-### TASK-186 — Unit Test `dashboard.page.spec.ts`
-**Status:** To Do  
-**Priorità:** Media
-
-### TASK-421 — Unit Test `active-trade.page.spec.ts`
-**Status:** To Do  
-**Priorità:** Media
 
 ---
 

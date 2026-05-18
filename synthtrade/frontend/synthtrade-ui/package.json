@@ -12,6 +12,7 @@
     "test:watch": "jest --watch",
     "test:ci": "jest --ci --runInBand",
     "test:coverage": "jest --coverage",
+    "test:e2e": "playwright test",
     "lint": "eslint src --ext .ts,.html",
     "format": "prettier --write \"src/**/*.{ts,html,scss}\""
   },
@@ -59,6 +60,7 @@
     "jest-preset-angular": "^14.2.0",
     "prettier": "^3.3.0",
     "ts-node": "^10.9.2",
+    "@playwright/test": "^1.45.0"
     "typescript": "~5.9.2"
   }
 }

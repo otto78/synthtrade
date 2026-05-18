@@ -13,6 +13,7 @@ Key Dependencies: market_data, indicators, execution_engine, supabase_client
 """
 import logging
 from datetime import datetime, timezone
+import pandas as pd
 
 from app.core.market_data import fetch_ohlcv
 from app.core.indicators import signal_ema_crossover, signal_rsi_reversion, signal_breakout_bb
@@ -48,7 +49,9 @@ def _extract_symbols(strategy: dict) -> list[str]:
     return [strategy.get("pair", "BTC/USDT")]
 
 
-def _signal_to_direction(signal_value: int) -> str | None:
+from typing import Literal
+
+def _signal_to_direction(signal_value: int) -> Literal["BUY", "SELL"] | None:
     """Converts numeric signal (-1, 0, 1) to string direction."""
     if signal_value == 1:
         return "BUY"
@@ -99,23 +102,26 @@ class StrategyRunner:
                 # 2. Compute signal
                 raw_signal = signal_fn(df, params)
                 # Signals return a pandas Series: take the latest value
-                last_signal = int(raw_signal.iloc[-1]) if hasattr(raw_signal, "iloc") else int(raw_signal)
+                if isinstance(raw_signal, pd.Series):
+                    last_signal = int(raw_signal.iloc[-1])
+                else:
+                    last_signal = int(raw_signal)
                 direction = _signal_to_direction(last_signal)
 
-                if direction is None:
-                    logger.debug(f"[{strategy_id}] Neutral signal for {symbol}, proceeding with placeholder.")
-                    direction = "HOLD"
-
-                # 3. Build Signal and pass it to the engine
                 current_price = float(df["close"].iloc[-1])
-                signal = Signal(
-                    strategy_id=strategy_id,
-                    symbol=symbol,
-                    direction=direction,
-                    strength=abs(last_signal),
-                    price=current_price,
-                    timestamp=datetime.now(timezone.utc),
-                )
+
+                if direction is None:
+                    logger.debug(f"[{strategy_id}] Neutral signal for {symbol}, skipping execution.")
+                    signal = None
+                else:
+                    signal = Signal(
+                        strategy_id=strategy_id,
+                        symbol=symbol,
+                        direction=direction,
+                        strength=abs(last_signal),
+                        price=current_price,
+                        timestamp=datetime.now(timezone.utc),
+                    )
 
                 # --- DRAWDOWN CALCULATION (TASK-415) ---
 
@@ -171,13 +177,18 @@ class StrategyRunner:
                     # Se ci sono più simboli, assegna una quota uguale; altrimenti 100%
                     pct = 100.0 / len(symbols) if len(symbols) > 0 else 100.0
                 budget_usdt = total_budget * (pct / 100.0)
-                await self.engine.process_signal(
-                    signal=signal,
-                    balance=budget_usdt,
-                    open_positions=strategy_positions,
-                    current_drawdown_pct=current_drawdown_pct,
-                )
-                logger.info(f"[{strategy_id}] Signal {direction} on {symbol} @ {current_price:.4f} processed.")
+                
+                # Filter positions for the current symbol so risk manager evaluates concurrent positions per symbol
+                symbol_positions = [p for p in strategy_positions if p.symbol == symbol]
+                
+                if signal is not None:
+                    await self.engine.process_signal(
+                        signal=signal,
+                        balance=budget_usdt,
+                        open_positions=symbol_positions,
+                        current_drawdown_pct=current_drawdown_pct,
+                    )
+                    logger.info(f"[{strategy_id}] Signal {direction} on {symbol} @ {current_price:.4f} processed.")
 
             except Exception as e:
                 logger.error(f"[{strategy_id}] Tick error on {symbol}: {e}", exc_info=True)

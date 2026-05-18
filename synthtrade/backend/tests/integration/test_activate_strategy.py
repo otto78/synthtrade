@@ -62,7 +62,7 @@ async def test_activate_strategy_insufficient_funds(client, mock_db):
     try:
         response = client.post("/api/strategies/strat_123/activate")
         assert response.status_code == 422
-        assert response.json()["detail"]["error"] == "insufficient_funds"
+        assert response.json()["message"]["error"] == "insufficient_funds"
     finally:
         app.dependency_overrides.clear()
 

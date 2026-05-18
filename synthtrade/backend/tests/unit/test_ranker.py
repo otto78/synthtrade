@@ -1,6 +1,11 @@
-import pytest
 from app.core.ranker import Ranker, rank_strategies, RankConfig
 from app.core.backtester import BacktestResult
+
+
+def compute_score(result: BacktestResult, config: RankConfig = None) -> float | None:
+    ranker = Ranker(config) if config else Ranker()
+    return ranker.compute_score(result)
+
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────

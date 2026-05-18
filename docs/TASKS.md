@@ -147,7 +147,8 @@
 > Stato attuale: **23 test falliti** nel backend dopo il refactoring architetturale.
 
 ### TASK-501 — Fix `test_activate_strategy.py` (Insufficient Funds)
-**Status:** To Do  
+**Status:** Done ✅  
+**Completato:** 2026-05-18
 **Priorità:** Alta  
 **Dettagli:** Risolvere il `KeyError: 'detail'` causato dal formato di risposta 422 non allineato tra router e test.
 

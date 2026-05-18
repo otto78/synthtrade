@@ -10,11 +10,6 @@
 
 > **Obiettivo:** Risolvere il debito tecnico architetturale, configurazioni dinamiche e comunicazione in tempo reale.
 
-### TASK-187 — 🟢 Fix `dashboard.page.ts` e `dashboard.service.ts`
-**Status:** To Do  
-**Priorità:** Alta  
-**Dettagli:** Gestire correttamente la sottoscrizione ai dati del backend e i casi di errore/timeout.
-
 ### TASK-209 — 🔵 Refactor: `RiskConfig` dataclass iniettabile nei test
 **Status:** In Progress  
 **Priorità:** Media

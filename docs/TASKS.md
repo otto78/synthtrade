@@ -10,14 +10,6 @@
 
 > **Obiettivo:** Chiudere tutti i task lasciati in sospeso nelle fases precedenti per garantire un sistema "perfettamente funzionante" prima del deploy.
 
-### TASK-067 — Refactor `RankConfig`
-**Status:** In Progress  
-**Priorità:** Media
-
-### TASK-169 — Refactor: `StrategyListComponent` + `StrategyRowComponent`
-**Status:** In Progress  
-**Priorità:** Media
-
 
 ### TASK-176 — 🔴 E2E `auth.spec.ts` (login errato → errore; login corretto → /dashboard)
 **Status:** To Do  

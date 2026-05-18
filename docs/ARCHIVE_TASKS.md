@@ -118,6 +118,18 @@ Questo file contiene lo storico di tutti i task completati, spostati qui da `TAS
 **Completato:** 2026-05-18
 **Priorità:** Media
 
+### TASK-067 — Refactor `RankConfig`
+**Status:** Done ✅  
+**Completato:** 2026-05-18
+**Priorità:** Media  
+**Dettagli:** Refactoring della configurazione del ranker completato e integrato con successo.
+
+### TASK-169 — Refactor: `StrategyListComponent` + `StrategyRowComponent`
+**Status:** Done ✅  
+**Completato:** 2026-05-18
+**Priorità:** Media  
+**Dettagli:** Consolidamento e ottimizzazione della visualizzazione della lista strategie completata.
+
 ---
 
 ## 🧪 Test Suite Stabilization & Quality Assurance (Completato 2026-05-18)

@@ -6,26 +6,9 @@
 
 ---
 
-## 🛠️ Fase 6 — Stabilizzazione & Completamento (Debito Tecnico)
+## 🛠️ Fase 6A — Refactoring & Logica Applicativa
 
-> **Obiettivo:** Chiudere tutti i task lasciati in sospeso nelle fases precedenti per garantire un sistema "perfettamente funzionante" prima del deploy.
-
-
-### TASK-176 — 🔴 E2E `auth.spec.ts` (login errato → errore; login corretto → /dashboard)
-**Status:** To Do  
-**Priorità:** Alta
-
-### TASK-177 — 🔴 E2E `strategies.spec.ts` (attivazione e disattivazione end-to-end)
-**Status:** To Do  
-**Priorità:** Alta
-
-### TASK-178 — 🔴 E2E `logs.spec.ts` (filtro level aggiorna lista)
-**Status:** To Do  
-**Priorità:** Alta
-
-### TASK-186 — Unit Test `dashboard.page.spec.ts`
-**Status:** To Do  
-**Priorità:** Media
+> **Obiettivo:** Risolvere il debito tecnico architetturale, configurazioni dinamiche e comunicazione in tempo reale.
 
 ### TASK-187 — 🟢 Fix `dashboard.page.ts` e `dashboard.service.ts`
 **Status:** To Do  
@@ -66,6 +49,28 @@
 
 ### TASK-250 — 🟢 Broadcast WS `eval_complete` con strategy_id, verdict, score
 **Status:** In Progress  
+**Priorità:** Media
+
+---
+
+## 🧪 Fase 6B — Test Suite & Stabilità Frontend
+
+> **Obiettivo:** Garantire la massima stabilità della UI ed eliminare regressioni tramite test E2E e unitari.
+
+### TASK-176 — 🔴 E2E `auth.spec.ts` (login errato → errore; login corretto → /dashboard)
+**Status:** To Do  
+**Priorità:** Alta
+
+### TASK-177 — 🔴 E2E `strategies.spec.ts` (attivazione e disattivazione end-to-end)
+**Status:** To Do  
+**Priorità:** Alta
+
+### TASK-178 — 🔴 E2E `logs.spec.ts` (filtro level aggiorna lista)
+**Status:** To Do  
+**Priorità:** Alta
+
+### TASK-186 — Unit Test `dashboard.page.spec.ts`
+**Status:** To Do  
 **Priorità:** Media
 
 ### TASK-421 — Unit Test `active-trade.page.spec.ts`

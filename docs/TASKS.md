@@ -67,7 +67,8 @@ Separare i template di prompt e i contenuti Jinja2 dalla logica Python, spostand
     *   Aggiungere test di integrazione che verificano i prompt generati da `build_prompt()` e `build_system_prompt()`.
 
 ### TASK-238 — 🔵 Refactor: `@async_retry` decorator in `ai/retry.py`
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-19
 **Priorità:** Media
 
 **Descrizione:**
@@ -98,4 +99,5 @@ Estrarre la logica di retry asincrono attualmente implementata manualmente in `a
 ## 📈 EPIC-400 — Pipeline di Esecuzione (Finalizzazione)
 
 > **Obiettivo:** Completare l'integrazione del motore di trading reale e la visualizzazione avanzata dei trade.
-> **Status:** ✅ **EPIC COMPLETATA** (2026-05-19)
+> **Status:** Done ✅  
+**Completato:** 2026-05-19

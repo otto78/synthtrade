@@ -721,12 +721,21 @@ export class StrategiesPage implements OnInit, OnDestroy {
     }
   }
 
+  private resetGenerationStateIfEmpty() {
+    if (this.generatedStrategies().length === 0) {
+      this.generationId.set(null);
+      this.generationStatus.set('pending');
+      this.checkingSaved.set(false);
+    }
+  }
+
   saveAndApprove(s: Strategy): void {
     // Se la strategia ha già un ID (salvata su DB durante la generazione), approva direttamente
     if (s.id) {
       this.strategyService.approve(s.id).subscribe({
         next: () => {
           this.generatedStrategies.update(list => list.filter(x => x.id !== s.id));
+          this.resetGenerationStateIfEmpty();
           this.loadStrategies();
           this.activeTab.set('APPROVATE');
         },
@@ -754,6 +763,7 @@ export class StrategiesPage implements OnInit, OnDestroy {
     ).subscribe({
       next: () => {
         this.generatedStrategies.update(list => list.filter(x => x !== s));
+        this.resetGenerationStateIfEmpty();
         this.loadStrategies();
         this.activeTab.set('APPROVATE');
       },
@@ -766,12 +776,14 @@ export class StrategiesPage implements OnInit, OnDestroy {
       this.strategyService.deleteStrategy(s.id).subscribe({
         next: () => {
           this.generatedStrategies.update(list => list.filter(x => x.id !== s.id));
+          this.resetGenerationStateIfEmpty();
           this.loadStrategies();
         },
         error: (err) => console.error('Errore durante la cancellazione:', err)
       });
     } else {
       this.generatedStrategies.update(list => list.filter(x => x !== s));
+      this.resetGenerationStateIfEmpty();
     }
   }
 

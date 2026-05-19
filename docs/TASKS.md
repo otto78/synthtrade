@@ -71,20 +71,100 @@ Rendere configurabili tutti gli intervalli di scheduler e loop periodici via `ap
     *   Eseguire `pytest` sui moduli interessati dopo il refactor.
 
 ### TASK-232 — 🔵 Refactor: `MarketRegimeDetector` con soglie configurabili
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-19
 **Priorità:** Media
+
+**Descrizione:**
+Estrarre le soglie di rilevamento del regime di mercato da `app/ai/context_builder.py` e renderle configurabili tramite `app.config.Settings`. Questo permette di adattare il comportamento di `detect_market_regime` a mercati volatili, trending o ranging senza cambiare il codice.
+
+**Piano di Attuazione:**
+1.  **Audit della logica attuale**:
+    *   Identificare le costanti hardcoded in `app/ai/context_builder.py` come `_VOLATILE_ATR_THRESHOLD` e `_TRENDING_SLOPE_THRESHOLD`.
+    *   Verificare l'uso di `detect_market_regime` in `app/ai/context_builder.py` e nei test esistenti.
+2.  **Definizione dei setting**:
+    *   Aggiungere in `app/config.py` i campi configurabili:
+        *   `MARKET_REGIME_ATR_THRESHOLD: float = 0.025`
+        *   `MARKET_REGIME_TRENDING_R2_THRESHOLD: float = 0.15`
+        *   `MARKET_REGIME_MIN_CANDLES: int = 20` (se serve per i controlli di validità dati)
+    *   Aggiornare `.env.example` con i valori di default.
+3.  **Refactor `context_builder`**:
+    *   Rimuovere le costanti locali e leggere i valori da `settings`.
+    *   Valutare se trasformare `detect_market_regime` in funzione parametrizzata per aumentare testabilità.
+    *   Mantenere i tre stati esistenti `trending`, `volatile`, `ranging`.
+4.  **Integrazione e documentazione**:
+    *   Aggiornare i commenti in `app/ai/context_builder.py` e `app/config.py` perché i soglie siano esplicite.
+    *   Documentare il significato di ogni soglia: volatility threshold vs trend R² threshold.
+5.  **Verifica e test**:
+    *   Aggiornare i test in `synthtrade/backend/tests/unit/test_context_builder.py` per verificare che i nuovi setting influenzino l'esito.
+    *   Aggiungere un test che forzi regime `volatile`/`trending` cambiando i valori di soglia.
 
 ### TASK-235 — 🔵 Refactor: template `.jinja2` separato da logica
 **Status:** In Progress  
 **Priorità:** Media
 
+**Descrizione:**
+Separare i template di prompt e i contenuti Jinja2 dalla logica Python, spostando il testo strutturato in file `.jinja2` dedicati e mantenendo il codice Python limitato alla sola preparazione dei dati e al rendering.
+
+**Piano di Attuazione:**
+1.  **Audit dei template attuali**:
+    *   Individuare i template inline in `app/ai/prompt_builder.py` e ogni altro file Python che genera prompt o output HTML dinamico.
+2.  **Creazione della struttura template**:
+    *   Creare `app/ai/templates/` o `app/templates/` per contenere i file Jinja2.
+    *   Spostare `SYSTEM_PROMPT` e `PROMPT_TEMPLATE` in file come `system_prompt.jinja2` e `evaluation_prompt.jinja2`.
+3.  **Implementazione del renderer**:
+    *   Aggiungere `app/ai/template_loader.py` o una funzione in `prompt_builder.py` che usa `jinja2.Environment` con `FileSystemLoader`.
+    *   Se `jinja2` non è presente, aggiungere la dipendenza a `requirements.txt`.
+4.  **Refactor `prompt_builder.py`**:
+    *   Ridurre `build_system_prompt()` e `build_prompt()` a wrapper di rendering.
+    *   Mantenere separata la logica dei dati (`EvalPromptInput`) dal layout del prompt.
+5.  **Verifica e test**:
+    *   Aggiungere test unitari di rendering template che controllano la sostituzione dei campi.
+    *   Aggiungere test di integrazione che verificano i prompt generati da `build_prompt()` e `build_system_prompt()`.
+
 ### TASK-238 — 🔵 Refactor: `@async_retry` decorator in `ai/retry.py`
 **Status:** In Progress  
 **Priorità:** Media
 
+**Descrizione:**
+Estrarre la logica di retry asincrono attualmente implementata manualmente in `app/ai/model_client.py` in un decorator riutilizzabile `async_retry`. Questo migliora la chiarezza, riduce duplicazione e rende il backoff configurabile.
+
+**Piano di Attuazione:**
+1.  **Audit della logica di retry esistente**:
+    *   Analizzare `app/ai/model_client.py` e verificare i percorsi di retry per 429/503 e timeout.
+2.  **Creazione di `ai/retry.py`**:
+    *   Implementare un decorator `async_retry(max_retries, backoff_base, retry_exceptions)`.
+    *   Gestire sleep esponenziale e logging dei tentativi.
+3.  **Refactor `ModelClient`**:
+    *   Applicare il decorator a `_call_model` o incapsulare il loop di retry all'interno del decorator.
+    *   Usare i valori `settings.AI_MAX_RETRIES` e `settings.AI_BACKOFF_BASE` per popolare il decorator.
+4.  **Documentazione**:
+    *   Aggiornare `app/config.py` con commenti esplicativi per ritardi e numero di retry.
+5.  **Verifica e test**:
+    *   Scrivere test per `async_retry` che simulano errori temporanei e verificano il numero di chiamate.
+    *   Testare il comportamento del client in caso di `429`, `503` e `Timeout`.
+
 ### TASK-245 — 🔵 Refactor: `MAX_CONCURRENT_EVALS` da `Settings`
 **Status:** In Progress  
 **Priorità:** Media
+
+**Descrizione:**
+Garantire che la concorrenza dell'evaluator AI sia controllata esclusivamente da `settings.MAX_CONCURRENT_EVALS` e non da valori hardcoded sparsi nel codice.
+
+**Piano di Attuazione:**
+1.  **Audit dell'uso corrente**:
+    *   Verificare `synthtrade/backend/app/core/run_pipeline.py`, `synthtrade/backend/app/ai/evaluator.py` e ogni test che passi un valore di `max_concurrent`.
+    *   Cercare hardcoded `asyncio.Semaphore(...)` e default `max_concurrent=3`.
+2.  **Refactor dell'evaluator**:
+    *   In `app/ai/evaluator.py`, cambiare il default del parametro `max_concurrent` da `3` a `None`.
+    *   All'interno del metodo, impostare `max_concurrent = settings.MAX_CONCURRENT_EVALS` se non specificato.
+3.  **Allineamento della pipeline**:
+    *   Lasciare la chiamata in `run_pipeline` come fallback esplicito, ma assicurarsi che il comportamento predefinito del metodo sia sempre basato su `settings`.
+4.  **Documentazione e configurazione**:
+    *   Aggiornare `.env.example` e `app/config.py` per chiarire il ruolo di `MAX_CONCURRENT_EVALS`.
+5.  **Verifica e test**:
+    *   Aggiungere test che verificano il valore usato quando `evaluate_all()` viene chiamato senza `max_concurrent`.
+    *   Aggiungere test di regressione per assicurare che il valore impostato in `settings` venga propagato al semaforo.
 
 ---
 

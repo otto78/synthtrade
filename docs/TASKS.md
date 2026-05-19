@@ -174,11 +174,11 @@ Garantire che la concorrenza dell'evaluator AI sia controllata esclusivamente da
 > **Status E2E:** ✅ **SUITE E2E COMPLETATA** (27 test implementati - 2026-05-19)
 
 ### TASK-186 — Unit Test `dashboard.page.spec.ts`
-**Status:** To Do
+**Status:** Completed
 **Priorità:** Media
 
 ### TASK-421 — Unit Test `active-trade.page.spec.ts`
-**Status:** To Do
+**Status:** Completed
 **Priorità:** Media
 
 ---

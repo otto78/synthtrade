@@ -19,6 +19,7 @@
 ### TASK-238 — 🔵 Refactor: `@async_retry` decorator in `ai/retry.py`
 **Status:** Done ✅  
 **Completato:** 2026-05-19
+**Completato:** 2026-05-19
 **Priorità:** Media
 
 ---

@@ -168,18 +168,23 @@ Garantire che la concorrenza dell'evaluator AI sia controllata esclusivamente da
 
 ---
 
+### TASK-FE-001 — ✅ Migliora progress bar generazione con stepper a 3 fasi proporzionale
+**Status:** Done ✅  
+**Completato:** 2026-05-19  
+**Priorità:** Media
+
+**Descrizione:**
+Sostituita la progress bar animata fittizia (che partiva al 100% in 30s) con uno stepper visivo a 3 fasi (Analisi Mercato → Ottimizzazione AI → Backtesting) con larghezza proporzionale allo stato backend.
+
+**Modifiche:**
+- `generation-progress.component.ts`: nuovo layout stepper con cerchi ✅/⏳/○, barra proporzionale (33/66/100%), indicatori visivi, step 3 "Backtesting" ora correttamente attivato su `completed`
+
+---
+
 ## 🧪 Fase 6B — Test Suite & Stabilità Frontend
 
 > **Obiettivo:** Garantire la massima stabilità della UI ed eliminare regressioni tramite test E2E e unitari.
 > **Status E2E:** ✅ **SUITE E2E COMPLETATA** (27 test implementati - 2026-05-19)
-
-### TASK-186 — Unit Test `dashboard.page.spec.ts`
-**Status:** Completed
-**Priorità:** Media
-
-### TASK-421 — Unit Test `active-trade.page.spec.ts`
-**Status:** Completed
-**Priorità:** Media
 
 ---
 

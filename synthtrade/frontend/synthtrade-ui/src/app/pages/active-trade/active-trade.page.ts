@@ -77,7 +77,7 @@ interface StrategyActiveInfo {
           <ng-container *ngFor="let s of strategies(); trackBy: trackByStrategy">
             <div class="strategy-section">
               <div class="section-header" (click)="toggleCollapse(s.id)">
-                <span class="collapse-indicator">{{ (collapsed()[s.id] ?? false) ? '▸' : '▾' }}</span>
+                <span class="collapse-indicator">{{ collapsed()[s.id] ? '▸' : '▾' }}</span>
                 <div class="section-title-row">
                   <span class="section-title">{{ s.title }}</span>
                   <span class="section-meta">{{ s.pair }} · {{ s.timeframe }}</span>
@@ -100,7 +100,7 @@ interface StrategyActiveInfo {
                 </div>
               </div>
 
-              <div *ngIf="!(collapsed()[s.id] ?? false)">
+              <div *ngIf="!collapsed()[s.id]">
                 <div *ngIf="s.open_trades.length > 0" class="trades-section">
                   <h4 class="subsection-title">🟢 Trade Aperti</h4>
                   <div class="trades-table">

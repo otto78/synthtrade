@@ -465,32 +465,11 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
     .btn-export { color: var(--accent-primary); border-color: rgba(240,185,11,0.3); }
     .btn-export:hover { background: rgba(240,185,11,0.1); }
 
-    .results-comparison { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; background: rgba(0,0,0,0.2); padding: 16px; border-radius: 8px; }
-    .res-item { display: flex; flex-direction: column; gap: 4px; }
-    .res-label { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; }
-    .res-value { font-size: 14px; font-weight: 700; }
-    .success { color: var(--color-buy); }
-    .result-badge { padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 700; background: rgba(246,70,93,0.1); color: var(--color-sell); }
-    .result-badge.success { background: rgba(14,203,129,0.1); color: var(--color-buy); }
-    .btn-ghost-full { width: 100%; margin-top: 12px; background: transparent; border: 1px solid var(--border-default); color: var(--text-secondary); padding: 8px; border-radius: 6px; cursor: pointer; }
-
-    /* Spinner loading */
-    .loading-spinner { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; gap: 16px; }
-    .spinner { width: 40px; height: 40px; border: 3px solid var(--border-default); border-top: 3px solid var(--accent-primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .loading-text { color: var(--text-secondary); font-size: 14px; }
-
-    .generation-alert {
-      margin-bottom: 16px; padding: 12px 16px; border-radius: 8px;
-      font-size: 14px; color: var(--text-primary);
-      background: rgba(246, 70, 93, 0.08); border: 1px solid rgba(246, 70, 93, 0.35);
-    }
-
-    /* Nome personalizzato */
-    .strategy-custom-name { display: block; font-size: 14px; font-weight: 700; color: var(--accent-primary); margin-bottom: 2px; }
-    .strategy-custom-name-small { display: block; font-size: 13px; font-weight: 600; color: var(--accent-primary); margin-bottom: 2px; }
-    .active-custom-name { display: block; font-size: 13px; font-weight: 600; color: var(--accent-primary); margin-bottom: 2px; }
-    .acc-custom-name { display: block; font-size: 13px; font-weight: 600; color: var(--accent-primary); margin-bottom: 2px; }
+    .accordion-actions { display: flex; gap: 12px; }
+    .btn-outline { background: transparent; border: 1px solid var(--border-default); color: var(--text-secondary); padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s; }
+    .btn-outline:hover { border-color: var(--text-primary); color: var(--text-primary); }
+    .btn-export { color: var(--accent-primary); border-color: rgba(240,185,11,0.3); }
+    .btn-export:hover { background: rgba(240,185,11,0.1); }
   `]
 })
 export class StrategiesPage implements OnInit, OnDestroy {

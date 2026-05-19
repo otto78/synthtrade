@@ -4,6 +4,24 @@
 @use 'styles/animations' as *;
 @use 'styles/theme-dark' as *;
 
+/* Global utilities moved from strategies page to reduce component style bundle size */
+.results-comparison { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; background: rgba(0,0,0,0.2); padding: 16px; border-radius: 8px; }
+.res-item { display: flex; flex-direction: column; gap: 4px; }
+.res-label { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; }
+.res-value { font-size: 14px; font-weight: 700; }
+.success { color: var(--color-buy); }
+.result-badge { padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 700; background: rgba(246,70,93,0.1); color: var(--color-sell); }
+.result-badge.success { background: rgba(14,203,129,0.1); color: var(--color-buy); }
+.btn-ghost-full { width: 100%; margin-top: 12px; background: transparent; border: 1px solid var(--border-default); color: var(--text-secondary); padding: 8px; border-radius: 6px; cursor: pointer; }
+.loading-spinner { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; gap: 16px; }
+.spinner { width: 40px; height: 40px; border: 3px solid var(--border-default); border-top: 3px solid var(--accent-primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { color: var(--text-secondary); font-size: 14px; }
+.generation-alert { margin-bottom: 16px; padding: 12px 16px; border-radius: 8px; font-size: 14px; color: var(--text-primary); background: rgba(246, 70, 93, 0.08); border: 1px solid rgba(246, 70, 93, 0.35); }
+.strategy-custom-name, .strategy-custom-name-small, .active-custom-name, .acc-custom-name { display: block; font-weight: 600; color: var(--accent-primary); margin-bottom: 2px; }
+.strategy-custom-name { font-size: 14px; font-weight: 700; }
+.strategy-custom-name-small, .active-custom-name, .acc-custom-name { font-size: 13px; }
+
 /* Google Fonts */
 @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&display=swap');

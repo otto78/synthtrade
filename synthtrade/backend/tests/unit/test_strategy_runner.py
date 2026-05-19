@@ -158,7 +158,7 @@ async def test_run_tick_updates_last_tick_at(mock_engine, mock_ohlcv, mock_db):
 async def test_run_tick_allocation_budget(mock_engine, mock_ohlcv, mock_db):
     """Testa che il budget sia calcolato in base all'allocazione percentuale per ciascun simbolo."""
     mock_signal = MagicMock(return_value=pd.Series([1]))
-    with patch.dict("app.execution.strategy_runner.SIGNAL_MAP", {"mean_reversion_rsi": mock_signal}), \
+    with patch("app.execution.strategy_runner.registry.get", return_value=mock_signal), \
          patch("app.execution.strategy_runner.fetch_ohlcv", return_value=mock_ohlcv):
         runner = StrategyRunner(mock_engine)
         strategy = {
@@ -199,7 +199,7 @@ async def test_run_tick_symbol_isolation(mock_engine, mock_ohlcv, mock_db):
     ]
 
     mock_signal = MagicMock(return_value=pd.Series([1]))
-    with patch.dict("app.execution.strategy_runner.SIGNAL_MAP", {"mean_reversion_rsi": mock_signal}), \
+    with patch("app.execution.strategy_runner.registry.get", return_value=mock_signal), \
          patch("app.execution.strategy_runner.fetch_ohlcv", return_value=mock_ohlcv):
         runner = StrategyRunner(mock_engine)
         strategy = {

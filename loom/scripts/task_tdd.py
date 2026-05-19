@@ -54,15 +54,22 @@ def run_tests(test_path: Optional[str] = None, verbose: bool = False) -> Tuple[b
         (success, output) tuple
     """
     # Detect test framework
-    if (PROJECT_ROOT / "pytest.ini").exists() or (PROJECT_ROOT / "pyproject.toml").exists():
+    if (PROJECT_ROOT / "pytest.ini").exists() or (PROJECT_ROOT / "pyproject.toml").exists() or (PROJECT_ROOT / "synthtrade" / "backend" / "pytest.ini").exists():
         # pytest
-        cmd = ["pytest"]
+        cmd = [sys.executable, "-m", "pytest"]
         if verbose:
             cmd.append("-v")
         if test_path:
             cmd.append(test_path)
         else:
-            cmd.append("tests/")
+            # Check for common test directories
+            added = False
+            for d in ["tests", "synthtrade/backend/tests"]:
+                if (PROJECT_ROOT / d).exists():
+                    cmd.append(d)
+                    added = True
+            if not added:
+                cmd.append(".")
     elif (PROJECT_ROOT / "package.json").exists():
         # npm test
         cmd = ["npm", "test"]
@@ -220,11 +227,11 @@ def start_tdd_task(task_id: str, description: str, dry_run: bool = False):
     print(f"   4. If tests fail: fix code and repeat step 2")
 
 
-def run_tdd_tests(verbose: bool = False):
+def run_tdd_tests(test_path: Optional[str] = None, verbose: bool = False):
     """Run tests and show TDD status."""
     print("🧪 Running test suite...")
     
-    success, output = run_tests(verbose=verbose)
+    success, output = run_tests(test_path, verbose=verbose)
     
     print(output)
     
@@ -244,7 +251,7 @@ def run_tdd_tests(verbose: bool = False):
     sys.exit(0 if success else 1)
 
 
-def complete_tdd_task(task_id: str, dry_run: bool = False, no_push: bool = False):
+def complete_tdd_task(task_id: str, test_path: Optional[str] = None, dry_run: bool = False, no_push: bool = False):
     """
     Complete TDD task after tests pass.
     
@@ -256,8 +263,8 @@ def complete_tdd_task(task_id: str, dry_run: bool = False, no_push: bool = False
     print(f"🧪 Completing TDD task {task_id}")
     
     # Run tests one final time
-    print("\n🧪 Running final test suite...")
-    success, output = run_tests(verbose=True)
+    print(f"\n🧪 Running final test suite ({test_path or 'all tests'})...")
+    success, output = run_tests(test_path, verbose=True)
     
     if not success:
         print("\n❌ Tests are still failing!")
@@ -351,11 +358,13 @@ def main():
     
     # Test
     test_parser = subparsers.add_parser("test", help="Run tests")
+    test_parser.add_argument("test_path", nargs="?", help="Specific test path")
     test_parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     
     # Complete
     complete_parser = subparsers.add_parser("complete", help="Complete TDD task")
     complete_parser.add_argument("task_id", help="Task ID")
+    complete_parser.add_argument("test_path", nargs="?", help="Specific test path to run during completion")
     complete_parser.add_argument("--no-push", action="store_true", help="Don't push automatically")
     
     args = parser.parse_args()
@@ -365,10 +374,10 @@ def main():
             start_tdd_task(args.task_id, args.description, dry_run=args.dry_run)
         
         elif args.command == "test":
-            run_tdd_tests(verbose=args.verbose)
+            run_tdd_tests(test_path=args.test_path, verbose=args.verbose)
         
         elif args.command == "complete":
-            complete_tdd_task(args.task_id, dry_run=args.dry_run, no_push=args.no_push)
+            complete_tdd_task(args.task_id, test_path=args.test_path, dry_run=args.dry_run, no_push=args.no_push)
         
         else:
             parser.print_help()

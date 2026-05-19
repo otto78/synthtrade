@@ -36,6 +36,10 @@ import { SignedNumberPipe } from '../../shared/pipes/signed-number.pipe';
         />
       </div>
 
+      @if (error()) {
+        <div class="error-msg">{{ error() }}</div>
+      }
+
       <!-- Active Strategy Card (TASK-328) -->
       @if (stats().active_strategy; as strategy) {
         <div class="strategy-card" (click)="goToMonitor()">
@@ -175,6 +179,7 @@ export class DashboardPage implements OnInit, OnDestroy {
     engine_status: '—',
   });
   loading = signal(true);
+  error = signal<string | null>(null);
 
   sortedAssets = computed(() => {
     const assets = this.stats().balance_assets;
@@ -185,13 +190,17 @@ export class DashboardPage implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.sub.add(
       this.dashboardService.getStats().subscribe({
-        next: (data) => { this.stats.set(data); this.loading.set(false); },
-        error: () => this.loading.set(false),
+        next: (data) => { this.stats.set(data); this.loading.set(false); this.error.set(null); },
+        error: (err) => { this.loading.set(false); this.error.set('Failed to load dashboard stats'); console.error('Dashboard stats error:', err); },
       })
     );
     this.sub.add(
-      this.wsService.on<Partial<DashboardStats>>(WsMessageType.StatsUpdate).subscribe(msg => {
-        if (msg.payload) this.stats.update(s => ({ ...s, ...msg.payload! }));
+      this.wsService.on<Partial<DashboardStats>>(WsMessageType.StatsUpdate).subscribe({
+        next: (msg) => {
+          if (msg.payload) this.stats.update(s => ({ ...s, ...msg.payload! }));
+          this.error.set(null);
+        },
+        error: (err) => { this.error.set('WebSocket error'); console.error('WS error:', err); },
       })
     );
   }

@@ -1,13 +1,13 @@
 import logging
 from datetime import datetime, timedelta, timezone
 from app.core.strategy_generator import generate_all_variants, build_strategy_id, TEMPLATES
-from app.core.indicators import signal_ema_crossover, signal_rsi_reversion, signal_breakout_bb
 from app.core.market_data import fetch_ohlcv
 from app.core.backtester import run_backtest
 from app.core.ranker import Ranker
 from app.services.market_data_service import MarketDataService
 from app.db.supabase_client import get_supabase
 from app.config import settings
+from app.execution.registry import registry
 
 logger = logging.getLogger("synthtrade.pipeline")
 
@@ -17,14 +17,6 @@ logger = logging.getLogger("synthtrade.pipeline")
 # lives in other modules.
 globals()['fetch_ohlcv'] = fetch_ohlcv
 globals()['get_supabase'] = get_supabase
-
-SIGNAL_MAP = {
-    "trend_ema": lambda df, p: signal_ema_crossover(df, p["ema_fast"], p["ema_slow"]),
-    "mean_reversion_rsi": lambda df, p: signal_rsi_reversion(
-        df, p["rsi_period"], p["rsi_oversold"], p["rsi_overbought"]
-    ),
-    "breakout_bb": lambda df, p: signal_breakout_bb(df, p["bb_period"], p["bb_std"]),
-}
 
 
 def build_evaluator():
@@ -72,8 +64,12 @@ async def run_pipeline(
                 ohlcv_cache[cache_key] = md_service.get_ohlcv(strategy.pair, strategy.timeframe, days=days)
             ohlcv = ohlcv_cache[cache_key]
 
-            signal_fn = lambda df, p=strategy.params, t=strategy.template: SIGNAL_MAP[t](df, p)
-            result = run_backtest(ohlcv, signal_fn)
+            signal_fn = registry.get(strategy.template)
+            if signal_fn is None:
+                logger.warning(f"Template {strategy.template} non supportato, salto.")
+                continue
+
+            result = run_backtest(ohlcv, lambda df, p=strategy.params, f=signal_fn: f(df, p))
             score = Ranker().compute_score(result)
 
             if score is None:
@@ -114,6 +110,8 @@ async def run_pipeline(
 
     # Passo AI Evaluator sulle top-N strategie
     if ai_eval and saved_strategies:
+        # Ensure WebSocket manager is available for broadcasting eval results
+        from app.api.ws import manager
         top_n = settings.PIPELINE_AI_EVAL_TOP_N
         top = sorted(saved_strategies, key=lambda s: s["score"], reverse=True)[:top_n]
         try:
@@ -132,6 +130,18 @@ async def run_pipeline(
                     logger.info(f"Strategy {eval_result.strategy_id} DEMOTED → REJECTED")
                 elif eval_result.verdict == "PROMOTE":
                     logger.info(f"Strategy {eval_result.strategy_id} PROMOTED score={eval_result.score:.3f}")
+                # Broadcast evaluation result (any verdict) to frontend via WebSocket
+                try:
+                    await manager.broadcast({
+                        "type": "eval_complete",
+                        "payload": {
+                            "strategy_id": eval_result.strategy_id,
+                            "verdict": eval_result.verdict,
+                            "score": eval_result.score,
+                        },
+                    })
+                except Exception as ws_err:
+                    logger.warning(f"Failed to broadcast eval_complete for {eval_result.strategy_id}: {ws_err}")
         except Exception as e:
             logger.error(f"AI eval step failed (pipeline continues): {e}")
 

@@ -1,11 +1,12 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, shareReplay, timeout, catchError, of } from 'rxjs';
+import { Observable, shareReplay, timeout, catchError, of, retry, timer } from 'rxjs';
 import { DashboardStats, BalanceSnapshot } from '../models/dashboard.model';
 import { environment } from '../../../environments/environment';
 
 const CACHE_TTL_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 15_000;
+const MAX_RETRIES = 3;
 
 @Injectable({ providedIn: 'root' })
 export class DashboardService {
@@ -15,20 +16,38 @@ export class DashboardService {
   private stats$: Observable<DashboardStats> | null = null;
   private statsCreatedAt = 0;
 
+  /**
+   * TASK-187: Invalida cache e forza refresh dei dati.
+   */
+  invalidateCache(): void {
+    this.stats$ = null;
+    this.statsCreatedAt = 0;
+  }
+
   getStats(): Observable<DashboardStats> {
     const now = Date.now();
     if (!this.stats$ || now - this.statsCreatedAt > CACHE_TTL_MS) {
       this.statsCreatedAt = now;
       this.stats$ = this.http.get<DashboardStats>(this.base).pipe(
         timeout(REQUEST_TIMEOUT_MS),
-        catchError(() => of({
-          balance_eur: 0,
-          balance_breakdown: {},
-          balance_assets: [],
-          pnl_today: 0,
-          active_strategy: null,
-          engine_status: 'OFFLINE',
-        })),
+        // TASK-187: Retry con exponential backoff (1s, 2s, 4s)
+        retry({
+          count: MAX_RETRIES,
+          delay: (error, retryCount) => timer(Math.pow(2, retryCount - 1) * 1000)
+        }),
+        catchError((err) => {
+          console.error('Dashboard stats error after retries:', err);
+          return of({
+            balance_eur: 0,
+            balance_breakdown: {},
+            balance_assets: [],
+            pnl_today: 0,
+            active_strategy: null,
+            engine_status: 'OFFLINE',
+            active_strategies_count: 0,
+            total_active_pnl_pct: 0,
+          } as DashboardStats);
+        }),
         shareReplay(1)
       );
     }

@@ -1,6 +1,8 @@
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.core.auth_utils import verify_token
+from app.config import settings
+from app.execution.risk_manager import RiskConfig
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -53,3 +55,8 @@ def get_market_data_service(
 ):
     """TASK-038: Returns the MarketDataService."""
     return MarketDataService(repo, exchange)
+
+
+def get_risk_config() -> RiskConfig:
+    """TASK-209: Restituisce il RiskConfig iniettabile."""
+    return RiskConfig.from_settings(settings)

@@ -12,7 +12,18 @@
       "Bash(npm test:*)",
       "Bash(npm ci:*)",
       "Bash(npm install:*)",
-      "Bash(poetry run:*)"
+      "Bash(poetry run:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(uvicorn:*)",
+      "Bash(pip install:*)",
+      "Bash(netstat -ano)",
+      "Bash(findstr :8008)",
+      "Bash(taskkill:*)",
+      "Bash(kill:*)",
+      "Bash(cmd.exe /c \"taskkill /PID 43600 /F\")",
+      "Bash(cmd.exe /c \"tasklist /FI \\\\\"PID eq 43600\\\\\"\")"
     ]
   }
 }

@@ -12,6 +12,18 @@ class RiskConfig:
     default_stop_loss_pct: float = 0.02
     default_take_profit_pct: float = 0.04
 
+    @classmethod
+    def from_settings(cls, settings):
+        """Crea RiskConfig dai Settings dell'app."""
+        return cls(
+            max_concurrent_positions=settings.MAX_CONCURRENT_POSITIONS,
+            max_exposure_per_symbol_pct=settings.MAX_EXPOSURE_PER_SYMBOL_PCT,
+            max_drawdown_pct=settings.MAX_DRAWDOWN_PCT,
+            default_position_size_pct=settings.DEFAULT_POSITION_SIZE_PCT,
+            default_stop_loss_pct=settings.DEFAULT_STOP_LOSS_PCT,
+            default_take_profit_pct=settings.DEFAULT_TAKE_PROFIT_PCT,
+        )
+
 
 class RiskManager:
     def __init__(self, config: RiskConfig | None = None):

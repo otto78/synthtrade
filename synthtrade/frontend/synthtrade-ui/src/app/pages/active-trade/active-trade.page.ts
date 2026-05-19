@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, inject, signal, computed } from '@angular/core';
-import { NgClass, DatePipe, DecimalPipe } from '@angular/common';
+import { CommonModule, NgClass, NgForOf, NgIf, DatePipe, DecimalPipe } from '@angular/common';
 import { Subscription, switchMap, forkJoin, of, catchError, map } from 'rxjs';
 import { DashboardService } from '../../core/services/dashboard.service';
 import { StrategyService, ActivePnlItem, MonitorStrategyInfo } from '../../core/services/strategy.service';
@@ -12,7 +12,6 @@ import {
   WsTradeClosedPayload
 } from '../../core/models/ws-message.model';
 import { EmptyStateComponent } from '../../shared/components/empty-state/empty-state.component';
-import { SignedNumberPipe } from '../../shared/pipes/signed-number.pipe';
 import { ActiveTradeRowComponent, ActiveTradeRowData } from '../../shared/components/active-trade-row/active-trade-row.component';
 
 interface TradeDetail {
@@ -44,12 +43,14 @@ interface StrategyActiveInfo {
 @Component({
   selector: 'app-active-trade',
   standalone: true,
-  imports: [NgClass, EmptyStateComponent, SignedNumberPipe, DatePipe, DecimalPipe, ActiveTradeRowComponent],
+  imports: [NgClass, NgIf, NgForOf, EmptyStateComponent, DatePipe, DecimalPipe, ActiveTradeRowComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    @if (strategies().length === 0) {
-      <app-empty-state message="Nessun trade attivo" icon="📊" />
-    } @else {
+    <ng-container *ngIf="strategies().length === 0; else activeTradeList">
+      <app-empty-state message="Nessun trade attivo" icon="📊"></app-empty-state>
+    </ng-container>
+
+    <ng-template #activeTradeList>
       <div class="active-trade">
         <h1 class="page-title">📈 Trade Attivi ({{ strategies().length }} strategie attive)</h1>
 
@@ -73,9 +74,10 @@ interface StrategyActiveInfo {
 
         <!-- Lista Strategie Attive -->
         <div class="strategies-list">
-          @for (s of strategies(); track s.id) {
+          <ng-container *ngFor="let s of strategies(); trackBy: trackByStrategy">
             <div class="strategy-section">
-              <div class="section-header">
+              <div class="section-header" (click)="toggleCollapse(s.id)">
+                <span class="collapse-indicator">{{ (collapsed()[s.id] ?? false) ? '▸' : '▾' }}</span>
                 <div class="section-title-row">
                   <span class="section-title">{{ s.title }}</span>
                   <span class="section-meta">{{ s.pair }} · {{ s.timeframe }}</span>
@@ -98,9 +100,8 @@ interface StrategyActiveInfo {
                 </div>
               </div>
 
-              <!-- Open Trades Table — usando ActiveTradeRowComponent -->
-              @if (s.open_trades.length > 0) {
-                <div class="trades-section">
+              <div *ngIf="!(collapsed()[s.id] ?? false)">
+                <div *ngIf="s.open_trades.length > 0" class="trades-section">
                   <h4 class="subsection-title">🟢 Trade Aperti</h4>
                   <div class="trades-table">
                     <div class="table-header">
@@ -112,16 +113,13 @@ interface StrategyActiveInfo {
                       <span>P&L</span>
                       <span>Valore</span>
                     </div>
-                    @for (trade of s.open_trades; track trade.id) {
-                      <app-active-trade-row [tradeData]="toActiveTradeRowData(trade, s)" />
-                    }
+                    <ng-container *ngFor="let trade of s.open_trades; trackBy: trackByTrade">
+                      <app-active-trade-row [tradeData]="toActiveTradeRowData(trade, s)"></app-active-trade-row>
+                    </ng-container>
                   </div>
                 </div>
-              }
 
-              <!-- Closed Trades Table -->
-              @if (s.closed_trades.length > 0) {
-                <div class="trades-section">
+                <div *ngIf="s.closed_trades.length > 0" class="trades-section">
                   <h4 class="subsection-title">🔵 Trade Chiusi</h4>
                   <div class="trades-table">
                     <div class="table-header">
@@ -132,7 +130,7 @@ interface StrategyActiveInfo {
                       <span>Tipo</span>
                       <span>Stato</span>
                     </div>
-                    @for (trade of s.closed_trades; track trade.id) {
+                    <ng-container *ngFor="let trade of s.closed_trades; trackBy: trackByTrade">
                       <div class="table-row">
                         <span class="cell-date">{{ trade.executed_at | date:'dd/MM HH:mm' }}</span>
                         <span class="cell-asset">{{ trade.symbol }}</span>
@@ -146,29 +144,25 @@ interface StrategyActiveInfo {
                           {{ trade.status }}
                         </span>
                       </div>
-                    }
+                    </ng-container>
                   </div>
                 </div>
-              }
 
-              <!-- Equity Curve -->
-              @if (s.equity_curve.length > 1) {
-                <div class="chart-section">
+                <div *ngIf="s.equity_curve.length > 1" class="chart-section">
                   <h4 class="subsection-title">📈 Equity Curve</h4>
                   <div class="equity-viz">
                     <div class="curve-points">
-                      @for (point of s.equity_curve; track $index) {
-                        <div class="point-bar" [style.height.%]="point" [title]="point.toFixed(2) + '%'"></div>
-                      }
+                      <div *ngFor="let point of s.equity_curve; index as i" class="point-bar" [style.height.%]="point" [title]="point.toFixed(2) + '%'">
+                      </div>
                     </div>
                   </div>
                 </div>
-              }
+              </div>
             </div>
-          }
+          </ng-container>
         </div>
       </div>
-    }
+    </ng-template>
   `,
   styles: [`
     .active-trade { padding: 24px; max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px; }
@@ -217,6 +211,25 @@ interface StrategyActiveInfo {
   `]
 })
 export class ActiveTradePage implements OnInit, OnDestroy {
+  // Map to keep collapse state per strategy id
+  collapsed = signal<Record<string, boolean>>({});
+
+  // Toggle collapse for a given strategy
+  toggleCollapse(strategyId: string): void {
+    this.collapsed.update(map => ({
+      ...map,
+      [strategyId]: !map[strategyId]
+    }));
+  }
+
+  trackByStrategy(index: number, strategy: StrategyActiveInfo): string {
+    return strategy.id;
+  }
+
+  trackByTrade(index: number, trade: TradeDetail): string {
+    return trade.id;
+  }
+
   private dashboardService = inject(DashboardService);
   private strategyService = inject(StrategyService);
   private wsService = inject(WsService);
@@ -352,6 +365,11 @@ export class ActiveTradePage implements OnInit, OnDestroy {
         const sid = msg['strategy_id'] as string | undefined;
         if (sid) {
           this.strategies.update(list => list.filter(s => s.id !== sid));
+          // also remove collapse state for this strategy
+          this.collapsed.update(map => {
+            const { [sid]: _, ...rest } = map;
+            return rest;
+          });
         }
       })
     );

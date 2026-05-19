@@ -20,6 +20,8 @@ export interface DashboardStats {
   pnl_today: number;
   active_strategy: Partial<Strategy> | null;
   engine_status: string;
+  active_strategies_count?: number;  // TASK-430
+  total_active_pnl_pct?: number;     // TASK-430
 }
 
 export interface BalanceSnapshot {

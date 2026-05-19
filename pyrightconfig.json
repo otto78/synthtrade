@@ -1,0 +1,11 @@
+{
+    "extraPaths": [
+        "synthtrade/backend"
+    ],
+    "executionEnvironments": [
+        {
+            "root": "synthtrade/backend",
+            "extraPaths": ["."]
+        }
+    ]
+}

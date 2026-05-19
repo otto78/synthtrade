@@ -82,9 +82,17 @@ class Settings(BaseSettings):
     SCHEDULER_PIPELINE_INTERVAL_MIN: int = 60
     SCHEDULER_SIGNAL_INTERVAL_MIN: int = 5   # Frequenza tick per strategie ACTIVE
 
+    # Pluggability (TASK-214)
+    STRATEGY_PLUGINS: str = ""  # Comma-separated module paths
+
+    @computed_field
+    @property
+    def strategy_plugins_list(self) -> List[str]:
+        return [p.strip() for p in self.STRATEGY_PLUGINS.split(',') if p.strip()]
+
     # Backend
     BACKEND_HOST: str = '0.0.0.0'
-    BACKEND_PORT: int = 8008
+    BACKEND_PORT: int = 8888
     CORS_ORIGINS: str = 'http://localhost:4208'
     LOG_LEVEL: str = 'INFO'
 

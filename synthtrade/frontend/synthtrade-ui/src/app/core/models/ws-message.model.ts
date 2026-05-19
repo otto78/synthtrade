@@ -1,4 +1,5 @@
 export enum WsMessageType {
+  EvalComplete = 'eval_complete',
   GenerationComplete = 'generation_complete',
   Ping = 'ping',
   Price = 'price',
@@ -10,6 +11,7 @@ export enum WsMessageType {
   TradeClosed = 'trade_closed',
   StrategyStopped = 'strategy_stopped',
   StrategyPnlUpdated = 'strategy_pnl_updated',
+  ExchangeError = 'exchange_error',
 }
 
 export interface WsMessage<T = any> {
@@ -59,4 +61,11 @@ export interface WsStrategyPnlUpdatedPayload {
   current_pnl_pct: number;
   current_pnl_eur: number;
   current_value_usdt: number;
+}
+
+export interface WsExchangeErrorPayload {
+  strategy_id: string;
+  error_message: string;
+  error_type: string;
+  timestamp: string;
 }

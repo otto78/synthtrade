@@ -114,6 +114,7 @@ async def heartbeat_job() -> None:
 async def run_active_strategies_job(engine=None) -> None:
     """
     TASK-408: Esegue run_tick() su tutte le strategie ACTIVE.
+    TASK-429: Gestisce errori exchange e broadcast via WebSocket.
     """
     if engine is None:
         return
@@ -126,9 +127,42 @@ async def run_active_strategies_job(engine=None) -> None:
         if not active_strategies:
             return
         runner = StrategyRunner(engine)
-        import asyncio
-        await asyncio.gather(*[runner.run_tick(s) for s in active_strategies], return_exceptions=True)
-        logger.info(f"Active strategies job: {len(active_strategies)} strategie processate")
+
+        # TASK-429: asyncio.gather con return_exceptions=True
+        results = await asyncio.gather(
+            *[runner.run_tick(s) for s in active_strategies],
+            return_exceptions=True
+        )
+
+        # TASK-429: Gestione errori e broadcast per strategie fallite
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                strategy = active_strategies[i]
+                strategy_id = strategy["id"]
+                error_type = type(result).__name__
+                error_message = str(result)
+
+                logger.error(
+                    f"[{strategy_id}] Strategy tick failed: {error_type}: {error_message}",
+                    exc_info=result
+                )
+
+                # Broadcast errore via WebSocket
+                try:
+                    await manager.broadcast_exchange_error(
+                        strategy_id=strategy_id,
+                        error_message=error_message or "Unknown error",
+                        error_type=error_type
+                    )
+                except Exception as broadcast_err:
+                    logger.warning(f"Failed to broadcast error for {strategy_id}: {broadcast_err}")
+
+        success_count = sum(1 for r in results if not isinstance(r, Exception))
+        error_count = sum(1 for r in results if isinstance(r, Exception))
+        logger.info(
+            f"Active strategies job: {success_count} success, {error_count} errors "
+            f"out of {len(active_strategies)} total"
+        )
     except Exception as e:
         logger.error(f"Active strategies job error: {e}")
 

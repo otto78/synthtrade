@@ -95,7 +95,7 @@ export class ActiveTradeRowComponent implements OnInit, OnDestroy {
 
   positionValueEur = computed(() => {
     const t = this.trade();
-    return t.entry_price * t.quantity;
+    return this.currentPrice() * t.quantity;
   });
 
   /** Required input: ActiveTradeRowData */

@@ -10,14 +10,34 @@
 
 > **Obiettivo:** Risolvere il debito tecnico architetturale, configurazioni dinamiche e comunicazione in tempo reale.
 
-### TASK-187 — 🟢 Fix `dashboard.page.ts` e `dashboard.service.ts`
-**Status:** To Do  
-**Priorità:** Alta  
-**Dettagli:** Gestire correttamente la sottoscrizione ai dati del backend e i casi di errore/timeout.
 
 ### TASK-217 — 🔵 Refactor: `SignalResolver` iniettato nel costruttore
 **Status:** In Progress  
 **Priorità:** Media
+
+**Descrizione:**
+Refactoring dell'architettura di gestione dei segnali per permettere l'iniezione del resolver. Attualmente i segnali vengono processati individualmente; il resolver permetterà di valutare un set di segnali collettivamente (es. per limitare posizioni simultanee o scegliere il segnale più forte).
+
+**Piano di Attuazione:**
+1.  **Definizione Configurazione**:
+    *   Aggiungere `SIGNAL_STRENGTH_THRESHOLD` (default: 0.6) in `app/config.py`.
+2.  **Refactor `ExecutionEngine`**:
+    *   Aggiornare il costruttore in `app/execution/execution_engine.py` per accettare obbligatoriamente (o con default tipizzato) un `SignalResolverProtocol`.
+    *   Aggiungere un metodo `process_signals(signals, balance, current_drawdown_pct)` che:
+        *   Recupera le posizioni aperte correnti.
+        *   Usa `self.signal_resolver.resolve(...)` per filtrare i segnali.
+        *   Itera sui segnali risolti e chiama `process_signal` per ognuno.
+3.  **Refactor `StrategyRunner`**:
+    *   Modificare `run_tick` in `app/execution/strategy_runner.py` per accumulare i segnali di tutti i simboli in una lista invece di processarli uno alla volta.
+    *   Chiamare `engine.process_signals(...)` alla fine del loop di scansione simboli.
+4.  **Integrazione `main.py`**:
+    *   Inizializzare `DefaultSignalResolver` con la soglia dai settings.
+    *   Passarlo all'istanza singleton di `ExecutionEngine`.
+5.  **Verifica**:
+    *   Aggiornare `tests/unit/test_signal_resolver.py` se necessario.
+    *   Creare un nuovo test unitario per verificare la catena `StrategyRunner` -> `ExecutionEngine` -> `SignalResolver`.
+
+---
 
 ### TASK-222 — 🔵 Refactor: intervalli configurabili da `Settings`
 **Status:** In Progress  
@@ -44,25 +64,14 @@
 ## 🧪 Fase 6B — Test Suite & Stabilità Frontend
 
 > **Obiettivo:** Garantire la massima stabilità della UI ed eliminare regressioni tramite test E2E e unitari.
-
-### TASK-176 — 🔴 E2E `auth.spec.ts` (login errato → errore; login corretto → /dashboard)
-**Status:** To Do  
-**Priorità:** Alta
-
-### TASK-177 — 🔴 E2E `strategies.spec.ts` (attivazione e disattivazione end-to-end)
-**Status:** To Do  
-**Priorità:** Alta
-
-### TASK-178 — 🔴 E2E `logs.spec.ts` (filtro level aggiorna lista)
-**Status:** To Do  
-**Priorità:** Alta
+> **Status E2E:** ✅ **SUITE E2E COMPLETATA** (27 test implementati - 2026-05-19)
 
 ### TASK-186 — Unit Test `dashboard.page.spec.ts`
-**Status:** To Do  
+**Status:** To Do
 **Priorità:** Media
 
 ### TASK-421 — Unit Test `active-trade.page.spec.ts`
-**Status:** To Do  
+**Status:** To Do
 **Priorità:** Media
 
 ---
@@ -70,30 +79,4 @@
 ## 📈 EPIC-400 — Pipeline di Esecuzione (Finalizzazione)
 
 > **Obiettivo:** Completare l'integrazione del motore di trading reale e la visualizzazione avanzata dei trade.
-
-### TASK-419 — Componente `ActiveTradeRowComponent`
-**Status:** To Do  
-**Priorità:** Alta  
-**Dettagli:**
-- P&L unrealizzato aggiornato da WS price.
-- Badge BUY/SELL con animazioni flash al cambio prezzo.
-- Calcolo valore posizione in EUR in tempo reale.
-
-### TASK-427 — ✅ Frontend: selezione multi-crypto nel form generazione
-**Status:** Done
-**Priorità:** Media
-**Dettagli:**
-- Form con aggiunta di più crypto e slider percentuale.
-- Validazione: somma delle percentuali = 100%.
-- Backend: AllocationItem model con validazione.
-- Frontend: toggle AI auto-selection vs allocation manuale.
-
-### TASK-429 — Gestione errori e retry per exchange failures nel signal loop
-**Status:** To Do  
-**Priorità:** Alta  
-**Dettagli:** Gestione di `asyncio.gather` con `return_exceptions=True` e broadcast di errori via WebSocket.
-
-### TASK-430 — Dashboard: KPI globali strategie attive e trade aperti
-**Status:** To Do  
-**Priorità:** Media  
-**Dettagli:** Aggiunta di `active_strategies_count` e `total_active_pnl_pct` alle statistiche dashboard.
+> **Status:** ✅ **EPIC COMPLETATA** (2026-05-19)

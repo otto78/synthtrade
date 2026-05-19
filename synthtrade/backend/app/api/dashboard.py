@@ -30,6 +30,25 @@ async def get_dashboard(
 
     active_strategy = strategy_repo.get_one_active()
 
+    # TASK-430: KPI globali per strategie attive
+    db = get_supabase()
+    active_strategies_res = db.table("strategies").select("*").eq("status", "ACTIVE").execute()
+    active_strategies = active_strategies_res.data or []
+
+    active_strategies_count = len(active_strategies)
+
+    # Calcola P&L totale da strategie attive
+    # Se la strategia ha current_value_usdt e initial_capital_usdt, calcola P&L %
+    total_active_pnl_pct = 0.0
+    for strategy in active_strategies:
+        current_value = strategy.get("current_value_usdt") or strategy.get("initial_capital_usdt", 100.0)
+        initial_capital = strategy.get("initial_capital_usdt") or strategy.get("budget_eur", 100.0)
+        if initial_capital > 0:
+            pnl_pct = ((current_value - initial_capital) / initial_capital) * 100
+            total_active_pnl_pct += pnl_pct
+
+    total_active_pnl_pct = round(total_active_pnl_pct, 2)
+
     # Saldo Binance con timeout esplicito (async) per non bloccare la dashboard
     balance_eur = 0.0
     balance_breakdown = {}
@@ -67,6 +86,8 @@ async def get_dashboard(
         "pnl_today": pnl_today,
         "active_strategy": active_strategy,
         "engine_status": "RUNNING",
+        "active_strategies_count": active_strategies_count,
+        "total_active_pnl_pct": total_active_pnl_pct,
     }
 
 

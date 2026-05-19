@@ -73,6 +73,22 @@ class ConnectionManager:
             "current_value_usdt": round(current_value_usdt, 2),
         })
 
+    async def broadcast_exchange_error(self, strategy_id: str,
+                                       error_message: str,
+                                       error_type: str):
+        """
+        TASK-429: Broadcast exchange failures via WebSocket.
+        Notifica il frontend quando una strategia fallisce a causa di errori exchange.
+        """
+        from datetime import datetime, timezone
+        await self.broadcast({
+            "type": "exchange_error",
+            "strategy_id": strategy_id,
+            "error_message": error_message,
+            "error_type": error_type,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+
 
 manager = ConnectionManager()
 

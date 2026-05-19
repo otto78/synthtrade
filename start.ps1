@@ -10,7 +10,7 @@ Write-Host "⚡ SynthTrade — avvio in corso..." -ForegroundColor Yellow
 
 # Backend
 Start-Process powershell -ArgumentList "-NoExit", "-Command", `
-  "Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned; & '$venv'; cd '$backend'; uvicorn app.main:app --reload --port 8008" `
+  "Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned; & '$venv'; cd '$backend'; uvicorn app.main:app --reload --port 8888" `
   -WindowStyle Normal
 
 # Frontend
@@ -19,7 +19,7 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", `
   -WindowStyle Normal
 
 Write-Host ""
-Write-Host "  Backend  → http://localhost:8008/health" -ForegroundColor Cyan
+Write-Host "  Backend  → http://localhost:8888/health" -ForegroundColor Cyan
 Write-Host "  Frontend → http://localhost:4208" -ForegroundColor Cyan
 Write-Host "  Password → admin123" -ForegroundColor Green
 Write-Host ""

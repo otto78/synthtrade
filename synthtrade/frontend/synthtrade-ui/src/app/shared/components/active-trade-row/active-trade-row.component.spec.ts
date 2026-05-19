@@ -124,11 +124,11 @@ describe('ActiveTradeRowComponent', () => {
     expect(fixture.componentInstance.currentPrice()).toBe(currentPrice);
   });
 
-  // Test 9: Calculate position value in EUR
-  it('should calculate position value in EUR', () => {
-    // position_value_eur = entry_price * quantity = 50000 * 0.015 = 750
+  // Test 9: Calculate position value in EUR using current price
+  it('should calculate position value in EUR using current price', () => {
+    // position_value_eur = current_price * quantity = 52000 * 0.015 = 780
     const valueEl = el.querySelector('.ar-value');
-    expect(valueEl?.textContent).toContain('750');
+    expect(valueEl?.textContent).toContain('780');
   });
 
   // Test 10: Opened date formatted
@@ -138,7 +138,25 @@ describe('ActiveTradeRowComponent', () => {
     expect(dateEl?.textContent).toContain('14/05');
   });
 
-  // Test 11: WS subscription cleanup on destroy
+  // Test 11: Position value updates when WS price changes
+  it('should update position value in EUR when WS price changes', fakeAsync(() => {
+    // Initial: current_price=52000, quantity=0.015 → 780 EUR
+    let valueEl = el.querySelector('.ar-value');
+    expect(valueEl?.textContent).toContain('780');
+
+    // WS update: new price 53000
+    wsSubject.next({
+      type: WsMessageType.Price,
+      payload: { pair: 'BTC/USDT', price: 53000 }
+    });
+    fixture.detectChanges();
+
+    // New value: 53000 * 0.015 = 795 EUR
+    valueEl = el.querySelector('.ar-value');
+    expect(valueEl?.textContent).toContain('795');
+  }));
+
+  // Test 12: WS subscription cleanup on destroy
   it('should unsubscribe from WS on destroy', () => {
     fixture.destroy();
     expect(fixture.componentInstance['wsSub']?.closed).toBeTruthy();

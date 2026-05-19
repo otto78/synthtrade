@@ -16,22 +16,12 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from app.core.market_data import fetch_ohlcv
-from app.core.indicators import signal_ema_crossover, signal_rsi_reversion, signal_breakout_bb
 from app.db.supabase_client import get_supabase
 from app.execution.execution_engine import ExecutionEngine
 from app.execution.schemas import Signal
-from app.execution.order_tracker import OrderTracker
+from app.execution.registry import registry
 
 logger = logging.getLogger(__name__)
-
-# Template mapping -> Signal function (aligned with run_pipeline.py)
-SIGNAL_MAP = {
-    "trend_ema": lambda df, p: signal_ema_crossover(df, p["ema_fast"], p["ema_slow"]),
-    "mean_reversion_rsi": lambda df, p: signal_rsi_reversion(
-        df, p["rsi_period"], p["rsi_oversold"], p["rsi_overbought"]
-    ),
-    "breakout_bb": lambda df, p: signal_breakout_bb(df, p["bb_period"], p["bb_std"]),
-}
 
 # Minimum candles required for reliable indicator calculation
 LOOKBACK_CANDLES = 200
@@ -84,11 +74,11 @@ class StrategyRunner:
         params = strategy.get("params") or {}
         timeframe = strategy.get("timeframe", "1h")
 
-        if template not in SIGNAL_MAP:
+        signal_fn = registry.get(template)
+        if signal_fn is None:
             logger.warning(f"[{strategy_id}] Template '{template}' not supported, skipping.")
             return
 
-        signal_fn = SIGNAL_MAP[template]
         symbols = _extract_symbols(strategy)
 
         for symbol in symbols:

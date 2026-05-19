@@ -199,4 +199,176 @@ Questo file contiene lo storico di tutti i task completati, spostati qui da `TAS
 - Aggiunto script `test:e2e` e configurazione Playwright.
 - Test di prova creato in `e2e/strategies.spec.ts`.
 
+### TASK-209 — 🔵 Refactor: `RiskConfig` dataclass iniettabile nei test
+**Status:** Done ✅  
+**Completato:** 2026-05-18
+**TDD Workflow:**
+- [x] 🔴 Red: Tests created and failing
+- [x] 🟢 Green: Implement feature to pass tests
+- [x] 🔵 Refactor: Clean up code
+- [x] ✅ Complete: All tests passing
+
+### TASK-214 — 🔵 Refactor: pluggabile via `config.py` con `importlib`
+**Status:** Done ✅  
+**Completato:** 2026-05-18
+**TDD Workflow:**
+- [x] 🔴 Red: Tests created and failing
+- [x] 🟢 Green: Implement feature to pass tests
+- [x] 🔵 Refactor: Clean up code
+- [x] ✅ Complete: All tests passing
+
+### TASK-250 — 🟢 Broadcast WS `eval_complete` con strategy_id, verdict, score
+**Status:** Done ✅
+**Completato:** 2026-05-18
+**Priorità:** Media
+
+### TASK-418 — Refactor `active-trade.page.ts`: supporto multi-strategia
+**Status:** Done ✅
+**Completato:** 2026-05-19
+**Priorità:** Critica
+**Dettagli:**
+- ✅ Rimuovere dipendenza da "una singola strategia attiva".
+- ✅ GET /api/trades/active per snapshot iniziale.
+- ✅ WS trade_opened/closed per aggiornamento real-time.
+- ✅ Trade raggruppati per strategia con header collassabili.
+- ✅ 17/17 test passati.
+
+### TASK-419 — Componente `ActiveTradeRowComponent`
+**Status:** Done ✅
+**Completato:** 2026-05-19
+**Priorità:** Alta
+**Dettagli:**
+- ✅ P&L unrealizzato aggiornato da WS price in tempo reale.
+- ✅ Badge BUY/SELL con animazioni flash al cambio prezzo (flash-up/flash-down).
+- ✅ Calcolo valore posizione in EUR in tempo reale (current_price * quantity).
+- ✅ Bug fix: positionValueEur ora usa current_price invece di entry_price.
+- ✅ 19 test Python + 12 test Angular = 31 test passati.
+
+### TASK-427 — Frontend: selezione multi-crypto nel form generazione
+**Status:** Done ✅
+**Completato:** 2026-05-19
+**Priorità:** Media
+**Dettagli:**
+- ✅ Form con aggiunta di più crypto e slider percentuale.
+- ✅ Validazione: somma delle percentuali = 100%.
+- ✅ Backend: AllocationItem model con validazione.
+- ✅ Frontend: toggle AI auto-selection vs allocation manuale.
+
+### TASK-429 — Gestione errori e retry per exchange failures nel signal loop
+**Status:** Done ✅
+**Completato:** 2026-05-19
+**Priorità:** Alta
+**Dettagli:**
+- ✅ asyncio.gather con `return_exceptions=True` gestisce eccezioni senza bloccare altre strategie.
+- ✅ Broadcast errori exchange via WebSocket con `broadcast_exchange_error()`.
+- ✅ Logging dettagliato con strategy_id, error_type, error_message.
+- ✅ Statistiche success/error nel log del job.
+- ✅ 17 test passati + 11 test strategy_runner esistenti confermati.
+
+### TASK-430 — Dashboard: KPI globali strategie attive e trade aperti
+**Status:** Done ✅
+**Completato:** 2026-05-19
+**Priorità:** Media
+**Dettagli:**
+- ✅ Aggiunto `active_strategies_count` (conteggio strategie ACTIVE).
+- ✅ Aggiunto `total_active_pnl_pct` (P&L aggregato calcolato da current_value vs initial_capital).
+- ✅ Integrati i KPI nell'endpoint GET /api/dashboard.
+- ✅ 17 test passati.
+
+---
+
+## 🎉 EPIC-400 — Pipeline di Esecuzione (COMPLETATA 2026-05-19)
+
+**Task Completati:**
+- TASK-418: Refactor `active-trade.page.ts` supporto multi-strategia
+- TASK-419: Componente `ActiveTradeRowComponent` con P&L real-time
+- TASK-426: StrategyRunner multi-simbolo
+- TASK-427: Frontend selezione multi-crypto nel form generazione
+- TASK-429: Gestione errori exchange failures con broadcast WebSocket
+- TASK-430: Dashboard KPI globali strategie attive
+
+**Totale Test:** 31 (TASK-419) + 28 (TASK-429) + 17 (TASK-430) = **76+ test passati per questa sessione**
+
+---
+
+## 🛠️ Fase 6A — Refactoring & Logica Applicativa (Inizio 2026-05-19)
+
+### TASK-187 — Fix `dashboard.page.ts` e `dashboard.service.ts`
+**Status:** Done ✅
+**Completato:** 2026-05-19
+**Priorità:** Alta
+**Dettagli:**
+- ✅ Aggiunto `invalidateCache()` method per forzare refresh dati.
+- ✅ Implementato retry logic con exponential backoff (1s, 2s, 4s) - max 3 retry.
+- ✅ Gestione errori timeout (15s) con fallback graceful.
+- ✅ catchError ritorna dati fallback senza propagare errori sensibili.
+- ✅ Aggiornati campi DashboardStats con `active_strategies_count` e `total_active_pnl_pct`.
+- ✅ 18 test passati (9 service + 9 page).
+
+---
+
+## 🧪 Fase 6B — Test Suite & Stabilità Frontend (Inizio 2026-05-19)
+
+### TASK-176 — E2E `auth.spec.ts` (login errato → errore; login corretto → /dashboard)
+**Status:** Done ✅
+**Completato:** 2026-05-19
+**Priorità:** Alta
+**Dettagli:**
+- ✅ Creato `e2e/auth.spec.ts` con 6 scenari di test Playwright.
+- ✅ Test login con credenziali errate → mostra errore.
+- ✅ Test login con credenziali corrette → redirect a /dashboard.
+- ✅ Test accesso route protetta senza auth → redirect a /login.
+- ✅ Test logout → redirect a /login e token rimosso.
+- ✅ Test persistenza autenticazione dopo page reload.
+- ✅ Test loading state durante autenticazione.
+- ✅ Auth usa solo password (no email) - password di test: "testpass".
+- ⚠️ I test E2E richiedono backend su http://localhost:8008 e frontend su http://localhost:4208.
+
+### TASK-177 — E2E `strategies.spec.ts` (attivazione e disattivazione end-to-end)
+**Status:** Done ✅
+**Completato:** 2026-05-19
+**Priorità:** Alta
+**Dettagli:**
+- ✅ Creato `e2e/strategies.spec.ts` con 8 scenari di test Playwright.
+- ✅ Test caricamento pagina e visualizzazione tab.
+- ✅ Test navigazione tra tab (GENERAZIONE, APPROVATE, ATTIVE, COMPLETATE).
+- ✅ Test approvazione strategia PENDING → passa ad APPROVATE.
+- ✅ Test attivazione strategia APPROVED → passa ad ATTIVE.
+- ✅ Test disattivazione strategia ACTIVE → passa a COMPLETATE.
+- ✅ Test visualizzazione P&L real-time per strategie attive.
+- ✅ Test reject strategia approved.
+- ✅ Test empty state quando non ci sono strategie.
+- ⚠️ I test E2E richiedono backend su http://localhost:8008 e frontend su http://localhost:4208.
+
+### TASK-178 — E2E `logs.spec.ts` (filtro level aggiorna lista)
+**Status:** Done ✅
+**Completato:** 2026-05-19
+**Priorità:** Alta
+**Dettagli:**
+- ✅ Creato `e2e/logs.spec.ts` con 13 scenari di test Playwright.
+- ✅ Test caricamento pagina logs.
+- ✅ Test visualizzazione lista log.
+- ✅ Test filtro per level (BUY, SELL, SKIP, BLOCK, ERROR).
+- ✅ Test reset filtro mostra tutti i log.
+- ✅ Test paginazione (next/prev).
+- ✅ Test disabilitazione bottone prev sulla prima pagina.
+- ✅ Test visualizzazione tutte le opzioni di filtro.
+- ✅ Test struttura log (timestamp, badge, reason, price).
+- ⚠️ I test E2E richiedono backend su http://localhost:8008 e frontend su http://localhost:4208.
+
+---
+
+## 🎉 Fase 6B — Test Suite E2E Completata (2026-05-19)
+
+**Test E2E Completati:**
+- TASK-176: auth.spec.ts (6 test)
+- TASK-177: strategies.spec.ts (8 test)
+- TASK-178: logs.spec.ts (13 test)
+
+**Totale Test E2E:** **27 test implementati** per questa fase.
+
+**Coverage:**
+- Autenticazione e autorizzazione completa
+- Workflow strategie end-to-end (PENDING → APPROVED → ACTIVE → STOPPED)
+- Gestione logs con filtri e paginazione
 

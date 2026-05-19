@@ -222,11 +222,12 @@ import { TitleCasePipe, DecimalPipe } from '@angular/common';
     .counter { font-size:10px; color:var(--text-secondary); }
     .counter.warning { color: var(--color-sell); font-weight: 600; }
 
+    .form-actions { display: flex; justify-content: center; }
     .btn-primary { 
       background:var(--accent-primary); color:#000; border:none; padding:14px; 
       border-radius:8px; font-weight:700; cursor:pointer; font-size: 15px;
       display: flex; align-items: center; justify-content: center; gap: 10px;
-      transition: transform 0.1s, filter 0.2s;
+      width: 100%; transition: transform 0.1s, filter 0.2s;
     }
     .btn-primary:hover { filter: brightness(1.1); }
     .btn-primary:active { transform: scale(0.98); }

@@ -43,7 +43,8 @@ Rendere configurabili tutti gli intervalli di scheduler e loop periodici via `ap
     *   Eseguire `pytest` sui moduli interessati dopo il refactor.
 
 ### TASK-235 — 🔵 Refactor: template `.jinja2` separato da logica
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-19
 **Priorità:** Media
 
 **Descrizione:**

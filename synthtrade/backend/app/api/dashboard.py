@@ -11,7 +11,7 @@ from app.core.binance_balance import get_total_balance_eur
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
-BALANCE_TIMEOUT = 8  # secondi massimi per fetch del saldo Binance
+BALANCE_TIMEOUT = 30  # secondi massimi per fetch del saldo Binance
 
 
 @router.get("")
@@ -63,18 +63,11 @@ async def get_dashboard(
         balance_breakdown = balance_info.get("breakdown", {})
         balance_assets = balance_info.get("assets", [])
 
-        # Fallback se saldo 0
         if balance_eur <= 0:
-            logger.warning("Binance balance is 0 or failed, using fallback")
-            balance_eur = 1500.0
-            balance_assets = [{"asset": "USDT", "quantity": 1500.0, "value_eur": 1500.0}]
-            balance_breakdown = {"Spot": {"value_eur": 1500.0, "assets": balance_assets}}
+            logger.warning("Binance balance is 0 or failed to fetch — showing real balance (0.0)")
 
     except asyncio.TimeoutError:
-        logger.warning(f"Binance balance fetch timed out after {BALANCE_TIMEOUT}s, using fallback")
-        balance_eur = 1500.0
-        balance_assets = [{"asset": "USDT", "quantity": 1500.0, "value_eur": 1500.0}]
-        balance_breakdown = {"Spot": {"value_eur": 1500.0, "assets": balance_assets}}
+        logger.warning(f"Binance balance fetch timed out after {BALANCE_TIMEOUT}s")
     except Exception as e:
         logger.error(f"Failed to fetch Binance balance: {e}")
 

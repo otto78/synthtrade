@@ -7,6 +7,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.2.5] — 2026-05-19
+
+### Fixed
+- **Dashboard falso saldo 1500€**: Risolto bug critico per cui la dashboard mostrava sempre 1500 EUR fittizi quando il fetch del saldo Binance era lento o restituiva 0. La causa era doppia:
+  1. **Performance**: `get_total_balance_eur()` usava `fetch_ticker()` individuale per ciascuno dei 433 asset → 240 secondi, facendo scattare il timeout dashboard (8s). Ottimizzato con `fetch_tickers()` batch che recupera tutti i prezzi in una singola chiamata → 4.7 secondi.
+  2. **Fallback hardcoded**: Rimosso il valore fittizio 1500.0 EUR che veniva iniettato quando saldo 0 o timeout. Ora mostra il saldo reale (anche se 0) con log warning.
+
 ## [1.2.4] — 2026-05-14
 
 ### Fixed

@@ -389,4 +389,21 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
 
-**Ultima modifica:** 2026-05-14 — Cline (Aggiornamento documentazione EPIC-400 Execution Epic)
+---
+
+### v1.2.8 — 2026-05-19
+
+**Milestone:** 🔴 Fix saldo dashboard — 1500€ fittizio → saldo reale testnet
+
+**Completato:**
+- ✅ **Performance `get_total_balance_eur()`**: Riscritta con `fetch_tickers()` batch invece di `fetch_ticker()` individuale per ogni asset. Tempo di esecuzione: da **240 secondi** a **4.7 secondi** per 433 asset.
+- ✅ **Fallback hardcoded 1500€ rimosso**: La dashboard ora mostra il saldo reale (anche 0.0) invece di iniettare un valore fittizio quando il saldo è 0 o c'è timeout.
+- ✅ **Test aggiornato**: `test_dashboard_fallback_when_balance_zero` rinominato in `test_dashboard_shows_real_balance_when_zero` con asserzione 0.0.
+
+**Decisioni chiave:**
+- `fetch_tickers()` in una singola chiamata batc h invece di N chiamate individuali evita rate-limit e timeout
+- Il saldo reale (anche 0) è sempre preferibile a un valore fittizio — l'utente deve vedere la verità del proprio conto
+
+---
+
+**Ultima modifica:** 2026-05-19 — Cline (Fix saldo dashboard fittizio + ottimizzazione performance fetch_tickers)

@@ -2,8 +2,9 @@
 Binance portfolio balance aggregator.
 Recupera il saldo totale del conto Binance (Spot + LD tokens),
 convertendo tutto in EUR usando i prezzi correnti di mercato.
-NOTA: fetch_balance().total include già Earn e altri wallet,
-quindi NON si aggiungono chiamate separate a Simple Earn per evitare double counting.
+
+Ottimizzato: usa fetch_tickers() per ottenere TUTTI i prezzi in ~2 chiamate
+invece di fetch_ticker() per ogni singolo asset (che impiega minuti con 400+ asset).
 """
 import logging
 import ccxt
@@ -39,31 +40,113 @@ LD_MAP = {
 
 
 def _get_exchange() -> ccxt.Exchange:
+    """Crea istanza exchange configurata per testnet o live."""
     ex = ccxt.binance({
         "apiKey": settings.BINANCE_API_KEY,
         "secret": settings.BINANCE_SECRET_KEY,
         "enableRateLimit": True,
-        "timeout": 5000,  # 5 secondi timeout per ogni chiamata HTTP (evita blocchi lunghi)
-        "options": {"defaultType": "spot"}
+        "timeout": 5000,
+        "options": {"defaultType": "spot"},
     })
     if settings.BINANCE_TESTNET:
         ex.set_sandbox_mode(True)
-        # Forza gli URL per evitare redirect su Future (bug CCXT 4.3.90+)
-        vision_url = "https://testnet.binance.vision/api/v3"
+        vision = "https://testnet.binance.vision"
         ex.urls["api"] = {
-            "public": vision_url,
-            "private": vision_url,
-            "v3": vision_url,
-            "v1": vision_url,
-            "sapi": vision_url,
-            "fapiPublic": vision_url,
-            "fapiPrivate": vision_url,
-            "dapiPublic": vision_url,
-            "dapiPrivate": vision_url,
+            "public": f"{vision}/api/v3",
+            "private": f"{vision}/api/v3",
+            "v3": f"{vision}/api/v3",
+            "v1": f"{vision}/api/v1",
+            "sapi": f"{vision}/sapi/v1",
+            "fapiPublic": f"{vision}/api/v3",
+            "fapiPrivate": f"{vision}/api/v3",
+            "dapiPublic": f"{vision}/api/v3",
+            "dapiPrivate": f"{vision}/api/v3",
         }
-    else:
-        ex.set_sandbox_mode(False)
+        ex.has["fetchCurrencies"] = False
+        ex.has["fetchPositions"] = False
+        ex.has["fetchFundingRate"] = False
+        ex.has["fetchFundingHistory"] = False
+        ex.has["fetchOpenInterest"] = False
     return ex
+
+
+def _build_ticker_map(exchange: ccxt.Exchange) -> dict:
+    """
+    Recupera TUTTI i ticker disponibili in una singola chiamata
+    e costruisce un dict: symbol -> last price.
+    """
+    try:
+        tickers = exchange.fetch_tickers()
+        return {
+            symbol: float(info["last"])
+            for symbol, info in tickers.items()
+            if info.get("last") is not None
+        }
+    except Exception as e:
+        logger.warning(f"fetch_tickers failed: {e}, falling back to individual lookups")
+        return {}
+
+
+def _convert_to_eur_via_tickers(
+    asset: str, qty: float, ticker_map: dict, eur_usdt: float | None
+) -> float | None:
+    """
+    Converte qty di asset in EUR usando la mappa ticker pre-caricata.
+    eur_usdt è il tasso di cambio EUR/USDT pre-calcolato.
+    """
+    if asset == "EUR":
+        return qty
+
+    # Se abbiamo eur_usdt, prova prima via USDT (la strada più comune)
+    if eur_usdt is not None:
+        # Asset -> USDT
+        usdt_price = ticker_map.get(f"{asset}/USDT")
+        if usdt_price is not None:
+            return qty * usdt_price * eur_usdt
+
+        # Inverso EUR/{asset}
+        eur_price = ticker_map.get(f"EUR/{asset}")
+        if eur_price is not None:
+            return qty / eur_price
+
+        # Diretto {asset}/EUR
+        direct_price = ticker_map.get(f"{asset}/EUR")
+        if direct_price is not None:
+            return qty * direct_price
+
+    # Se non abbiamo eur_usdt, usa la via classica
+    direct_price = ticker_map.get(f"{asset}/EUR")
+    if direct_price is not None:
+        return qty * direct_price
+
+    eur_price = ticker_map.get(f"EUR/{asset}")
+    if eur_price is not None:
+        return qty / eur_price
+
+    # Via USDT senza eur_usdt
+    usdt_price = ticker_map.get(f"{asset}/USDT")
+    if usdt_price is not None:
+        usdt_val = qty * usdt_price
+        # Prova USDT/EUR o EUR/USDT
+        usdt_eur = ticker_map.get("USDT/EUR")
+        if usdt_eur is not None:
+            return usdt_val * usdt_eur
+        eur_usdt_inv = ticker_map.get("EUR/USDT")
+        if eur_usdt_inv is not None:
+            return usdt_val / eur_usdt_inv
+
+    # Via BTC
+    btc_price = ticker_map.get(f"{asset}/BTC")
+    if btc_price is not None:
+        btc_val = qty * btc_price
+        btc_eur = ticker_map.get("BTC/EUR")
+        if btc_eur is not None:
+            return btc_val * btc_eur
+        eur_btc = ticker_map.get("EUR/BTC")
+        if eur_btc is not None:
+            return btc_val / eur_btc
+
+    return None
 
 
 def get_total_balance_eur() -> dict:
@@ -78,7 +161,6 @@ def get_total_balance_eur() -> dict:
           - breakdown: dict (ripartizione per wallet)
     """
     exchange = _get_exchange()
-    exchange.load_markets()
 
     all_assets = {}  # asset -> {"total": float, "sources": set}
 
@@ -101,7 +183,20 @@ def get_total_balance_eur() -> dict:
     except Exception as e:
         logger.warning(f"Spot balance fetch failed: {e}")
 
-    # --- Conversione in EUR ---
+    # --- Pre-carica TUTTI i ticker in una volta sola ---
+    ticker_map = _build_ticker_map(exchange)
+
+    # Pre-calcola EUR/USDT
+    eur_usdt = None
+    usdt_eur = ticker_map.get("USDT/EUR")
+    if usdt_eur is not None:
+        eur_usdt = usdt_eur
+    else:
+        eur_usdt_inv = ticker_map.get("EUR/USDT")
+        if eur_usdt_inv is not None:
+            eur_usdt = 1.0 / eur_usdt_inv
+
+    # --- Conversione in EUR usando la mappa ticker ---
     total_eur = 0.0
     asset_details = []
     wallet_totals = {}
@@ -111,8 +206,9 @@ def get_total_balance_eur() -> dict:
         if qty <= 0:
             continue
 
-        eur_value = _convert_to_eur(exchange, asset, qty)
+        eur_value = _convert_to_eur_via_tickers(asset, qty, ticker_map, eur_usdt)
         if eur_value is None:
+            logger.debug(f"Cannot convert {asset} to EUR")
             continue
 
         total_eur += eur_value
@@ -143,59 +239,3 @@ def get_total_balance_eur() -> dict:
             for wallet, info in sorted(wallet_totals.items())
         },
     }
-
-
-def _convert_to_eur(exchange: ccxt.Exchange, asset: str, qty: float) -> float | None:
-    """Prova a convertire qty di asset in EUR, tentando EUR -> USDT -> BTC."""
-    if asset == "EUR":
-        return qty
-
-    # 1. Conversione diretta in EUR o inversa (es. EUR/SOL)
-    try:
-        ticker = exchange.fetch_ticker(f"{asset}/EUR")
-        return qty * float(ticker["last"])
-    except Exception:
-        try:
-            ticker = exchange.fetch_ticker(f"EUR/{asset}")
-            return qty / float(ticker["last"])
-        except Exception:
-            pass
-
-    # 2. Conversione via USDT
-    try:
-        # Se l'asset è già USDT, dobbiamo solo convertire USDT in EUR
-        if asset == "USDT":
-            usdt_val = qty
-        else:
-            ticker = exchange.fetch_ticker(f"{asset}/USDT")
-            usdt_val = qty * float(ticker["last"])
-        
-        # Prova USDT/EUR o EUR/USDT
-        try:
-            ticker = exchange.fetch_ticker("USDT/EUR")
-            return usdt_val * float(ticker["last"])
-        except Exception:
-            ticker = exchange.fetch_ticker("EUR/USDT")
-            return usdt_val / float(ticker["last"])
-    except Exception:
-        pass
-
-    # 3. Conversione via BTC
-    try:
-        if asset == "BTC":
-            btc_val = qty
-        else:
-            ticker = exchange.fetch_ticker(f"{asset}/BTC")
-            btc_val = qty * float(ticker["last"])
-            
-        try:
-            ticker = exchange.fetch_ticker("BTC/EUR")
-            return btc_val * float(ticker["last"])
-        except Exception:
-            ticker = exchange.fetch_ticker("EUR/BTC")
-            return btc_val / float(ticker["last"])
-    except Exception:
-        pass
-
-    logger.debug(f"Cannot convert {asset} to EUR")
-    return None

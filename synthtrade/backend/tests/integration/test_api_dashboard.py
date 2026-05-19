@@ -77,14 +77,14 @@ def test_dashboard_returns_required_fields(auth):
     assert data["balance_eur"] == 1234.5
 
 
-def test_dashboard_fallback_when_balance_zero(auth):
+def test_dashboard_shows_real_balance_when_zero(auth):
     pytest._current_mock_db = make_db()
     with patch("app.api.dashboard.get_total_balance_eur", return_value={"total_eur": 0.0, "breakdown": {}, "assets": []}):
         r = client.get("/api/dashboard", headers=auth)
     assert r.status_code == 200
     data = r.json()
-    assert data["balance"] == 1500.0
-    assert data["balance_eur"] == 1500.0
+    assert data["balance"] == 0.0
+    assert data["balance_eur"] == 0.0
 
 
 def test_dashboard_pnl_today_zero_when_no_trades(auth):

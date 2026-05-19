@@ -12,7 +12,8 @@
 
 
 ### TASK-217 — 🔵 Refactor: `SignalResolver` iniettato nel costruttore
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-19
 **Priorità:** Media
 
 **Descrizione:**
@@ -42,6 +43,32 @@ Refactoring dell'architettura di gestione dei segnali per permettere l'iniezione
 ### TASK-222 — 🔵 Refactor: intervalli configurabili da `Settings`
 **Status:** In Progress  
 **Priorità:** Media
+
+**Descrizione:**
+Rendere configurabili tutti gli intervalli di scheduler e loop periodici via `app.config.Settings`, eliminando valori hardcoded in `app/scheduler/jobs.py` e nelle parti del backend che gestiscono job ricorrenti.
+
+**Piano di Attuazione:**
+1.  **Audit del codice**:
+    *   Identificare tutti gli intervalli hardcoded in backend, con attenzione a `app/scheduler/jobs.py` e a eventuali `asyncio.sleep(...)` usati in loop ricorrenti.
+2.  **Definizione dei setting**:
+    *   Verificare gli intervalli già presenti in `app/config.py`.
+    *   Aggiungere o confermare i seguenti campi se mancanti:
+        *   `SCHEDULER_PIPELINE_INTERVAL_MIN: int = 60`
+        *   `SCHEDULER_SIGNAL_INTERVAL_MIN: int = 5`
+        *   `SCHEDULER_MONITOR_INTERVAL_SEC: int = 30`
+        *   `SCHEDULER_HEARTBEAT_INTERVAL_SEC: int = 10`
+        *   `SCHEDULER_MONITOR_PNL_INTERVAL_SEC: int = 30`
+        *   `EXECUTION_INTERVAL_SECONDS: int = 300` (se non già referenziato da altri moduli).
+3.  **Refactor scheduler**:
+    *   Aggiornare `setup_scheduler(...)` in `app/scheduler/jobs.py` per usare i valori da `settings`.
+    *   Sostituire i valori hardcoded `seconds=30`, `seconds=10` e simili con i corrispondenti setting.
+4.  **Documentazione e configurazione**:
+    *   Aggiungere i nuovi valori al modello `.env` o ai commenti di `app/config.py`.
+    *   Assicurarsi che il team sappia che tutti gli intervalli possono essere modificati da ambiente.
+5.  **Verifica e test**:
+    *   Scrivere test di configurazione che confermino i default dei nuovi setting.
+    *   Se possibile, aggiungere un test su `setup_scheduler` che verifica che i job usino gli intervalli da `settings`.
+    *   Eseguire `pytest` sui moduli interessati dopo il refactor.
 
 ### TASK-232 — 🔵 Refactor: `MarketRegimeDetector` con soglie configurabili
 **Status:** In Progress  

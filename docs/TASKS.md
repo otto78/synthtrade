@@ -145,7 +145,8 @@ Estrarre la logica di retry asincrono attualmente implementata manualmente in `a
     *   Testare il comportamento del client in caso di `429`, `503` e `Timeout`.
 
 ### TASK-245 — 🔵 Refactor: `MAX_CONCURRENT_EVALS` da `Settings`
-**Status:** In Progress  
+**Status:** Done ✅  
+**Completato:** 2026-05-19
 **Priorità:** Media
 
 **Descrizione:**

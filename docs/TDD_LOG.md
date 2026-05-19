@@ -1,5 +1,27 @@
 # TDD Log
 
+## TASK-427 — GREEN (End)
+
+**Time:** 2026-05-19
+**Status:** Tests Passing
+**Details:**
+```
+tests/test_task_427.py::test_allocation_item_validation PASSED
+tests/test_task_427.py::test_strategy_request_with_allocation PASSED
+tests/test_task_427.py::test_strategy_request_allocation_sum_validation PASSED
+tests/test_task_427.py::test_strategy_request_allocation_optional PASSED
+tests/test_task_427.py::test_strategy_request_cannot_have_both_symbols_and_allocation PASSED
+tests/test_task_427.py::test_allocation_item_symbol_format PASSED
+tests/test_task_427.py::test_allocation_empty_is_valid PASSED
+tests/test_task_427.py::test_allocation_unique_symbols PASSED
+8 passed in 0.58s
+```
+- Added `AllocationItem` model to backend schemas with validation
+- Added `allocation` field to `StrategyRequest` with sum-to-100% validation
+- Implemented frontend multi-crypto allocation UI with sliders
+- Added `useAllocation` signal to toggle between AI auto-selection and manual allocation
+- Frontend validates allocation sum and disables submit if invalid
+
 
 ## TASK-015 — RED (Start)
 
@@ -158,5 +180,113 @@ Ran 0 tests in 0.000s
 
 NO TESTS RAN
 
+```
+
+
+## TASK-209 — RED (Start)
+
+**Time:** 2026-05-18 15:00:17  
+**Status:** Tests Failing  
+**Details:**
+```
+
+----------------------------------------------------------------------
+Ran 0 tests in 0.000s
+
+NO TESTS RAN
+
+```
+
+
+## TASK-209 — COMPLETE (Failed)
+
+**Time:** 2026-05-18 15:20:04  
+**Status:** Tests Still Failing  
+**Details:**
+```
+
+----------------------------------------------------------------------
+Ran 0 tests in 0.000s
+
+NO TESTS RAN
+
+```
+
+
+## TASK-209 — GREEN (Complete)
+
+**Time:** 2026-05-18 15:25:29  
+**Status:** All Tests Passing  
+**Details:**
+```
+============================= test session starts =============================
+platform win32 -- Python 3.12.6, pytest-8.3.3, pluggy-1.6.0 -- C:\Python312\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\andrea.mazzarotto\myJobs\SynthTrade\synthtrade\backend
+configfile: pytest.ini
+plugins: anyio-4.13.0, asyncio-0.24.0, cov-7.1.0, mock-3.14.0
+asyncio: mode=Mode.AUTO, default_loop_scope=function
+collecting ... collected 296 items
+
+synthtrade\backend\test_task_041.py::test_ranker_high_risk_pre
+```
+
+
+## TASK-214 — RED (Start)
+
+**Time:** 2026-05-18 16:03:45  
+**Status:** Tests Failing  
+**Details:**
+```
+============================= test session starts =============================
+platform win32 -- Python 3.12.6, pytest-8.3.3, pluggy-1.6.0 -- C:\Python312\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\andrea.mazzarotto\myJobs\SynthTrade
+plugins: anyio-4.13.0, asyncio-0.24.0, cov-7.1.0, mock-3.14.0
+asyncio: mode=Mode.STRICT, default_loop_scope=None
+collecting ... collected 1 item
+
+tests/test_task_214.py::test_task_214_placeholder FAILED                 [100%]
+
+============================
+```
+
+
+## TASK-214 — GREEN (Complete)
+
+**Time:** 2026-05-18 16:36:18  
+**Status:** All Tests Passing  
+**Details:**
+```
+============================= test session starts =============================
+platform win32 -- Python 3.12.6, pytest-8.3.3, pluggy-1.6.0 -- C:\Python312\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\andrea.mazzarotto\myJobs\SynthTrade
+plugins: anyio-4.13.0, asyncio-0.24.0, cov-7.1.0, mock-3.14.0
+asyncio: mode=Mode.STRICT, default_loop_scope=None
+collecting ... collected 4 items
+
+tests/test_task_214.py::test_registry_singleton PASSED                   [ 25%]
+tests/test_task_214.py::test
+```
+
+
+## TASK-418 — RED (Start)
+
+**Time:** 2026-05-18 16:51:19  
+**Status:** Tests Failing  
+**Details:**
+```
+============================= test session starts =============================
+platform win32 -- Python 3.12.6, pytest-8.3.3, pluggy-1.6.0 -- C:\Python312\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\andrea.mazzarotto\myJobs\SynthTrade
+plugins: anyio-4.13.0, asyncio-0.24.0, cov-7.1.0, mock-3.14.0
+asyncio: mode=Mode.STRICT, default_loop_scope=None
+collecting ... collected 1 item
+
+tests/test_task_418.py::test_task_418_placeholder FAILED                 [100%]
+
+============================
 ```
 

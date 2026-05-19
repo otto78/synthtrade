@@ -49,12 +49,18 @@ export interface StrategyCreateDto {
 export type RiskLevel = 'low' | 'medium' | 'high';
 export type AssetClass = 'crypto' | 'stocks' | 'forex';
 
+export interface AllocationItem {
+  symbol: string;
+  percentage: number;
+}
+
 export interface StrategyRequest {
   budget_eur: number;
   duration_days: number;
   asset_class: AssetClass;
   risk_level: RiskLevel;
   symbols?: string[];
+  allocation?: AllocationItem[];
   free_text?: string;
   max_strategies?: number;
   custom_name?: string;

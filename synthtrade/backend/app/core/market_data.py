@@ -3,17 +3,17 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 from app.db.supabase_client import get_supabase
 from app.config import settings
+from app.core.exchange_factory import get_exchange
 
-# Inizializzazione exchange configurata per Spot Testnet se necessario
-exchange = ccxt.binance({
-    "apiKey": settings.BINANCE_API_KEY,
-    "secret": settings.BINANCE_SECRET_KEY,
-    "enableRateLimit": True,
-    "options": {"defaultType": "spot"}
-})
+# Inizializzazione exchange via ExchangeFactory (TASK-431)
+# La factory gestisce automaticamente key/URL in base a TRADING_MODE
+exchange = get_exchange()
 
-if settings.BINANCE_TESTNET:
-    exchange.set_sandbox_mode(True)
+# Configurazione aggiuntiva per Spot Market Data
+exchange.options["defaultType"] = "spot"
+
+# Override URL per Spot Testnet (la sandbox mode non basta per spot)
+if settings.TRADING_MODE == 'test':
     vision_url = "https://testnet.binance.vision/api/v3"
     exchange.urls["api"] = {
         "public": vision_url,
@@ -26,8 +26,6 @@ if settings.BINANCE_TESTNET:
         "dapiPublic": vision_url,
         "dapiPrivate": vision_url,
     }
-else:
-    exchange.set_sandbox_mode(False)
 
 OHLCV_COLS = ["open", "high", "low", "close", "volume"]
 

@@ -40,16 +40,12 @@ LD_MAP = {
 
 
 def _get_exchange() -> ccxt.Exchange:
-    """Crea istanza exchange configurata per testnet o live."""
-    ex = ccxt.binance({
-        "apiKey": settings.BINANCE_API_KEY,
-        "secret": settings.BINANCE_SECRET_KEY,
-        "enableRateLimit": True,
-        "timeout": 5000,
-        "options": {"defaultType": "spot"},
-    })
-    if settings.BINANCE_TESTNET:
-        ex.set_sandbox_mode(True)
+    """Restituisce istanza exchange via ExchangeFactory (TASK-431)."""
+    from app.core.exchange_factory import get_exchange as _get_factory_exchange
+    ex = _get_factory_exchange()
+    ex.options["defaultType"] = "spot"
+    ex.timeout = 5000
+    if settings.TRADING_MODE == 'test':
         vision = "https://testnet.binance.vision"
         ex.urls["api"] = {
             "public": f"{vision}/api/v3",

@@ -12,14 +12,14 @@ async def get_exchange_status(_user: str = Depends(get_current_user)):
     TASK-090: GET /api/exchange/status
     """
     adapter = BinanceExchangeAdapter(
-        api_key=settings.BINANCE_API_KEY,
-        secret=settings.BINANCE_SECRET_KEY,
-        testnet=settings.BINANCE_TESTNET
+        api_key=settings.binance_api_key,
+        secret=settings.binance_secret_key,
+        testnet=settings.TRADING_MODE == 'test'
     )
     try:
         balance = await adapter.get_balance()
         return {
-            "mode": "testnet" if settings.BINANCE_TESTNET else "live",
+            "mode": "testnet" if settings.TRADING_MODE == 'test' else "live",
             "base_url": settings.binance_base_url,
             "usdt_balance": balance,
         }
@@ -41,7 +41,7 @@ async def get_holdings(
     exchange = get_exchange(request)
     try:
         holdings = await exchange.get_holdings()
-        return {"holdings": holdings, "mode": "testnet" if settings.BINANCE_TESTNET else "live"}
+        return {"holdings": holdings, "mode": "testnet" if settings.TRADING_MODE == 'test' else "live"}
     except ExchangeAuthError as e:
         raise HTTPException(status_code=401, detail=str(e))
     except ExchangeNetworkError as e:

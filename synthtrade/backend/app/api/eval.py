@@ -69,9 +69,9 @@ async def _run_eval_background(strategy_id: str) -> None:
         # Setup temporary dependencies for service
         repo = OhlcvRepository(db)
         exchange = BinanceExchangeAdapter(
-            api_key=settings.BINANCE_API_KEY,
-            secret=settings.BINANCE_SECRET_KEY,
-            testnet=settings.BINANCE_TESTNET,
+            api_key=settings.binance_api_key,
+            secret=settings.binance_secret_key,
+            testnet=settings.TRADING_MODE == 'test',
         )
         md_service = MarketDataService(repo, exchange)
         

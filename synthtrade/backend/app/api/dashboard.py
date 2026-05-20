@@ -2,6 +2,7 @@ import logging
 import asyncio
 from datetime import date
 from fastapi import APIRouter, Depends
+from app.config import settings
 from app.db.supabase_client import get_supabase
 from app.dependencies import get_current_user, get_strategy_repo, get_trade_repo
 from app.db.repositories.strategy_repository import StrategyRepository
@@ -79,6 +80,7 @@ async def get_dashboard(
         "pnl_today": pnl_today,
         "active_strategy": active_strategy,
         "engine_status": "RUNNING",
+        "trading_mode": settings.TRADING_MODE,
         "active_strategies_count": active_strategies_count,
         "total_active_pnl_pct": total_active_pnl_pct,
     }

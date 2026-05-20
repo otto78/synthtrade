@@ -21,20 +21,42 @@ class Settings(BaseSettings):
     SUPABASE_ANON_KEY: str = ''
     SUPABASE_SERVICE_ROLE_KEY: str = ''
 
-    # Binance
+    # Binance — Key per Testnet
     BINANCE_API_KEY: str = ''
     BINANCE_SECRET_KEY: str = ''
-    BINANCE_TESTNET: bool = True
+
+    # Binance — Key per LIVE (produzione)
+    BINANCE_API_KEY_LIVE: str = ''
+    BINANCE_SECRET_KEY_LIVE: str = ''
+
+    # Modalità trading
+    TRADING_MODE: str = 'test'       # 'test' | 'live'
+    ALLOW_LIVE_MODE: bool = False    # Flag sicurezza
+
+    @computed_field
+    @property
+    def BINANCE_TESTNET(self) -> bool:
+        return self.TRADING_MODE == 'test'
+
+    @computed_field
+    @property
+    def binance_api_key(self) -> str:
+        return self.BINANCE_API_KEY if self.TRADING_MODE == 'test' else self.BINANCE_API_KEY_LIVE
+
+    @computed_field
+    @property
+    def binance_secret_key(self) -> str:
+        return self.BINANCE_SECRET_KEY if self.TRADING_MODE == 'test' else self.BINANCE_SECRET_KEY_LIVE
 
     @computed_field
     @property
     def binance_base_url(self) -> str:
-        return 'https://testnet.binance.vision' if self.BINANCE_TESTNET else 'https://api.binance.com'
+        return 'https://testnet.binance.vision' if self.TRADING_MODE == 'test' else 'https://api.binance.com'
 
     @computed_field
     @property
     def binance_ws_base_url(self) -> str:
-        return 'wss://testnet.binance.vision/ws' if self.BINANCE_TESTNET else 'wss://stream.binance.com:9443/ws'
+        return 'wss://testnet.binance.vision/ws' if self.TRADING_MODE == 'test' else 'wss://stream.binance.com:9443/ws'
 
     # Auth
     APP_PASSWORD: str = 'changeme'
@@ -79,8 +101,14 @@ class Settings(BaseSettings):
     DEFAULT_POSITION_SIZE_PCT: float = 0.05
     DEFAULT_STOP_LOSS_PCT: float = 0.02
     DEFAULT_TAKE_PROFIT_PCT: float = 0.04
+    SIGNAL_STRENGTH_THRESHOLD: float = 0.6
+    MARKET_REGIME_VOLATILE_THRESHOLD: float = 0.025
+    MARKET_REGIME_TRENDING_THRESHOLD: float = 0.15
     SCHEDULER_PIPELINE_INTERVAL_MIN: int = 60
     SCHEDULER_SIGNAL_INTERVAL_MIN: int = 5   # Frequenza tick per strategie ACTIVE
+    SCHEDULER_MONITOR_POSITIONS_INTERVAL_SECONDS: int = 30
+    SCHEDULER_HEARTBEAT_INTERVAL_SECONDS: int = 10
+    SCHEDULER_MONITOR_PNL_INTERVAL_SECONDS: int = 30
 
     # Pluggability (TASK-214)
     STRATEGY_PLUGINS: str = ""  # Comma-separated module paths

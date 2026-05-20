@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.api import auth, strategies, dashboard, logs, ws, trades, eval as eval_api, pipeline, exchange, monitor
+from app.api import auth, strategies, dashboard, logs, ws, trades, eval as eval_api, pipeline, exchange, monitor, config_api
 from app.scheduler.jobs import setup_scheduler
 from app.core.logging import setup_logging
 from app.core.exceptions import (
@@ -31,6 +31,7 @@ async def lifespan(app: FastAPI):
     from app.execution.risk_manager import RiskManager, RiskConfig
     from app.execution.order_tracker import OrderTracker
     from app.execution.execution_engine import ExecutionEngine
+    from app.execution.signal_resolver import DefaultSignalResolver
     from app.services.stop_loss_service import StopLossService
     from app.db.repositories.trade_repository import TradeRepository
     from app.db.supabase_client import get_supabase
@@ -39,17 +40,22 @@ async def lifespan(app: FastAPI):
     trade_repo = TradeRepository(db)
 
     exchange = BinanceExchangeAdapter(
-        api_key=settings.BINANCE_API_KEY,
-        secret=settings.BINANCE_SECRET_KEY,
-        testnet=settings.BINANCE_TESTNET,
+        api_key=settings.binance_api_key,
+        secret=settings.binance_secret_key,
+        testnet=settings.TRADING_MODE == 'test',
     )
     risk_config = RiskConfig.from_settings(settings)
     sl_service = StopLossService()
+    
+    # TASK-217: Iniezione del resolver configurato
+    resolver = DefaultSignalResolver(strength_threshold=settings.SIGNAL_STRENGTH_THRESHOLD)
+    
     engine = ExecutionEngine(
         risk_manager=RiskManager(config=risk_config),
         order_tracker=OrderTracker(repo=trade_repo),
         exchange=exchange,
         sl_service=sl_service,
+        signal_resolver=resolver,
     )
 
     # Rende l'engine disponibile via request.app.state.engine
@@ -108,6 +114,7 @@ app.include_router(eval_api.router, prefix="/api")
 app.include_router(pipeline.router, prefix="/api")
 app.include_router(exchange.router, prefix="/api")
 app.include_router(monitor.router, prefix="/api")
+app.include_router(config_api.router, prefix="/api")
 
 @app.get("/")
 def read_root():

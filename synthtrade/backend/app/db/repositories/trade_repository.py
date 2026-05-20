@@ -10,7 +10,7 @@ class TradeRepository(ModeFilterMixin):
 
     def list_all(self, status: Optional[str] = None, limit: int = 50) -> List[Trade]:
         query = self.db.table(self.table_name).select("*")
-        query = self._apply_mode_filter(query)
+        query = self._apply_trading_mode_filter(query)
         if status:
             query = query.eq("status", status)
         res = query.order("executed_at", desc=True).limit(limit).execute()
@@ -18,25 +18,25 @@ class TradeRepository(ModeFilterMixin):
 
     def list_active_with_strategies(self) -> List[dict]:
         query = self.db.table(self.table_name).select("*, strategies(*)").eq("status", "OPEN")
-        query = self._apply_mode_filter(query)
+        query = self._apply_trading_mode_filter(query)
         res = query.order("executed_at", desc=True).execute()
         return res.data or []
 
     def get_since(self, since_iso: str) -> List[Trade]:
         query = self.db.table(self.table_name).select("*").gte("executed_at", since_iso)
-        query = self._apply_mode_filter(query)
+        query = self._apply_trading_mode_filter(query)
         res = query.execute()
         return [Trade.model_validate(t) for t in res.data] if res.data else []
 
     def get_history(self) -> List[dict]:
         query = self.db.table(self.table_name).select("executed_at,cost_eur,pnl_pct")
-        query = self._apply_mode_filter(query)
+        query = self._apply_trading_mode_filter(query)
         res = query.order("executed_at").execute()
         return res.data or []
 
     def get_open_positions(self, symbol: Optional[str] = None, strategy_id: Optional[str] = None) -> List[Trade]:
         query = self.db.table(self.table_name).select("*").eq("status", "OPEN")
-        query = self._apply_mode_filter(query)
+        query = self._apply_trading_mode_filter(query)
         if symbol:
             query = query.eq("pair", symbol)
         if strategy_id:
@@ -46,19 +46,19 @@ class TradeRepository(ModeFilterMixin):
 
     def get_closed_trades_by_strategy(self, strategy_id: str) -> List[Trade]:
         query = self.db.table(self.table_name).select("price, quantity, pnl_pct").eq("strategy_id", strategy_id).eq("status", "CLOSED")
-        query = self._apply_mode_filter(query)
+        query = self._apply_trading_mode_filter(query)
         res = query.execute()
         return [Trade.model_validate(t) for t in res.data] if res.data else []
 
     def get_open_by_strategy(self, strategy_id: str) -> List[Trade]:
         query = self.db.table(self.table_name).select("*").eq("strategy_id", strategy_id).eq("status", "OPEN")
-        query = self._apply_mode_filter(query)
+        query = self._apply_trading_mode_filter(query)
         res = query.execute()
         return [Trade.model_validate(t) for t in res.data] if res.data else []
 
     def get_by_id(self, trade_id: str) -> Optional[Trade]:
         query = self.db.table(self.table_name).select("*").eq("id", trade_id)
-        query = self._apply_mode_filter(query)
+        query = self._apply_trading_mode_filter(query)
         res = query.single().execute()
         if res.data:
             return Trade.model_validate(res.data)

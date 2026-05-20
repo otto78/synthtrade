@@ -10,7 +10,7 @@ class StrategyRepository(ModeFilterMixin):
 
     def get_by_id(self, strategy_id: str) -> Optional[Strategy]:
         query = self.db.table(self.table_name).select("*").eq("id", strategy_id)
-        query = self._apply_mode_filter(query)
+        query = self._apply_trading_mode_filter(query)
         res = query.single().execute()
         if res.data:
             return Strategy.model_validate(res.data)
@@ -27,13 +27,13 @@ class StrategyRepository(ModeFilterMixin):
 
     def get_one_active(self) -> Optional[Strategy]:
         query = self.db.table(self.table_name).select("*").eq("status", "ACTIVE").limit(1)
-        query = self._apply_mode_filter(query)
+        query = self._apply_trading_mode_filter(query)
         res = query.execute()
         return Strategy.model_validate(res.data[0]) if res.data else None
 
     def list_by_status(self, status: str) -> List[Strategy]:
         query = self.db.table(self.table_name).select("*").eq("status", status)
-        query = self._apply_mode_filter(query)
+        query = self._apply_trading_mode_filter(query)
         res = query.execute()
         return [Strategy.model_validate(s) for s in res.data] if res.data else []
 
@@ -41,7 +41,7 @@ class StrategyRepository(ModeFilterMixin):
         query = self.db.table(self.table_name).select("*")
         if status:
             query = query.eq("status", status)
-        query = self._apply_mode_filter(query)
+        query = self._apply_trading_mode_filter(query)
         res = query.execute()
         return [Strategy.model_validate(s) for s in res.data] if res.data else []
 

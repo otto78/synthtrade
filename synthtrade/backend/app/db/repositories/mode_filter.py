@@ -2,7 +2,7 @@
 ModeFilterMixin — Aggiunge filtro automatico per modalità TEST/LIVE.
 
 TASK-431: Tutti i repository che estendono questo mixin aggiungono
-automaticamente `.eq("mode", current_mode)` a ogni query SELECT.
+automaticamente `.eq("trading_mode", current_mode)` a ogni query SELECT.
 
 In questo modo, quando l'app è in modalità TEST, vede solo i dati TEST;
 quando è in modalità LIVE, vede solo i dati LIVE.
@@ -20,16 +20,16 @@ class ModeFilterMixin:
     automaticamente il filtro.
     """
 
-    def _apply_mode_filter(self, query):
+    def _apply_trading_mode_filter(self, query):
         """Aggiunge il filtro mode alla query Supabase.
 
         Args:
             query: Oggetto query Supabase (es. self.db.table(...).select(...))
 
         Returns:
-            Query con filtro .eq("mode", current_mode) aggiunto.
+            Query con filtro .eq("trading_mode", current_mode) aggiunto.
         """
-        return query.eq("mode", settings.TRADING_MODE)
+        return query.eq("trading_mode", settings.TRADING_MODE)
 
     def _filter_for_write(self, data: dict) -> dict:
         """Aggiunge automaticamente il campo mode ai dati in scrittura.
@@ -40,6 +40,6 @@ class ModeFilterMixin:
         Returns:
             Dict con campo mode aggiunto se non presente.
         """
-        if "mode" not in data:
-            data["mode"] = settings.TRADING_MODE
+        if "trading_mode" not in data:
+            data["trading_mode"] = settings.TRADING_MODE
         return data

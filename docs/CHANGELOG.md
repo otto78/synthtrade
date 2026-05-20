@@ -7,7 +7,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [1.2.5] — 2026-05-19
+## [1.2.9] — 2026-05-20
+
+### Added
+- **8 template strategici** (era 3): aggiunti `trend_ema_fast`, `mean_reversion_rsi_aggressive`, `breakout_bb_tight`, `momentum_macd`, `scalp_short_term`
+- **Nuove funzioni indicatore**: `signal_macd_crossover`, `signal_ema_dual_crossover`, `macd()` in `indicators.py`
+- **Registry esteso**: tutti gli 8 template registrati in `StrategyRegistry._load_defaults()`
+
+### Changed
+- **Filtri rilassati**: tolleranza durata 80% (era 50%), fallback su 3 template invece di 1 solo
+- **Nomi descrittivi**: titolo usa template_data['title'] invece di template ID tecnico
+- **Prompt AI**: `request_enricher.py` aggiornato con tutti gli 8 template
+- **Fix `run_pipeline.py`**: titolo ora usa `strategy.title` (es. "Trend Following EMA (BTC/USDT)") invece di `f"{strategy.template} {strategy.pair} {strategy.timeframe}"` (es. "trend_ema BTC/USDT 1h")
+
+## [1.2.8] — 2026-05-19
 
 ### Fixed
 - **Dashboard falso saldo 1500€**: Risolto bug critico per cui la dashboard mostrava sempre 1500 EUR fittizi quando il fetch del saldo Binance era lento o restituiva 0. La causa era doppia:

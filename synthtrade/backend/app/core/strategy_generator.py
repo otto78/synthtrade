@@ -9,7 +9,10 @@ from app.ai.request_enricher import enrich_request_with_ai
 from app.services.market_data_service import MarketDataService
 from app.core.backtester import run_backtest, BacktestResult
 from app.core.ranker import Ranker, RankConfig
-from app.core.indicators import signal_ema_crossover, signal_rsi_reversion, signal_breakout_bb
+from app.core.indicators import (
+    signal_ema_crossover, signal_rsi_reversion, signal_breakout_bb,
+    signal_macd_crossover, signal_ema_dual_crossover,
+)
 
 logger = logging.getLogger("synthtrade.generator")
 
@@ -43,10 +46,17 @@ def normalize_trading_pair(symbol: str) -> str:
 
 SIGNAL_MAP = {
     "trend_ema": lambda df, p: signal_ema_crossover(df, p["ema_fast"], p["ema_slow"]),
+    "trend_ema_fast": lambda df, p: signal_ema_crossover(df, p["ema_fast"], p["ema_slow"]),
     "mean_reversion_rsi": lambda df, p: signal_rsi_reversion(
         df, p["rsi_period"], p["rsi_oversold"], p["rsi_overbought"]
     ),
+    "mean_reversion_rsi_aggressive": lambda df, p: signal_rsi_reversion(
+        df, p["rsi_period"], p["rsi_oversold"], p["rsi_overbought"]
+    ),
     "breakout_bb": lambda df, p: signal_breakout_bb(df, p["bb_period"], p["bb_std"]),
+    "breakout_bb_tight": lambda df, p: signal_breakout_bb(df, p["bb_period"], p["bb_std"]),
+    "momentum_macd": lambda df, p: signal_macd_crossover(df, p["macd_fast"], p["macd_slow"], p["macd_signal"]),
+    "scalp_short_term": lambda df, p: signal_ema_dual_crossover(df, p["ema_short"], p["ema_long"]),
 }
 
 TEMPLATES: dict[str, dict] = {
@@ -56,10 +66,22 @@ TEMPLATES: dict[str, dict] = {
         "duration_days": 30,
         "risk_level": "medium",
         "params": {
-            "ema_fast":    [10, 20],
-            "ema_slow":    [50, 100],
+            "ema_fast":    [10, 20, 50],
+            "ema_slow":    [100, 200],
             "stop_loss":   [0.02, 0.03],
-            "take_profit": [0.05, 0.08],
+            "take_profit": [0.05, 0.08, 0.12],
+        }
+    },
+    "trend_ema_fast": {
+        "title": "Fast EMA Momentum",
+        "description": "Cattura movimenti rapidi con EMA veloci su timeframe brevi.",
+        "duration_days": 14,
+        "risk_level": "high",
+        "params": {
+            "ema_fast":    [5, 10],
+            "ema_slow":    [20, 30],
+            "stop_loss":   [0.015, 0.025],
+            "take_profit": [0.03, 0.05],
         }
     },
     "mean_reversion_rsi": {
@@ -75,6 +97,19 @@ TEMPLATES: dict[str, dict] = {
             "take_profit":    [0.04, 0.06],
         }
     },
+    "mean_reversion_rsi_aggressive": {
+        "title": "Aggressive RSI Reversal",
+        "description": "Mean reversion aggressiva con RSI estremo e target più ampi.",
+        "duration_days": 10,
+        "risk_level": "high",
+        "params": {
+            "rsi_period":     [7, 14],
+            "rsi_oversold":   [20, 25],
+            "rsi_overbought": [75, 80],
+            "stop_loss":      [0.025],
+            "take_profit":    [0.06, 0.10],
+        }
+    },
     "breakout_bb": {
         "title": "Bollinger Breakout",
         "description": "Entra a mercato sulle rotture delle bande di Bollinger con alta volatilità.",
@@ -85,6 +120,43 @@ TEMPLATES: dict[str, dict] = {
             "bb_std":      [2.0, 2.5],
             "stop_loss":   [0.03],
             "take_profit": [0.07, 0.10],
+        }
+    },
+    "breakout_bb_tight": {
+        "title": "Bollinger Squeeze",
+        "description": "Cattura le esplosioni di volatilità dopo periodi di compressione (squeeze).",
+        "duration_days": 5,
+        "risk_level": "high",
+        "params": {
+            "bb_period":   [14, 20],
+            "bb_std":      [1.5, 2.0],
+            "stop_loss":   [0.02, 0.03],
+            "take_profit": [0.05, 0.08],
+        }
+    },
+    "momentum_macd": {
+        "title": "MACD Momentum",
+        "description": "Sfrutta gli incroci MACD per catturare cambi di momentum.",
+        "duration_days": 21,
+        "risk_level": "medium",
+        "params": {
+            "macd_fast":  [12],
+            "macd_slow":  [26],
+            "macd_signal":[9],
+            "stop_loss":  [0.02, 0.03],
+            "take_profit":[0.04, 0.07],
+        }
+    },
+    "scalp_short_term": {
+        "title": "Short-Term Scalping",
+        "description": "Operazioni rapide su timeframe brevi per catturare piccoli movimenti.",
+        "duration_days": 3,
+        "risk_level": "high",
+        "params": {
+            "ema_short":  [5, 8],
+            "ema_long":   [13, 21],
+            "stop_loss":  [0.01, 0.015],
+            "take_profit":[0.02, 0.03],
         }
     },
 }
@@ -260,19 +332,23 @@ def build_strategy_id(s: StrategyParams) -> str:
 def _filter_templates_by_constraints(req: StrategyRequest) -> List[str]:
     valid_templates = []
     for name, data in TEMPLATES.items():
-        # Durata ± 50% per essere più flessibili nella generazione
+        # Durata ± 80% per massimizzare varietà di template
         dur = data.get("duration_days", 30)
-        if not (req.duration_days * 0.5 <= dur <= req.duration_days * 1.5):
+        tolerance = req.duration_days * 0.8
+        if not (req.duration_days - tolerance <= dur <= req.duration_days + tolerance):
             continue
 
-        # Rischio
-        if req.risk_level == "low" and data.get("risk_level") == "high":
+        # Rischio: low esclude high, ma medium e high includono tutti
+        risk = data.get("risk_level", "medium")
+        if req.risk_level == "low" and risk == "high":
             continue
 
         valid_templates.append(name)
 
-    # Se nessun template soddisfa i vincoli rigidi, restituiamo quello più vicino
+    # Se nessun template soddisfa i vincoli, restituiamo almeno 3 template vari
+    # per garantire varietà anche quando i filtri sono troppo stretti
     if not valid_templates:
-        return [list(TEMPLATES.keys())[0]]
+        fallback = ["trend_ema", "mean_reversion_rsi", "momentum_macd"]
+        return [t for t in fallback if t in TEMPLATES]
 
     return valid_templates

@@ -27,7 +27,9 @@ async def enrich_request_with_ai(req: StrategyRequest) -> StrategyRequest:
     system_prompt = (
         "Sei un assistente esperto di trading algoritmico. "
         "Dato il testo dell'utente, estrai i simboli di trading (es. BTC/USDT) e "
-        "identifica il template di strategia più adatto tra: trend_ema, mean_reversion_rsi, breakout_bb. "
+        "identifica il template di strategia più adatto tra: "
+        "trend_ema, trend_ema_fast, mean_reversion_rsi, mean_reversion_rsi_aggressive, "
+        "breakout_bb, breakout_bb_tight, momentum_macd, scalp_short_term. "
         "Rispondi SOLO con un oggetto JSON valido con chiavi 'symbols' (lista di stringhe) e 'template' (stringa)."
     )
     

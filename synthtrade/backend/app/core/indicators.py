@@ -55,3 +55,30 @@ def signal_breakout_bb(df: pd.DataFrame, period: int, std: float) -> pd.Series:
     sig[prev_close > upper.shift(1)] = 1
     sig[prev_close < lower.shift(1)] = -1
     return sig
+
+
+def macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
+    """Calcola il segnale MACD: 1 quando MACD > signal line, -1 quando < ."""
+    ema_fast = ema(series, fast)
+    ema_slow = ema(series, slow)
+    macd_line = ema_fast - ema_slow
+    signal_line = ema(macd_line, signal)
+    sig = pd.Series(0, index=series.index)
+    sig[macd_line > signal_line] = 1
+    sig[macd_line < signal_line] = -1
+    return sig.shift(1)
+
+
+def signal_macd_crossover(df: pd.DataFrame, macd_fast: int, macd_slow: int, macd_signal: int) -> pd.Series:
+    """Segnale basato sull'incrocio MACD."""
+    return macd(df["close"], macd_fast, macd_slow, macd_signal)
+
+
+def signal_ema_dual_crossover(df: pd.DataFrame, ema_short: int, ema_long: int) -> pd.Series:
+    """EMA crossover generico per scalping e trend veloci."""
+    ema_f = ema(df["close"], ema_short).shift(1)
+    ema_s = ema(df["close"], ema_long).shift(1)
+    sig = pd.Series(0, index=df.index)
+    sig[ema_f > ema_s] = 1
+    sig[ema_f < ema_s] = -1
+    return sig

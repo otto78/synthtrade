@@ -137,7 +137,18 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - [x] Integrazione in `run_pipeline.py` (PROMOTE/DEMOTE/HOLD logic) — 4 test
 - [x] Integration tests (happy path, fallback, cache hit, JSON malformato, all models down) — 5 test
 
+### v2.0.0 — Modulo Scalping (Signal Intelligence) 🚀
+- [ ] **Fase 1: Foundation & Models** (TASK-801 -> 804)
+- [ ] **Fase 2: Signal Intelligence Collectors** (TASK-805 -> 810)
+- [ ] **Fase 3: Engine & Signal Aggregation** (TASK-811 -> 813)
+- [ ] **Fase 4: Fast Execution Engine (L1)** (TASK-814 -> 817)
+- [ ] **Fase 5: Opportunity Monitor (AI News)** (TASK-818 -> 820)
+- [ ] **Fase 6: AI Supervisor v2.0 (L2)** (TASK-821 -> 823)
+- [ ] **Fase 7: Frontend Scalping Dashboard** (TASK-824 -> 828)
+- [ ] **Fase 8: Backtest & Validation** (TASK-829 -> 832)
+
 ### v1.0.0 — Hardening & Deploy
+
 - [ ] Supabase Cloud: RLS, Realtime, Auth
 - [ ] Docker multi-stage: backend (python:3.12-slim) + frontend (node:20-alpine + nginx:alpine)
 - [ ] docker-compose.prod.yml con network interna, logging json-file
@@ -406,4 +417,26 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
 
-**Ultima modifica:** 2026-05-19 — Cline (Fix saldo dashboard fittizio + ottimizzazione performance fetch_tickers)
+### v1.2.9 — 2026-05-20
+
+**Milestone:** Diversificazione strategie — da 3 a 8 template con nomi descrittivi
+
+**Completato:**
+- ✅ **Da 3 a 8 template**: aggiunti `trend_ema_fast` (Fast EMA Momentum), `mean_reversion_rsi_aggressive` (Aggressive RSI Reversal), `breakout_bb_tight` (Bollinger Squeeze), `momentum_macd` (MACD Momentum), `scalp_short_term` (Short-Term Scalping)
+- ✅ **Più varietà di parametri**: ogni template ha ora più combinazioni (es. ema_fast da [10,20] → [10,20,50])
+- ✅ **Range durate ampliato**: da 3gg (scalp) a 30gg (trend), coprendo ogni esigenza di trading
+- ✅ **Filtri rilassati**: tolleranza durata 80% (era 50%), fallback su 3 template invece di 1 solo
+- ✅ **Nomi descrittivi**: tutti i template titolo umano (es. "Trend Following EMA — BTC/USDT 1h" invece di "trend_ema BTC/USDT 1h")
+- ✅ **Fix `run_pipeline.py`**: titolo ora usa `strategy.title` invece di concatenare template ID tecnico
+- ✅ **Nuove funzioni indicatore**: `signal_macd_crossover`, `signal_ema_dual_crossover`, `macd()`
+- ✅ **Registry aggiornato**: tutti gli 8 template registrati in `StrategyRegistry._load_defaults()`
+- ✅ **Prompt AI esteso**: `request_enricher.py` aggiornato con tutti gli 8 template
+
+**Decisioni chiave:**
+- Aumentare i template da 3 a 8 garantisce che anche con filtri attivi, l'utente veda sempre strategie diversificate
+- La tolleranza durata 80% evita che template validi vengano esclusi per piccole differenze di durata
+- I titoli descrittivi migliorano UX: l'utente capisce subito la logica della strategia
+
+---
+
+**Ultima modifica:** 2026-05-20 — Cline (Diversificazione strategie: 3→8 template, nomi descrittivi, filtri rilassati)

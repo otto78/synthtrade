@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timedelta, timezone
+import pandas as pd
 from app.core.strategy_generator import generate_all_variants, build_strategy_id, TEMPLATES
 from app.core.market_data import fetch_ohlcv
 from app.core.backtester import run_backtest
@@ -64,6 +65,22 @@ async def run_pipeline(
                 ohlcv_cache[cache_key] = md_service.get_ohlcv(strategy.pair, strategy.timeframe, days=days)
             ohlcv = ohlcv_cache[cache_key]
 
+            if isinstance(ohlcv, list):
+                ohlcv = pd.DataFrame(ohlcv)
+                ohlcv_cache[cache_key] = ohlcv
+
+            if hasattr(ohlcv, "empty") and ohlcv.empty:
+                logger.warning(f"Empty OHLCV for {strategy.pair} {strategy.timeframe}: skipping")
+                continue
+
+            if not hasattr(ohlcv, "columns") or "close" not in ohlcv.columns:
+                logger.warning(f"Invalid OHLCV format for {strategy.pair} {strategy.timeframe}: skipping")
+                continue
+
+            if len(ohlcv) < 2:
+                logger.warning(f"Insufficient OHLCV rows for {strategy.pair} {strategy.timeframe}: skipping")
+                continue
+
             signal_fn = registry.get(strategy.template)
             if signal_fn is None:
                 logger.warning(f"Template {strategy.template} non supportato, salto.")
@@ -78,9 +95,10 @@ async def run_pipeline(
             strategy_id = build_strategy_id(strategy)
             now = datetime.now(timezone.utc)
             expires_at = (now + timedelta(days=7)).isoformat()
+            title = strategy.title or f"{strategy.template} {strategy.pair} {strategy.timeframe}"
             row = {
                 "id": strategy_id,
-                "title": f"{strategy.template} {strategy.pair} {strategy.timeframe}",
+                "title": title,
                 "template": strategy.template,
                 "pair": strategy.pair,
                 "timeframe": strategy.timeframe,

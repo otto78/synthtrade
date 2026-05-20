@@ -18,13 +18,23 @@ class StrategyRegistry:
 
     def _load_defaults(self):
         """Carica gli indicatori core predefiniti."""
-        from app.core.indicators import signal_ema_crossover, signal_rsi_reversion, signal_breakout_bb
+        from app.core.indicators import (
+            signal_ema_crossover, signal_rsi_reversion, signal_breakout_bb,
+            signal_macd_crossover, signal_ema_dual_crossover,
+        )
         
         self.register("trend_ema", lambda df, p: signal_ema_crossover(df, p["ema_fast"], p["ema_slow"]))
+        self.register("trend_ema_fast", lambda df, p: signal_ema_crossover(df, p["ema_fast"], p["ema_slow"]))
         self.register("mean_reversion_rsi", lambda df, p: signal_rsi_reversion(
             df, p["rsi_period"], p["rsi_oversold"], p["rsi_overbought"]
         ))
+        self.register("mean_reversion_rsi_aggressive", lambda df, p: signal_rsi_reversion(
+            df, p["rsi_period"], p["rsi_oversold"], p["rsi_overbought"]
+        ))
         self.register("breakout_bb", lambda df, p: signal_breakout_bb(df, p["bb_period"], p["bb_std"]))
+        self.register("breakout_bb_tight", lambda df, p: signal_breakout_bb(df, p["bb_period"], p["bb_std"]))
+        self.register("momentum_macd", lambda df, p: signal_macd_crossover(df, p["macd_fast"], p["macd_slow"], p["macd_signal"]))
+        self.register("scalp_short_term", lambda df, p: signal_ema_dual_crossover(df, p["ema_short"], p["ema_long"]))
 
     def _load_plugins(self):
         """Carica plugin configurati nei settings."""

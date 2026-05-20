@@ -10,6 +10,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
 import { EmptyStateComponent } from '../../shared/components/empty-state/empty-state.component';
 import { StrategyRequestFormComponent } from '../../shared/components/strategy-request-form/strategy-request-form.component';
 import { GenerationProgressComponent } from '../../shared/components/generation-progress/generation-progress.component';
+import { GenerationCompletePayload } from '../../core/services/generation-ws.service';
 import { NgClass, KeyValuePipe, DecimalPipe, CurrencyPipe, DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -101,8 +102,10 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
                         <div class="ai-badge">✨ AI Optimized</div>
                         @if (s.custom_name) {
                           <span class="strategy-custom-name">{{ s.custom_name }}</span>
+                          <span class="strategy-name strategy-name--sub">{{ s.title }}</span>
+                        } @else {
+                          <span class="strategy-name">{{ s.title }}</span>
                         }
-                        <span class="strategy-name">{{ s.title }}</span>
                         <div class="meta-tags">
                           <span class="tag tag--pair">{{ s.pair }}</span>
                           <span class="tag tag--tf">{{ s.timeframe }}</span>
@@ -183,8 +186,10 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
                       <div class="title-group">
                         @if (s.custom_name) {
                           <span class="strategy-custom-name-small">{{ s.custom_name }}</span>
+                          <span class="strategy-name strategy-name--sub">{{ s.title }}</span>
+                        } @else {
+                          <span class="strategy-name">{{ s.title }}</span>
                         }
-                        <span class="strategy-name">{{ s.title }}</span>
                         <div class="meta-tags">
                           <span class="tag tag--pair">{{ s.pair }}</span>
                           <span class="tag tag--tf">{{ s.timeframe }}</span>
@@ -217,9 +222,11 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
                   <div class="active-row" @slideIn>
                     <div class="active-info">
                       @if (s.custom_name) {
-                        <span class="active-custom-name">{{ s.custom_name }}</span>
+                        <span class="active-title">{{ s.custom_name }}</span>
+                        <span class="active-subtitle">{{ s.title }}</span>
+                      } @else {
+                        <span class="active-title">{{ s.title }}</span>
                       }
-                      <span class="active-title">{{ s.title }}</span>
                       <span class="active-meta">{{ s.pair }} · {{ s.timeframe }}</span>
                     </div>
                     
@@ -258,14 +265,22 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
                     <div class="accordion-header" (click)="toggleExpand(s.id!)">
                       <div class="acc-info">
                         @if (s.custom_name) {
-                          <span class="acc-custom-name">{{ s.custom_name }}</span>
+                          <span class="acc-title">{{ s.custom_name }}</span>
+                          <span class="acc-subtitle">{{ s.title }}</span>
+                        } @else {
+                          <div class="acc-title-row">
+                            <span class="acc-title">{{ s.title }}</span>
+                            @if (s.status === 'STOPPED') {
+                              <span class="stopped-badge">STOPPED</span>
+                            }
+                          </div>
                         }
-                        <div class="acc-title-row">
-                          <span class="acc-title">{{ s.title }}</span>
-                          @if (s.status === 'STOPPED') {
-                            <span class="stopped-badge">STOPPED</span>
-                          }
-                        </div>
+                        @if (!s.custom_name && s.status === 'STOPPED') {
+                          <!-- already handled above -->
+                        }
+                        @if (s.custom_name && s.status === 'STOPPED') {
+                          <span class="stopped-badge">STOPPED</span>
+                        }
                         <div class="acc-meta">
                           <span class="tag">{{ s.pair }}</span>
                           <span class="date">{{ s.updated_at | date:'dd MMM yyyy' }}</span>
@@ -377,6 +392,32 @@ type Tab = 'GENERAZIONE' | 'APPROVATE' | 'ATTIVE' | 'COMPLETATE';
     .btn-new-search-inline:hover { background: var(--accent-primary); color: #000; }
 
     .strategy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 24px; }
+    .strategy-custom-name {
+      display: block; font-size: 18px; font-weight: 700; color: var(--accent-primary, #F0B90B);
+      line-height: 1.2; margin-bottom: 2px;
+    }
+    .strategy-custom-name-small {
+      display: block; font-size: 16px; font-weight: 700; color: var(--accent-primary, #F0B90B);
+      line-height: 1.2; margin-bottom: 2px;
+    }
+    .strategy-name--sub {
+      font-size: 12px !important; color: var(--text-secondary, #848E9C) !important;
+      font-weight: 400 !important; font-family: inherit !important;
+    }
+    .active-custom-name {
+      display: block; font-size: 16px; font-weight: 700; color: var(--accent-primary, #F0B90B);
+    }
+    .active-subtitle {
+      display: block; font-size: 12px; color: var(--text-secondary, #848E9C);
+      font-weight: 400; margin-top: -2px;
+    }
+    .acc-custom-name {
+      display: block; font-size: 16px; font-weight: 700; color: var(--accent-primary, #F0B90B);
+    }
+    .acc-subtitle {
+      display: block; font-size: 12px; color: var(--text-secondary, #848E9C);
+      font-weight: 400; margin-top: -2px;
+    }
     .strategy-card { background: var(--bg-card); border: 1px solid var(--border-default); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 16px; transition: all 0.2s; }
     .strategy-card:hover { border-color: var(--accent-primary); transform: translateY(-4px); }
 
@@ -552,7 +593,7 @@ export class StrategiesPage implements OnInit, OnDestroy {
     // Listener per completamento generazione
     this.sub.add(
       this.generationWsService.onGenerationComplete().subscribe(msg => {
-        const payload = msg.payload as any;
+        const payload = msg.payload as GenerationCompletePayload;
         if (payload && payload.generation_id === this.generationId()) {
           this.generationResultCount.set(payload.count);
           this.generationStatus.set('completed');

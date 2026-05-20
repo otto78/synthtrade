@@ -1,18 +1,15 @@
 import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { CurrencyPipe, DecimalPipe } from '@angular/common';
-import { Router } from '@angular/router';
 import { DashboardService } from '../../core/services/dashboard.service';
 import { WsService } from '../../core/services/ws.service';
-import { WsMessageType } from '../../core/models/ws-message.model';
-import { DashboardStats, BalanceBreakdown } from '../../core/models/dashboard.model';
+import { DashboardStats, BalanceBreakdown, BalanceSnapshot } from '../../core/models/dashboard.model';
 import { StatCardComponent } from '../../shared/components/stat-card/stat-card.component';
-import { SignedNumberPipe } from '../../shared/pipes/signed-number.pipe';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [StatCardComponent, SignedNumberPipe, CurrencyPipe, DecimalPipe],
+  imports: [StatCardComponent, CurrencyPipe, DecimalPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="dashboard">
@@ -20,13 +17,23 @@ import { SignedNumberPipe } from '../../shared/pipes/signed-number.pipe';
       <div class="stats-grid">
         <app-stat-card
           label="Saldo Binance"
-          [value]="(stats().balance_eur | currency:'EUR':'symbol':'1.2-2') ?? '—'"
+          [value]="(balanceFormatted())"
           [loading]="loading()"
         />
         <app-stat-card
-          label="PnL Oggi"
-          [value]="stats().pnl_today | signedNumber"
-          [delta]="stats().pnl_today"
+          label="PnL Portafoglio"
+          [value]="portfolioPnlStr()"
+          [delta]="stats().portfolio_pnl_pct ?? 0"
+          [loading]="loading()"
+        />
+        <app-stat-card
+          label="Strategie Attive"
+          [value]="activeStrategiesStr()"
+          [loading]="loading()"
+        />
+        <app-stat-card
+          label="Trade Aperti"
+          [value]="openTradesStr()"
           [loading]="loading()"
         />
         <app-stat-card
@@ -40,42 +47,60 @@ import { SignedNumberPipe } from '../../shared/pipes/signed-number.pipe';
         <div class="error-msg">{{ error() }}</div>
       }
 
-      <!-- Active Strategy Card (TASK-328) -->
-      @if (stats().active_strategy; as strategy) {
-        <div class="strategy-card" (click)="goToMonitor()">
-          <div class="sc-header">
-            <div class="sc-info">
-              <span class="sc-title">{{ strategy.title }}</span>
-              <span class="sc-meta">{{ strategy.pair }} · {{ strategy.timeframe }}</span>
-            </div>
-            <div class="sc-status">
-              <span class="pulse-dot"></span>
-              Attiva
-            </div>
-          </div>
-          <div class="sc-stats">
-            <div class="sc-stat">
-              <span class="sc-stat-label">Score</span>
-              <span class="sc-stat-value">{{ strategy.score ?? '—' }}</span>
-            </div>
-            <div class="sc-stat">
-              <span class="sc-stat-label">Budget</span>
-              <span class="sc-stat-value">{{ strategy.budget_eur | currency:'EUR':'symbol':'1.0-0' }}</span>
-            </div>
-            <div class="sc-stat">
-              <span class="sc-stat-label">Rischio AI</span>
-              <span class="sc-stat-value" [class]="'risk-' + (strategy.ai_risk?.toLowerCase() || 'medium')">
-                {{ strategy.ai_risk || '—' }}
-              </span>
-            </div>
-          </div>
-          <div class="sc-footer">
-            <button class="btn-monitor">📊 Monitora</button>
+      <!-- Equity Chart -->
+      <div class="chart-section">
+        <div class="chart-header">
+          <h3>Andamento Saldo</h3>
+          <div class="chart-toggles">
+            @for (r of ranges; track r) {
+              <button
+                class="toggle-btn"
+                [class.active]="selectedRange() === r"
+                (click)="loadEquity(r)"
+              >
+                {{ r }}
+              </button>
+            }
           </div>
         </div>
-      }
+        <div class="chart-container">
+          @if (equityData().length > 0) {
+            <svg class="equity-chart" [attr.viewBox]="viewBox()">
+              <!-- Grid lines -->
+              @for (gl of gridLines(); track $index) {
+                <line
+                  [attr.x1]="gl.x1" [attr.y1]="gl.y1"
+                  [attr.x2]="gl.x2" [attr.y2]="gl.y2"
+                  class="grid-line"
+                />
+              }
+              <!-- Area fill -->
+              <path [attr.d]="areaPath()" class="chart-area" />
+              <!-- Line -->
+              <path [attr.d]="linePath()" class="chart-line" />
+              <!-- Dots -->
+              @for (pt of chartPoints(); track $index) {
+                <circle
+                  [attr.cx]="pt.x" [attr.cy]="pt.y" r="3"
+                  [class.dot-positive]="pt.value >= 0"
+                  [class.dot-negative]="pt.value < 0"
+                />
+              }
+            </svg>
+            <div class="chart-metrics">
+              <span class="metric" [class.positive]="pnlTotal() >= 0" [class.negative]="pnlTotal() < 0">
+                P&L: {{ pnlTotal() | number:'1.2-2' }} EUR
+              </span>
+            </div>
+          } @else {
+            <div class="chart-empty">
+              <span>Nessun dato disponibile per questo periodo</span>
+            </div>
+          }
+        </div>
+      </div>
 
-      <!-- Asset Breakdown (ordinato per valore EUR decrescente - TASK-327) -->
+      <!-- Asset Breakdown -->
       @if (sortedAssets().length > 0 && !loading()) {
         <div class="assets-section">
           <h3>Portfolio Asset</h3>
@@ -100,42 +125,48 @@ import { SignedNumberPipe } from '../../shared/pipes/signed-number.pipe';
     </div>
   `,
   styles: [`
-    .stats-grid {
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px;
-    }
+    .dashboard { padding: 24px; max-width: 1200px; margin: 0 auto; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
 
-    /* Active Strategy Card */
-    .strategy-card {
-      margin-top: 24px;
-      background: var(--bg-card);
-      border: 1px solid var(--border-default);
-      border-radius: 12px;
-      padding: 20px;
-      cursor: pointer;
-      transition: all 0.2s;
+    /* Chart Section */
+    .chart-section { margin-top: 24px; }
+    .chart-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 12px;
     }
-    .strategy-card:hover { border-color: var(--accent-primary); transform: translateY(-2px); }
-    .sc-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
-    .sc-info { display: flex; flex-direction: column; gap: 4px; }
-    .sc-title { font-size: 18px; font-weight: 700; color: var(--text-primary); }
-    .sc-meta { font-size: 13px; color: var(--text-secondary); font-family: monospace; }
-    .sc-status { display: flex; align-items: center; gap: 8px; color: var(--color-buy); font-size: 12px; font-weight: 700; }
-    .pulse-dot { width: 8px; height: 8px; background: var(--color-buy); border-radius: 50%; animation: pulse 1.5s infinite; }
-    @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
-    .sc-stats { display: flex; gap: 24px; margin-bottom: 16px; }
-    .sc-stat { display: flex; flex-direction: column; gap: 2px; }
-    .sc-stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; }
-    .sc-stat-value { font-size: 16px; font-weight: 700; font-family: monospace; }
-    .risk-low { color: var(--color-buy); }
-    .risk-medium { color: var(--accent-primary); }
-    .risk-high { color: var(--color-sell); }
-    .sc-footer { border-top: 1px solid var(--border-default); padding-top: 12px; }
-    .btn-monitor {
-      background: transparent; border: 1px solid var(--border-default);
-      color: var(--text-secondary); padding: 8px 20px; border-radius: 6px;
-      cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s;
+    .chart-header h3 {
+      font-size: 13px; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 1px; margin: 0;
     }
-    .btn-monitor:hover { border-color: var(--accent-primary); color: var(--accent-primary); }
+    .chart-toggles { display: flex; gap: 4px; background: var(--bg-surface); padding: 3px; border-radius: 6px; }
+    .toggle-btn {
+      background: none; border: none; color: var(--text-secondary);
+      padding: 4px 12px; border-radius: 4px; cursor: pointer;
+      font-size: 11px; font-weight: 600; transition: all 0.2s;
+    }
+    .toggle-btn.active { background: var(--bg-elevated); color: var(--accent-primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .toggle-btn:hover:not(.active) { color: var(--text-primary); }
+
+    .chart-container {
+      background: var(--bg-card); border: 1px solid var(--border-default);
+      border-radius: 12px; padding: 20px; position: relative;
+    }
+    .equity-chart { width: 100%; height: 200px; overflow: visible; }
+    .grid-line { stroke: rgba(255,255,255,0.04); stroke-width: 1; }
+    .chart-area { fill: rgba(14,203,129,0.08); }
+    .chart-line { fill: none; stroke: var(--color-buy, #0ECB81); stroke-width: 2; stroke-linejoin: round; }
+    .dot-positive { fill: var(--color-buy, #0ECB81); }
+    .dot-negative { fill: var(--color-sell, #F6465D); }
+    .chart-metrics {
+      margin-top: 8px; text-align: right;
+    }
+    .metric { font-size: 13px; font-weight: 600; font-family: monospace; }
+    .metric.positive { color: var(--color-buy, #0ECB81); }
+    .metric.negative { color: var(--color-sell, #F6465D); }
+    .chart-empty {
+      height: 200px; display: flex; align-items: center; justify-content: center;
+      color: var(--text-muted); font-size: 13px;
+    }
 
     /* Asset Table */
     .assets-section { margin-top: 24px; }
@@ -143,7 +174,7 @@ import { SignedNumberPipe } from '../../shared/pipes/signed-number.pipe';
       font-size: 13px; color: var(--text-muted);
       text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;
     }
-    .assets-table { background: var(--surface); border-radius: 8px; overflow: hidden; }
+    .assets-table { background: var(--bg-card); border-radius: 8px; overflow: hidden; border: 1px solid var(--border-default); }
     .asset-row {
       display: grid;
       grid-template-columns: 100px 1fr 120px 100px;
@@ -153,11 +184,11 @@ import { SignedNumberPipe } from '../../shared/pipes/signed-number.pipe';
     .asset-row.header {
       color: var(--text-muted); font-size: 11px;
       text-transform: uppercase; letter-spacing: 1px;
-      background: var(--surface-hover, rgba(255,255,255,0.04));
+      background: rgba(255,255,255,0.03);
     }
     .asset-row:not(.header) {
       color: var(--text-primary);
-      border-bottom: 1px solid var(--border, rgba(255,255,255,0.06));
+      border-bottom: 1px solid rgba(255,255,255,0.06);
     }
     .asset-row:last-child { border-bottom: none; }
     .col-asset { font-weight: 600; }
@@ -167,7 +198,6 @@ import { SignedNumberPipe } from '../../shared/pipes/signed-number.pipe';
 export class DashboardPage implements OnInit, OnDestroy {
   private dashboardService = inject(DashboardService);
   private wsService = inject(WsService);
-  private router = inject(Router);
   private sub = new Subscription();
 
   stats = signal<DashboardStats>({
@@ -175,11 +205,13 @@ export class DashboardPage implements OnInit, OnDestroy {
     balance_breakdown: {} as BalanceBreakdown,
     balance_assets: [],
     pnl_today: 0,
-    active_strategy: null,
     engine_status: '—',
   });
   loading = signal(true);
   error = signal<string | null>(null);
+  equityData = signal<BalanceSnapshot[]>([]);
+  selectedRange = signal('1m');
+  ranges = ['1d', '1w', '1m', '1y'];
 
   sortedAssets = computed(() => {
     const assets = this.stats().balance_assets;
@@ -187,28 +219,106 @@ export class DashboardPage implements OnInit, OnDestroy {
     return [...assets].sort((a, b) => b.value_eur - a.value_eur);
   });
 
-  ngOnInit(): void {
-    this.sub.add(
-      this.dashboardService.getStats().subscribe({
-        next: (data) => { this.stats.set(data); this.loading.set(false); this.error.set(null); },
-        error: (err) => { this.loading.set(false); this.error.set('Failed to load dashboard stats'); console.error('Dashboard stats error:', err); },
-      })
-    );
-    this.sub.add(
-      this.wsService.on<Partial<DashboardStats>>(WsMessageType.StatsUpdate).subscribe({
-        next: (msg) => {
-          if (msg.payload) this.stats.update(s => ({ ...s, ...msg.payload! }));
-          this.error.set(null);
-        },
-        error: (err) => { this.error.set('WebSocket error'); console.error('WS error:', err); },
-      })
-    );
-  }
+  balanceFormatted = computed(() => {
+    const b = this.stats().balance_eur;
+    if (b === 0 && !this.loading()) return '—';
+    return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 }).format(b);
+  });
 
-  goToMonitor() {
-    const s = this.stats().active_strategy;
-    if (s?.id) this.router.navigate(['/active-trade']);
+  activeStrategiesStr = computed(() => String(this.stats().active_strategies_count ?? 0));
+  openTradesStr = computed(() => String(this.stats().open_trades_count ?? 0));
+
+  portfolioPnlStr = computed(() => {
+    const pnl = this.stats().portfolio_pnl_eur ?? 0;
+    if (pnl === 0) return '€0.00';
+    const sign = pnl > 0 ? '+' : '';
+    return `${sign}€${pnl.toFixed(2)}`;
+  });
+
+  // Chart computations
+  chartPoints = computed(() => {
+    const data = this.equityData();
+    if (data.length < 2) return [];
+
+    const values = data.map(d => d.value);
+    const min = Math.min(...values, 0);
+    const max = Math.max(...values, 1);
+    const range = max - min || 1;
+    const w = 1000;
+    const h = 180;
+    const stepX = w / (data.length - 1);
+
+    return data.map((d, i) => ({
+      x: i * stepX,
+      y: h - ((d.value - min) / range) * h,
+      value: d.value,
+    }));
+  });
+
+  viewBox = computed(() => {
+    return `0 0 1000 200`;
+  });
+
+  linePath = computed(() => {
+    const pts = this.chartPoints();
+    if (pts.length < 2) return '';
+    return pts.map((p, idx) => `${idx === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
+  });
+
+  areaPath = computed(() => {
+    const pts = this.chartPoints();
+    if (pts.length < 2) return '';
+    const bottom = 180;
+    const top = pts[0];
+    const bottomRight = pts[pts.length - 1];
+    return `M${top.x},${bottom} L${top.x},${top.y} ${pts.slice(1).map((p) => `L${p.x},${p.y}`).join(' ')} L${bottomRight.x},${bottom} Z`;
+  });
+
+  gridLines = computed<{x1: number; y1: number; x2: number; y2: number}[]>(() => {
+    const h = 180;
+    return [25, 50, 75].map(pct => ({
+      x1: 0, y1: h * pct / 100,
+      x2: 1000, y2: h * pct / 100,
+    }));
+  });
+
+  pnlTotal = computed(() => {
+    const data = this.equityData();
+    if (data.length < 2) return 0;
+    return Math.round((data[data.length - 1].value - data[0].value) * 100) / 100;
+  });
+
+  ngOnInit(): void {
+    this.loadStats();
+    this.loadEquity('1m');
   }
 
   ngOnDestroy(): void { this.sub.unsubscribe(); }
+
+  loadStats(): void {
+    this.sub.add(
+      this.dashboardService.getStats().subscribe({
+        next: (data) => {
+          this.stats.set(data);
+          this.loading.set(false);
+          this.error.set(null);
+        },
+        error: (err) => {
+          this.loading.set(false);
+          this.error.set('Failed to load dashboard stats');
+          console.error('Dashboard stats error:', err);
+        },
+      })
+    );
+  }
+
+  loadEquity(range: string): void {
+    this.selectedRange.set(range);
+    this.sub.add(
+      this.dashboardService.getEquityHistory(range).subscribe({
+        next: (data) => this.equityData.set(data),
+        error: (err) => console.error('Equity history error:', err),
+      })
+    );
+  }
 }

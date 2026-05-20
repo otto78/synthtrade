@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, shareReplay, timeout, catchError, of, retry, timer } from 'rxjs';
 import { DashboardStats, BalanceSnapshot } from '../models/dashboard.model';
 import { environment } from '../../../environments/environment';
@@ -16,9 +16,6 @@ export class DashboardService {
   private stats$: Observable<DashboardStats> | null = null;
   private statsCreatedAt = 0;
 
-  /**
-   * TASK-187: Invalida cache e forza refresh dei dati.
-   */
   invalidateCache(): void {
     this.stats$ = null;
     this.statsCreatedAt = 0;
@@ -30,7 +27,6 @@ export class DashboardService {
       this.statsCreatedAt = now;
       this.stats$ = this.http.get<DashboardStats>(this.base).pipe(
         timeout(REQUEST_TIMEOUT_MS),
-        // TASK-187: Retry con exponential backoff (1s, 2s, 4s)
         retry({
           count: MAX_RETRIES,
           delay: (error, retryCount) => timer(Math.pow(2, retryCount - 1) * 1000)
@@ -42,9 +38,9 @@ export class DashboardService {
             balance_breakdown: {},
             balance_assets: [],
             pnl_today: 0,
-            active_strategy: null,
             engine_status: 'OFFLINE',
             active_strategies_count: 0,
+            open_trades_count: 0,
             total_active_pnl_pct: 0,
           } as DashboardStats);
         }),
@@ -54,7 +50,8 @@ export class DashboardService {
     return this.stats$;
   }
 
-  getEquityHistory(): Observable<BalanceSnapshot[]> {
-    return this.http.get<BalanceSnapshot[]>(`${this.base}/equity-history`);
+  getEquityHistory(range: string = '1m'): Observable<BalanceSnapshot[]> {
+    const params = new HttpParams().set('range', range);
+    return this.http.get<BalanceSnapshot[]>(`${this.base}/equity-history`, { params });
   }
 }

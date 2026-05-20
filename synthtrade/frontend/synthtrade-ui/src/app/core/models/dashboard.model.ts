@@ -1,5 +1,3 @@
-import { Strategy } from './strategy.model';
-
 export interface BalanceAsset {
   asset: string;
   quantity: number;
@@ -18,10 +16,13 @@ export interface DashboardStats {
   balance_breakdown: BalanceBreakdown;
   balance_assets: BalanceAsset[];
   pnl_today: number;
-  active_strategy: Partial<Strategy> | null;
   engine_status: string;
-  active_strategies_count?: number;  // TASK-430
-  total_active_pnl_pct?: number;     // TASK-430
+  active_strategies_count?: number;
+  open_trades_count?: number;
+  total_active_pnl_pct?: number;
+  total_strategy_pnl_eur?: number;
+  portfolio_pnl_eur?: number;
+  portfolio_pnl_pct?: number;
 }
 
 export interface BalanceSnapshot {

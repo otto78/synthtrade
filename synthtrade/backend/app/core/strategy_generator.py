@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 from itertools import product
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -7,6 +8,9 @@ from typing import List, Optional, Generator, Tuple
 import pandas as pd
 from app.execution.schemas import StrategyRequest
 from app.ai.request_enricher import enrich_request_with_ai
+from app.ai.name_generator import generate_funny_name
+from app.ai.model_client import ModelClient
+from app.config import settings
 from app.services.market_data_service import MarketDataService
 from app.core.backtester import run_backtest, BacktestResult
 from app.core.ranker import Ranker, RankConfig
@@ -240,6 +244,18 @@ async def generate_for_request(req: StrategyRequest, md_service: MarketDataServi
     results: List[StrategyParams] = []
     now = datetime.now(timezone.utc)
 
+    # Crea client AI prima del loop e set per tracciare nomi già generati
+    ai_name_client = ModelClient(
+        api_key=settings.AI_API_KEY,
+        api_base_url=settings.AI_API_BASE_URL,
+        cascade_models=settings.ai_cascade_models_list,
+        fallback_model=settings.AI_FALLBACK_MODEL,
+        timeout=min(settings.AI_TIMEOUT_SECONDS, 10.0),
+        max_retries=1,
+        backoff_base=settings.AI_BACKOFF_BASE,
+    )
+    used_names: set[str] = set()
+
     # TASK-FIX-004: Loop backtest reale (sostituisce random)
     for template_name in filtered_templates:
         template_data = TEMPLATES[template_name]
@@ -247,7 +263,7 @@ async def generate_for_request(req: StrategyRequest, md_service: MarketDataServi
         keys = list(param_grid.keys())
         combos = list(product(*param_grid.values()))
 
-        for pair, tf, combo in product(pairs, timeframes, combos):
+        for variant_idx, (pair, tf, combo) in enumerate(product(pairs, timeframes, combos)):
             ohlcv = ohlcv_cache.get((pair, tf))
             if ohlcv is None or ohlcv.empty:
                 continue
@@ -267,7 +283,14 @@ async def generate_for_request(req: StrategyRequest, md_service: MarketDataServi
 
                 budget = float(req.budget_eur) if req.budget_eur > 0 else 100.0
                 title = f"{template_data['title']} — {pair} {tf}"
-                custom_name = req.custom_name or title
+                # Genera nome simpatico via AI (o fallback) se nessun custom_name fornito
+                if req.custom_name:
+                    custom_name = req.custom_name
+                else:
+                    custom_name = await generate_funny_name(
+                        ai_name_client, template_name, pair, tf, params_dict,
+                        used_names=used_names, variant_index=variant_idx,
+                    )
                 data_source = f"binance_{tf}_{lookback_days}d"
 
                 variant = StrategyParams(

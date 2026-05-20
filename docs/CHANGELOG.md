@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.3.0] — 2026-05-20
+
+### Added
+- **Modalità TEST/LIVE (TASK-431)**: Isolamento sicuro a runtime delle operazioni.
+- **Separazione dati**: Colonna `trading_mode` su `strategies`, `trades` e `operation_logs` con applicazione automatica di filtri repository.
+- **ExchangeFactory centralizzato**: Configurazione a runtime delle credenziali API e URL (testnet vs produzione) con reconnect dinamico.
+- **Topbar TEST/LIVE e Toggle UI**: Interfaccia grafica con indicatore di stato visivo e toggle di commutazione con popup di conferma di sicurezza.
+- **Endpoint `/api/config/mode`**: Nuove API REST `GET` e `POST` protette per leggere e commutare la modalità operativa corrente.
+
 ## [1.2.9] — 2026-05-20
 
 ### Added

@@ -127,7 +127,12 @@ class ExecutionEngine:
         if not self.check_exit_conditions(position, current_price):
             return
         try:
-            result: OrderResult = await self.exchange.close_order(position)
+            # close_position si aspetta symbol, side e quantity
+            result: OrderResult = await self.exchange.close_position(
+                symbol=position.symbol,
+                side=position.direction,
+                quantity=position.quantity
+            )
             pnl_pct = ((current_price - position.entry_price) / position.entry_price * 100
                        if position.direction == "BUY"
                        else (position.entry_price - current_price) / position.entry_price * 100)

@@ -439,4 +439,20 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
 
-**Ultima modifica:** 2026-05-20 — Cline (Diversificazione strategie: 3→8 template, nomi descrittivi, filtri rilassati)
+### v1.3.0 — 2026-05-20
+
+**Milestone:** Modalità TEST/LIVE, separazione dati, API key, toggle UI (TASK-431)
+
+**Completato:**
+- ✅ **Separazione dati TEST/LIVE**: Aggiunta colonna `trading_mode` a `strategies`, `trades` e `operation_logs` con filtri automatici nelle query di repository.
+- ✅ **ExchangeFactory centralizzato**: Gestione dinamica delle chiavi API (live vs testnet) e reconnect a runtime senza riavvio del server.
+- ✅ **Toggle UI e indicatore topbar**: Visualizzazione dello stato attuale (TEST/LIVE) nella barra di navigazione con switcher sicuro (conferma obbligatoria per passare a LIVE).
+- ✅ **Endpoint `/api/config/mode`**: Permette la lettura e il cambio della modalità operativa a runtime, con protezioni di sicurezza.
+
+**Decisioni chiave:**
+- La modalità LIVE richiede l'abilitazione esplicita tramite variabile d'ambiente `ALLOW_LIVE_MODE=true` per prevenire attivazioni accidentali.
+- Il database usa la colonna `trading_mode` per isolare in modo sicuro i trade e le strategie reali da quelle di test.
+
+---
+
+**Ultima modifica:** 2026-05-20 — Antigravity (Modalità TEST/LIVE completata e archiviata [TASK-431])

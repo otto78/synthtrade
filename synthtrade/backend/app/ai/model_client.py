@@ -2,6 +2,7 @@ import asyncio
 import httpx
 import logging
 from app.ai.schemas import ModelResponse
+from app.ai.retry import async_retry
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class ModelClient:
         self.max_retries = max_retries
         self.backoff_base = backoff_base
 
+    @async_retry(max_retries=3, backoff_base=2.0, exceptions=(httpx.TimeoutException, httpx.HTTPStatusError))
     async def _call_model(self, model: str, system: str, user: str) -> ModelResponse:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -45,33 +47,22 @@ class ModelClient:
             ],
         }
 
-        last_error: Exception | None = None
-        for attempt in range(self.max_retries):
+        async with httpx.AsyncClient(timeout=self.timeout) as http:
+            resp = await http.post(f"{self.api_base_url}/chat/completions",
+                                    headers=headers, json=body)
             try:
-                async with httpx.AsyncClient(timeout=self.timeout) as http:
-                    resp = await http.post(f"{self.api_base_url}/chat/completions",
-                                           headers=headers, json=body)
-                    resp.raise_for_status()
-                    data = resp.json()
-                    return ModelResponse(
-                        content=data["choices"][0]["message"]["content"],
-                        model=data.get("model", model),
-                        tokens_used=data.get("usage", {}).get("total_tokens", 0),
-                    )
-            except httpx.TimeoutException as e:
-                raise ModelTimeoutError(f"Timeout on {model}") from e
+                resp.raise_for_status()
+                data = resp.json()
+                return ModelResponse(
+                    content=data["choices"][0]["message"]["content"],
+                    model=data.get("model", model),
+                    tokens_used=data.get("usage", {}).get("total_tokens", 0),
+                )
             except httpx.HTTPStatusError as e:
                 if e.response.status_code in (429, 503):
-                    last_error = e
-                    wait = self.backoff_base ** attempt
-                    logger.warning(f"{model} rate limited, retry {attempt+1} in {wait}s")
-                    await asyncio.sleep(wait)
-                    continue
+                    # Re-raise per trigger del decoratore
+                    raise e
                 raise ModelClientError(f"HTTP {e.response.status_code} on {model}") from e
-            except Exception as e:
-                raise ModelClientError(str(e)) from e
-
-        raise ModelClientError(f"Max retries exceeded for {model}") from last_error
 
     async def call_with_fallback(self, system: str, user: str) -> ModelResponse:
         all_models = self.cascade_models + [self.fallback_model]
@@ -82,7 +73,7 @@ class ModelClient:
                 result = await self._call_model(model, system, user)
                 logger.info(f"AI response from {model}")
                 return result
-            except (ModelClientError, ModelTimeoutError) as e:
+            except (ModelClientError, ModelTimeoutError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
                 logger.warning(f"Model {model} failed: {e}")
                 last_error = e
                 continue

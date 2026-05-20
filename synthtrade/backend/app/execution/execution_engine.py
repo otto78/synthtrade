@@ -5,16 +5,18 @@ from app.execution.schemas import (
 from app.execution.risk_manager import RiskManager
 from app.execution.order_tracker import OrderTracker
 from app.services.stop_loss_service import StopLossService
+from app.execution.signal_resolver import SignalResolverProtocol, DefaultSignalResolver
 
 class ExecutionEngine:
     def __init__(self, risk_manager: RiskManager, order_tracker: OrderTracker,
-                 exchange, sl_service: StopLossService, logger=None, signal_resolver=None):
+                 exchange, sl_service: StopLossService, logger=None, 
+                 signal_resolver: SignalResolverProtocol = None):
         self.risk_manager = risk_manager
         self.order_tracker = order_tracker
         self.exchange = exchange
         self.sl_service = sl_service
         self.logger = logger or logging.getLogger(__name__)
-        self.signal_resolver = signal_resolver
+        self.signal_resolver = signal_resolver or DefaultSignalResolver()
 
     async def _broadcast_trade_opened(self, strategy_id: str, trade_id: str,
                                       symbol: str, direction: str, price: float,
@@ -44,6 +46,30 @@ class ExecutionEngine:
             )
         except Exception as e:
             self.logger.warning(f"Failed to broadcast trade_closed: {e}")
+
+    async def process_signals(self, signals: list[Signal], balance: float,
+                              current_drawdown_pct: float) -> None:
+        """
+        TASK-217: Processa una lista di segnali risolvendoli tramite il resolver.
+        """
+        if not signals:
+            return
+
+        # Recupera tutte le posizioni aperte per il contesto di risoluzione
+        open_positions = self.order_tracker.get_open_positions()
+        
+        # Risoluzione segnali (filtro/priorità)
+        resolved_signals = self.signal_resolver.resolve(signals, open_positions)
+        
+        for signal in resolved_signals:
+            # Filtra le posizioni per il simbolo specifico per il risk manager
+            symbol_positions = [p for p in open_positions if p.symbol == signal.symbol]
+            await self.process_signal(
+                signal=signal,
+                balance=balance,
+                open_positions=symbol_positions,
+                current_drawdown_pct=current_drawdown_pct
+            )
 
     async def process_signal(self, signal: Signal, balance: float,
                              open_positions: list[PositionSnapshot],

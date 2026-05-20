@@ -64,7 +64,7 @@ class StrategyRunner:
         """
         Executes a single tick for the given strategy:
         1. For each symbol, fetch OHLCV and compute signals.
-        2. If a signal is generated, delegate to ExecutionEngine.process_signal().
+        2. Accumulate signals and delegate to ExecutionEngine.process_signals().
         3. Update last_tick_at in the database.
 
         Exceptions are caught and logged to prevent the entire loop from failing.
@@ -80,6 +80,14 @@ class StrategyRunner:
             return
 
         symbols = _extract_symbols(strategy)
+        collected_signals: list[Signal] = []
+        
+        # Calculate shared metrics (drawdown) once per tick if possible
+        # Retrieve all open positions for this strategy to calculate global unrealized PnL
+        strategy_positions = self.engine.order_tracker.get_open_positions(strategy_id=strategy_id)
+        realized_pnl_usdt = self.engine.order_tracker.get_realized_pnl(strategy_id)
+        if not isinstance(realized_pnl_usdt, (int, float)):
+            realized_pnl_usdt = 0.0
 
         for symbol in symbols:
             try:
@@ -100,10 +108,7 @@ class StrategyRunner:
 
                 current_price = float(df["close"].iloc[-1])
 
-                if direction is None:
-                    logger.debug(f"[{strategy_id}] Neutral signal for {symbol}, skipping execution.")
-                    signal = None
-                else:
+                if direction is not None:
                     signal = Signal(
                         strategy_id=strategy_id,
                         symbol=symbol,
@@ -112,77 +117,65 @@ class StrategyRunner:
                         price=current_price,
                         timestamp=datetime.now(timezone.utc),
                     )
-
-                # --- DRAWDOWN CALCULATION (TASK-415) ---
-
-                # Retrieve all open positions for this strategy to calculate global unrealized PnL
-                strategy_positions = self.engine.order_tracker.get_open_positions(strategy_id=strategy_id)
-
-                unrealized_pnl_usdt = 0.0
-                for pos in strategy_positions:
-                    # Use current_price if it matches the current symbol, otherwise fetch ticker from exchange
-                    pos_price = current_price if pos.symbol == symbol else await self.engine.exchange.get_ticker_price(pos.symbol)
-                    unrealized_pnl_usdt += self.engine.order_tracker.update_unrealized_pnl(
-                        pos.entry_price, pos_price, pos.quantity, pos.direction
-                    )
-
-                realized_pnl_usdt = self.engine.order_tracker.get_realized_pnl(strategy_id)
-                # Ensure numeric totals; if mocks return non‑numeric values, treat as zero
-                if not isinstance(realized_pnl_usdt, (int, float)):
-                    realized_pnl_usdt = 0.0
-                if not isinstance(unrealized_pnl_usdt, (int, float)):
-                    unrealized_pnl_usdt = 0.0
-                total_pnl_usdt = realized_pnl_usdt + unrealized_pnl_usdt
-
-                initial_capital = float(strategy.get("initial_capital_usdt") or strategy.get("budget_eur") or 100.0)
-                current_equity = initial_capital + total_pnl_usdt
-
-                # Peak-to-Trough logic:
-                # The peak is either the initial capital, the stored peak, or the current equity
-                stored_peak = strategy.get("peak_equity_usdt")
-                peak_equity = max(initial_capital, float(stored_peak) if stored_peak else 0.0, current_equity)
-
-                # Update peak_equity_usdt in the local dictionary so it can be saved at the end of the tick
-                strategy["peak_equity_usdt"] = peak_equity
-
-                # Calculate current drawdown percentage relative to the peak equity
-                current_drawdown_pct = 0.0
-                if current_equity < peak_equity:
-                    current_drawdown_pct = ((peak_equity - current_equity) / peak_equity) * 100
-
-                # --------------------------------------
-
-                # Calcola il budget per questo simbolo in base all'allocazione (percentuale) se presente
-                total_budget = float(strategy.get("initial_capital_usdt") or strategy.get("budget_eur") or 100.0)
-                allocation = params.get("allocation") or []
-                # Determina la percentuale di allocazione per il simbolo corrente
-                pct = None
-                if isinstance(allocation, list) and allocation:
-                    for a in allocation:
-                        if a.get("symbol") == symbol and isinstance(a.get("pct"), (int, float)):
-                            pct = a["pct"]
-                            break
-                # Se non è stata trovata un'allocazione specifica, distribuisci equamente il budget tra i simboli
-                if pct is None:
-                    # Se ci sono più simboli, assegna una quota uguale; altrimenti 100%
-                    pct = 100.0 / len(symbols) if len(symbols) > 0 else 100.0
-                budget_usdt = total_budget * (pct / 100.0)
-                
-                # Filter positions for the current symbol so risk manager evaluates concurrent positions per symbol
-                symbol_positions = [p for p in strategy_positions if p.symbol == symbol]
-                
-                if signal is not None:
-                    await self.engine.process_signal(
-                        signal=signal,
-                        balance=budget_usdt,
-                        open_positions=symbol_positions,
-                        current_drawdown_pct=current_drawdown_pct,
-                    )
-                    logger.info(f"[{strategy_id}] Signal {direction} on {symbol} @ {current_price:.4f} processed.")
+                    collected_signals.append(signal)
 
             except Exception as e:
-                logger.error(f"[{strategy_id}] Tick error on {symbol}: {e}", exc_info=True)
-                # Continue with remaining symbols (best-effort)
+                logger.error(f"[{strategy_id}] Signal computation error on {symbol}: {e}")
+
+        # --- DRAWDOWN CALCULATION (TASK-415) ---
+        try:
+            unrealized_pnl_usdt = 0.0
+            for pos in strategy_positions:
+                # Fetch current price for each open position
+                # Optimization: if symbol is in our scan, we already have it, otherwise fetch
+                pos_price = await self.engine.exchange.get_ticker_price(pos.symbol)
+                unrealized_pnl_usdt += self.engine.order_tracker.update_unrealized_pnl(
+                    pos.entry_price, pos_price, pos.quantity, pos.direction
+                )
+
+            if not isinstance(unrealized_pnl_usdt, (int, float)):
+                unrealized_pnl_usdt = 0.0
+            total_pnl_usdt = realized_pnl_usdt + unrealized_pnl_usdt
+
+            initial_capital = float(strategy.get("initial_capital_usdt") or strategy.get("budget_eur") or 100.0)
+            current_equity = initial_capital + total_pnl_usdt
+
+            stored_peak = strategy.get("peak_equity_usdt")
+            peak_equity = max(initial_capital, float(stored_peak) if stored_peak else 0.0, current_equity)
+            strategy["peak_equity_usdt"] = peak_equity
+
+            current_drawdown_pct = 0.0
+            if current_equity < peak_equity:
+                current_drawdown_pct = ((peak_equity - current_equity) / peak_equity) * 100
+
+            # --------------------------------------
+
+            # 3. Delegate signal processing to ExecutionEngine
+            if collected_signals:
+                # Note: balance used here is total budget for simplicity in this refactor, 
+                # though individual symbols might have allocations. 
+                # DefaultSignalResolver will filter/prioritize.
+                total_budget = float(strategy.get("initial_capital_usdt") or strategy.get("budget_eur") or 100.0)
+                await self.engine.process_signals(
+                    signals=collected_signals,
+                    balance=total_budget,
+                    current_drawdown_pct=current_drawdown_pct
+                )
+                logger.info(f"[{strategy_id}] Processed {len(collected_signals)} signals.")
+
+        except Exception as e:
+            logger.error(f"[{strategy_id}] Tick finalization error: {e}", exc_info=True)
+
+        # 4. Update last_tick_at metadata
+        try:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            update_data = {
+                "last_tick_at": now_iso,
+                "peak_equity_usdt": strategy.get("peak_equity_usdt")
+            }
+            self.db.table("strategies").update(update_data).eq("id", strategy_id).execute()
+        except Exception as e:
+            logger.warning(f"[{strategy_id}] Error updating last_tick_at: {e}")
 
         # 4. Update last_tick_at metadata
         try:

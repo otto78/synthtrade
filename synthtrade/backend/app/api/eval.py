@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from app.dependencies import get_current_user
 from app.ai.cache import EvalCache
 from app.config import settings
+from app.services.market_data_service import MarketDataService
 import logging
 
 router = APIRouter(prefix="/strategies", tags=["eval"])

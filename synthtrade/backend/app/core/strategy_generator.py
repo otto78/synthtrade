@@ -4,6 +4,7 @@ from itertools import product
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Generator, Tuple
+import pandas as pd
 from app.execution.schemas import StrategyRequest
 from app.ai.request_enricher import enrich_request_with_ai
 from app.services.market_data_service import MarketDataService
@@ -218,7 +219,7 @@ async def generate_for_request(req: StrategyRequest, md_service: MarketDataServi
     lookback_days = 60
 
     # TASK-FIX-003: Cache OHLCV — una sola chiamata per (pair, timeframe)
-    ohlcv_cache: dict[tuple, object] = {}
+    ohlcv_cache: dict[tuple[str, str], pd.DataFrame] = {}
     for pair in pairs:
         for tf in timeframes:
             key = (pair, tf)
@@ -232,7 +233,7 @@ async def generate_for_request(req: StrategyRequest, md_service: MarketDataServi
                 logger.warning(f"OHLCV fetch fallito {pair}/{tf}: {e}")
 
     fetch_had_data = any(
-        df is not None and not (hasattr(df, "empty") and df.empty)
+        df is not None and not df.empty
         for df in ohlcv_cache.values()
     )
 
@@ -248,7 +249,7 @@ async def generate_for_request(req: StrategyRequest, md_service: MarketDataServi
 
         for pair, tf, combo in product(pairs, timeframes, combos):
             ohlcv = ohlcv_cache.get((pair, tf))
-            if ohlcv is None or (hasattr(ohlcv, 'empty') and ohlcv.empty):
+            if ohlcv is None or ohlcv.empty:
                 continue
 
             params_dict = dict(zip(keys, combo))

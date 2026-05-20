@@ -1,23 +1,13 @@
 from app.ai.schemas import EvalPromptInput
+from pathlib import Path
 
 _SYSTEM_PROMPT = """You are a quantitative analyst AI specializing in crypto trading strategy evaluation.
 Your task is to evaluate a trading strategy based on backtest metrics and market context.
 You MUST respond with a valid JSON object only, no markdown, no explanation outside JSON.
 Required fields: score (float 0-1), verdict (PROMOTE|HOLD|DEMOTE), reasoning (string), confidence (float 0-1)."""
 
-_PROMPT_TEMPLATE = """## Market Context
-Symbol: {symbol} | Timeframe: {timeframe} | Regime: {regime}
-Price range: {price_min:.0f} – {price_max:.0f} | Last: {price_last:.0f}
-Volatility: {volatility_pct:.2f}% | Trend: {trend_pct:+.2f}%
-
-## Strategy: {title}
-Template: {template} | Params: {params}
-PnL: {pnl_pct:+.2f}% | Win rate: {win_rate:.0%} | Sharpe: {sharpe:.2f}
-Max drawdown: {max_drawdown_pct:.2f}% | Trades: {num_trades} | Score: {score:.4f}
-
-## Task
-Evaluate this strategy. Respond ONLY with JSON:
-{{"score": <0.0-1.0>, "verdict": "<PROMOTE|HOLD|DEMOTE>", "reasoning": "<explanation>", "confidence": <0.0-1.0>}}"""
+_TEMPLATE_PATH = Path(__file__).parent / "templates" / "market_context.jinja2"
+_PROMPT_TEMPLATE = _TEMPLATE_PATH.read_text(encoding="utf-8")
 
 
 def build_system_prompt() -> str:

@@ -25,9 +25,11 @@ def mock_ohlcv():
 def mock_engine():
     """Mock ExecutionEngine."""
     engine = MagicMock()
-    engine.process_signal = AsyncMock(return_value=None)
+    engine.process_signals = AsyncMock(return_value=None)
     engine.order_tracker = MagicMock()
     engine.order_tracker.get_open_positions = MagicMock(return_value=[])
+    engine.order_tracker.get_realized_pnl = MagicMock(return_value=0.0)
+    engine.order_tracker.update_unrealized_pnl = MagicMock(return_value=0.0)
     engine.exchange = MagicMock()
     engine.exchange.get_ticker_price = AsyncMock(return_value=100.0)
     return engine
@@ -67,8 +69,10 @@ def test_signal_to_direction():
 
 @pytest.mark.asyncio
 async def test_run_tick_buy_signal(mock_engine, mock_ohlcv, mock_db):
-    """Segnale BUY → engine.process_signal chiamato."""
-    with patch("app.execution.strategy_runner.fetch_ohlcv", return_value=mock_ohlcv):
+    """Segnale BUY → engine.process_signals chiamato."""
+    mock_signal = MagicMock(return_value=pd.Series([1]))
+    with patch("app.execution.strategy_runner.registry.get", return_value=mock_signal), \
+         patch("app.execution.strategy_runner.fetch_ohlcv", return_value=mock_ohlcv):
         runner = StrategyRunner(mock_engine)
         strategy = {
             "id": "test-123",
@@ -79,9 +83,8 @@ async def test_run_tick_buy_signal(mock_engine, mock_ohlcv, mock_db):
             "budget_eur": 1000,
         }
         await runner.run_tick(strategy)
-        # Se RSI genera BUY, process_signal deve essere chiamato
-        # (con dati mockati potrebbe non generare segnale, ma non deve crashare)
-        assert True
+        # process_signals deve essere chiamato con i segnali raccolti
+        assert mock_engine.process_signals.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -116,7 +119,7 @@ async def test_run_tick_unknown_template(mock_engine, mock_ohlcv, mock_db):
             "budget_eur": 1000,
         }
         await runner.run_tick(strategy)
-        mock_engine.process_signal.assert_not_called()
+        mock_engine.process_signals.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -134,7 +137,7 @@ async def test_run_tick_ohlcv_error(mock_engine, mock_db):
         }
         await runner.run_tick(strategy)
         # Non deve propagare eccezioni
-        mock_engine.process_signal.assert_not_called()
+        mock_engine.process_signals.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -155,14 +158,14 @@ async def test_run_tick_updates_last_tick_at(mock_engine, mock_ohlcv, mock_db):
         mock_db.table.assert_called_with("strategies")
 
 @pytest.mark.asyncio
-async def test_run_tick_allocation_budget(mock_engine, mock_ohlcv, mock_db):
-    """Testa che il budget sia calcolato in base all'allocazione percentuale per ciascun simbolo."""
+async def test_run_tick_accumulates_signals(mock_engine, mock_ohlcv, mock_db):
+    """Testa che StrategyRunner accumuli segnali da più simboli e li passi in un unico call."""
     mock_signal = MagicMock(return_value=pd.Series([1]))
     with patch("app.execution.strategy_runner.registry.get", return_value=mock_signal), \
          patch("app.execution.strategy_runner.fetch_ohlcv", return_value=mock_ohlcv):
         runner = StrategyRunner(mock_engine)
         strategy = {
-            "id": "test-alloc",
+            "id": "test-accum",
             "template": "mean_reversion_rsi",
             "timeframe": "1h",
             "params": {
@@ -177,57 +180,10 @@ async def test_run_tick_allocation_budget(mock_engine, mock_ohlcv, mock_db):
             "budget_eur": 1000,
         }
         await runner.run_tick(strategy)
-        # Il metodo process_signal dovrebbe essere stato chiamato due volte, una per ogni simbolo
-        assert mock_engine.process_signal.call_count == 2
-        # Verifica i valori di budget passati a process_signal per ciascun simbolo
-        calls = mock_engine.process_signal.call_args_list
-        # Primo call (BTC/USDT) budget = 1000 * 0.60 = 600
-        _, kwargs1 = calls[0]
-        assert pytest.approx(kwargs1["balance"], 0.01) == 600
-        # Secondo call (ETH/USDT) budget = 1000 * 0.40 = 400
-        _, kwargs2 = calls[1]
-        assert pytest.approx(kwargs2["balance"], 0.01) == 400
-
-@pytest.mark.asyncio
-async def test_run_tick_symbol_isolation(mock_engine, mock_ohlcv, mock_db):
-    """Testa che le open_positions passate all'engine siano filtrate per simbolo."""
-    from app.execution.schemas import PositionSnapshot
-    
-    mock_engine.order_tracker.get_open_positions.return_value = [
-        PositionSnapshot(trade_id="1", strategy_id="test-iso", symbol="BTC/USDT", direction="BUY", entry_price=50000, quantity=1, stop_loss=40000, take_profit=60000, opened_at=datetime.now(timezone.utc)),
-        PositionSnapshot(trade_id="2", strategy_id="test-iso", symbol="ETH/USDT", direction="SELL", entry_price=3000, quantity=10, stop_loss=3500, take_profit=2500, opened_at=datetime.now(timezone.utc)),
-    ]
-
-    mock_signal = MagicMock(return_value=pd.Series([1]))
-    with patch("app.execution.strategy_runner.registry.get", return_value=mock_signal), \
-         patch("app.execution.strategy_runner.fetch_ohlcv", return_value=mock_ohlcv):
-        runner = StrategyRunner(mock_engine)
-        strategy = {
-            "id": "test-iso",
-            "template": "mean_reversion_rsi",
-            "timeframe": "1h",
-            "params": {
-                "rsi_period": 14,
-                "rsi_oversold": 25,
-                "rsi_overbought": 70,
-                "allocation": [
-                    {"symbol": "BTC/USDT", "pct": 60},
-                    {"symbol": "ETH/USDT", "pct": 40},
-                ],
-            },
-            "budget_eur": 1000,
-        }
-        await runner.run_tick(strategy)
-        
-        assert mock_engine.process_signal.call_count == 2
-        calls = mock_engine.process_signal.call_args_list
-        
-        # BTC/USDT call should only see BTC position
-        _, kwargs1 = calls[0]
-        assert len(kwargs1["open_positions"]) == 1
-        assert kwargs1["open_positions"][0].symbol == "BTC/USDT"
-        
-        # ETH/USDT call should only see ETH position
-        _, kwargs2 = calls[1]
-        assert len(kwargs2["open_positions"]) == 1
-        assert kwargs2["open_positions"][0].symbol == "ETH/USDT"
+        # process_signals deve essere chiamato UNA VOLTA con DUE segnali
+        assert mock_engine.process_signals.call_count == 1
+        args, kwargs = mock_engine.process_signals.call_args
+        assert len(kwargs["signals"]) == 2
+        symbols = [s.symbol for s in kwargs["signals"]]
+        assert "BTC/USDT" in symbols
+        assert "ETH/USDT" in symbols

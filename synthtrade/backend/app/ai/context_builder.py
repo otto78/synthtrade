@@ -1,9 +1,7 @@
 import pandas as pd
 import numpy as np
 from app.ai.schemas import MarketContext, OhlcvSummary
-
-_VOLATILE_ATR_THRESHOLD = 0.025   # ATR/price > 2.5% → volatile
-_TRENDING_SLOPE_THRESHOLD = 0.15  # regressione lineare R² > 0.15 → trending
+from app.config import settings
 
 
 def build_ohlcv_summary(df: pd.DataFrame, symbol: str, timeframe: str,
@@ -30,24 +28,26 @@ def build_ohlcv_summary(df: pd.DataFrame, symbol: str, timeframe: str,
     )
 
 
-def detect_market_regime(df: pd.DataFrame) -> str:
+def detect_market_regime(df: pd.DataFrame, 
+                        volatile_threshold: float = settings.MARKET_REGIME_VOLATILE_THRESHOLD,
+                        trending_threshold: float = settings.MARKET_REGIME_TRENDING_THRESHOLD) -> str:
     close = df["close"]
     atr = (df["high"] - df["low"]).mean() if "high" in df.columns else close.std()
     atr_ratio = atr / close.mean()
 
-    if atr_ratio > _VOLATILE_ATR_THRESHOLD:
+    if atr_ratio > volatile_threshold:
         # Controlla se c'è anche trend
         x = np.arange(len(close))
         slope, _ = np.polyfit(x, close.values, 1)
         r2 = np.corrcoef(x, close.values)[0, 1] ** 2
-        if r2 > _TRENDING_SLOPE_THRESHOLD:
+        if r2 > trending_threshold:
             return "trending"
         return "volatile"
 
     # Bassa volatilità — controlla trend
     x = np.arange(len(close))
     r2 = np.corrcoef(x, close.values)[0, 1] ** 2
-    if r2 > _TRENDING_SLOPE_THRESHOLD:
+    if r2 > trending_threshold:
         return "trending"
     return "ranging"
 

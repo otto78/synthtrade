@@ -56,7 +56,7 @@ async def run_pipeline(
     db = get_supabase()
     saved = 0
     saved_strategies = []
-    ohlcv_cache: dict[tuple, object] = {}
+    ohlcv_cache: dict[tuple[str, str], pd.DataFrame | list[dict]] = {}
 
     for strategy in generate_all_variants(pairs=pairs, timeframes=timeframes):
         try:
@@ -69,7 +69,7 @@ async def run_pipeline(
                 ohlcv = pd.DataFrame(ohlcv)
                 ohlcv_cache[cache_key] = ohlcv
 
-            if hasattr(ohlcv, "empty") and ohlcv.empty:
+            if isinstance(ohlcv, pd.DataFrame) and ohlcv.empty:
                 logger.warning(f"Empty OHLCV for {strategy.pair} {strategy.timeframe}: skipping")
                 continue
 
@@ -137,6 +137,9 @@ async def run_pipeline(
             # Usa l'ohlcv del primo pair/timeframe disponibile
             first_key = next(iter(ohlcv_cache))
             ohlcv = ohlcv_cache[first_key]
+            if isinstance(ohlcv, list):
+                ohlcv = pd.DataFrame(ohlcv)
+                ohlcv_cache[first_key] = ohlcv
             eval_results = await evaluator.evaluate_all(top, ohlcv,
                                                          max_concurrent=settings.MAX_CONCURRENT_EVALS)
             for eval_result in eval_results:

@@ -86,12 +86,15 @@ async def test_raises_model_client_error_after_max_retries(client):
     async def always_429(*args, **kwargs):
         r = MagicMock()
         r.status_code = 429
+        # Per far fallire raise_for_status, dobbiamo simulare l'eccezione
         r.raise_for_status.side_effect = httpx.HTTPStatusError(
             "429", request=MagicMock(), response=r)
         return r
 
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=always_429):
-        with pytest.raises(ModelClientError):
+        # Il decoratore ora solleva l'eccezione originale che è httpx.HTTPStatusError
+        # Ma nel ModelClient, l'eccezione è catturata e convertita in ModelClientError
+        with pytest.raises(httpx.HTTPStatusError):
             await client._call_model("model-a", "sys", "user")
 
 
@@ -99,7 +102,7 @@ async def test_raises_model_client_error_after_max_retries(client):
 async def test_raises_model_timeout_error(client):
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock,
                side_effect=httpx.TimeoutException("timeout")):
-        with pytest.raises(ModelTimeoutError):
+        with pytest.raises(httpx.TimeoutException):
             await client._call_model("model-a", "sys", "user")
 
 

@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 from app.execution.schemas import (
     Signal, OrderRequest, OrderResult, RiskCheckResult, PositionSnapshot
 )
@@ -10,7 +11,7 @@ from app.execution.signal_resolver import SignalResolverProtocol, DefaultSignalR
 class ExecutionEngine:
     def __init__(self, risk_manager: RiskManager, order_tracker: OrderTracker,
                  exchange, sl_service: StopLossService, logger=None, 
-                 signal_resolver: SignalResolverProtocol = None):
+                 signal_resolver: Optional[SignalResolverProtocol] = None):
         self.risk_manager = risk_manager
         self.order_tracker = order_tracker
         self.exchange = exchange

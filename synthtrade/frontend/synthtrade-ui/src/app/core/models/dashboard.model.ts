@@ -19,10 +19,9 @@ export interface DashboardStats {
   engine_status: string;
   active_strategies_count?: number;
   open_trades_count?: number;
+  closed_trades_count?: number;
+  closed_trades_pnl?: number;
   total_active_pnl_pct?: number;
-  total_strategy_pnl_eur?: number;
-  portfolio_pnl_eur?: number;
-  portfolio_pnl_pct?: number;
 }
 
 export interface BalanceSnapshot {

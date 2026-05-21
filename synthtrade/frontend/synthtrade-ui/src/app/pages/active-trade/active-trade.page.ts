@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, inject, signal, computed } from '@angular/core';
-import { CommonModule, NgClass, NgForOf, NgIf, DatePipe, DecimalPipe } from '@angular/common';
+import { NgClass, NgForOf, NgIf, DecimalPipe } from '@angular/common';
 import { Subscription, switchMap, forkJoin, of, catchError, map } from 'rxjs';
 import { DashboardService } from '../../core/services/dashboard.service';
 import { StrategyService, ActivePnlItem, MonitorStrategyInfo } from '../../core/services/strategy.service';
@@ -9,7 +9,8 @@ import {
   WsStrategyPnlUpdatedPayload,
   WsStrategyStoppedPayload,
   WsTradeOpenedPayload,
-  WsTradeClosedPayload
+  WsTradeClosedPayload,
+  WsPricePayload
 } from '../../core/models/ws-message.model';
 import { EmptyStateComponent } from '../../shared/components/empty-state/empty-state.component';
 import { ActiveTradeRowComponent, ActiveTradeRowData } from '../../shared/components/active-trade-row/active-trade-row.component';
@@ -37,13 +38,16 @@ interface StrategyActiveInfo {
   pnl_eur: number;
   open_trades: TradeDetail[];
   closed_trades: TradeDetail[];
-  equity_curve: number[];
+  equity_curve: { value: number; height: number }[];
+  initial_price: number | null;
+  current_price: number | null;
+  hodl_value_usdt: number | null;
 }
 
 @Component({
   selector: 'app-active-trade',
   standalone: true,
-  imports: [NgClass, NgIf, NgForOf, EmptyStateComponent, DatePipe, DecimalPipe, ActiveTradeRowComponent],
+  imports: [NgClass, NgIf, NgForOf, EmptyStateComponent, DecimalPipe, ActiveTradeRowComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <ng-container *ngIf="strategies().length === 0; else activeTradeList">
@@ -87,6 +91,12 @@ interface StrategyActiveInfo {
                     <span class="ss-label">Capitale</span>
                     <span class="ss-value">{{ s.initial_capital_usdt | number:'1.0-0' }} USDT</span>
                   </div>
+                  <div class="ss-item" *ngIf="s.hodl_value_usdt">
+                    <span class="ss-label">Buy & Hold</span>
+                    <span class="ss-value" [ngClass]="{ positive: s.hodl_value_usdt > s.initial_capital_usdt, negative: s.hodl_value_usdt < s.initial_capital_usdt }">
+                      {{ s.hodl_value_usdt | number:'1.0-2' }} USDT
+                    </span>
+                  </div>
                   <div class="ss-item">
                     <span class="ss-label">P&L</span>
                     <span class="ss-value" [ngClass]="{ positive: s.pnl_pct > 0, negative: s.pnl_pct < 0 }">
@@ -119,40 +129,13 @@ interface StrategyActiveInfo {
                   </div>
                 </div>
 
-                <div *ngIf="s.closed_trades.length > 0" class="trades-section">
-                  <h4 class="subsection-title">🔵 Trade Chiusi</h4>
-                  <div class="trades-table">
-                    <div class="table-header">
-                      <span>Data</span>
-                      <span>Asset</span>
-                      <span>Direzione</span>
-                      <span>P&L</span>
-                      <span>Tipo</span>
-                      <span>Stato</span>
-                    </div>
-                    <ng-container *ngFor="let trade of s.closed_trades; trackBy: trackByTrade">
-                      <div class="table-row">
-                        <span class="cell-date">{{ trade.executed_at | date:'dd/MM HH:mm' }}</span>
-                        <span class="cell-asset">{{ trade.symbol }}</span>
-                        <span class="cell-side" [ngClass]="trade.side.toLowerCase()">{{ trade.side }}</span>
-                        <span class="cell-pnl" [ngClass]="{ positive: trade.pnl_pct > 0, negative: trade.pnl_pct < 0 }">
-                          {{ trade.pnl_pct | number:'1.2-2' }}%
-                        </span>
-                        <span class="cell-type">{{ trade.trade_type }}</span>
-                        <span class="cell-status">
-                          <span class="status-dot closed"></span>
-                          {{ trade.status }}
-                        </span>
-                      </div>
-                    </ng-container>
-                  </div>
-                </div>
+
 
                 <div *ngIf="s.equity_curve.length > 1" class="chart-section">
                   <h4 class="subsection-title">📈 Equity Curve</h4>
                   <div class="equity-viz">
                     <div class="curve-points">
-                      <div *ngFor="let point of s.equity_curve; index as i" class="point-bar" [style.height.%]="point" [title]="point.toFixed(2) + '%'">
+                      <div *ngFor="let point of s.equity_curve; index as i" class="point-bar" [style.height.%]="point.height" [title]="point.value.toFixed(2)">
                       </div>
                     </div>
                   </div>
@@ -235,8 +218,23 @@ export class ActiveTradePage implements OnInit, OnDestroy {
   private wsService = inject(WsService);
   private sub = new Subscription();
 
-  strategies = signal<StrategyActiveInfo[]>([]);
-  private currentStrategies: StrategyActiveInfo[] = [];
+  private currentStrategies = signal<StrategyActiveInfo[]>([]);
+  private pricesByPair = signal<Record<string, number>>({});
+
+  strategies = computed(() => {
+    const list = this.currentStrategies().filter(s => s.open_trades.length > 0);
+    const prices = this.pricesByPair();
+    return list.map(s => {
+      const currentPrice = prices[s.pair] || null;
+      let hodl_value_usdt = null;
+      if (s.initial_price && currentPrice) {
+        // HODL value = (Budget / InitialPrice) * CurrentPrice
+        const quantity = s.initial_capital_usdt / s.initial_price;
+        hodl_value_usdt = quantity * currentPrice;
+      }
+      return { ...s, current_price: currentPrice, hodl_value_usdt };
+    });
+  });
 
   totalOpenTrades = computed(() =>
     this.strategies().reduce((acc, s) => acc + s.open_trades.length, 0)
@@ -275,8 +273,7 @@ export class ActiveTradePage implements OnInit, OnDestroy {
         }),
         catchError(() => of([] as MonitorStrategyInfo[]))
       ).subscribe(monitorData => {
-        this.currentStrategies = monitorData.map(m => this.buildStrategyInfo(m));
-        this.strategies.set(this.currentStrategies);
+        this.currentStrategies.set(monitorData.map(m => this.buildStrategyInfo(m)));
       })
     );
   }
@@ -312,6 +309,14 @@ export class ActiveTradePage implements OnInit, OnDestroy {
         strategy_id: t.strategy_id || monitor.strategy?.id || ''
       }));
 
+    const rawCurve = monitor.stats?.equity_curve || [100];
+    const minVal = Math.min(...rawCurve);
+    const maxVal = Math.max(...rawCurve);
+    const range = maxVal - minVal;
+    const paddedMin = range === 0 ? minVal - 1 : minVal - (range * 0.1);
+    const paddedMax = range === 0 ? maxVal + 1 : maxVal + (range * 0.1);
+    const paddedRange = paddedMax - paddedMin;
+
     return {
       id: monitor.strategy?.id || '',
       title: monitor.strategy?.title || '',
@@ -324,7 +329,13 @@ export class ActiveTradePage implements OnInit, OnDestroy {
       pnl_eur: monitor.stats?.total_pnl_eur || 0,
       open_trades: openTrades,
       closed_trades: closedTrades,
-      equity_curve: monitor.stats?.equity_curve || [100]
+      equity_curve: rawCurve.map(val => ({
+        value: val,
+        height: Math.max(2, ((val - paddedMin) / paddedRange) * 100)
+      })),
+      initial_price: monitor.stats?.initial_price ?? null,
+      current_price: null,
+      hodl_value_usdt: null
     };
   }
 
@@ -333,7 +344,7 @@ export class ActiveTradePage implements OnInit, OnDestroy {
       this.wsService.on<WsStrategyPnlUpdatedPayload>(WsMessageType.StrategyPnlUpdated).subscribe(msg => {
         const sid = msg['strategy_id'] as string | undefined;
         if (!sid) return;
-        this.strategies.update(list =>
+        this.currentStrategies.update(list =>
           list.map(s => {
             if (s.id === sid) {
               return {
@@ -345,6 +356,16 @@ export class ActiveTradePage implements OnInit, OnDestroy {
             return s;
           })
         );
+      })
+    );
+
+    this.sub.add(
+      this.wsService.on<WsPricePayload>(WsMessageType.Price).subscribe(msg => {
+        const wsPricePayload = msg.payload ?? (msg as unknown as WsPricePayload);
+        const pair = wsPricePayload.pair;
+        const price = wsPricePayload.price;
+        if (!pair || !price) return;
+        this.pricesByPair.update(map => ({ ...map, [pair]: price }));
       })
     );
 
@@ -364,10 +385,11 @@ export class ActiveTradePage implements OnInit, OnDestroy {
       this.wsService.on<WsStrategyStoppedPayload>(WsMessageType.StrategyStopped).subscribe(msg => {
         const sid = msg['strategy_id'] as string | undefined;
         if (sid) {
-          this.strategies.update(list => list.filter(s => s.id !== sid));
+          this.currentStrategies.update(list => list.filter(s => s.id !== sid));
           // also remove collapse state for this strategy
           this.collapsed.update(map => {
-            const { [sid]: _, ...rest } = map;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { [sid]: _unused, ...rest } = map;
             return rest;
           });
         }

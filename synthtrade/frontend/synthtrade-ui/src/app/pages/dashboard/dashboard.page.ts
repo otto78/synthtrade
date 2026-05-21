@@ -21,9 +21,9 @@ import { StatCardComponent } from '../../shared/components/stat-card/stat-card.c
           [loading]="loading()"
         />
         <app-stat-card
-          label="PnL Portafoglio"
-          [value]="portfolioPnlStr()"
-          [delta]="stats().portfolio_pnl_pct ?? 0"
+          label="PnL Oggi"
+          [value]="pnlTodayStr()"
+          [delta]="stats().pnl_today"
           [loading]="loading()"
         />
         <app-stat-card
@@ -34,6 +34,12 @@ import { StatCardComponent } from '../../shared/components/stat-card/stat-card.c
         <app-stat-card
           label="Trade Aperti"
           [value]="openTradesStr()"
+          [loading]="loading()"
+        />
+        <app-stat-card
+          label="Trade Chiusi Oggi"
+          [value]="closedTradesStr()"
+          [delta]="stats().closed_trades_pnl ?? 0"
           [loading]="loading()"
         />
         <app-stat-card
@@ -227,12 +233,15 @@ export class DashboardPage implements OnInit, OnDestroy {
 
   activeStrategiesStr = computed(() => String(this.stats().active_strategies_count ?? 0));
   openTradesStr = computed(() => String(this.stats().open_trades_count ?? 0));
-
-  portfolioPnlStr = computed(() => {
-    const pnl = this.stats().portfolio_pnl_eur ?? 0;
+  closedTradesStr = computed(() => {
+    const count = this.stats().closed_trades_count ?? 0;
+    const pnl = this.stats().closed_trades_pnl ?? 0;
+    return `${count} (${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} EUR)`;
+  });
+  pnlTodayStr = computed(() => {
+    const pnl = this.stats().pnl_today;
     if (pnl === 0) return '€0.00';
-    const sign = pnl > 0 ? '+' : '';
-    return `${sign}€${pnl.toFixed(2)}`;
+    return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', signDisplay: 'always', minimumFractionDigits: 2 }).format(pnl);
   });
 
   // Chart computations

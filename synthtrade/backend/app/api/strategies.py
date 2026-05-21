@@ -70,10 +70,7 @@ def get_active_strategies_pnl(
         # Recupera trade OPEN per questa strategia
         open_trades = trade_repo.get_open_by_strategy(strategy_id)
         
-        if not open_trades:
-            continue
-            
-        # Calcola P&L totale
+        # Calcola P&L totale (0 se senza trade aperti)
         total_pnl_pct = 0.0
         total_pnl_eur = 0.0
         initial_capital = float(strategy.initial_capital_usdt or strategy.budget_eur or 100.0)

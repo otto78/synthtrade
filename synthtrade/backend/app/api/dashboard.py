@@ -17,56 +17,56 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 BALANCE_TIMEOUT = 30
 
 
+def _mode_filter(query):
+    """Aggiunge filtro trading_mode a query Supabase diretta."""
+    return query.eq("trading_mode", settings.TRADING_MODE)
+
+
 @router.get("")
 async def get_dashboard(
     _user: str = Depends(get_current_user),
     strategy_repo: StrategyRepository = Depends(get_strategy_repo),
     trade_repo: TradeRepository = Depends(get_trade_repo),
 ):
+    db = get_supabase()
     today = date.today().isoformat()
 
+    # ——— TRADES OGGI (con trading_mode filter) ———
     trades = trade_repo.get_since(today)
 
-    # Calcola PnL da pnl_pct * cost se pnl_eur è null
     pnl_today = 0.0
     for t in trades:
         if t.pnl_eur:
             pnl_today += t.pnl_eur
         elif t.pnl_pct and t.price and t.quantity:
-            # Stima: pnl_eur ≈ price * quantity * pnl_pct
             estimated_pnl = (t.price * t.quantity) * abs(t.pnl_pct) / 100
             pnl_today += estimated_pnl
-
     pnl_today = round(pnl_today, 4)
 
-    db = get_supabase()
-
-    # KPI: strategie attive
-    active_strategies_res = db.table("strategies").select("*").eq("status", "ACTIVE").execute()
+    # ——— KPI: strategie attive (con trading_mode filter) ———
+    active_strategies_res = _mode_filter(
+        db.table("strategies").select("*").eq("status", "ACTIVE")
+    ).execute()
     active_strategies = active_strategies_res.data or []
     active_strategies_count = len(active_strategies)
 
-    # KPI: trade aperti (OPEN)
-    open_trades_res = db.table("trades").select("id").eq("status", "OPEN").execute()
+    # ——— KPI: trade aperti (con trading_mode filter) ———
+    open_trades_res = _mode_filter(
+        db.table("trades").select("id").eq("status", "OPEN")
+    ).execute()
     open_trades_count = len(open_trades_res.data or [])
 
-    # Calcola P&L totale da strategie attive e PnL portafoglio
+    # ——— PnL strategie attive (solo calcolo percentuale) ———
     total_active_pnl_pct = 0.0
-    total_invested = 0.0
-    total_current = 0.0
     for strategy in active_strategies:
-        initial = strategy.get("initial_capital_usdt") or strategy.get("budget_eur", 100.0)
-        current = strategy.get("current_value_usdt") or strategy.get("initial_capital_usdt", 100.0)
-        if initial > 0:
+        current = strategy.get("current_value_usdt")
+        initial = strategy.get("initial_capital_usdt") or strategy.get("budget_eur")
+        if current and initial and initial > 0:
             pnl_pct = ((current - initial) / initial) * 100
             total_active_pnl_pct += pnl_pct
-            total_invested += initial
-            total_current += current
-
     total_active_pnl_pct = round(total_active_pnl_pct, 2)
-    total_strategy_pnl_eur = round(total_current - total_invested, 2)
 
-    # Saldo Binance
+    # ——— Saldo Binance (da API reale, non calcolato) ———
     balance_eur = 0.0
     balance_breakdown = {}
     balance_assets = []
@@ -88,13 +88,16 @@ async def get_dashboard(
     except Exception as e:
         logger.error(f"Failed to fetch Binance balance: {e}")
 
-    # PnL portafoglio: differenza tra saldo Binance e capitale investito
-    if total_invested > 0 and balance_eur > 0:
-        portfolio_pnl_eur = round(balance_eur - total_invested, 2)
-        portfolio_pnl_pct = round(((balance_eur - total_invested) / total_invested) * 100, 2)
-    else:
-        portfolio_pnl_eur = 0.0
-        portfolio_pnl_pct = 0.0
+    # ——— KPI: trade chiusi oggi ———
+    closed_trades_today_res = _mode_filter(
+        db.table("trades").select("pnl_pct,price,quantity,fee_eur").eq("status", "CLOSED").gte("closed_at", today)
+    ).execute()
+    closed_trades_count = len(closed_trades_today_res.data or [])
+    closed_trades_pnl = 0.0
+    for t in closed_trades_today_res.data or []:
+        if t.get("pnl_pct") and t.get("price") and t.get("quantity"):
+            closed_trades_pnl += (t["price"] * t["quantity"]) * abs(t["pnl_pct"]) / 100
+    closed_trades_pnl = round(closed_trades_pnl, 2)
 
     return {
         "balance": balance_eur,
@@ -104,10 +107,9 @@ async def get_dashboard(
         "pnl_today": pnl_today,
         "active_strategies_count": active_strategies_count,
         "open_trades_count": open_trades_count,
+        "closed_trades_count": closed_trades_count,
+        "closed_trades_pnl": closed_trades_pnl,
         "total_active_pnl_pct": total_active_pnl_pct,
-        "total_strategy_pnl_eur": total_strategy_pnl_eur,
-        "portfolio_pnl_eur": portfolio_pnl_eur,
-        "portfolio_pnl_pct": portfolio_pnl_pct,
         "engine_status": "RUNNING",
         "trading_mode": settings.TRADING_MODE,
     }

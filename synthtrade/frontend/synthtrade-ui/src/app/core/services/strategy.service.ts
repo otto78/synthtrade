@@ -31,7 +31,9 @@ export interface MonitorStrategyInfo {
     win_rate: number;
     total_trades: number;
     active_trades: number;
+    active_trades_count: number;
     equity_curve: number[];
+    initial_price?: number | null;
   };
   recent_trades: Array<{
     id: string;

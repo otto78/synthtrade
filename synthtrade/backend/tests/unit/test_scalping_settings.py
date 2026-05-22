@@ -72,10 +72,6 @@ class TestScalpingSettingsDefaults:
         sut = ScalpingSettings()
         assert sut.SCALPING_OPPORTUNITY_POLL_INTERVAL_MIN == 5
 
-    def test_default_cryptopanic_key_empty(self):
-        """CRYPTOPANIC_API_KEY default deve essere stringa vuota"""
-        sut = ScalpingSettings()
-        assert sut.CRYPTOPANIC_API_KEY == ''
 
     def test_default_scalping_mode(self):
         """SCALPING_DEFAULT_MODE default deve essere 'PAPER'"""
@@ -125,10 +121,6 @@ class TestScalpingSettingsOverride:
         sut = ScalpingSettings()
         assert sut.SCALPING_SIGNAL_STRENGTH_THRESHOLD == 50.0
 
-    def test_override_cryptopanic_key(self):
-        self._set_env('CRYPTOPANIC_API_KEY', 'test_key_123')
-        sut = ScalpingSettings()
-        assert sut.CRYPTOPANIC_API_KEY == 'test_key_123'
 
     def test_override_scalping_mode(self):
         self._set_env('SCALPING_DEFAULT_MODE', 'LIVE')

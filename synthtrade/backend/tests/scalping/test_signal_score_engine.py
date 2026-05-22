@@ -1,0 +1,174 @@
+"""Test per SignalScoreEngine (TASK-804)."""
+
+from decimal import Decimal
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from app.scalping.intelligence.signal_score_engine import (
+    DEFAULT_WEIGHTS,
+    SignalScoreEngine,
+)
+from app.scalping.intelligence.collectors.cvd_calculator import CVDCalculator
+
+
+class TestDefaultWeights:
+    def test_weights_sum_to_one(self):
+        """La somma dei pesi deve essere 1.0."""
+        total = sum(DEFAULT_WEIGHTS.values())
+        assert abs(total - 1.0) < 0.01
+
+    def test_all_keys_present(self):
+        """Tutti i pesi attesi sono presenti."""
+        expected_keys = {
+            "funding_rate", "cvd", "open_interest", "long_short_ratio", 
+            "fear_greed", "onchain", "sentiment", "whale"
+        }
+        assert DEFAULT_WEIGHTS.keys() == expected_keys
+
+
+class TestSignalScoreEngine:
+    @pytest.mark.asyncio
+    async def test_compute_all_collectors_fail(self):
+        """Se tutti i collector falliscono, score neutrale e non tradeable."""
+        engine = SignalScoreEngine(symbol="BTCUSDT", threshold=30.0)
+
+        # Mock tutti i collector per fallire
+        engine._funding_rate.collect = AsyncMock(return_value=None)
+        engine._open_interest.collect = AsyncMock(return_value=None)
+        engine._long_short.collect = AsyncMock(return_value=None)
+        engine._fear_greed.collect = AsyncMock(return_value=None)
+        engine._sentiment.collect = AsyncMock(return_value=None)
+        engine._whale.collect = AsyncMock(return_value=None)
+        engine._onchain.collect = AsyncMock(return_value=None)
+
+        score = await engine.compute()
+
+        assert score.total == 0.0
+        assert score.bias == "neutral"
+        assert score.tradeable is False
+        assert len(score.breakdown) == 0
+
+    @pytest.mark.asyncio
+    async def test_compute_bullish_scenario(self):
+        """Scenario rialzista: funding rate negativo + CVD positivo."""
+        from datetime import datetime, timezone
+        from app.scalping.models.intelligence import FundingRate, OpenInterest, LongShortRatio, FearGreedData
+
+        engine = SignalScoreEngine(symbol="BTCUSDT", threshold=30.0)
+
+        # Mock funding rate negativo (bullish)
+        engine._funding_rate.collect = AsyncMock(return_value=FundingRate(
+            rate=Decimal("-0.0005"), symbol="BTCUSDT", timestamp=datetime.now(timezone.utc)
+        ))
+
+        # Mock OI stabile
+        engine._open_interest.collect = AsyncMock(return_value=OpenInterest(
+            value_usd=Decimal("1000000000"), symbol="BTCUSDT", timestamp=datetime.now(timezone.utc)
+        ))
+
+        # Mock L/S con piu short (bullish)
+        engine._long_short.collect = AsyncMock(return_value=LongShortRatio(
+            long_pct=Decimal("35"), short_pct=Decimal("65"),
+            symbol="BTCUSDT", timestamp=datetime.now(timezone.utc)
+        ))
+
+        # Mock Fear & Greed (paura = long bias)
+        engine._fear_greed.collect = AsyncMock(return_value=FearGreedData(
+            value=20, label="Extreme Fear", timestamp=datetime.now(timezone.utc)
+        ))
+
+        score = await engine.compute()
+
+        assert score.total > 0  # Score positivo = bullish
+        assert score.bias == "bullish"
+        assert len(score.breakdown) > 0
+
+    @pytest.mark.asyncio
+    async def test_compute_bearish_scenario(self):
+        """Scenario ribassista: funding rate alto positivo + L/S long-heavy."""
+        from datetime import datetime, timezone
+        from app.scalping.models.intelligence import FundingRate, OpenInterest, LongShortRatio, FearGreedData
+
+        engine = SignalScoreEngine(symbol="BTCUSDT", threshold=30.0)
+
+        # Mock funding rate positivo alto (bearish)
+        engine._funding_rate.collect = AsyncMock(return_value=FundingRate(
+            rate=Decimal("0.001"), symbol="BTCUSDT", timestamp=datetime.now(timezone.utc)
+        ))
+
+        # Mock OI molto alto (bearish)
+        engine._open_interest.collect = AsyncMock(return_value=OpenInterest(
+            value_usd=Decimal("2000000000"), symbol="BTCUSDT", timestamp=datetime.now(timezone.utc)
+        ))
+
+        # Mock L/S con > 70% long (bearish)
+        engine._long_short.collect = AsyncMock(return_value=LongShortRatio(
+            long_pct=Decimal("80"), short_pct=Decimal("20"),
+            symbol="BTCUSDT", timestamp=datetime.now(timezone.utc)
+        ))
+
+        # Mock Fear & Greed (euforia = short bias)
+        engine._fear_greed.collect = AsyncMock(return_value=FearGreedData(
+            value=85, label="Extreme Greed", timestamp=datetime.now(timezone.utc)
+        ))
+
+        score = await engine.compute()
+
+        assert score.total < 0  # Score negativo = bearish
+        assert score.bias == "bearish"
+        assert len(score.breakdown) > 0
+
+    @pytest.mark.asyncio
+    async def test_compute_with_cvd(self):
+        """CVDCalculator collegato contribuisce allo score."""
+        from datetime import datetime, timezone
+
+        engine = SignalScoreEngine(symbol="BTCUSDT", threshold=30.0)
+
+        # Crea CVDCalculator con dati
+        cvd = CVDCalculator()
+        cvd.on_trade(price=50000, quantity=1000, is_buyer_maker=False)  # buy pressure
+
+        engine._set_cvd_calculator(cvd)
+
+        # Mock altri collector a None (solo CVD attivo)
+        engine._funding_rate.collect = AsyncMock(return_value=None)
+        engine._open_interest.collect = AsyncMock(return_value=None)
+        engine._long_short.collect = AsyncMock(return_value=None)
+        engine._fear_greed.collect = AsyncMock(return_value=None)
+        engine._sentiment.collect = AsyncMock(return_value=None)
+        engine._whale.collect = AsyncMock(return_value=None)
+        engine._onchain.collect = AsyncMock(return_value=None)
+
+        score = await engine.compute()
+
+        assert "cvd" in score.breakdown
+        assert score.breakdown["cvd"] > 0  # CVD positivo = bullish
+
+    @pytest.mark.asyncio
+    async def test_get_snapshot_structure(self):
+        """Verifica che get_snapshot restituisca un MarketIntelSnapshot completo."""
+        from datetime import datetime, timezone
+        from app.scalping.models.intelligence import MarketIntelSnapshot, FundingRate
+
+        engine = SignalScoreEngine(symbol="BTCUSDT", threshold=30.0)
+        
+        # Mock collectors per ritornare qualcosa di semplice
+        engine._funding_rate.collect = AsyncMock(return_value=FundingRate(
+            rate=Decimal("0"), symbol="BTCUSDT", timestamp=datetime.now(timezone.utc)
+        ))
+        engine._open_interest.collect = AsyncMock(return_value=None)
+        engine._long_short.collect = AsyncMock(return_value=None)
+        engine._fear_greed.collect = AsyncMock(return_value=None)
+        engine._sentiment.collect = AsyncMock(return_value=None)
+        engine._whale.collect = AsyncMock(return_value=None)
+        engine._onchain.collect = AsyncMock(return_value=None)
+
+        snapshot = await engine.get_snapshot()
+        
+        assert isinstance(snapshot, MarketIntelSnapshot)
+        assert snapshot.symbol == "BTCUSDT"
+        assert snapshot.funding_rate is not None
+        assert snapshot.signal_score is not None
+        assert snapshot.sentiment is None # Come da mock

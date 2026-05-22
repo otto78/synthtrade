@@ -44,6 +44,11 @@ class ScalpingSettings(BaseSettings):
     # Modalità default
     SCALPING_DEFAULT_MODE: str = 'PAPER'
 
+    # Intelligence API Keys
+    NEWSAPI_API_KEY: str = ''
+    CRYPTOCOMPARE_API_KEY: str = ''
+    DUNE_API_KEY: str = ''
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(

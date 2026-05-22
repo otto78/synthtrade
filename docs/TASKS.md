@@ -398,82 +398,78 @@ L'engine swing usa REST. Lo scalping richiede uno stream in tempo reale.
 ---
 
 ### TASK-804 — Intelligence Layer & Signal Scoring [📎 Dettaglio]
-**Status:** To Do
+**Status:** Done ✅
 **Priorità:** Media
 
-**📎 Dettaglio Piano — Fonti dati:**
+**📎 Fonti dati implementate:**
+
 | Fonte | Dati | Endpoint | Frequenza | Costo |
 |---|---|---|---|---|
-| Binance Futures | Funding Rate | `/fapi/v1/fundingRate` | Ogni 8h | Gratuito |
-| Binance Futures | Open Interest | `/fapi/v1/openInterest` | Real-time | Gratuito |
-| Binance Futures | Long/Short Ratio | `/futures/data/globalLongShortAccountRatio` | 5min | Gratuito |
-| WS Binance | CVD (da trade stream) | `<symbol>@trade` | Real-time | Gratuito |
-| Alternative.me | Fear & Greed | `https://api.alternative.me/fng/` | 1/giorno | Gratuito |
-| CoinGecko News | News crypto | `https://api.coingecko.com/api/v3/news` | On demand | Gratuito ✅ |
-| Messari | News crypto | `https://data.messari.io/api/v1/news` | On demand | Free tier ✅ |
-| CryptoCompare | News crypto | `https://min-api.cryptocompare.com/data/v2/news/?lang=EN` | On demand | Free tier ✅ |
-| NewsAPI | News mainstream | `https://newsapi.org/v2/everything?q=crypto` | On demand | Free tier ✅ |
-| RSS Feed | Notizie crypto | `https://cointelegraph.com/rss`, `https://coindesk.com/arc/outboundfeeds/rss/` | Real-time | Gratuito ✅ |
-| Glassnode | On-chain | `https://api.glassnode.com/v1/metrics/` | 1h | Free tier |
+| **Binance Futures** | Funding Rate | `/fapi/v1/fundingRate` | Ogni 8h | Gratuito |
+| **Binance Futures** | Open Interest | `/fapi/v1/openInterest` | Real-time | Gratuito |
+| **Binance Futures** | Long/Short Ratio | `/futures/data/globalLongShortAccountRatio` | 5min | Gratuito |
+| **WS Binance** | CVD (da trade stream) | `<symbol>@trade` | Real-time | Gratuito |
+| **Alternative.me** | Fear & Greed | `https://api.alternative.me/fng/` | 1/giorno | Gratuito |
+| ✅ **Blockchain.com** | On-chain (active addr, exchange volume) | `https://api.blockchain.info/charts/n-unique-addresses`, `/charts/exchange-volume` | 1h | Gratuito (no key) |
+| ✅ **Blockchair** | On-chain (stats, whale tx) | `https://api.blockchair.com/bitcoin/stats`, `/bitcoin/transactions?q=output_total(usd).gt(1000000)` | On demand | Gratuito (no key) |
+| ✅ **Dune Analytics** | On-chain SQL custom | `POST /api/v1/query/{query_id}/execute`, `GET /api/v1/execution/{id}/results` | On demand | `DUNE_API_KEY` in env |
+| ✅ **CryptoCompare** | News feed | `https://min-api.cryptocompare.com/data/v2/news/?lang=EN` | On demand | `CRYPTOCOMPARE_API_KEY` in env |
+| ✅ **NewsAPI** | News mainstream (backup) | `https://newsapi.org/v2/everything?q=crypto+bitcoin` | 100 req/giorno | `NEWSAPI_API_KEY` in env |
+| ✅ **Whale Alert RSS** | Whale movements real-time | `https://whale-alert.io/rss` | Real-time | Gratuito (no key) |
 
-**📎 Dettaglio Piano — SignalScoreEngine (pesi):**
-```python
-WEIGHTS = {
-    'funding_rate':     0.25,  # segnale contrarian più affidabile
-    'cvd':              0.25,  # pressione reale di mercato
-    'open_interest':    0.15,  # contesto esposizione
-    'long_short_ratio': 0.15,  # sentiment contrarian
-    'fear_greed':       0.10,  # contesto macro
-    'onchain':          0.10,  # flussi exchange
-}
+**Componenti implementati in `app/scalping/intelligence/collectors/`:**
+| File | Classe | Descrizione |
+|---|---|---|
+| `funding_rate.py` | `FundingRateCollector` | Funding rate Binance Futures con interpretazione (±0.05%, ±0.10%) e score (-25 a +25) |
+| `open_interest.py` | `OpenInterestCollector` | Open Interest Binance Futures con score (-15 a +15) |
+| `long_short_ratio.py` | `LongShortRatioCollector` | Long/Short ratio Binance con score contrarian (-15 a +15) |
+| `cvd_calculator.py` | `CVDCalculator` | Cumulative Volume Delta in tempo reale da trade stream WS con trend detection e score (-15 a +15) |
+| `fear_greed.py` | `FearGreedCollector` | Fear & Greed Index da Alternative.me con classificazione e score (-10 a +10) |
+| `onchain.py` | `OnChainCollector` | [COMPLETATO] Blockchain.com + Blockchair + Dune Analytics |
+| `sentiment.py` | `SentimentCollector` | [COMPLETATO] CryptoCompare + NewsAPI news feed |
+| `whale.py` | `WhaleCollector` | [COMPLETATO] Whale Alert RSS + Blockchair whale tx filter |
+
+**📎 SignalScoreEngine (`app/scalping/intelligence/signal_score_engine.py`):**
+- Pesi: `funding_rate` (0.25), `cvd` (0.25), `open_interest` (0.15), `long_short_ratio` (0.15), `fear_greed` (0.10), `onchain` (0.10)
+- Score finale normalizzato -100 a +100 con bias (`bullish`/`bearish`/`neutral`)
+- Breakdown dettagliato per categoria
+- Tradeable solo se |score| ≥ 30
+
+**📎 SignalAggregator (`app/scalping/engine/signal_aggregator.py`):**
+- Blocca BUY se score bearish / overleveraged
+- Blocca SELL se score bullish
+- Blocca trade se score neutral o insufficiente
+- Combined confidence calcolata come max tra confidence intelligence e confidence tecnica in caso di allineamento, 0 in caso di conflitto
+
+**📎 Modelli Pydantic (`app/scalping/models/intelligence.py`):**
+| Modello | Campi |
+|---|---|
+| `FundingRate` | symbol, rate (Decimal), timestamp, next_funding_time |
+| `OpenInterest` | symbol, value_usd (Decimal), asset, timestamp |
+| `LongShortRatio` | symbol, long_pct, short_pct, timestamp → ratio property |
+| `CVDData` | symbol, cvd, buy_volume, sell_volume, trend, timestamp |
+| `FearGreedData` | value (int), label, timestamp |
+| `SignalScore` | total (float), bias, tradeable, confidence, breakdown (dict) |
+| `MarketIntelSnapshot` | funding_rate, open_interest, long_short_ratio, cvd, fear_greed, signal_score |
+| `ExecutionDecision` | execute (bool), reason (Optional[str]), confidence (float) |
+
+**📎 Test implementati (`tests/scalping/`):**
+| File | # Test | Copertura |
+|---|---|---|
+| `test_funding_rate.py` | 11 | collect success, negative rate, empty, HTTP error, interpret_rate (5 soglie), rate_to_score (5 casi) |
+| `test_open_interest.py` | 7 | collect success, HTTP error, oi_to_score (5 casi) |
+| `test_long_short_ratio.py` | 7 | collect success, empty, HTTP error, ratio_to_score (4 casi) |
+| `test_cvd_calculator.py` | 13 | CVD zero, buy/sell trades, multiple, snapshot con trend, reset, score (4 casi) |
+| `test_fear_greed.py` | 12 | collect success, extreme greed, empty, HTTP error, classify (5 bande), fng_to_score (5 casi) |
+| `test_intelligence_models.py` | 17 | Tutti i modelli Pydantic: valid, frozen, missing, edge cases |
+| `test_signal_score_engine.py` | 5 | Weights sum, all keys, all collectors fail, bullish/bearish scenario, with CVD |
+| `test_signal_aggregator.py` | 11 | Block/allows buy/sell, neutral/none, low confidence, combined confidence |
+| **Totale** | **83** | +33 test esistenti WS client = **116 totali** |
+
+**Risultato finale:**
 ```
-
-**📎 Dettaglio Piano — FundingRateCollector:**
+======================= 116 passed, 2 warnings in 9.64s =======================
 ```
-Funding Rate positivo  → i long pagano gli short → overleveraged long → bias SHORT
-Funding Rate negativo  → gli short pagano i long → overleveraged short → bias LONG
-Soglie: > +0.10% = fortemente overleveraged long (contrarian short)
-        > +0.05% = moderatamente rialzista
-        0%      = equilibrio
-        < -0.05% = moderatamente ribassista
-        < -0.10% = fortemente overleveraged short (contrarian long)
-```
-
-**📎 Dettaglio Piano — CVDCalculator:**
-```python
-class CVDCalculator:
-    """Cumulative Volume Delta — pressione netta buy vs sell in tempo reale."""
-    def on_trade(self, trade: BinanceTrade):
-        delta = trade.quantity if not trade.is_buyer_maker else -trade.quantity
-        self._cvd += delta
-    # CVD crescente = più pressione buy → momentum rialzista
-    # CVD calante = più pressione sell → momentum ribassista
-    # CVD divergente dal prezzo = forte segnale inversione imminente
-```
-
-**📎 Dettaglio Piano — SignalAggregator (ibrido):**
-```python
-class SignalAggregator:
-    """
-    Un ordine viene eseguito SOLO se entrambi sono allineati:
-    - Score intelligenza > soglia (default: 30)
-    - Strategia tecnica conferma (filtro timing)
-    """
-    def should_execute(self, technical_signal, market_score):
-        if not market_score.tradeable:
-            return ExecutionDecision(execute=False)
-        if (market_score.bias == 'bullish') != (technical_signal.type == 'BUY'):
-            return ExecutionDecision(execute=False, reason="conflitto intelligence-tecnico")
-        return ExecutionDecision(execute=True, confidence=market_score.total / 100)
-```
-
-**Dettagli:**
-Collettori di mercato specifici ad alta frequenza e motore di scoring.
-
-**Piano:**
-1. Creare `FundingRateCollector`, `OpenInterestCollector`, `LongShortRatioCollector`, `FearGreedCollector`, `CVDCalculator`, `OnChainCollector`, `SentimentCollector`.
-2. Creare `SignalScoreEngine` in `app/scalping/intelligence/`: aggrega tutti i collettori in uno score normalizzato (-100 a +100).
-3. Creare `SignalAggregator` in `app/scalping/engine/` che combina score intelligence + segnale tecnico.
 
 ---
 

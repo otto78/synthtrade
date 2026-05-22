@@ -249,7 +249,7 @@ Aggiungere configurazioni scalping senza frammentare il sistema.
 ---
 
 ### TASK-801 — Estensione Moduli Core (Indicators, Risk, WS, Exchange)
-**Status:** To Do
+**Status:** Done ✅
 **Priorità:** Critica
 **Dipende da:** TASK-800
 
@@ -379,7 +379,7 @@ Creare le tabelle dedicate per non inquinare il logging swing.
 ---
 
 ### TASK-803 — Binance Live WS Client (Feed Dati) [📎 Dettaglio]
-**Status:** To Do
+**Status:** Done ✅
 **Priorità:** Alta
 
 **📎 Dettaglio Piano:**

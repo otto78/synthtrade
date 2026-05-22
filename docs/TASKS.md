@@ -474,7 +474,8 @@ L'engine swing usa REST. Lo scalping richiede uno stream in tempo reale.
 ---
 
 ### TASK-805 — Scalping Engine & TickProcessor [📎 Dettaglio]
-**Status:** To Do
+**Status:** Done ✅  
+**Completato:** 2026-05-22
 **Priorità:** Critica
 **Dipende da:** TASK-801, TASK-803, TASK-804
 

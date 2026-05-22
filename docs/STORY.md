@@ -455,4 +455,18 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
 
-**Ultima modifica:** 2026-05-20 — Antigravity (Modalità TEST/LIVE completata e archiviata [TASK-431])
+### v1.3.1 — 2026-05-22
+
+**Milestone:** Fix favicon — saetta vettoriale al posto di Angular e emoji
+
+**Completato:**
+- ✅ **Favicon SVG**: Sostituito `<text>⚡</text>` con path vettoriale della saetta per compatibilità browser
+- ✅ **Fallback .ico rimosso**: Rimosso `<link rel="alternate icon" href="favicon.ico">` da `index.html` (mostrava ancora logo Angular)
+- ✅ **Budget warning fix**: `anyComponentStyle` aumentato da 8kB a 10kB in `angular.json` per evitare warning build
+
+**Decisioni chiave:**
+- Le favicon SVG con emoji (`<text>⚡</text>`) non sono supportate universalmente come favicon; serve un path vettoriale reale
+
+---
+
+**Ultima modifica:** 2026-05-22 — Cline (Fix favicon saetta vettoriale)

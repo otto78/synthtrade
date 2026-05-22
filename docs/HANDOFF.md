@@ -6,19 +6,20 @@
 
 ### Da: Cline → prossima sessione
 
-**Data:** 2026-05-14
+**Data:** 2026-05-22
 
-**Contesto:** Completata la **Fase A dell'Epica Execution (EPIC-400)**. Le strategie ora possono essere attivate operativamente con esecuzione di ordini reali e allocazione del capitale su Binance.
+**Contesto:** Fix favicon — sostituita emoji saetta con path vettoriale, rimosso fallback icona Angular (.ico), fix budget warning build.
 
 ---
 
-### ✅ FASE COMPLETATA: Execution Phase A (2026-05-14)
+### ✅ FASE COMPLETATA: Fix favicon (2026-05-22)
 
 **Cosa è stato fatto:**
-- Implementato `execution/capital_allocator.py` per il calcolo delle quote iniziali.
-- Esteso `POST /api/strategies/{id}/activate` per integrare l'esecuzione degli ordini tramite `ccxt`.
-- Aggiunto controllo `insufficient_funds` (TASK-403) con rollback dello stato.
-- Allineato lo schema DB (Migration 008 e 009) per tracciare `activated_at` e `initial_capital_usdt`.
+- Sostituita favicon SVG: `<text>⚡</text>` → path vettoriale della saetta (`public/favicon.svg`, `src/favicon.svg`)
+- Rimosso fallback `.ico` (logo Angular) da `index.html`
+- Aumentato `anyComponentStyle` da 8kB a 10kB in `angular.json`
+- Build eseguita con successo (nessun warning)
+- Aggiornati `docs/STORY.md` e `docs/HANDOFF.md`
 
 ---
 

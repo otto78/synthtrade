@@ -22,13 +22,13 @@ import { NgClass } from '@angular/common';
     }
   `,
   styles: [`
-    .stat-card { padding: 16px; background: var(--bg-surface); border-radius: 8px; }
+    .stat-card { padding: 16px; background: var(--bg-surface); border-radius: 8px; min-height: 120px; display: flex; flex-direction: column; justify-content: center; }
     .label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
     .value { display: block; font-size: 24px; font-family: var(--font-mono, monospace); color: var(--text-primary); }
     .value.positive { color: var(--color-buy); }
     .value.negative { color: var(--color-sell); }
     .delta { font-size: 12px; color: var(--text-secondary); }
-    .skeleton { height: 80px; background: var(--bg-elevated); animation: pulse 1.5s ease-in-out infinite; }
+    .skeleton { height: 100px; background: var(--bg-elevated); animation: pulse 1.5s ease-in-out infinite; border-radius: 8px; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
   `]
 })

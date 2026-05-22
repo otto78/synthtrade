@@ -13,11 +13,27 @@ logger = logging.getLogger(__name__)
 def build_evaluator():
     from app.ai.model_client import ModelClient
     from app.ai.evaluator import Evaluator
+    from app.db.repositories.llm_model_repository import LLMModelRepository
+    from app.services.llm_model_service import LLMModelService
+    from app.db.supabase_client import get_supabase
+
+    # Load models from the database instead of hardcoded env vars
+    db = get_supabase()
+    repo = LLMModelRepository(db)
+    model_service = LLMModelService(repo)
+    cascade_models, fallback_model = model_service.get_active_models()
+
+    # Fallback to env vars if DB is empty
+    if not cascade_models:
+        cascade_models = settings.ai_cascade_models_list
+    if not fallback_model:
+        fallback_model = settings.AI_FALLBACK_MODEL
+
     client = ModelClient(
         api_key=settings.AI_API_KEY,
         api_base_url=settings.AI_API_BASE_URL,
-        cascade_models=settings.ai_cascade_models_list,
-        fallback_model=settings.AI_FALLBACK_MODEL,
+        cascade_models=cascade_models,
+        fallback_model=fallback_model,
         timeout=settings.AI_TIMEOUT_SECONDS,
         max_retries=settings.AI_MAX_RETRIES,
         backoff_base=settings.AI_BACKOFF_BASE,

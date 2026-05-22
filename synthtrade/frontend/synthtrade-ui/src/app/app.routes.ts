@@ -31,6 +31,10 @@ export const routes: Routes = [
         path: 'logs',
         loadComponent: () => import('./pages/logs/logs.page').then(m => m.LogsPage),
       },
+      {
+        path: 'llm-models',
+        loadComponent: () => import('./pages/llm-models/llm-models.page').then(m => m.LLMModelsPage),
+      },
     ],
   },
   { path: '**', redirectTo: 'dashboard' },

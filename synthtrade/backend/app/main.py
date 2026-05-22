@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api import auth, strategies, dashboard, logs, ws, trades, eval as eval_api, pipeline, exchange, monitor, config_api
+from app.api import llm_models_api
 from app.scheduler.jobs import setup_scheduler
 from app.core.logging import setup_logging
 from app.core.exceptions import (
@@ -115,6 +116,7 @@ app.include_router(pipeline.router, prefix="/api")
 app.include_router(exchange.router, prefix="/api")
 app.include_router(monitor.router, prefix="/api")
 app.include_router(config_api.router, prefix="/api")
+app.include_router(llm_models_api.router, prefix="/api")
 
 @app.get("/")
 def read_root():

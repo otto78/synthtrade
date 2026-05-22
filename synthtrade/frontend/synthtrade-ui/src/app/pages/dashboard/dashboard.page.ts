@@ -1,4 +1,8 @@
 import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { firstValueFrom } from 'rxjs';
+import { LLMModelsService } from '../../core/services/llm-models.service';
+import { LLMModelsPayload } from '../../core/models/llm-models.model';
 import { Subscription } from 'rxjs';
 import { CurrencyPipe, DecimalPipe } from '@angular/common';
 import { DashboardService } from '../../core/services/dashboard.service';
@@ -9,7 +13,7 @@ import { StatCardComponent } from '../../shared/components/stat-card/stat-card.c
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [StatCardComponent, CurrencyPipe, DecimalPipe],
+  imports: [StatCardComponent, CurrencyPipe, DecimalPipe, FormsModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="dashboard">
@@ -40,11 +44,6 @@ import { StatCardComponent } from '../../shared/components/stat-card/stat-card.c
           label="Trade Chiusi Oggi"
           [value]="closedTradesStr()"
           [delta]="stats().closed_trades_pnl ?? 0"
-          [loading]="loading()"
-        />
-        <app-stat-card
-          label="Engine"
-          [value]="stats().engine_status"
           [loading]="loading()"
         />
       </div>
@@ -106,33 +105,90 @@ import { StatCardComponent } from '../../shared/components/stat-card/stat-card.c
         </div>
       </div>
 
-      <!-- Asset Breakdown -->
+      <!-- Asset Breakdown - Accordion -->
       @if (sortedAssets().length > 0 && !loading()) {
         <div class="assets-section">
-          <h3>Portfolio Asset</h3>
-          <div class="assets-table">
-            <div class="asset-row header">
-              <span class="col-asset">Asset</span>
-              <span class="col-qty">Quantità</span>
-              <span class="col-eur">Valore EUR</span>
-              <span class="col-pct">% Portfolio</span>
-            </div>
-            @for (a of sortedAssets(); track a.asset) {
-              <div class="asset-row">
-                <span class="col-asset">{{ a.asset }}</span>
-                <span class="col-qty">{{ a.quantity | number:'1.4-8' }}</span>
-                <span class="col-eur">{{ a.value_eur | currency:'EUR':'symbol':'1.2-2' }}</span>
-                <span class="col-pct">{{ (a.value_eur / stats().balance_eur * 100) | number:'1.1-1' }}%</span>
+          <button class="accordion-header" (click)="toggleAssets()">
+            <h3>Portfolio Asset</h3>
+            <span class="accordion-arrow" [class.open]="assetsOpen()">▾</span>
+          </button>
+          @if (assetsOpen()) {
+            <div class="accordion-body">
+              <div class="assets-table">
+                <div class="asset-row header">
+                  <span class="col-asset">Asset</span>
+                  <span class="col-qty">Quantità</span>
+                  <span class="col-eur">Valore EUR</span>
+                  <span class="col-pct">% Portfolio</span>
+                </div>
+                @for (a of sortedAssets(); track a.asset) {
+                  <div class="asset-row">
+                    <span class="col-asset">{{ a.asset }}</span>
+                    <span class="col-qty">{{ a.quantity | number:'1.4-8' }}</span>
+                    <span class="col-eur">{{ a.value_eur | currency:'EUR':'symbol':'1.2-2' }}</span>
+                    <span class="col-pct">{{ (a.value_eur / stats().balance_eur * 100) | number:'1.1-1' }}%</span>
+                  </div>
+                }
               </div>
-            }
-          </div>
+            </div>
+          }
         </div>
       }
+
+      <!-- LLM Models Configuration -->
+      <div class="llm-section">
+        <button class="accordion-header" (click)="toggleLLM()">
+          <h3>Modelli LLM</h3>
+          <span class="accordion-arrow" [class.open]="llmOpen()">▾</span>
+        </button>
+        @if (llmOpen()) {
+          <div class="accordion-body">
+            <div class="llm-form">
+              <p class="llm-hint">
+                I modelli free potrebbero non essere più disponibili. Sostituisci qui i modelli della cascata.
+              </p>
+
+              @if (llmModels().cascade.length > 0) {
+                @for (model of llmModels().cascade; track $index) {
+                  <div class="llm-field">
+                    <label class="llm-label">{{ model }}</label>
+                    <input
+                      class="llm-input"
+                      [ngModel]="getCascade($index)"
+                      (ngModelChange)="setCascade($index, $event)"
+                      placeholder="Nuovo modello..."
+                    />
+                  </div>
+                }
+              } @else {
+                <div class="llm-empty">Nessun modello caricato. Clicca "Carica" per recuperarli.</div>
+              }
+
+              <div class="llm-actions">
+                <button class="llm-btn llm-btn-load" (click)="loadLLMModels()" [disabled]="llmLoading()">
+                  {{ llmLoading() ? 'Caricamento...' : 'Carica' }}
+                </button>
+                <button
+                  class="llm-btn llm-btn-save"
+                  (click)="saveLLMModels()"
+                  [disabled]="llmLoading() || llmModels().cascade.length === 0"
+                >
+                  {{ llmLoading() ? 'Salvataggio...' : 'Salva' }}
+                </button>
+              </div>
+
+              @if (llmMessage()) {
+                <div class="llm-message">{{ llmMessage() }}</div>
+              }
+            </div>
+          </div>
+        }
+      </div>
     </div>
   `,
   styles: [`
     .dashboard { padding: 24px; max-width: 1200px; margin: 0 auto; }
-    .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
 
     /* Chart Section */
     .chart-section { margin-top: 24px; }
@@ -174,13 +230,26 @@ import { StatCardComponent } from '../../shared/components/stat-card/stat-card.c
       color: var(--text-muted); font-size: 13px;
     }
 
-    /* Asset Table */
-    .assets-section { margin-top: 24px; }
-    .assets-section h3 {
-      font-size: 13px; color: var(--text-muted);
-      text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;
+    /* Asset Table - Accordion */
+    .assets-section { margin-top: 24px; border: 1px solid var(--border-default); border-radius: 8px; overflow: hidden; }
+    .accordion-header {
+      display: flex; justify-content: space-between; align-items: center;
+      width: 100%; padding: 14px 16px;
+      background: var(--bg-surface); border: none; cursor: pointer;
+      transition: background 0.2s;
     }
-    .assets-table { background: var(--bg-card); border-radius: 8px; overflow: hidden; border: 1px solid var(--border-default); }
+    .accordion-header:hover { background: var(--bg-elevated); }
+    .accordion-header h3 {
+      font-size: 13px; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 1px; margin: 0;
+    }
+    .accordion-arrow {
+      font-size: 12px; color: var(--text-secondary);
+      transition: transform 0.2s ease;
+    }
+    .accordion-arrow.open { transform: rotate(180deg); }
+    .accordion-body { border-top: 1px solid var(--border-default); }
+    .assets-table { background: var(--bg-card); }
     .asset-row {
       display: grid;
       grid-template-columns: 100px 1fr 120px 100px;
@@ -199,6 +268,99 @@ import { StatCardComponent } from '../../shared/components/stat-card/stat-card.c
     .asset-row:last-child { border-bottom: none; }
     .col-asset { font-weight: 600; }
     .col-eur, .col-pct { text-align: right; }
+
+    /* LLM Models Configuration */
+    .llm-section { margin-top: 24px; border: 1px solid var(--border-default); border-radius: 8px; overflow: hidden; }
+    .llm-form {
+      padding: 20px;
+      background: var(--bg-card, #1A1D23);
+    }
+    .llm-hint {
+      font-size: 12px; color: var(--text-secondary, #848E9C);
+      margin: 0 0 16px 0; line-height: 1.5;
+    }
+    .llm-field {
+      margin-bottom: 14px;
+    }
+    .llm-field:last-of-type {
+      margin-bottom: 0;
+    }
+    .llm-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: monospace;
+      color: var(--text-secondary, #848E9C);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .llm-input {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid rgba(234,236,239,0.1);
+      border-radius: 6px;
+      background: var(--bg-surface, #0D1117);
+      color: var(--text-primary, #E8EAED);
+      font-size: 14px;
+      font-family: monospace;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      box-sizing: border-box;
+    }
+    .llm-input:focus {
+      border-color: var(--accent-primary, #0ECB81);
+      box-shadow: 0 0 0 2px rgba(14,203,129,0.15);
+    }
+    .llm-input::placeholder {
+      color: var(--text-muted, #5A5F6B);
+    }
+    .llm-empty {
+      font-size: 13px; color: var(--text-muted, #5A5F6B);
+      text-align: center; padding: 16px 0;
+    }
+    .llm-actions {
+      display: flex; gap: 10px; margin-top: 18px;
+    }
+    .llm-btn {
+      flex: 1;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .llm-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .llm-btn-load {
+      background: var(--bg-surface, #0D1117);
+      color: var(--text-primary, #E8EAED);
+      border: 1px solid rgba(234,236,239,0.1);
+    }
+    .llm-btn-load:hover:not(:disabled) {
+      background: var(--bg-elevated, #262A33);
+    }
+    .llm-btn-save {
+      background: var(--accent-primary, #0ECB81);
+      color: #000;
+    }
+    .llm-btn-save:hover:not(:disabled) {
+      background: #0AB770;
+    }
+    .llm-message {
+      margin-top: 12px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      background: rgba(14,203,129,0.08);
+      color: var(--color-buy, #0ECB81);
+      border: 1px solid rgba(14,203,129,0.2);
+    }
   `]
 })
 export class DashboardPage implements OnInit, OnDestroy {
@@ -218,6 +380,7 @@ export class DashboardPage implements OnInit, OnDestroy {
   equityData = signal<BalanceSnapshot[]>([]);
   selectedRange = signal('1m');
   ranges = ['1d', '1w', '1m', '1y'];
+  assetsOpen = signal(false);
 
   sortedAssets = computed(() => {
     const assets = this.stats().balance_assets;
@@ -243,6 +406,16 @@ export class DashboardPage implements OnInit, OnDestroy {
     if (pnl === 0) return '€0.00';
     return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', signDisplay: 'always', minimumFractionDigits: 2 }).format(pnl);
   });
+
+  llmOpen = signal(false);
+
+  toggleAssets(): void {
+    this.assetsOpen.update(v => !v);
+  }
+
+  toggleLLM(): void {
+    this.llmOpen.update(v => !v);
+  }
 
   // Chart computations
   chartPoints = computed(() => {
@@ -300,6 +473,56 @@ export class DashboardPage implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.loadStats();
     this.loadEquity('1m');
+  }
+
+  // ---------- LLM model management ----------
+  private llmService = inject(LLMModelsService);
+  readonly llmModels = signal<LLMModelsPayload>({ cascade: [], fallback: '' });
+  readonly newCascade = signal<string[]>([]);
+  readonly llmLoading = signal(false);
+  readonly llmMessage = signal('');
+
+  async loadLLMModels() {
+    this.llmLoading.set(true);
+    try {
+      const data = await firstValueFrom(this.llmService.getModels());
+      this.llmModels.set(data);
+      // initialise editable fields with current values
+      this.newCascade.set([...data.cascade]);
+    } catch (e) {
+      this.llmMessage.set('Errore nel caricamento dei modelli');
+    } finally {
+      this.llmLoading.set(false);
+    }
+  }
+
+  async saveLLMModels() {
+    this.llmLoading.set(true);
+    this.llmMessage.set('');
+    try {
+      const payload = {
+        cascade: this.newCascade().map(v => v.trim()).filter(Boolean),
+        fallback: this.llmModels().fallback,
+      } as LLMModelsPayload;
+      await firstValueFrom(this.llmService.setModels(payload));
+      this.llmModels.set(payload);
+      this.llmMessage.set('Modelli salvati');
+    } catch (e) {
+      this.llmMessage.set('Errore nel salvataggio');
+    } finally {
+      this.llmLoading.set(false);
+    }
+  }
+
+  // Helper getters/setters for the cascade inputs (required for ngModel binding)
+  getCascade(index: number): string {
+    const arr = this.newCascade();
+    return arr[index] ?? '';
+  }
+  setCascade(index: number, value: string): void {
+    const arr = [...this.newCascade()];
+    arr[index] = value;
+    this.newCascade.set(arr);
   }
 
   ngOnDestroy(): void { this.sub.unsubscribe(); }

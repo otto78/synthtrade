@@ -24,21 +24,24 @@ When proper credentials are supplied the function creates a real Supabase
 client via ``create_client`` as before.
 """
 
+from __future__ import annotations
+
 from functools import lru_cache
-from typing import Any
+from typing import TYPE_CHECKING, Any
 import logging
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    # Type-only import for static analysis.
+    from supabase import Client  # type: ignore
+
 try:
-    # ``supabase`` is an optional dependency; import lazily so that the module
-    # can be imported even when the package is not installed (e.g., in minimal CI).
-    from supabase import create_client, Client  # type: ignore
+    # Runtime import; ``supabase`` is an optional dependency.
+    from supabase import create_client  # type: ignore
 except Exception:  # pragma: no cover
-    # Define placeholder types for static analysis when the package is missing.
-    Client = Any  # type: ignore
     def create_client(*_args, **_kwargs):  # type: ignore
         raise RuntimeError("supabase package not available")
 
@@ -100,6 +103,9 @@ class _DummyTable:
         return self
 
     def match(self, *_, **__) -> "_DummyTable":
+        return self
+
+    def neq(self, *_, **__) -> "_DummyTable":
         return self
 
     def delete(self, *_, **__) -> "_DummyTable":

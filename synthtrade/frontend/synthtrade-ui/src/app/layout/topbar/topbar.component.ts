@@ -1,8 +1,10 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, OnInit, OnDestroy, signal } from '@angular/core';
 import { AsyncPipe } from '@angular/common';
 import { AuthService } from '../../core/services/auth.service';
 import { ConfigService } from '../../core/services/config.service';
-import { BehaviorSubject, tap, catchError, of } from 'rxjs';
+import { DashboardService } from '../../core/services/dashboard.service';
+import { LLMModelsService } from '../../core/services/llm-models.service';
+import { BehaviorSubject, tap, catchError, of, Subscription, interval } from 'rxjs';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 
 @Component({
@@ -29,6 +31,37 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
         </button>
 
         <span class="status-detail">{{ (mode$ | async)?.details }}</span>
+
+        <!-- Engine Status -->
+        @if (engineStatus()) {
+          <span
+            class="engine-badge"
+            [class.running]="engineStatus() === 'RUNNING'"
+            [class.stopped]="engineStatus() !== 'RUNNING'"
+            [class.offline]="engineStatus() === 'OFFLINE' || engineStatus() === '—'"
+          >
+            <span class="engine-indicator"></span>
+            <span class="engine-label">{{ engineStatus() }}</span>
+          </span>
+        }
+
+        <!-- LLM Models Status -->
+        @if (llmStatus(); as s) {
+          <span
+            class="llm-badge"
+            [class.all-ok]="s === 'all_ok'"
+            [class.partial]="s === 'partial'"
+            [class.all-down]="s === 'all_down'"
+            title="Stato modelli AI — {{ s === 'all_ok' ? 'tutti attivi' : s === 'partial' ? 'alcuni non rispondono' : 'nessuno attivo' }}"
+          >
+            <span class="llm-indicator"></span>
+            <span class="llm-label">
+              AI
+              @if (s === 'partial') { ⚠️ }
+              @if (s === 'all_down') { ✕ }
+            </span>
+          </span>
+        }
 
         <!-- Dropdown modalità -->
         @if (dropdownOpen) {
@@ -161,6 +194,78 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
       font-size: 8px; opacity: 0.6; margin-left: 2px;
     }
 
+    /* Engine Status Badge */
+    .engine-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px 4px 8px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: monospace;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      border: 1px solid rgba(234,236,239,0.1);
+    }
+    .engine-badge.running {
+      color: #0ECB81;
+      border-color: rgba(14,203,129,0.3);
+      background: rgba(14,203,129,0.08);
+    }
+    .engine-badge.stopped {
+      color: #F0B90B;
+      border-color: rgba(240,185,11,0.3);
+      background: rgba(240,185,11,0.08);
+    }
+    .engine-badge.offline {
+      color: #F6465D;
+      border-color: rgba(246,70,93,0.3);
+      background: rgba(246,70,93,0.08);
+    }
+    .engine-indicator {
+      width: 6px; height: 6px; border-radius: 50%; display: inline-block;
+    }
+    .engine-badge.running .engine-indicator { background: #0ECB81; }
+    .engine-badge.stopped .engine-indicator { background: #F0B90B; }
+    .engine-badge.offline .engine-indicator { background: #F6465D; }
+
+    /* LLM Status Badge */
+    .llm-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px 4px 8px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: monospace;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      border: 1px solid rgba(234,236,239,0.1);
+    }
+    .llm-badge.all-ok {
+      color: #0ECB81;
+      border-color: rgba(14,203,129,0.3);
+      background: rgba(14,203,129,0.08);
+    }
+    .llm-badge.partial {
+      color: #F0B90B;
+      border-color: rgba(240,185,11,0.3);
+      background: rgba(240,185,11,0.08);
+    }
+    .llm-badge.all-down {
+      color: #F6465D;
+      border-color: rgba(246,70,93,0.3);
+      background: rgba(246,70,93,0.08);
+    }
+    .llm-indicator {
+      width: 6px; height: 6px; border-radius: 50%; display: inline-block;
+    }
+    .llm-badge.all-ok .llm-indicator { background: #0ECB81; }
+    .llm-badge.partial .llm-indicator { background: #F0B90B; }
+    .llm-badge.all-down .llm-indicator { background: #F6465D; }
+
     .status-detail {
       font-size: 11px; color: var(--text-secondary, #848E9C);
     }
@@ -253,9 +358,12 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
     }
   `]
 })
-export class TopbarComponent {
+export class TopbarComponent implements OnInit, OnDestroy {
   auth = inject(AuthService);
   configService = inject(ConfigService);
+  private dashboardService = inject(DashboardService);
+  private llmModelsService = inject(LLMModelsService);
+  private sub = new Subscription();
 
   mode$ = this.configService.getMode();
   dropdownOpen = false;
@@ -264,9 +372,38 @@ export class TopbarComponent {
   toastType: 'success' | 'error' = 'success';
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
 
+  engineStatus = signal<string>('');
+  llmStatus = signal<'all_ok' | 'partial' | 'all_down'>('all_ok');
+
   // Confirm dialog per switch a LIVE
   confirmVisible = false;
   confirmMessage = '';
+
+  private _redirectedToModels = false;
+
+  ngOnInit(): void {
+    this.sub.add(
+      this.dashboardService.getStats().subscribe({
+        next: (stats) => this.engineStatus.set(stats.engine_status),
+        error: () => this.engineStatus.set('OFFLINE'),
+      })
+    );
+    // LLM health check on load and every 5 minutes
+    this.runLLMCheck();
+    this.sub.add(
+      interval(300_000).subscribe(() => this.runLLMCheck())
+    );
+    // Also listen for check results emitted by any component (e.g. llm-models page)
+    this.sub.add(
+      this.llmModelsService.checkCompleted.subscribe(res => {
+        this.llmStatus.set(res.summary);
+      })
+    );
+  }
+
+  ngOnDestroy(): void {
+    this.sub.unsubscribe();
+  }
 
   toggleDropdown(): void {
     this.dropdownOpen = !this.dropdownOpen;
@@ -295,14 +432,14 @@ export class TopbarComponent {
     this.configService.setMode(mode).pipe(
       tap(() => {
         this.configService.invalidateCache();
+        this.dashboardService.invalidateCache();
         this.mode$ = this.configService.getMode();
         this.dropdownOpen = false;
         this.showToast(
           mode === 'live' ? '✅ Passato a modalità LIVE' : '🔄 Passato a modalità TEST',
           'success'
         );
-        // Ricarica la pagina dopo 800ms per dare tempo al toast di mostrarsi
-        // e garantire che tutti i componenti si reinizializzino con la nuova modalità
+        // Ricarica la pagina dopo 800ms
         setTimeout(() => window.location.reload(), 800);
       }),
       catchError((err) => {
@@ -312,6 +449,27 @@ export class TopbarComponent {
       }),
       tap(() => this.switchDisabled$.next(false))
     ).subscribe();
+  }
+
+  private runLLMCheck(): void {
+    this.sub.add(
+      this.llmModelsService.checkModels().subscribe({
+        next: (res) => {
+          this.llmStatus.set(res.summary);
+          // Redirect only once per session and only if NOT already on /llm-models
+          if (
+            !this._redirectedToModels &&
+            res.summary === 'all_down' &&
+            !window.location.pathname.endsWith('/llm-models')
+          ) {
+            this._redirectedToModels = true;
+            this.showToast('⚠️ Nessun modello AI attivo! Reindirizzamento...', 'error');
+            setTimeout(() => { window.location.href = '/llm-models'; }, 2000);
+          }
+        },
+        error: () => this.llmStatus.set('all_down'),
+      })
+    );
   }
 
   private showToast(message: string, type: 'success' | 'error'): void {

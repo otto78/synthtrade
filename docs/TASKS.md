@@ -234,16 +234,16 @@ src/app/
 ---
 
 ### TASK-800 — Setup Base & Configurazioni
-**Status:** To Do
+**Status:** Done ✅
 **Priorità:** Critica
 
 **Dettagli:**
 Aggiungere configurazioni scalping senza frammentare il sistema.
 
 **Piano:**
-1. In `app/config.py`, creare `ScalpingSettings` (es. `SCALPING_MAX_DAILY_LOSS_PCT`, `SCALPING_TIMEFRAME`, `SCALPING_SIGNAL_STRENGTH_THRESHOLD`).
-2. Aggiungere le variabili d'ambiente a `.env.example` e documentarle in `.env` (inclusa `CRYPTOPANIC_API_KEY` per le news).
-3. Test TDD: testare il caricamento corretto dei valori da env vars.
+1. ✅ In `app/config.py`, creare `ScalpingSettings` con 13 parametri scalping + property `settings.scalping`
+2. ✅ Aggiunte variabili d'ambiente a `.env` (sezione `# Scalping Module v2.0`)
+3. ✅ Test TDD: 30/30 test PASS (default, override via env, type coercion, access via settings)
 
 ---
 

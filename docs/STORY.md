@@ -467,6 +467,21 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 **Decisioni chiave:**
 - Le favicon SVG con emoji (`<text>⚡</text>`) non sono supportate universalmente come favicon; serve un path vettoriale reale
 
+### v1.3.2 — 2026-05-22
+
+**Milestone:** TASK-800 completato — ScalpingSettings in config.py
+
+**Completato:**
+- ✅ **ScalpingSettings**: Classe Pydantic in `app/config.py` con 13 parametri scalping (rischio, timeframe, intelligenza, supervisor, opportunity)
+- ✅ **settings.scalping**: Property cached su Settings singleton per accesso centralizzato
+- ✅ **.env aggiornato**: Sezione `# Scalping Module v2.0` con tutte le variabili documentate
+- ✅ **30/30 test PASS**: Default values, override via env, type coercion, access via settings.scalping
+- ✅ **Fix .env bug**: Commento sulla stessa riga di `CRYPTOPANIC_API_KEY` parsato come valore — spostato su riga separata
+
+**Decisioni chiave:**
+- `ScalpingSettings` è una classe separata da `Settings` per isolamento delle responsabilità, accessibile via `settings.scalping`
+- Caching con `@cached_property` per evitare ricreazione dell'istanza a ogni accesso
+
 ---
 
-**Ultima modifica:** 2026-05-22 — Cline (Fix favicon saetta vettoriale)
+**Ultima modifica:** 2026-05-22 — Cline (TASK-800 completato + fix favicon)

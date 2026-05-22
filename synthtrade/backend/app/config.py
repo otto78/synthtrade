@@ -1,3 +1,4 @@
+from functools import cached_property
 from pathlib import Path
 from typing import List
 from pydantic import computed_field
@@ -7,6 +8,43 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Then go up one level to find the .env file in synthtrade/backend/
 BASE_DIR = Path(__file__).resolve().parent.parent
 ENV_FILE = BASE_DIR / '.env'
+
+
+class ScalpingSettings(BaseSettings):
+    """Configurazioni specifiche per il modulo Scalping (Epic-800)."""
+    model_config = SettingsConfigDict(
+        env_file=str(ENV_FILE),
+        env_file_encoding='utf-8',
+        case_sensitive=False,
+        extra='ignore'
+    )
+
+    # Limiti di trading
+    SCALPING_MAX_DAILY_LOSS_PCT: float = 3.0
+    SCALPING_MAX_CONSECUTIVE_LOSSES: int = 5
+    SCALPING_MAX_POSITION_SIZE: float = 0.01
+
+    # Timeframe e segnali
+    SCALPING_TIMEFRAME: str = '1m'
+    SCALPING_SIGNAL_STRENGTH_THRESHOLD: float = 30.0
+    SCALPING_MIN_CONFIDENCE: float = 0.6
+    SCALPING_EXECUTION_INTERVAL_MS: int = 500
+    SCALPING_CANDLE_BUFFER_SIZE: int = 100
+
+    # Intelligence
+    SCALPING_INTEL_UPDATE_INTERVAL_SEC: int = 60
+
+    # Supervisor AI
+    SCALPING_SUPERVISOR_INTERVAL_MIN: int = 10
+    SCALPING_SUPERVISOR_MIN_TRADES_BEFORE_DECISION: int = 3
+
+    # Opportunity Monitor
+    SCALPING_OPPORTUNITY_POLL_INTERVAL_MIN: int = 5
+    CRYPTOPANIC_API_KEY: str = ''
+
+    # Modalità default
+    SCALPING_DEFAULT_MODE: str = 'PAPER'
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -128,5 +166,11 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> List[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(',')]
+
+    # Scalping
+    @cached_property
+    def scalping(self) -> ScalpingSettings:
+        return ScalpingSettings()
+
 
 settings = Settings()

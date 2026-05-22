@@ -89,6 +89,51 @@ class ConnectionManager:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
+    # TASK-801: Nuovi broadcast per scalping (Signal Intelligence)
+    async def broadcast_scalping_tick(self, symbol: str, price: float,
+                                      volume: float,
+                                      timestamp: str | None = None):
+        """
+        Broadcast di un tick live dal websocket Binance per lo scalping.
+        Invia prezzo e volume in tempo reale al frontend.
+        """
+        from datetime import datetime, timezone
+        ts = timestamp or datetime.now(timezone.utc).isoformat()
+        message = {
+            "type": "scalping_tick",
+            "symbol": symbol,
+            "price": price,
+            "volume": volume,
+            "timestamp": ts,
+        }
+        for ws in list(self.active_connections):
+            try:
+                await ws.send_json(message)
+            except Exception:
+                self.disconnect(ws)
+
+    async def broadcast_intel_score(self, symbol: str, total_score: float,
+                                     bias: str,
+                                     components: dict | None = None):
+        """
+        Broadcast dello score intelligence aggregato per un simbolo.
+        Inviato periodicamente dall'IntelligenceScheduler.
+        """
+        from datetime import datetime, timezone
+        message = {
+            "type": "intel_score",
+            "symbol": symbol,
+            "total_score": total_score,
+            "bias": bias,
+            "components": components or {},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        for ws in list(self.active_connections):
+            try:
+                await ws.send_json(message)
+            except Exception:
+                self.disconnect(ws)
+
 
 manager = ConnectionManager()
 

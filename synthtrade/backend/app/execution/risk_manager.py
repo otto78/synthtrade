@@ -48,6 +48,36 @@ class RiskManager:
                                    reason=f"Drawdown {current_drawdown_pct:.1f}% supera il limite {self.config.max_drawdown_pct:.1f}%")
         return RiskCheckResult(approved=True, reason="OK")
 
+    def check_max_daily_loss(self, daily_pnl_pct: float,
+                             max_daily_loss_pct: float | None = None) -> RiskCheckResult:
+        """
+        TASK-801: Controllo intraday — perdita massima giornaliera.
+
+        Blocca il trading se la perdita del giorno supera la soglia configurata.
+        """
+        threshold = max_daily_loss_pct if max_daily_loss_pct is not None else self.config.max_drawdown_pct
+        if daily_pnl_pct < -threshold:
+            return RiskCheckResult(
+                approved=False,
+                reason=f"Perdita giornaliera {daily_pnl_pct:.1f}% supera la soglia {threshold:.1f}%"
+            )
+        return RiskCheckResult(approved=True, reason="OK")
+
+    def check_max_consecutive_losses(self, consecutive_losses: int,
+                                     max_consecutive_losses: int | None = None) -> RiskCheckResult:
+        """
+        TASK-801: Controllo intraday — perdite consecutive massime.
+
+        Blocca il trading se il numero di perdite consecutive supera la soglia configurata.
+        """
+        threshold = max_consecutive_losses if max_consecutive_losses is not None else self.config.max_concurrent_positions
+        if consecutive_losses > threshold:
+            return RiskCheckResult(
+                approved=False,
+                reason=f"{consecutive_losses} perdite consecutive superano la soglia {threshold}"
+            )
+        return RiskCheckResult(approved=True, reason="OK")
+
     def calculate_stop_loss_price(self, entry_price: float,
                                   direction: Literal["BUY", "SELL"]) -> float:
         pct = self.config.default_stop_loss_pct
@@ -60,7 +90,11 @@ class RiskManager:
 
     def validate_signal(self, signal, balance: float,
                         open_positions: list[PositionSnapshot],
-                        current_drawdown_pct: float) -> RiskCheckResult:
+                        current_drawdown_pct: float,
+                        daily_pnl_pct: float | None = None,
+                        consecutive_losses: int | None = None,
+                        max_daily_loss_pct: float | None = None,
+                        max_consecutive_losses: int | None = None) -> RiskCheckResult:
         drawdown_check = self.check_drawdown(current_drawdown_pct)
         if not drawdown_check.approved:
             return drawdown_check
@@ -68,6 +102,17 @@ class RiskManager:
         positions_check = self.check_max_positions(open_positions)
         if not positions_check.approved:
             return positions_check
+
+        # TASK-801: Controlli intraday
+        if daily_pnl_pct is not None:
+            daily_check = self.check_max_daily_loss(daily_pnl_pct, max_daily_loss_pct)
+            if not daily_check.approved:
+                return daily_check
+
+        if consecutive_losses is not None:
+            consec_check = self.check_max_consecutive_losses(consecutive_losses, max_consecutive_losses)
+            if not consec_check.approved:
+                return consec_check
 
         size = self.calculate_position_size(balance, signal.price)
         sl = self.calculate_stop_loss_price(signal.price, signal.direction)

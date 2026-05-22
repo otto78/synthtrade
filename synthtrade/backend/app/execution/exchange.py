@@ -16,6 +16,13 @@ class ExchangeProtocol(Protocol):
     async def close_position(self, symbol: str, side: str, quantity: float) -> Dict[str, Any]: ...
     async def get_open_orders(self, symbol: str) -> List[Dict[str, Any]]: ...
     async def get_symbol_filters(self, symbol: str) -> Dict[str, Any]: ...
+    async def place_oco_order(self, symbol: str, side: str, quantity: float,
+                              price: float, stop_price: float,
+                              take_profit_price: float | None = None) -> Dict[str, Any]: ...
+    async def place_stop_loss_order(self, symbol: str, side: str,
+                                    quantity: float, stop_price: float) -> Dict[str, Any]: ...
+    async def place_limit_order(self, symbol: str, side: str,
+                                quantity: float, limit_price: float) -> Dict[str, Any]: ...
 
 class BinanceExchangeAdapter:
     """
@@ -136,3 +143,129 @@ class BinanceExchangeAdapter:
         }
         self._filters_cache[symbol] = filters
         return filters
+
+    # ── TASK-801: OCO, Stop Loss, Limit Orders ─────────────────────────
+
+    async def place_oco_order(self, symbol: str, side: str, quantity: float,
+                              price: float, stop_price: float,
+                              take_profit_price: float | None = None) -> Dict[str, Any]:
+        """
+        TASK-801: Piazzare un ordine OCO (One-Cancels-Other).
+
+        Prova prima con l'ordine OCO nativo CCXT.
+        Se fallisce (es. Binance spot non supporta OCO via CCXT),
+        usa un synthetic OCO: market order + stop loss separato.
+        """
+        try:
+            params: dict = {
+                "type": "oco",
+                "price": price,
+                "stopPrice": stop_price,
+                "takeProfitPrice": take_profit_price,
+                "amount": quantity,
+            }
+            order = await self.client.create_order(
+                symbol,
+                "oco",
+                side.lower(),
+                quantity,
+                price,
+                params=params,
+            )
+            return {
+                "order_id": order.get("id", "unknown"),
+                "type": "oco",
+                "status": order.get("status", "unknown"),
+                "price": order.get("price", price),
+                "stop_price": stop_price,
+                "take_profit_price": take_profit_price,
+                "quantity": order.get("amount", quantity),
+            }
+        except Exception as oco_err:
+            logger.warning(f"OCO non supportato per {symbol}, fallback synthetic: {oco_err}")
+            return await self._place_oco_synthetic(
+                symbol=symbol, side=side, quantity=quantity,
+                price=price, stop_price=stop_price,
+                take_profit_price=take_profit_price,
+            )
+
+    async def _place_oco_synthetic(self, symbol: str, side: str,
+                                    quantity: float, price: float,
+                                    stop_price: float,
+                                    take_profit_price: float | None = None) -> Dict[str, Any]:
+        """
+        Synthetic OCO: place market order + stop loss + limit take profit.
+        """
+        main_order = await self.place_market_order(symbol, side, quantity)
+        sl_result = await self.place_stop_loss_order(
+            symbol=symbol,
+            side="sell" if side.lower() == "buy" else "buy",
+            quantity=quantity,
+            stop_price=stop_price,
+        )
+        tp_result = None
+        if take_profit_price:
+            tp_result = await self.place_limit_order(
+                symbol=symbol,
+                side="sell" if side.lower() == "buy" else "buy",
+                quantity=quantity,
+                limit_price=take_profit_price,
+            )
+        return {
+            "type": "oco_synthetic",
+            "main_order_id": main_order.get("order_id"),
+            "stop_loss_id": sl_result.get("order_id"),
+            "take_profit_id": tp_result.get("order_id") if tp_result else None,
+            "status": "placed",
+        }
+
+    async def place_stop_loss_order(self, symbol: str, side: str,
+                                    quantity: float, stop_price: float) -> Dict[str, Any]:
+        """
+        TASK-801: Piazzare uno stop loss order.
+
+        Usa stop_market (o stop_loss) di CCXT per piazzare
+        un ordine che si attiva quando il prezzo raggiunge stop_price.
+        """
+        try:
+            order = await self.client.create_order(
+                symbol=symbol,
+                type="stop_market",
+                side=side.lower(),
+                amount=quantity,
+                params={"stopPrice": stop_price},
+            )
+            return {
+                "order_id": order.get("id", "unknown"),
+                "type": "stop_loss",
+                "status": order.get("status", "unknown"),
+                "stop_price": stop_price,
+                "quantity": order.get("amount", quantity),
+            }
+        except Exception as e:
+            raise ExchangeOrderError(f"Stop loss failed for {symbol}: {e}")
+
+    async def place_limit_order(self, symbol: str, side: str,
+                                quantity: float, limit_price: float) -> Dict[str, Any]:
+        """
+        TASK-801: Piazzare un limit order.
+
+        Usato come take profit (limit sell per long position).
+        """
+        try:
+            order = await self.client.create_order(
+                symbol=symbol,
+                type="limit",
+                side=side.lower(),
+                amount=quantity,
+                price=limit_price,
+            )
+            return {
+                "order_id": order.get("id", "unknown"),
+                "type": "limit",
+                "status": order.get("status", "unknown"),
+                "price": order.get("price", limit_price),
+                "quantity": order.get("amount", quantity),
+            }
+        except Exception as e:
+            raise ExchangeOrderError(f"Limit order failed for {symbol}: {e}")

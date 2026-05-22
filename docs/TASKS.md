@@ -241,9 +241,10 @@ src/app/
 Aggiungere configurazioni scalping senza frammentare il sistema.
 
 **Piano:**
-1. ✅ In `app/config.py`, creare `ScalpingSettings` con 13 parametri scalping + property `settings.scalping`
+1. ✅ In `app/config.py`, creare `ScalpingSettings` con 12 parametri scalping + property `settings.scalping`
 2. ✅ Aggiunte variabili d'ambiente a `.env` (sezione `# Scalping Module v2.0`)
 3. ✅ Test TDD: 30/30 test PASS (default, override via env, type coercion, access via settings)
+4. ✅ Rimossa dipendenza da CryptoPanic API (a pagamento) — le news crypto useranno fonti free (CoinGecko News API, Messari, CryptoCompare, NewsAPI, RSS feed)
 
 ---
 
@@ -408,7 +409,11 @@ L'engine swing usa REST. Lo scalping richiede uno stream in tempo reale.
 | Binance Futures | Long/Short Ratio | `/futures/data/globalLongShortAccountRatio` | 5min | Gratuito |
 | WS Binance | CVD (da trade stream) | `<symbol>@trade` | Real-time | Gratuito |
 | Alternative.me | Fear & Greed | `https://api.alternative.me/fng/` | 1/giorno | Gratuito |
-| CryptoPanic | News + Sentiment | `https://cryptopanic.com/api/v1/posts/` | 5min | Free tier |
+| CoinGecko News | News crypto | `https://api.coingecko.com/api/v3/news` | On demand | Gratuito ✅ |
+| Messari | News crypto | `https://data.messari.io/api/v1/news` | On demand | Free tier ✅ |
+| CryptoCompare | News crypto | `https://min-api.cryptocompare.com/data/v2/news/?lang=EN` | On demand | Free tier ✅ |
+| NewsAPI | News mainstream | `https://newsapi.org/v2/everything?q=crypto` | On demand | Free tier ✅ |
+| RSS Feed | Notizie crypto | `https://cointelegraph.com/rss`, `https://coindesk.com/arc/outboundfeeds/rss/` | Real-time | Gratuito ✅ |
 | Glassnode | On-chain | `https://api.glassnode.com/v1/metrics/` | 1h | Free tier |
 
 **📎 Dettaglio Piano — SignalScoreEngine (pesi):**
@@ -750,9 +755,12 @@ Ogni 5 minuti:
 # BinanceRSSPoller — Feed RSS ufficiale Binance
 RSS_URL = "https://www.binance.com/en/support/announcement/rss"
 
-# CryptoPanicPoller — News aggregate con score sentiment
-BASE_URL = "https://cryptopanic.com/api/v1/posts/"
-Params: filter="important", currencies="BTC,ETH"
+# NewsPollers — Fonti news crypto gratuite (senza API key):
+#   CoinGecko:   https://api.coingecko.com/api/v3/news
+#   Messari:     https://data.messari.io/api/v1/news
+#   CryptoCompare: https://min-api.cryptocompare.com/data/v2/news/?lang=EN
+#   NewsAPI:     https://newsapi.org/v2/everything?q=crypto OR bitcoin OR ethereum
+#   RSS Feed:    https://cointelegraph.com/rss, https://coindesk.com/arc/outboundfeeds/rss/
 
 # CoinGeckoPoller — Trending coins
 TRENDING_URL = "https://api.coingecko.com/api/v3/search/trending"
@@ -773,7 +781,7 @@ POST /opportunities/{id}/ignore      # marca come ignorata
 Rilevamento automatico di opportunità di mercato (nuove listing, launchpool, news, whale movements) tramite polling multi-fonte e classificazione AI.
 
 **Piano:**
-1. Implementare `BinanceRSSPoller`, `CryptoPanicPoller`, `CoinGeckoPoller`, `WhaleAlertPoller`.
+1. Implementare `BinanceRSSPoller`, `NewsPoller` (aggregatore multi-fonte: CoinGecko News, Messari, CryptoCompare, NewsAPI, RSS feed), `CoinGeckoPoller`, `WhaleAlertPoller`.
 2. Implementare `Deduplicator` (hash del contenuto per evitare duplicati cross-source).
 3. Implementare `OpportunityClassifier` via `app/ai/model_client.py`.
 4. Implementare `OpportunityRouter` per smistare per categoria e urgenza.

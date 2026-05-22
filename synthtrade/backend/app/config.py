@@ -40,7 +40,6 @@ class ScalpingSettings(BaseSettings):
 
     # Opportunity Monitor
     SCALPING_OPPORTUNITY_POLL_INTERVAL_MIN: int = 5
-    CRYPTOPANIC_API_KEY: str = ''
 
     # Modalità default
     SCALPING_DEFAULT_MODE: str = 'PAPER'

@@ -32,9 +32,10 @@ class TestCandleBuffer:
     def test_buffer_is_circular(self):
         buf = CandleBuffer(size=5)
         for i in range(10):
-            buf.add(self._make_candle(i))
+            buf.add(self._make_candle(i, close=Decimal(str(100 + i))))
         assert len(buf) == 5
-        assert buf[0].close == Decimal("5")  # Prima candela scacciata
+        # Dopo 10 inserimenti con buffer size 5, le ultime 5 sono 101-105
+        assert buf[0].close == Decimal("105")  # Ultima candela inserita
 
     def test_latest_property(self):
         buf = CandleBuffer(size=10)

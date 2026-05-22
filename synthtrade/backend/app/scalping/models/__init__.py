@@ -4,8 +4,16 @@ from app.scalping.models.intelligence import (
     LongShortRatio,
     CVDData,
     FearGreedData,
+    OnChainData,
+    SentimentData,
+    WhaleData,
     SignalScore,
     MarketIntelSnapshot,
+)
+
+from app.scalping.models.market import (
+    Candle,
+    MarketRegime,
 )
 
 __all__ = [
@@ -14,6 +22,11 @@ __all__ = [
     "LongShortRatio",
     "CVDData",
     "FearGreedData",
+    "OnChainData",
+    "SentimentData",
+    "WhaleData",
     "SignalScore",
     "MarketIntelSnapshot",
+    "Candle",
+    "MarketRegime",
 ]

@@ -265,7 +265,7 @@ Estendere i moduli pre-esistenti invece di creare cloni scalping-only.
 ---
 
 ### TASK-802 — Database Migrations (Tabelle Separate) [📎 Dettaglio]
-**Status:** To Do
+**Status:** Done ✅
 **Priorità:** Alta
 
 **📎 Dettaglio Piano — Schema DB completo:**

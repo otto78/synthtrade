@@ -9,7 +9,8 @@ LOOKBACK_PERIODS = {
 
 
 def ema(series: pd.Series, period: int) -> pd.Series:
-    return series.ewm(span=period, adjust=False).mean()
+    result = series.ewm(span=period, adjust=False).mean()
+    return result if isinstance(result, pd.Series) else result.iloc[:, 0]
 
 
 def rsi(series: pd.Series, period: int = 14) -> pd.Series:
@@ -26,15 +27,16 @@ def rsi(series: pd.Series, period: int = 14) -> pd.Series:
     return result
 
 
-def bollinger_bands(series: pd.Series, period: int = 20, std: float = 2.0):
+def bollinger_bands(series: pd.Series, period: int = 20, std: float = 2.0) -> tuple[pd.Series, pd.Series, pd.Series]:
     mid = series.rolling(period).mean()
     sigma = series.rolling(period).std()
     return mid - std * sigma, mid, mid + std * sigma
 
 
 def signal_ema_crossover(df: pd.DataFrame, fast: int, slow: int) -> pd.Series:
-    ema_f = ema(df["close"], fast).shift(1)
-    ema_s = ema(df["close"], slow).shift(1)
+    close = df["close"]
+    ema_f: pd.Series = ema(close, fast).shift(1)
+    ema_s: pd.Series = ema(close, slow).shift(1)
     sig = pd.Series(0, index=df.index)
     sig[ema_f > ema_s] = 1
     sig[ema_f < ema_s] = -1
@@ -42,7 +44,8 @@ def signal_ema_crossover(df: pd.DataFrame, fast: int, slow: int) -> pd.Series:
 
 
 def signal_rsi_reversion(df: pd.DataFrame, period: int, oversold: int, overbought: int) -> pd.Series:
-    r = rsi(df["close"], period).shift(1)
+    close = df["close"]
+    r: pd.Series = rsi(close, period).shift(1)
     sig = pd.Series(0, index=df.index)
     sig[r < oversold] = 1
     sig[r > overbought] = -1
@@ -50,8 +53,9 @@ def signal_rsi_reversion(df: pd.DataFrame, period: int, oversold: int, overbough
 
 
 def signal_breakout_bb(df: pd.DataFrame, period: int, std: float) -> pd.Series:
-    lower, _, upper = bollinger_bands(df["close"], period, std)
-    prev_close = df["close"].shift(1)
+    close = df["close"]
+    lower, _, upper = bollinger_bands(close, period, std)
+    prev_close = close.shift(1)
     sig = pd.Series(0, index=df.index)
     sig[prev_close > upper.shift(1)] = 1
     sig[prev_close < lower.shift(1)] = -1
@@ -60,10 +64,10 @@ def signal_breakout_bb(df: pd.DataFrame, period: int, std: float) -> pd.Series:
 
 def macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
     """Calcola il segnale MACD: 1 quando MACD > signal line, -1 quando < ."""
-    ema_fast = ema(series, fast)
-    ema_slow = ema(series, slow)
-    macd_line = ema_fast - ema_slow
-    signal_line = ema(macd_line, signal)
+    ema_fast: pd.Series = ema(series, fast)
+    ema_slow: pd.Series = ema(series, slow)
+    macd_line: pd.Series = ema_fast - ema_slow
+    signal_line: pd.Series = ema(macd_line, signal)
     sig = pd.Series(0, index=series.index)
     sig[macd_line > signal_line] = 1
     sig[macd_line < signal_line] = -1
@@ -72,13 +76,15 @@ def macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> 
 
 def signal_macd_crossover(df: pd.DataFrame, macd_fast: int, macd_slow: int, macd_signal: int) -> pd.Series:
     """Segnale basato sull'incrocio MACD."""
-    return macd(df["close"], macd_fast, macd_slow, macd_signal)
+    close = df["close"]
+    return macd(close, macd_fast, macd_slow, macd_signal)
 
 
 def signal_ema_dual_crossover(df: pd.DataFrame, ema_short: int, ema_long: int) -> pd.Series:
     """EMA crossover generico per scalping e trend veloci."""
-    ema_f = ema(df["close"], ema_short).shift(1)
-    ema_s = ema(df["close"], ema_long).shift(1)
+    close = df["close"]
+    ema_f: pd.Series = ema(close, ema_short).shift(1)
+    ema_s: pd.Series = ema(close, ema_long).shift(1)
     sig = pd.Series(0, index=df.index)
     sig[ema_f > ema_s] = 1
     sig[ema_f < ema_s] = -1
@@ -102,10 +108,10 @@ def vwap(df: pd.DataFrame) -> pd.Series:
     Returns:
         pd.Series con il VWAP per ogni riga.
     """
-    close = df["close"]
-    volume = df["volume"]
-    cum_pv = (close * volume).cumsum()
-    cum_vol = volume.cumsum()
+    close: pd.Series = df["close"]
+    volume: pd.Series = df["volume"]
+    cum_pv: pd.Series = (close * volume).cumsum()
+    cum_vol: pd.Series = volume.cumsum()
     # Evita divisione per zero
     return cum_pv / cum_vol.replace(0, pd.NA)
 
@@ -116,7 +122,7 @@ def vwap(df: pd.DataFrame) -> pd.Series:
 def _true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
     """Calcola il True Range per ogni riga."""
     prev_close = close.shift(1)
-    tr = pd.concat([
+    tr: pd.Series = pd.concat([
         high - low,
         (high - prev_close).abs(),
         (low - prev_close).abs(),
@@ -131,8 +137,8 @@ def _directional_movement(
     """Calcola +DM e -DM smoothed."""
     prev_high = high.shift(1)
     prev_low = low.shift(1)
-    up_move = high - prev_high
-    down_move = prev_low - low
+    up_move: pd.Series = high - prev_high
+    down_move: pd.Series = prev_low - low
 
     plus_dm = pd.Series(0.0, index=high.index)
     minus_dm = pd.Series(0.0, index=high.index)
@@ -149,8 +155,8 @@ def _directional_movement(
 
     # Smoothing con Wilder's method (EMA-like)
     # Prima media semplice, poi smoothing
-    plus_dm_smooth = plus_dm.rolling(period).mean()
-    minus_dm_smooth = minus_dm.rolling(period).mean()
+    plus_dm_smooth: pd.Series = plus_dm.rolling(period).mean()
+    minus_dm_smooth: pd.Series = minus_dm.rolling(period).mean()
 
     # Wilder smoothing
     alpha = 1 / period
@@ -180,28 +186,28 @@ def adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
     Returns:
         pd.Series con ADX (range 0-100).
     """
-    high = df["high"]
-    low = df["low"]
-    close = df["close"]
+    high: pd.Series = df["high"]
+    low: pd.Series = df["low"]
+    close: pd.Series = df["close"]
 
     # True Range smoothing (ATR-like)
-    tr = _true_range(high, low, close)
-    atr = tr.rolling(period).mean()
+    tr: pd.Series = _true_range(high, low, close)
+    atr: pd.Series = tr.rolling(period).mean()
 
     # +DI e -DI
     plus_dm, minus_dm = _directional_movement(high, low, period)
 
     # +DI e -DI normalizzati su ATR
-    plus_di = 100 * plus_dm / atr.replace(0, pd.NA)
-    minus_di = 100 * minus_dm / atr.replace(0, pd.NA)
+    plus_di: pd.Series = 100 * plus_dm / atr.replace(0, pd.NA)
+    minus_di: pd.Series = 100 * minus_dm / atr.replace(0, pd.NA)
 
     # DX = |+DI - -DI| / (+DI + -DI) * 100
-    di_diff = (plus_di - minus_di).abs()
-    di_sum = (plus_di + minus_di).replace(0, pd.NA)
-    dx = 100 * di_diff / di_sum
+    di_diff: pd.Series = (plus_di - minus_di).abs()
+    di_sum: pd.Series = (plus_di + minus_di).replace(0, pd.NA)
+    dx: pd.Series = 100 * di_diff / di_sum
 
     # ADX = media mobile di DX
-    adx_series = dx.rolling(period).mean()
+    adx_series: pd.Series = dx.rolling(period).mean()
 
     return adx_series
 
@@ -225,14 +231,15 @@ def detect_trend(df: pd.DataFrame, period: int = 20) -> str:
     if len(df) < period:
         return "insufficient_data"
 
-    closes = df["close"].iloc[-period:].values
+    closes = df["close"].iloc[-period:].to_numpy()
     x = np.arange(len(closes))
 
     # Regressione lineare via polyfit
-    slope, intercept = np.polyfit(x, closes, 1)
+    coeffs: np.ndarray = np.polyfit(x, closes, 1)
+    slope: float = float(coeffs[0])
 
     # Pendenza normalizzata come % del prezzo medio
-    slope_pct = slope / np.mean(closes) * 100
+    slope_pct: float = slope / float(np.mean(closes)) * 100
 
     if slope_pct > 0.05:
         return "uptrend"
@@ -258,16 +265,16 @@ def detect_volatility(df: pd.DataFrame, period: int = 20) -> float:
     if len(df) < 2:
         return 0.0
 
-    high = df["high"]
-    low = df["low"]
-    close = df["close"]
+    high: pd.Series = df["high"]
+    low: pd.Series = df["low"]
+    close: pd.Series = df["close"]
 
-    tr = _true_range(high, low, close)
-    atr = tr.rolling(period).mean()
-    avg_price = close.rolling(period).mean()
+    tr: pd.Series = _true_range(high, low, close)
+    atr: pd.Series = tr.rolling(period).mean()
+    avg_price: pd.Series = close.rolling(period).mean()
 
     # Volatilità normalizzata come ATR% / prezzo
-    vol = (atr / avg_price.replace(0, pd.NA)).dropna()
+    vol: pd.Series = (atr / avg_price.replace(0, pd.NA)).dropna()
     if len(vol) == 0:
         return 0.0
 

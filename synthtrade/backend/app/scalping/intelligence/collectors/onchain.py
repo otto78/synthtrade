@@ -61,11 +61,14 @@ class OnChainCollector:
         if not self._dune_key:
             return {}
             
-        # In una implementazione reale, avremmo una mappa di query_id per simbolo
-        # Qui usiamo un esempio fittizio o saltiamo se non configurato
-        query_map = {"btc": "123456", "eth": "789012"}
+        # Mappa dinamica basata su settings
+        query_map = {
+            "btc": settings.scalping.DUNE_QUERY_ID_BTC,
+            "eth": settings.scalping.DUNE_QUERY_ID_ETH
+        }
+        
         query_id = query_map.get(symbol)
-        if not query_id:
+        if not query_id or query_id == '0':
             return {}
 
         try:
@@ -77,7 +80,13 @@ class OnChainCollector:
                     rows = data.get("result", {}).get("rows", [])
                     if rows:
                         # Assumiamo che la query restituisca 'net_flow'
-                        return {"net_flow": Decimal(str(rows[0].get("net_flow", 0)))}
+                        # Cerchiamo vari nomi possibili per flessibilità
+                        row = rows[0]
+                        net_flow = row.get("net_flow") or row.get("netflow") or row.get("value")
+                        if net_flow is not None:
+                            return {"net_flow": Decimal(str(net_flow))}
+                elif response.status_code == 404:
+                    logger.debug("Dune Query ID %s not found", query_id)
         except Exception as e:
             logger.warning("Dune Analytics fetch error: %s", e)
         return {}

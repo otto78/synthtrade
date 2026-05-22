@@ -48,6 +48,10 @@ class ScalpingSettings(BaseSettings):
     NEWSAPI_API_KEY: str = ''
     CRYPTOCOMPARE_API_KEY: str = ''
     DUNE_API_KEY: str = ''
+    
+    # Dune Query IDs (Public or User-owned)
+    DUNE_QUERY_ID_BTC: str = '35053'   # BTC CEX Netflow (Daily)
+    DUNE_QUERY_ID_ETH: str = '35055'   # ETH CEX Netflow (Daily) - Placeholder probabile
 
 
 class Settings(BaseSettings):

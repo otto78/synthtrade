@@ -4,9 +4,10 @@
 
 import { NgModule } from '@angular/core';
 import { RouterModule, Routes } from '@angular/router';
+import { ScalpingDashboardComponent } from './components/scalping-dashboard.component';
 
 const routes: Routes = [
-  // Lazy loaded routes will be added when components are created
+  { path: '', component: ScalpingDashboardComponent },
 ];
 
 @NgModule({

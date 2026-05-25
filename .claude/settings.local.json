@@ -23,7 +23,8 @@
       "Bash(taskkill:*)",
       "Bash(kill:*)",
       "Bash(cmd.exe /c \"taskkill /PID 43600 /F\")",
-      "Bash(cmd.exe /c \"tasklist /FI \\\\\"PID eq 43600\\\\\"\")"
+      "Bash(cmd.exe /c \"tasklist /FI \\\\\"PID eq 43600\\\\\"\")",
+      "Bash(find . -type f -name *.module.ts)"
     ]
   }
 }

@@ -35,6 +35,10 @@ export const routes: Routes = [
         path: 'llm-models',
         loadComponent: () => import('./pages/llm-models/llm-models.page').then(m => m.LLMModelsPage),
       },
+      {
+        path: 'scalping',
+        loadChildren: () => import('./scalping/scalping.module').then(m => m.ScalpingModule),
+      },
     ],
   },
   { path: '**', redirectTo: 'dashboard' },

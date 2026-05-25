@@ -260,6 +260,7 @@ src/app/
 ---
 
 ### TASK-809 — Frontend (Dashboard Scalping) [📎 Dettaglio]
+See `plans/task809_frontend_scalping.md` for implementation plan.
 **Status:** To Do
 **Priorità:** Media
 

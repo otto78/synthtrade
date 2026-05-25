@@ -1,4 +1,9 @@
-"""RegimeDetector - identifica il regime di mercato."""
+"""RegimeDetector - identifica il regime di mercato.
+
+L'implementazione predefinita (detect()) usa logica interna semplice.
+Il metodo detect_with_core() riutilizza detect_trend() e detect_volatility()
+da app/core/indicators.py per un'analisi più sofisticata.
+"""
 
 from typing import List, Optional
 
@@ -55,3 +60,47 @@ class RegimeDetector:
             confidence = 0.6
 
         return MarketRegime(regime=regime, confidence=confidence)
+
+    def detect_with_core(
+        self,
+        candles: List[Candle],
+    ) -> MarketRegime:
+        """Detect regime usando app/core/indicators.py.
+        
+        Metodo aggiuntivo che riutilizza detect_trend() e detect_volatility()
+        dal core. Non sostituisce detect() per retrocompatibilità.
+        """
+        import pandas as pd
+        from app.core.indicators import detect_trend, detect_volatility
+
+        if len(candles) < 20:
+            return MarketRegime(regime="unknown", confidence=0.0)
+
+        df = pd.DataFrame([
+            {
+                "open": float(c.open),
+                "high": float(c.high),
+                "low": float(c.low),
+                "close": float(c.close),
+                "volume": getattr(c, "volume", 0),
+            }
+            for c in candles[-20:]
+        ])
+
+        vol_pct = detect_volatility(df, period=20)
+        trend = detect_trend(df, period=20)
+
+        regime_map = {
+            "uptrend": "trending_up",
+            "downtrend": "trending_down",
+            "ranging": "ranging",
+            "insufficient_data": "unknown",
+        }
+
+        if vol_pct > 2.0:  # 2% ATR ratio = volatile
+            return MarketRegime(regime="volatile", confidence=0.7)
+
+        mapped_regime = regime_map.get(trend, "ranging")
+        confidence = 0.85 if mapped_regime in ("trending_up", "trending_down") else 0.6
+
+        return MarketRegime(regime=mapped_regime, confidence=confidence)

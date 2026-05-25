@@ -2,10 +2,12 @@ import json
 import re
 import logging
 from app.ai.schemas import EvalResult
+from app.scalping.models.supervisor import SupervisorDecision
 
 logger = logging.getLogger(__name__)
 
 _VALID_VERDICTS = {"PROMOTE", "HOLD", "DEMOTE"}
+_VALID_ACTIONS = {"update_params", "change_strategy", "pause_trading", "resume_trading", "no_action"}
 _MD_JSON_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
 
 
@@ -50,4 +52,29 @@ def parse_eval_result(raw: str, strategy_id: str, model_used: str) -> EvalResult
         confidence=confidence,
         model_used=model_used,
         tokens_used=data.get("tokens_used", 0),
+    )
+
+
+def parse_supervisor_decision(raw: str) -> SupervisorDecision:
+    """Parse AI supervisor decision JSON with new fields."""
+    md_match = _MD_JSON_RE.search(raw)
+    json_str = md_match.group(1).strip() if md_match else raw.strip()
+
+    try:
+        data = json.loads(json_str)
+    except json.JSONDecodeError as e:
+        raise EvalParseError(f"JSON supervisor non valido: {e}") from e
+
+    action = data.get("action", "")
+    if action not in _VALID_ACTIONS:
+        raise EvalParseError(f"action non valida: '{action}'. Attese: {_VALID_ACTIONS}")
+
+    return SupervisorDecision(
+        action=action,
+        reason=data.get("reason", ""),
+        confidence=float(data.get("confidence", 0.5)),
+        market_bias=data.get("market_bias"),
+        primary_signal=data.get("primary_signal"),
+        new_params=data.get("new_params"),
+        new_strategy=data.get("new_strategy"),
     )

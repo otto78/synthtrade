@@ -1,11 +1,13 @@
 """ExecutionLoop - main loop scalping v2.0.
 
 Orchestrazione completa del processo di trading ad alta frequenza.
+Può riutilizzare RiskManager (app/execution/risk_manager.py) e
+BinanceExchangeAdapter (app/execution/exchange.py) dal core se forniti.
 """
 
 import asyncio
 import logging
-from typing import Optional, Callable
+from typing import Optional, Callable, Any
 
 from app.scalping.data.candle_buffer import CandleBuffer
 from app.scalping.engine.regime_detector import RegimeDetector
@@ -24,6 +26,7 @@ class ExecutionLoop:
     """Main execution loop per lo scalping.
 
     Gira ogni 500ms-2s processando candele e generando segnali.
+    Può opzionalmente riutilizzare RiskManager e BinanceExchangeAdapter dal core.
     """
 
     def __init__(
@@ -35,14 +38,18 @@ class ExecutionLoop:
         regime_detector: Optional[RegimeDetector] = None,
         strategy_selector: Optional[StrategySelector] = None,
         position_manager: Optional[PositionManager] = None,
+        risk_manager: Optional[Any] = None,  # app.execution.risk_manager.RiskManager
+        exchange: Optional[Any] = None,  # app.execution.exchange.BinanceExchangeAdapter
     ):
         self._symbol = symbol
         self._candle_buffer = candle_buffer or CandleBuffer()
-        self._signal_engine = signal_engine or SignalScoreEngine()
+        self._signal_engine = signal_engine or SignalScoreEngine(symbol=self._symbol)
         self._signal_aggregator = signal_aggregator or SignalAggregator()
         self._regime_detector = regime_detector or RegimeDetector()
         self._strategy_selector = strategy_selector or StrategySelector()
         self._position_manager = position_manager or PositionManager()
+        self._risk_manager = risk_manager  # Opzionale
+        self._exchange = exchange  # Opzionale
         self._strategy: Optional[AbstractScalpingStrategy] = None
         self._current_regime: Optional[MarketRegime] = None
         self._running = False
@@ -83,7 +90,7 @@ class ExecutionLoop:
         # 1. Calcola indicatori
         self._indicators = AbstractScalpingStrategy.calculate_indicators(candles)
 
-        # 2. Detect regime
+        # 2. Detect regime (usa detect_trend/detect_volatility da app/core/indicators.py via RegimeDetector)
         self._current_regime = self._regime_detector.detect(candles, self._indicators)
 
         # 3. Select strategy
@@ -96,13 +103,28 @@ class ExecutionLoop:
         technical_signal = self._strategy.evaluate(candles, self._indicators)
 
         # 5. Get market intelligence score
-        market_score = await self._signal_engine.compute(self._symbol)
+        market_score = await self._signal_engine.compute()
 
         # 6. Aggregate signals
         decision = self._signal_aggregator.should_execute(technical_signal, market_score)
 
-        # 7. Notify
-        if self._on_signal and decision.execute:
+        # 7. Risk check via RiskManager core (opzionale, se fornito)
+        if decision and decision.execute and self._risk_manager:
+            try:
+                risk_result = self._risk_manager.check_drawdown(0.0)
+                if not risk_result.approved:
+                    logger.warning(f"Risk check bloccato: {risk_result.reason}")
+                    decision = ExecutionDecision(
+                        execute=False,
+                        reason=f"Risk block: {risk_result.reason}",
+                        confidence=0.0,
+                    )
+                    return decision
+            except Exception as exc:
+                logger.warning(f"Risk check fallito (non bloccante): {exc}")
+
+        # 8. Notify
+        if self._on_signal and decision and decision.execute:
             await self._on_signal(decision, market_score, technical_signal)
 
         return decision

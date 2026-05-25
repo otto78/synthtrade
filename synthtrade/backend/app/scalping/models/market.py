@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 def _utcnow() -> datetime:
@@ -12,6 +12,8 @@ def _utcnow() -> datetime:
 
 class Candle(BaseModel):
     """Candela 1m da Binance WS."""
+    model_config = ConfigDict(frozen=True)
+
     symbol: str
     open: Decimal
     high: Decimal
@@ -20,9 +22,6 @@ class Candle(BaseModel):
     volume: Decimal
     timestamp: datetime
     closed: bool = True
-
-    class Config:
-        frozen = True
 
 
 class MarketRegime(BaseModel):

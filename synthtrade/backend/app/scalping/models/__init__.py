@@ -16,6 +16,10 @@ from app.scalping.models.market import (
     MarketRegime,
 )
 
+from app.scalping.models.supervisor import (
+    SupervisorDecision,
+)
+
 __all__ = [
     "FundingRate",
     "OpenInterest",
@@ -29,4 +33,5 @@ __all__ = [
     "MarketIntelSnapshot",
     "Candle",
     "MarketRegime",
+    "SupervisorDecision",
 ]

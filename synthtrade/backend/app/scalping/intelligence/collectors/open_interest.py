@@ -8,7 +8,7 @@ Open Interest crescente + prezzo laterale = breakout imminente
 Open Interest decrescente = mercato in chiusura posizioni
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
@@ -45,7 +45,7 @@ class OpenInterestCollector:
                     symbol=symbol.upper(),
                     value_usd=Decimal(str(data.get("openInterest", "0"))),
                     asset=symbol.replace("USDT", ""),
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                 )
 
         except Exception as e:

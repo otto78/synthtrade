@@ -78,6 +78,11 @@ class TestSignalScoreEngine:
             value=20, label="Extreme Fear", timestamp=datetime.now(timezone.utc)
         ))
 
+        # Mock remaining collectors to None
+        engine._sentiment.collect = AsyncMock(return_value=None)
+        engine._whale.collect = AsyncMock(return_value=None)
+        engine._onchain.collect = AsyncMock(return_value=None)
+
         score = await engine.compute()
 
         assert score.total > 0  # Score positivo = bullish

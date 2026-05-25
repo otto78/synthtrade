@@ -11,10 +11,11 @@ import { ScalpingRoutingModule } from './scalping-routing.module';
 import { ScalpingWsService } from './services/scalping-ws.service';
 import { IntelligenceApiService } from './services/intelligence-api.service';
 import { OpportunityApiService } from './services/opportunity-api.service';
+import { BacktestApiService } from './services/backtest-api.service';
 
 @NgModule({
   declarations: [],
   imports: [CommonModule, HttpClientModule, ScalpingRoutingModule],
-  providers: [ScalpingWsService, IntelligenceApiService, OpportunityApiService],
+  providers: [ScalpingWsService, IntelligenceApiService, OpportunityApiService, BacktestApiService],
 })
 export class ScalpingModule {}

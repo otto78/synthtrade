@@ -41,8 +41,14 @@ export interface SignalScore {
 }
 
 export interface MarketIntelSnapshot {
-  funding_rate?: FundingRate;
-  open_interest?: OpenInterest;
+  symbol?: string;
+  funding_rate?: number;
+  open_interest?: number;
+  signal_score?: number;
+  bias?: 'bullish' | 'bearish' | 'neutral';
+  // Extended format for detailed data
+  funding_rate_detail?: FundingRate;
+  open_interest_detail?: OpenInterest;
   long_short_ratio?: {
     symbol: string;
     long_pct: number;
@@ -50,5 +56,5 @@ export interface MarketIntelSnapshot {
   };
   cvd?: CVDData;
   fear_greed?: FearGreedData;
-  signal_score?: SignalScore;
+  signal_score_detail?: SignalScore;
 }

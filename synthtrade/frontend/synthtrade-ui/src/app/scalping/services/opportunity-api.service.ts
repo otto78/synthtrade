@@ -12,7 +12,7 @@ import { Opportunity } from '../models/opportunity.model';
   providedIn: 'root',
 })
 export class OpportunityApiService {
-  private readonly API_URL = '/api/opportunities';
+  private readonly API_URL = '/api/scalping/opportunities';
 
   constructor(private http: HttpClient) {}
 

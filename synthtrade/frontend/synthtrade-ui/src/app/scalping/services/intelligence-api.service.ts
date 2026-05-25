@@ -12,7 +12,7 @@ import { MarketIntelSnapshot } from '../models/intelligence.model';
   providedIn: 'root',
 })
 export class IntelligenceApiService {
-  private readonly API_URL = '/api/intelligence';
+  private readonly API_URL = '/api/scalping/intelligence';
 
   constructor(private http: HttpClient) {}
 
@@ -31,10 +31,5 @@ export class IntelligenceApiService {
     return this.http.get<MarketIntelSnapshot[]>(
       `${this.API_URL}/${symbol}/history?limit=${limit}`
     );
-  }
-
-  /** Get signal score for symbol */
-  getSignalScore(symbol: string): Observable<any> {
-    return this.http.get<any>(`${this.API_URL}/${symbol}/score`);
   }
 }

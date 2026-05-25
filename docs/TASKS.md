@@ -261,8 +261,15 @@ src/app/
 
 ### TASK-809 — Frontend (Dashboard Scalping) [📎 Dettaglio]
 See `plans/task809_frontend_scalping.md` for implementation plan.
-**Status:** To Do
+**Status:** Done ✅
+**Completato:** 2026-05-25
 **Priorità:** Media
+
+**Risultati:**
+- Dashboard con 4 componenti integrati: MarketIntelPanel, SignalScorecard, OpportunityFeed, ScalpingDashboard
+- Services REST API configurati con URL `/api/scalping/...` per intelligence, opportunities, backtest
+- Router backend incluso in main.py con prefix `/api`
+- Angular build passing
 
 **📎 Dettaglio Piano — WebSocket Service:**
 ```typescript

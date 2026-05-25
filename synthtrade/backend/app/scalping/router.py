@@ -140,3 +140,35 @@ async def list_backtests() -> List[Dict]:
             "completed_at": result.completed_at.isoformat() if result.completed_at else None,
         })
     return summaries
+
+
+# Intelligence endpoints
+@router.get("/intelligence/{symbol}/snapshot")
+async def get_intel_snapshot(symbol: str) -> Dict:
+    """Get latest market intelligence snapshot for symbol."""
+    # TODO: Connect to SignalScoreEngine
+    return {
+        "symbol": symbol,
+        "funding_rate": 0.0,
+        "open_interest": 0,
+        "signal_score": 50,
+        "bias": "neutral",
+    }
+
+
+@router.get("/intelligence/{symbol}/history")
+async def get_intel_history(symbol: str, limit: int = 100) -> List[Dict]:
+    """Get historical intelligence snapshots."""
+    return []
+
+
+# Opportunity endpoints
+@router.get("/opportunities")
+async def get_opportunities(
+    urgency: Optional[str] = None,
+    category: Optional[str] = None,
+    limit: int = 50,
+) -> List[Dict]:
+    """Get opportunities list with filters."""
+    # TODO: Connect to OpportunityRouter
+    return []

@@ -6,6 +6,7 @@ const NAV_ITEMS = [
   { label: 'Dashboard',    icon: '⬡', route: '/dashboard' },
   { label: 'Strategies',   icon: '◈', route: '/strategies' },
   { label: 'Active Trade', icon: '◉', route: '/active-trade' },
+  { label: 'Scalping',     icon: '⚡', route: '/scalping' },
   { label: 'Logs',         icon: '≡', route: '/logs' },
   // New entry for LLM model configuration
   { label: 'LLM Models',   icon: '⟡', route: '/llm-models' },

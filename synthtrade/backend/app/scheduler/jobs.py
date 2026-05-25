@@ -6,6 +6,13 @@ from app.core.run_pipeline import run_pipeline
 from app.core.market_data import get_current_price
 from app.api.ws import manager
 from app.config import settings
+from app.scheduler.scalping_jobs import (
+    intelligence_snapshot_job,
+    funding_rate_update_job,
+    supervisor_check_job,
+    session_health_job,
+    set_engine as set_scalping_engine,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -180,4 +187,21 @@ def setup_scheduler(engine=None) -> AsyncIOScheduler:
                       id="active_strategies")
     scheduler.add_job(monitor_pnl_job, "interval", args=[engine],
                       seconds=settings.SCHEDULER_MONITOR_PNL_INTERVAL_SECONDS, id="monitor_pnl")
+
+    # Scalping jobs (TASK-807) — registrati solo se il modulo scalping è attivo
+    if settings.scalping.SCALPING_DEFAULT_MODE:
+        set_scalping_engine(engine)
+        scheduler.add_job(intelligence_snapshot_job, "interval",
+                          seconds=settings.scalping.SCALPING_INTEL_UPDATE_INTERVAL_SEC,
+                          id="scalping_intel_snapshot")
+        scheduler.add_job(funding_rate_update_job, "interval",
+                          minutes=60,
+                          id="scalping_funding_rate")
+        scheduler.add_job(supervisor_check_job, "interval",
+                          minutes=settings.scalping.SCALPING_SUPERVISOR_INTERVAL_MIN,
+                          id="scalping_supervisor_check")
+        scheduler.add_job(session_health_job, "interval",
+                          seconds=30,
+                          id="scalping_session_health")
+
     return scheduler

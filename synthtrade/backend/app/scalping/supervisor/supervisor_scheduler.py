@@ -62,11 +62,15 @@ class SupervisorScheduler:
                 logger.error(f"Supervisor tick error: {e}")
             await asyncio.sleep(self._interval)
 
-    async def _tick(self) -> None:
+    async def run_once(self) -> Optional[SupervisorDecision]:
+        """Esegui un singolo ciclo di supervisione (usato dai job scheduler)."""
+        return await self._tick()
+
+    async def _tick(self) -> Optional[SupervisorDecision]:
         """Esegui un ciclo di supervisione."""
         # Get market intelligence
-        snapshot = await self._score_engine.get_snapshot(self._symbol)
-        score = await self._score_engine.compute(self._symbol)
+        snapshot = await self._score_engine.get_snapshot()
+        score = await self._score_engine.compute()
 
         # Get regime from execution loop if available
         regime = self._loop.regime if self._loop else None

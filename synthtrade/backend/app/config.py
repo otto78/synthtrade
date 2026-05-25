@@ -41,6 +41,12 @@ class ScalpingSettings(BaseSettings):
     # Opportunity Monitor
     SCALPING_OPPORTUNITY_POLL_INTERVAL_MIN: int = 5
 
+    # Scheduler enable flags (TASK-807)
+    SCALPING_SCHEDULER_INTEL_SNAPSHOT_ENABLED: bool = True
+    SCALPING_SCHEDULER_FUNDING_RATE_ENABLED: bool = True
+    SCALPING_SCHEDULER_SUPERVISOR_ENABLED: bool = True
+    SCALPING_SCHEDULER_HEALTH_ENABLED: bool = True
+
     # Modalità default
     SCALPING_DEFAULT_MODE: str = 'PAPER'
 

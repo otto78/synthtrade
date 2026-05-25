@@ -4,6 +4,10 @@ from datetime import datetime, UTC
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.core.run_pipeline import run_pipeline
 from app.core.market_data import get_current_price
+from app.services.market_data_service import MarketDataService
+from app.db.repositories.ohlcv_repository import OhlcvRepository
+from app.execution.exchange import BinanceExchangeAdapter
+from app.db.supabase_client import get_supabase
 from app.api.ws import manager
 from app.config import settings
 from app.scheduler.scalping_jobs import (
@@ -21,7 +25,15 @@ scheduler = AsyncIOScheduler()
 
 async def run_pipeline_job() -> None:
     try:
-        await run_pipeline()
+        db = get_supabase()
+        exchange = BinanceExchangeAdapter(
+            api_key=settings.binance_api_key,
+            secret=settings.binance_secret_key,
+            testnet=settings.BINANCE_TESTNET,
+        )
+        repo = OhlcvRepository(db)
+        md_service = MarketDataService(repo=repo, exchange=exchange)
+        await run_pipeline(md_service=md_service)
         logger.info("Pipeline job completed")
     except Exception as e:
         logger.error(f"Pipeline job error: {e}")

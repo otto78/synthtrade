@@ -138,10 +138,10 @@ class _DummyClient:
 
 
 @lru_cache(maxsize=1)
-def get_supabase() -> Client:
+def get_supabase() -> Any:
     """Return a Supabase client or a dummy fallback."""
     if not settings.SUPABASE_URL:
         logger.warning("SUPABASE_URL not set. Using DummyClient.")
-        return _DummyClient()  # type: ignore[return-value]
+        return _DummyClient()
     
     return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)

@@ -44,7 +44,7 @@ async def intelligence_snapshot_job() -> None:
         try:
             from app.db.supabase_client import get_supabase
 
-            db = get_supabase()  # type: ignore[attr-defined]
+            db = get_supabase()
             data = {
                 "symbol": snapshot.symbol,
                 "funding_rate": (
@@ -120,6 +120,9 @@ async def funding_rate_update_job() -> None:
         for symbol in symbols:
             try:
                 fr = await collector.collect(symbol)
+                if fr is None:
+                    logger.warning(f"Funding rate for {symbol}: collector returned None")
+                    continue
                 rate_pct = float(fr.rate) * 100 if fr.rate else 0.0
                 logger.info(
                     f"Funding rate {symbol}: {rate_pct:.4f}% "

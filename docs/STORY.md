@@ -484,4 +484,15 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
 
-**Ultima modifica:** 2026-05-22 — Cline (TASK-800 completato + fix favicon)
+**Ultima modifica:** 2026-05-25 — Claude (TASK-806, TASK-807, TASK-808 completati)
+
+---
+
+### v2.0.0-alpha.3 — 2026-05-25
+
+**Milestone:** Scalping Module - Scheduler, Supervisor, Backtest Engine
+
+**Completato:**
+- ✅ **TASK-806 - AI Supervisor**: Integrazione moduli core esistenti. Esteso supervisor context, parameter updater, supervisor scheduler con 20+ test.
+- ✅ **TASK-807 - Scheduler Centralizzato**: 4 job scalping registrati, SupervisorScheduler con run_once(), 15 test passanti.
+- ✅ **TASK-808 - Backtest Engine**: HistoricalLoader, BacktestEngine, PerformanceCalculator, 10+ test su dati storici mock.

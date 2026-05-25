@@ -861,3 +861,42 @@ Integrazione LLM per leggere news ed emettere bias correttivi a costo quasi zero
 8. ✅ Tutti i 163 test scalping passanti.
 
 ---
+
+### TASK-807 — Scheduler Centralizzato
+**Status:** Done ✅
+**Completato:** 2026-05-25
+**Priorità:** Alta
+**Dipende da:** TASK-805 ✅
+
+**Risultati:**
+- 4 nuovi job scalping registrati in `app/scheduler/scalping_jobs.py`:
+  - `intelligence_snapshot_job` (ogni 60s): snapshot SignalScoreEngine → Supabase
+  - `funding_rate_update_job` (ogni 60min): funding rate BTCUSDT/ETHUSDT
+  - `supervisor_check_job` (ogni 10min): `SupervisorScheduler.run_once()`
+  - `session_health_job` (ogni 30s): heartbeat sessione
+- 4 flag di abilitazione in `ScalpingSettings` (default: `True`)
+- Registrazione condizionale in `setup_scheduler()` basata su `SCALPING_DEFAULT_MODE`
+- Nuovo metodo pubblico `run_once()` su `SupervisorScheduler`
+- 15 test: 14 verde + 1 con `importlib.reload`
+
+---
+
+### TASK-808 — Backtest Engine
+**Status:** Done ✅
+**Completato:** 2026-05-25
+**Priorità:** Alta
+**Dipende da:** TASK-804
+
+**Dettagli:**
+Motore di backtest per validare le strategie scalping su dati storici prima del go-live.
+
+**Implementazione completata:**
+1. `HistoricalLoader` in `app/scalping/data/historical_loader.py`: scarica OHLCV 1m, funding rate, OI storici da Binance REST API.
+2. `BacktestEngine` in `app/scalping/backtest/backtest_engine.py`: itera candele storiche, esegue ciclo completo con flag `use_intelligence` per confronto intelligence vs tecnico-only.
+3. `PerformanceCalculator` in `app/scalping/backtest/performance_calculator.py`: win rate, drawdown, Sharpe ratio, profit factor, correlazione signal_score → outcome.
+4. `ReportGenerator` in `app/scalping/backtest/report_generator.py`: report JSON con confronto with/without intelligence.
+5. Modelli Pydantic: `BacktestConfig`, `BacktestResult`, `SimulatedTrade`.
+6. Endpoint `POST /scalping/backtest/run` e `GET /scalping/backtest/{id}/result`.
+7. 10+ test su sequenze candele mock - tutti passanti.
+
+---

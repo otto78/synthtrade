@@ -241,21 +241,25 @@ src/app/
 ---
 
 ### TASK-807 — Scheduler Centralizzato
-**Status:** To Do
+**Status:** Done ✅
+**Completato:** 2026-05-25
 **Priorità:** Alta
-**Dipende da:** TASK-805
+**Dipende da:** TASK-805 ✅
 
-**Dettagli:**
-Gestione dei background job per scalping, unificata con il resto del bot.
-
-**Piano:**
-1. Creare `app/scheduler/scalping_jobs.py`.
-2. Aggiungere i cronjob per `CryptoNewsPoller`, aggiornamento Funding Rate, e check salute sessione.
-3. Importare e registrare questi job nell'istanza esistente di `AsyncIOScheduler` in `app/scheduler/jobs.py` (`setup_scheduler`).
+**Risultati:**
+- 4 nuovi job scalping registrati in `app/scheduler/scalping_jobs.py`:
+  - `intelligence_snapshot_job` (ogni 60s): snapshot SignalScoreEngine → Supabase
+  - `funding_rate_update_job` (ogni 60min): funding rate BTCUSDT/ETHUSDT
+  - `supervisor_check_job` (ogni 10min): `SupervisorScheduler.run_once()`
+  - `session_health_job` (ogni 30s): heartbeat sessione
+- 4 flag di abilitazione in `ScalpingSettings` (default: `True`)
+- Registrazione condizionale in `setup_scheduler()` basata su `SCALPING_DEFAULT_MODE`
+- Nuovo metodo pubblico `run_once()` su `SupervisorScheduler`
+- 15 test: 14 verde + 1 con `importlib.reload`
 
 ---
 
-### TASK-808 — Frontend (Dashboard Scalping) [📎 Dettaglio]
+### TASK-809 — Frontend (Dashboard Scalping) [📎 Dettaglio]
 **Status:** To Do
 **Priorità:** Media
 
@@ -326,55 +330,6 @@ UI in Angular per gestire lo scalping.
 
 ---
 
-### TASK-809 — Regressione E2E [📎 Dettaglio]
-**Status:** To Do
-**Priorità:** Media
-
-**📎 Dettaglio Piano — Test Suite Scalping:**
-```
-Unit Test (pytest):
-  test_strategies.py           → segnali su sequenze candele mock
-  test_signal_score_engine.py  → score per ogni scenario
-  test_cvd_calculator.py       → CVD su stream trade mock
-  test_funding_rate.py         → parsing risposta API + soglie
-
-Integration Test:
-  test_signal_aggregator.py    → segnale bloccato se intelligence contraddice
-  test_execution_loop.py       → loop completo con moduli core mockati
-  test_intelligence_pipeline.py→ collector → score → snapshot
-
-E2E Test (Playwright):
-  scalping-session.spec.ts     → avvio, pausa, stop sessione
-  market-intel.spec.ts         → aggiornamento pannello intelligence
-  opportunity-feed.spec.ts     → notifica opportunità alta urgenza
-```
-
-**📎 Dettaglio Piano — Scenario test aggregatore:**
-```python
-def test_signal_aggregator_blocks_buy_when_overleveraged():
-    score = SignalScore(total=-45, bias='bearish', tradeable=True)
-    technical = Signal(type='BUY', confidence=0.8)
-    result = aggregator.should_execute(technical, score)
-    assert result.execute == False
-    assert "conflitto" in result.reason.lower()
-
-def test_signal_aggregator_allows_buy_when_aligned():
-    score = SignalScore(total=+65, bias='bullish', tradeable=True)
-    technical = Signal(type='BUY', confidence=0.8)
-    result = aggregator.should_execute(technical, score)
-    assert result.execute == True
-    assert result.confidence > 0.5
-```
-
-**Dettagli:**
-Testare l'intero workflow.
-
-**Piano:**
-1. Aggiornare i test Playwright per includere l'avvio e l'arresto della sessione scalping.
-2. Assicurarsi che le suite esistenti (0 regressioni) continuino a passare dopo il deploy.
-
----
-
 ### TASK-810 — Opportunity Monitor [📎 Dettaglio] ★ NUOVO
 **Status:** To Do
 **Priorità:** Media
@@ -432,25 +387,59 @@ Rilevamento automatico di opportunità di mercato (nuove listing, launchpool, ne
 
 ---
 
-### TASK-811 — Backtest Engine [📎 Dettaglio] ★ NUOVO
+### TASK-811 — Regressione E2E [📎 Dettaglio]
 **Status:** To Do
-**Priorità:** Alta
-**Dipende da:** TASK-804
+**Priorità:** Media
 
-**Dettagli:** Motore di backtest per validare le strategie scalping su dati storici prima del go-live.
+**📎 Dettaglio Piano — Test Suite Scalping:**
+```
+Unit Test (pytest):
+  test_strategies.py           → segnali su sequenze candele mock
+  test_signal_score_engine.py  → score per ogni scenario
+  test_cvd_calculator.py       → CVD su stream trade mock
+  test_funding_rate.py         → parsing risposta API + soglie
+
+Integration Test:
+  test_signal_aggregator.py    → segnale bloccato se intelligence contraddice
+  test_execution_loop.py       → loop completo con moduli core mockati
+  test_intelligence_pipeline.py→ collector → score → snapshot
+
+E2E Test (Playwright):
+  scalping-session.spec.ts     → avvio, pausa, stop sessione
+  market-intel.spec.ts         → aggiornamento pannello intelligence
+  opportunity-feed.spec.ts     → notifica opportunità alta urgenza
+```
+
+**📎 Dettaglio Piano — Scenario test aggregatore:**
+```python
+def test_signal_aggregator_blocks_buy_when_overleveraged():
+    score = SignalScore(total=-45, bias='bearish', tradeable=True)
+    technical = Signal(type='BUY', confidence=0.8)
+    result = aggregator.should_execute(technical, score)
+    assert result.execute == False
+    assert "conflitto" in result.reason.lower()
+
+def test_signal_aggregator_allows_buy_when_aligned():
+    score = SignalScore(total=+65, bias='bullish', tradeable=True)
+    technical = Signal(type='BUY', confidence=0.8)
+    result = aggregator.should_execute(technical, score)
+    assert result.execute == True
+    assert result.confidence > 0.5
+```
+
+**Dettagli:**
+Testare l'intero workflow.
 
 **Piano:**
-1. Implementare `HistoricalLoader` (scarica OHLCV da Binance API + funding rate + OI storici).
-2. Implementare `BacktestEngine` con supporto `SignalAggregator` (confronto con/senza intelligence).
-3. Implementare `PerformanceCalculator` (win rate, drawdown, Sharpe ratio, profit factor).
-4. Endpoint `POST /scalping/backtest/run` e `GET /scalping/backtest/{id}/result`.
+1. Aggiornare i test Playwright per includere l'avvio e l'arresto della sessione scalping.
+2. Assicurarsi che le suite esistenti (0 regressioni) continuino a passare dopo il deploy.
 
 ---
 
 ### TASK-812 — Go Live & Deploy [📎 Dettaglio] ★ NUOVO
 **Status:** To Do
 **Priorità:** Media
-**Dipende da:** TASK-805, TASK-811
+**Dipende da:** TASK-805, TASK-808
 
 **Dettagli:** Preparazione e prima esecuzione in modalità LIVE con capitale minimo.
 
@@ -468,13 +457,13 @@ Rilevamento automatico di opportunità di mercato (nuove listing, launchpool, ne
 3. ~~**TASK-802** (DB Migrations)~~ ✅
 4. ~~**TASK-803** (Binance WsClient)~~ ✅
 5. ~~**TASK-804** (Intelligence Layer — componenti NUOVI: collectors, score engine)~~ ✅
-6. **TASK-811** (Backtest Engine — prima di eseguire, per validare)
-7. ~~**TASK-805** (TickProcessor + ExecutionLoop)~~ ✅
-8. **TASK-807** (Scheduler Centralizzato)
-9. **TASK-808** (Frontend)
-10. ~~**TASK-806** (AI Supervisor — estensione moduli core esistenti)~~ ✅
+6. ~~**TASK-805** (TickProcessor + ExecutionLoop)~~ ✅
+7. ~~**TASK-806** (AI Supervisor — estensione moduli core esistenti)~~ ✅
+8. ~~**TASK-807** (Scheduler Centralizzato)~~ ✅
+9. ~~**TASK-808** (Backtest Engine)~~ ✅
+10. **TASK-809** (Frontend Dashboard Scalping)
 11. **TASK-810** (Opportunity Monitor)
-12. **TASK-809** (Regressione E2E)
+12. **TASK-811** (Regressione E2E)
 13. **TASK-812** (Go Live)
 
 ---

@@ -172,3 +172,83 @@ async def get_opportunities(
     """Get opportunities list with filters."""
     # TODO: Connect to OpportunityRouter
     return []
+
+
+# Session endpoints
+_session_state: Dict = {
+    "session_id": None,
+    "status": "idle",
+    "mode": "paper",
+    "strategy": "scalping_v2",
+    "symbol": "BTCUSDT",
+    "paper_balance": 10000.0,
+}
+
+
+@router.get("/session")
+async def get_session() -> Dict:
+    """Get current session status."""
+    return _session_state.copy()
+
+
+@router.post("/session")
+async def control_session(control: Dict) -> Dict:
+    """Control session: start, stop, pause, resume."""
+    global _session_state
+
+    action = control.get("action")
+
+    if action == "start":
+        _session_state["status"] = "running"
+        _session_state["session_id"] = f"sess_{uuid.uuid4().hex[:8]}"
+        _session_state["mode"] = control.get("mode", "paper")
+        _session_state["strategy"] = control.get("strategy", "scalping_v2")
+        _session_state["symbol"] = control.get("symbol", "BTCUSDT")
+
+    elif action == "stop":
+        _session_state = {
+            "session_id": None,
+            "status": "idle",
+            "mode": "paper",
+            "strategy": "scalping_v2",
+            "symbol": "BTCUSDT",
+            "paper_balance": _session_state.get("paper_balance", 10000.0),
+        }
+
+    elif action == "pause":
+        if _session_state["status"] == "running":
+            _session_state["status"] = "paused"
+
+    elif action == "resume":
+        if _session_state["status"] == "paused":
+            _session_state["status"] = "running"
+
+    return _session_state.copy()
+# Position endpoints
+@router.get("/position")
+async def get_position() -> Optional[Dict]:
+    """Get current open position."""
+    # TODO: Connect to PositionManager
+    return None
+
+
+@router.get("/position/list")
+async def list_positions() -> List[Dict]:
+    """List all positions."""
+    return []
+
+
+# Performance endpoint
+@router.get("/performance")
+async def get_performance() -> Dict:
+    """Get performance metrics."""
+    return {
+        "total_pnl": 0,
+        "total_pnl_pct": 0,
+        "win_rate": 0,
+        "total_trades": 0,
+        "winning_trades": 0,
+        "losing_trades": 0,
+        "profit_factor": 0,
+        "max_drawdown": 0,
+    }

@@ -12,10 +12,13 @@ import { ScalpingWsService } from './services/scalping-ws.service';
 import { IntelligenceApiService } from './services/intelligence-api.service';
 import { OpportunityApiService } from './services/opportunity-api.service';
 import { BacktestApiService } from './services/backtest-api.service';
+import { SessionApiService } from './services/session-api.service';
+import { PositionApiService } from './services/position-api.service';
+import { PerformanceApiService } from './services/performance-api.service';
 
 @NgModule({
   declarations: [],
   imports: [CommonModule, HttpClientModule, ScalpingRoutingModule],
-  providers: [ScalpingWsService, IntelligenceApiService, OpportunityApiService, BacktestApiService],
+  providers: [ScalpingWsService, IntelligenceApiService, OpportunityApiService, BacktestApiService, SessionApiService, PositionApiService, PerformanceApiService],
 })
 export class ScalpingModule {}

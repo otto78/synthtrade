@@ -261,13 +261,21 @@ src/app/
 
 ### TASK-809 — Frontend (Dashboard Scalping) [📎 Dettaglio]
 See `plans/task809_frontend_scalping.md` for implementation plan.
-**Status:** Done ✅
-**Completato:** 2026-05-25
+**Status:** Completed ✅
+**Completato:** 2026-05-26
 **Priorità:** Media
 
-**Risultati:**
-- Dashboard con 4 componenti integrati: MarketIntelPanel, SignalScorecard, OpportunityFeed, ScalpingDashboard
-- Services REST API configurati con URL `/api/scalping/...` per intelligence, opportunities, backtest
+**Risultati completati:**
+- Dashboard con componenti: ScalpingDashboard, MarketIntelPanel, SignalScorecard, OpportunityFeed
+- SessionControls: Start/Stop/Paper-Live mode controls
+- PositionTicker: Open position display with PnL
+- LiveChart: Real-time candlestick chart (lightweight-charts)
+- StrategyPanel: Active strategy and parameters display
+- TradeLog: Trade history with signal score column
+- PerformancePanel: Win rate, profit factor, drawdown metrics
+- SupervisorLog: AI decision log
+- RiskControls: Risk manager configuration UI
+- Services: intelligence-api, opportunity-api, session-api, position-api, backtest-api, performance-api
 - Router backend incluso in main.py con prefix `/api`
 - Angular build passing
 

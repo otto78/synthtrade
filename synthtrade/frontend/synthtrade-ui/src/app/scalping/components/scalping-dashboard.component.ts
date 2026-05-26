@@ -6,17 +6,45 @@ import { Component } from '@angular/core';
 import { MarketIntelPanelComponent } from './market-intel-panel.component';
 import { SignalScorecardComponent } from './signal-scorecard.component';
 import { OpportunityFeedComponent } from './opportunity-feed.component';
+import { SessionControlsComponent } from './session-controls.component';
+import { PositionTickerComponent } from './position-ticker.component';
+import { LiveChartComponent } from './live-chart.component';
+import { StrategyPanelComponent } from './strategy-panel.component';
+import { TradeLogComponent } from './trade-log.component';
+import { PerformancePanelComponent } from './performance-panel.component';
+import { SupervisorLogComponent } from './supervisor-log.component';
+import { RiskControlsComponent } from './risk-controls.component';
 
 @Component({
   selector: 'app-scalping-dashboard',
   standalone: true,
-  imports: [MarketIntelPanelComponent, SignalScorecardComponent, OpportunityFeedComponent],
+  imports: [
+    MarketIntelPanelComponent,
+    SignalScorecardComponent,
+    OpportunityFeedComponent,
+    SessionControlsComponent,
+    PositionTickerComponent,
+    LiveChartComponent,
+    StrategyPanelComponent,
+    TradeLogComponent,
+    PerformancePanelComponent,
+    SupervisorLogComponent,
+    RiskControlsComponent
+  ],
   template: `
     <div class="scalping-dashboard">
       <h1>Scalping Dashboard v2.0</h1>
       <p>Signal Intelligence Engine</p>
 
       <div class="dashboard-grid">
+        <app-session-controls class="card"></app-session-controls>
+        <app-position-ticker class="card"></app-position-ticker>
+        <app-live-chart class="card chart-card"></app-live-chart>
+        <app-strategy-panel class="card"></app-strategy-panel>
+        <app-trade-log class="card"></app-trade-log>
+        <app-performance-panel class="card"></app-performance-panel>
+        <app-supervisor-log class="card"></app-supervisor-log>
+        <app-risk-controls class="card"></app-risk-controls>
         <app-market-intel-panel class="card"></app-market-intel-panel>
         <app-signal-scorecard class="card"></app-signal-scorecard>
         <app-opportunity-feed class="card"></app-opportunity-feed>
@@ -27,6 +55,7 @@ import { OpportunityFeedComponent } from './opportunity-feed.component';
     .scalping-dashboard { padding: 20px; }
     .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 20px; }
     .card { background: var(--bg-surface, #161B22); border: 1px solid var(--border-default, rgba(234,236,239,0.1)); border-radius: 8px; }
+    .chart-card { grid-column: span 2; }
     h1 { margin: 0 0 4px 0; color: var(--text-primary, #EAECEF); }
     p { margin: 0 0 16px 0; color: var(--text-secondary, #848E9C); }
   `],

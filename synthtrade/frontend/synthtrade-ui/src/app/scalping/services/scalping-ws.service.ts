@@ -57,6 +57,7 @@ export interface SupervisorDecision {
   confidence: number;
   previous_params?: Record<string, any>;
   new_params?: Record<string, any>;
+  timestamp: string;
 }
 
 export interface RiskBlockEvent {

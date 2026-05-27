@@ -46,6 +46,7 @@ class ScalpingSettings(BaseSettings):
     SCALPING_SCHEDULER_FUNDING_RATE_ENABLED: bool = True
     SCALPING_SCHEDULER_SUPERVISOR_ENABLED: bool = True
     SCALPING_SCHEDULER_HEALTH_ENABLED: bool = True
+    SCALPING_SCHEDULER_OPPORTUNITY_ENABLED: bool = True
 
     # Modalità default
     SCALPING_DEFAULT_MODE: str = 'PAPER'

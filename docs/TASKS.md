@@ -347,9 +347,10 @@ UI in Angular per gestire lo scalping.
 ---
 
 ### TASK-810 — Opportunity Monitor [📎 Dettaglio] ★ NUOVO
-**Status:** To Do
+**Status:** Completed ✅
+**Completato:** 2026-05-27
 **Priorità:** Media
-**Dipende da:** TASK-806
+**Dipende da:** TASK-806✅
 
 **📎 Dettaglio Piano — Architettura:**
 ```
@@ -385,10 +386,21 @@ BASE_URL = "https://api.whale-alert.io/v1/transactions"
 **📎 Dettaglio Piano — API Endpoints:**
 ```
 GET  /opportunities                  # lista con filtri (urgency, category)
-GET  /opportunities/live             # WebSocket stream nuove opportunità
+GET  /opportunities/watchlist        # recupera watchlist simboli
 POST /opportunities/{id}/watchlist   # aggiungi simbolo a watchlist engine
 POST /opportunities/{id}/ignore      # marca come ignorata
 ```
+
+**Risultati completati:**
+- Modelli Pydantic: `Opportunity`, `OpportunityCategory`, `OpportunityUrgency`, `OpportunitySource`, `PollerResult`
+- Pollers: `BinanceRSSPoller`, `CoinGeckoPoller` (trending + news), `WhaleAlertPoller`, `NewsPoller`
+- `Deduplicator` con hash-based deduplication
+- `OpportunityClassifier` con AI (ModelClient) e fallback heuristico
+- `OpportunityRouter` per smistare per categoria e urgenza
+- `OpportunityScheduler` con polling periodico ogni 5 minuti
+- Endpoint: GET `/opportunities`, POST `/opportunities/{id}/watchlist`, POST `/opportunities/{id}/ignore`, GET `/opportunities/watchlist`
+- Job `opportunity_monitor_job` registrato in `app/scheduler/jobs.py`
+- 13 test unitari (13 passed)
 
 **Dettagli:**
 Rilevamento automatico di opportunità di mercato (nuove listing, launchpool, news, whale movements) tramite polling multi-fonte e classificazione AI.

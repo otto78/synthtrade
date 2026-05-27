@@ -3,26 +3,32 @@
  */
 
 export type OpportunityCategory =
-  | 'new_listing'
-  | 'price_alert'
-  | 'whale_movement'
-  | 'news_sentiment'
-  | 'technical_breakout';
+  | 'listing'
+  | 'launchpool'
+  | 'news'
+  | 'whale'
+  | 'airdrop'
+  | 'staking'
+  | 'delisting'
+  | 'other';
 
-export type OpportunityUrgency = 'low' | 'medium' | 'high';
+export type OpportunityUrgency = 'HIGH' | 'MEDIUM' | 'LOW';
 
 export interface Opportunity {
   id: string;
-  source: string;
+  symbol?: string;
   category: OpportunityCategory;
   urgency: OpportunityUrgency;
-  scalping_opportunity: boolean;
+  source: string;
   title: string;
-  action?: string;
-  symbol?: string;
-  expected_volatility?: string;
-  time_sensitive: boolean;
+  description?: string;
   url?: string;
-  detected_at: string;
+  is_tradeable: boolean;
+  confidence_score?: number;
+  published_at?: string;
+  created_at: string;
+  is_watched: boolean;
+  is_ignored: boolean;
+  time_sensitive?: boolean;
   user_action?: 'watched' | 'ignored' | 'acted';
 }

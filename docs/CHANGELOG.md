@@ -7,6 +7,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.0.0-alpha.4] — 2026-05-27
+
+### Added
+- **Opportunity Monitor (TASK-810)**: Modelli Pydantic `Opportunity`, `OpportunityCategory`, `OpportunityUrgency`, `OpportunitySource`, `PollerResult`
+- **Pollers**: `BinanceRSSPoller`, `CoinGeckoPoller` (trending + news), `WhaleAlertPoller`, `NewsPoller` (RSS-based)
+- **Deduplicator**: Hash-based deduplication per evitare duplicati cross-source
+- **OpportunityClassifier**: Classificazione AI (ModelClient) con fallback heuristico basato su keyword matching
+- **OpportunityRouter**: Smistamento per categoria/urgenza, watchlist management (HIGH urgency → aggiunge watchlist)
+- **OpportunityScheduler**: Polling periodico ogni 5 minuti con `run_once()` method
+- **API Endpoints**: GET `/scalping/opportunities`, GET `/scalping/opportunities/watchlist`, POST `/scalping/opportunities/{id}/watchlist`, POST `/scalping/opportunities/{id}/ignore`
+- **Scheduler Job**: `opportunity_monitor_job` registrato in `app/scheduler/jobs.py` (INTERVAL_MIN da config)
+- **Config**: `SCALPING_SCHEDULER_OPPORTUNITY_ENABLED` flag (default: True)
+
 ## [1.3.0] — 2026-05-20
 
 ### Added

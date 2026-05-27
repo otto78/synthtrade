@@ -20,6 +20,14 @@ from app.scalping.models.supervisor import (
     SupervisorDecision,
 )
 
+from app.scalping.models.opportunity import (
+    Opportunity,
+    OpportunityCategory,
+    OpportunityUrgency,
+    OpportunitySource,
+    PollerResult,
+)
+
 __all__ = [
     "FundingRate",
     "OpenInterest",
@@ -34,4 +42,9 @@ __all__ = [
     "Candle",
     "MarketRegime",
     "SupervisorDecision",
+    "Opportunity",
+    "OpportunityCategory",
+    "OpportunityUrgency",
+    "OpportunitySource",
+    "PollerResult",
 ]

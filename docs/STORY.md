@@ -484,7 +484,16 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
 
-**Ultima modifica:** 2026-05-25 — Claude (TASK-806, TASK-807, TASK-808 completati)
+**Ultima modifica:** 2026-05-27 — Claude (TASK-810 completato)
+
+---
+
+### v2.0.0-alpha.4 — 2026-05-27
+
+**Milestone:** Scalping Module - Opportunity Monitor
+
+**Completato:**
+- ✅ **TASK-810 - Opportunity Monitor**: Modelli Pydantic, Pollers (BinanceRSS, CoinGecko, WhaleAlert, News), Deduplicator, Classifier, Router, Scheduler, API endpoints, 13 test unitari.
 
 ---
 

@@ -181,3 +181,23 @@ async def session_health_job() -> None:
         logger.debug("Session health check: OK")
     except Exception as e:
         logger.error(f"Session health job error: {e}")
+
+
+async def opportunity_monitor_job() -> None:
+    """Job: opportunity monitor periodico.
+
+    Esegue polling multi-fonte ogni 5 minuti e classifica opportunità.
+    Frequenza: 5 minuti (300 secondi).
+    """
+    if not settings.scalping.SCALPING_SCHEDULER_OPPORTUNITY_ENABLED:
+        return
+    try:
+        from app.scalping.opportunity.scheduler import OpportunityScheduler
+
+        scheduler = OpportunityScheduler()
+        results = await scheduler.run_once()
+
+        logger.info(f"Opportunity monitor job: {len(results)} new items processed")
+
+    except Exception as e:
+        logger.error(f"Opportunity monitor job error: {e}")

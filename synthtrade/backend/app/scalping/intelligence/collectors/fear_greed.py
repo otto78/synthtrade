@@ -50,7 +50,7 @@ class FearGreedCollector:
                 response = await client.get(ALTERNATIVE_ME_URL, params=params)
                 response.raise_for_status()
 
-                data = await response.json()
+                data = response.json()
                 entries = data.get("data", [])
                 if not entries:
                     return None

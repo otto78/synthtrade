@@ -45,7 +45,17 @@ export interface MarketIntelSnapshot {
   funding_rate?: number;
   open_interest?: number;
   signal_score?: number;
-  bias?: 'bullish' | 'bearish' | 'neutral';
+  signal_bias?: 'bullish' | 'bearish' | 'neutral';
+  tradeable?: boolean;
+  confidence?: number;
+  fear_greed_value?: number;
+  fear_greed_label?: string;
+  cvd_trend?: string;
+  long_pct?: number;
+  short_pct?: number;
+  breakdown?: Record<string, number>;
+  recorded_at?: string;
+  
   // Extended format for detailed data
   funding_rate_detail?: FundingRate;
   open_interest_detail?: OpenInterest;

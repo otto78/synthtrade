@@ -5,7 +5,7 @@
 
 import { Injectable, OnDestroy } from '@angular/core';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
-import { Subject, Observable, timer } from 'rxjs';
+import { Subject, timer } from 'rxjs';
 import { retryWhen, delayWhen, take } from 'rxjs/operators';
 
 // Event types matching backend
@@ -15,11 +15,22 @@ export type ScalpingEventType =
   | 'order'
   | 'position'
   | 'supervisor'
-  | 'risk_block';
+  | 'risk_block'
+  | 'trade_closed';
+
+export interface TradeClosedEvent {
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  entry_price: number;
+  exit_price: number;
+  pnl: number;
+  pnl_pct: number;
+  timestamp: string;
+}
 
 export interface ScalpingEvent {
   type: ScalpingEventType;
-  payload: any;
+  payload: CandleEvent | SignalEvent | PositionEvent | SupervisorDecision | RiskBlockEvent | TradeClosedEvent;
   timestamp: string;
 }
 
@@ -51,12 +62,40 @@ export interface PositionEvent {
   pnl_pct: number;
 }
 
+/** Strategy parameter values — extensible for different strategy types */
+export interface StrategyParams {
+  /** Bollinger Bands period */
+  bb_period?: number;
+  /** Bollinger Bands standard deviation multiplier */
+  bb_std?: number;
+  /** RSI period */
+  rsi_period?: number;
+  /** RSI overbought threshold */
+  rsi_overbought?: number;
+  /** RSI oversold threshold */
+  rsi_oversold?: number;
+  /** EMA fast period */
+  ema_fast?: number;
+  /** EMA slow period */
+  ema_slow?: number;
+  /** Take-profit in percentage */
+  take_profit_pct?: number;
+  /** Stop-loss in percentage */
+  stop_loss_pct?: number;
+  /** Position size in quote currency */
+  position_size?: number;
+  /** Maximum concurrent positions */
+  max_positions?: number;
+  /** Additional strategy-specific parameters */
+  [key: string]: unknown;
+}
+
 export interface SupervisorDecision {
   action: 'MODIFY_PARAMS' | 'CHANGE_STRATEGY' | 'PAUSE' | 'RESUME';
   reason: string;
   confidence: number;
-  previous_params?: Record<string, any>;
-  new_params?: Record<string, any>;
+  previous_params?: StrategyParams;
+  new_params?: StrategyParams;
   timestamp: string;
 }
 
@@ -71,7 +110,19 @@ export interface RiskBlockEvent {
 })
 export class ScalpingWsService implements OnDestroy {
   private ws$!: WebSocketSubject<ScalpingEvent>;
-  private readonly WS_URL = 'ws://localhost:8000/ws/scalping';
+  /**
+   * WS endpoint mounted at /ws/scalping in backend main.py.
+   * This matches the /ws proxy rule in proxy.conf.json which handles WS upgrade
+   * reliably. Use relative URL so it works through proxy AND direct connection.
+   */
+  private readonly WS_PATH = '/ws/scalping';
+  private get _wsUrl(): string {
+    const loc = window.location;
+    const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+    // When running standalone (no proxy), connect to backend directly.
+    // When running via ng serve proxy, the proxy handles WS upgrade on /api/*.
+    return `${proto}//${loc.host}${this.WS_PATH}`;
+  }
 
   // Subjects per ogni tipo evento
   candle$ = new Subject<CandleEvent>();
@@ -79,13 +130,14 @@ export class ScalpingWsService implements OnDestroy {
   position$ = new Subject<PositionEvent>();
   supervisorDecision$ = new Subject<SupervisorDecision>();
   riskBlock$ = new Subject<RiskBlockEvent>();
+  tradeClosed$ = new Subject<TradeClosedEvent>();
 
   private connected = false;
 
   connect(): void {
     if (this.connected) return;
 
-    this.ws$ = webSocket<ScalpingEvent>(this.WS_URL);
+    this.ws$ = webSocket<ScalpingEvent>(this._wsUrl);
 
     this.ws$
       .pipe(
@@ -127,6 +179,9 @@ export class ScalpingWsService implements OnDestroy {
         break;
       case 'risk_block':
         this.riskBlock$.next(event.payload as RiskBlockEvent);
+        break;
+      case 'trade_closed':
+        this.tradeClosed$.next(event.payload as TradeClosedEvent);
         break;
     }
   }

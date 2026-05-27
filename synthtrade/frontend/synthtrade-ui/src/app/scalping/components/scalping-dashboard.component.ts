@@ -2,7 +2,7 @@
  * Scalping Dashboard Component - Main page
  */
 
-import { Component } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { MarketIntelPanelComponent } from './market-intel-panel.component';
 import { SignalScorecardComponent } from './signal-scorecard.component';
 import { OpportunityFeedComponent } from './opportunity-feed.component';
@@ -14,6 +14,7 @@ import { TradeLogComponent } from './trade-log.component';
 import { PerformancePanelComponent } from './performance-panel.component';
 import { SupervisorLogComponent } from './supervisor-log.component';
 import { RiskControlsComponent } from './risk-controls.component';
+import { ScalpingWsService } from '../services/scalping-ws.service';
 
 @Component({
   selector: 'app-scalping-dashboard',
@@ -33,9 +34,6 @@ import { RiskControlsComponent } from './risk-controls.component';
   ],
   template: `
     <div class="scalping-dashboard">
-      <h1>Scalping Dashboard v2.0</h1>
-      <p>Signal Intelligence Engine</p>
-
       <div class="dashboard-grid">
         <app-session-controls class="card"></app-session-controls>
         <app-position-ticker class="card"></app-position-ticker>
@@ -53,11 +51,19 @@ import { RiskControlsComponent } from './risk-controls.component';
   `,
   styles: [`
     .scalping-dashboard { padding: 20px; }
-    .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 20px; }
+    .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
     .card { background: var(--bg-surface, #161B22); border: 1px solid var(--border-default, rgba(234,236,239,0.1)); border-radius: 8px; }
     .chart-card { grid-column: span 2; }
-    h1 { margin: 0 0 4px 0; color: var(--text-primary, #EAECEF); }
-    p { margin: 0 0 16px 0; color: var(--text-secondary, #848E9C); }
   `],
 })
-export class ScalpingDashboardComponent {}
+export class ScalpingDashboardComponent implements OnInit, OnDestroy {
+  constructor(private wsService: ScalpingWsService) {}
+
+  ngOnInit(): void {
+    this.wsService.connect();
+  }
+
+  ngOnDestroy(): void {
+    this.wsService.disconnect();
+  }
+}

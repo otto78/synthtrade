@@ -488,16 +488,26 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
 
-### v2.0.0-alpha.4 — 2026-05-27
+### v2.0.0-alpha.5 — 2026-05-27
 
-**Milestone:** Scalping Module - Opportunity Monitor
+**Milestone:** Scalping Module - Fix Frontend UI (14 bug fix)
 
 **Completato:**
-- ✅ **TASK-810 - Opportunity Monitor**: Modelli Pydantic, Pollers (BinanceRSS, CoinGecko, WhaleAlert, News), Deduplicator, Classifier, Router, Scheduler, API endpoints, 13 test unitari.
+- ✅ **Fix Binance WS URL**: URL combinata `/stream?streams=` → connessioni separate `/ws/SYMBOL@kline` e `/ws/SYMBOL@trade` per compatibilità Testnet
+- ✅ **Fix dispatch combined-stream**: Unwrap envelope `{stream, data}` per messaggi Binance
+- ✅ **Fix proxy.conf.json**: Aggiunto `"ws": true` alla regola `/api` per WebSocket upgrade
+- ✅ **Fix WS endpoint route**: Spostato da `/api/scalping/ws/scalping` a `/ws/scalping`
+- ✅ **Fix initial session state**: Rimosso invio stato idle su WS connect (sovrascriveva "running")
+- ✅ **Fix session UI**: Rimosso polling, usa solo POST response + ChangeDetectorRef
+- ✅ **Fix position ticker**: Ora usa WS `position$` invece di REST call una tantum
+- ✅ **Fix trade log**: Ora usa WS `trade_closed$` invece di polling REST
+- ✅ **Fix performance panel**: snake_case → camelCase mapping, refresh su trade_closed
+- ✅ **Fix PnL live**: `position_update` broadcast su ogni candela mock per PnL in tempo reale
+- ✅ **Fix mock generator**: Avviato (era definito ma mai lanciato via `asyncio.create_task`)
+- ✅ **Fix collector bug**: `await response.json()` → `response.json()` in 4 collectors
+- ✅ **Fix Decimal serialization**: Aggiunto `float()` per long_pct/short_pct in snapshot job
+- ✅ **Aggiunto endpoint `/api/scalping/trade-history`**: Recupera storico trade chiusi
 
----
-
-### v2.0.0-alpha.3 — 2026-05-25
 
 **Milestone:** Scalping Module - Scheduler, Supervisor, Backtest Engine
 

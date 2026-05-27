@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api import auth, strategies, dashboard, logs, ws, trades, eval as eval_api, pipeline, exchange, monitor, config_api
-from app.scalping.router import router as scalping_router
+from app.scalping.router import router as scalping_router, ws_scalping_router
 from app.api import llm_models_api
 from app.scheduler.jobs import setup_scheduler
 from app.core.logging import setup_logging
@@ -119,6 +119,9 @@ app.include_router(monitor.router, prefix="/api")
 app.include_router(config_api.router, prefix="/api")
 app.include_router(llm_models_api.router, prefix="/api")
 app.include_router(scalping_router, prefix="/api")
+# Scalping WebSocket — mounted at /ws to match the proxy rule /ws (ws: true)
+# which properly handles WS upgrade. Full path: /ws/scalping
+app.include_router(ws_scalping_router, prefix="/ws")
 
 @app.get("/")
 def read_root():

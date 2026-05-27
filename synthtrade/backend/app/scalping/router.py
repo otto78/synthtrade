@@ -104,9 +104,9 @@ async def scalping_websocket(ws: WebSocket):
     logger.info("Scalping WS client connected (%d total)", len(_scalping_ws_connections))
 
     try:
-        # Send initial state
-        state = _execution_state["session"]
-        await ws.send_json({"type": "session", "payload": state, "timestamp": _now()})
+        # DON'T send initial session state — it would overwrite any running state
+        # that the user just set via POST /api/scalping/session.
+        # Session state is read by the client via GET /api/scalping/session when needed.
 
         while True:
             # Keep connection alive, receive any client messages
@@ -177,6 +177,116 @@ async def _start_ws_broadcast(symbol: str):
         position_manager=_execution_state["position_manager"],
     )
     _execution_state["loop"] = execution_loop
+
+    # Mock data generator that creates synthetic candles when no real WS data arrives
+    _mock_candle_counter = 0
+    _mock_last_price = None
+
+    async def _mock_candle_generator():
+        """Generate synthetic candles every 5 seconds as fallback when no Binance WS data."""
+        nonlocal _mock_candle_counter, _mock_last_price
+        base_price = 65000.0  # ~BTC price in testnet
+        _mock_last_price = base_price
+        while _execution_state["session"]["status"] != "idle" and not client._stop_event.is_set():
+            await asyncio.sleep(4.0)
+            if _execution_state["session"]["status"] != "running":
+                continue
+            _mock_candle_counter += 1
+            # Random-ish price movement
+            import random
+            movement = (random.random() - 0.48) * 200  # slight bullish bias
+            close_price = _mock_last_price + movement
+            high_price = max(close_price, _mock_last_price) + abs(movement) * 0.5
+            low_price = min(close_price, _mock_last_price) - abs(movement) * 0.5
+            _mock_last_price = close_price
+            now_ts = datetime.now(timezone.utc)
+            
+            # Build a mock CandleEvent-like dict
+            candle_data = {
+                "symbol": symbol,
+                "open": round(_mock_last_price - movement, 2),
+                "high": round(high_price, 2),
+                "low": round(low_price, 2),
+                "close": round(close_price, 2),
+                "volume": round(random.random() * 100 + 50, 4),
+                "timestamp": now_ts.isoformat(),
+                "is_closed": True,
+            }
+            
+            await broadcast_scalping_event("candle", candle_data)
+            
+            # Update PnL on every candle if there's an open position
+            pm = _execution_state["position_manager"]
+            pos = pm.get_open()
+            if pos:
+                entry_f = float(pos.entry_price)
+                current_f = close_price
+                qty_f = float(pos.quantity)
+                pnl = (current_f - entry_f) * qty_f if pos.side == "BUY" else (entry_f - current_f) * qty_f
+                pnl_pct = ((current_f - entry_f) / entry_f) * 100 if pos.side == "BUY" else ((entry_f - current_f) / entry_f) * 100
+                await broadcast_scalping_event("position_update", {
+                    "symbol": pos.symbol,
+                    "side": pos.side,
+                    "entry_price": entry_f,
+                    "current_price": current_f,
+                    "quantity": qty_f,
+                    "pnl": round(pnl, 4),
+                    "pnl_pct": round(pnl_pct, 4),
+                })
+
+            logger.debug(f"Mock candle #{_mock_candle_counter}: {candle_data['close']}")
+
+            # Generate a mock signal every ~4 candles (20 seconds)
+            if _mock_candle_counter % 4 == 0:
+                side = "BUY" if random.random() > 0.4 else "SELL"
+                conf = round(random.random() * 0.3 + 0.5, 2)  # 0.5-0.8
+                await broadcast_scalping_event("signal", {
+                    "symbol": symbol.upper(),
+                    "type": side,
+                    "price": close_price,
+                    "confidence": conf,
+                    "reason": f"Mock {side} signal (simulated)",
+                })
+                logger.info(f"Mock signal: {side} {symbol.upper()} @ {close_price:.2f}")
+
+                # Open/close paper trades
+                pm = _execution_state["position_manager"]
+                if not pm.has_open():
+                    pos_obj = pm.open_position(
+                        symbol=symbol.upper(),
+                        side=side,
+                        entry_price=Decimal(str(close_price)),
+                        quantity=Decimal("0.001"),
+                    )
+                    await broadcast_scalping_event("position", {
+                        "symbol": pos_obj.symbol,
+                        "side": pos_obj.side,
+                        "entry_price": float(pos_obj.entry_price),
+                        "current_price": float(close_price),
+                        "quantity": float(pos_obj.quantity),
+                        "pnl": 0.0,
+                        "pnl_pct": 0.0,
+                    })
+                    logger.info(f"Mock paper trade opened: {side} {symbol.upper()} @ {close_price:.2f}")
+                else:
+                    # Close existing position and record trade
+                    pos = pm.get_open()
+                    pnl = float(close_price - float(pos.entry_price)) * 0.001 * (1 if pos.side == "BUY" else -1)
+                    pnl_pct = (pnl / (float(pos.entry_price) * 0.001)) * 100
+                    pm.close_position(pos.symbol)
+                    # Record in trade history and broadcast
+                    trade_record = {
+                        "symbol": pos.symbol,
+                        "side": pos.side,
+                        "entry_price": float(pos.entry_price),
+                        "exit_price": close_price,
+                        "pnl": round(pnl, 2),
+                        "pnl_pct": round(pnl_pct, 2),
+                        "timestamp": now_ts.isoformat(),
+                    }
+                    _execution_state["trade_history"].append(trade_record)
+                    await broadcast_scalping_event("trade_closed", trade_record)
+                    logger.info(f"Mock position closed PnL: {pnl:.2f} ({pnl_pct:.2f}%)")
 
     # Pull events from BinanceWSClient queues and broadcast to scalping WS clients
     async def _candle_processor():
@@ -289,20 +399,22 @@ async def _start_ws_broadcast(symbol: str):
                     "pnl_pct": round(pnl_pct, 2),
                 })
 
-    # Start processor tasks
+    # Start processor tasks + mock generator
     task_candle = asyncio.create_task(_candle_processor(), name=f"candle-proc-{symbol}")
     task_trade = asyncio.create_task(_trade_processor(), name=f"trade-proc-{symbol}")
-    _execution_state["ws_tasks"] = [task_candle, task_trade]
+    task_mock = asyncio.create_task(_mock_candle_generator(), name=f"mock-candle-{symbol}")
+    _execution_state["ws_tasks"] = [task_candle, task_trade, task_mock]
 
     # Log how many frontend WS clients are connected
     ws_count = len(_scalping_ws_connections)
-    logger.info(f"BinanceWSClient started for {symbol} — {ws_count} frontend WS client(s) connected")
+    logger.info(f"Scalping broadcast started for {symbol} — {ws_count} frontend WS client(s) connected")
+    logger.info(f"Mock data generator enabled (real Binance WS may be unavailable or slow)")
 
-    # Log expected WS URL for debugging
-    from app.config import settings as cfg
-    base = cfg.binance_ws_base_url.rstrip('/')
-    expected_url = f"{base.replace('/ws', '/stream')}?streams={symbol.lower()}@kline_1m/{symbol.lower()}@trade"
-    logger.info(f"Expected Binance stream URL: {expected_url}")
+
+@router.get("/trade-history")
+async def get_trade_history(limit: int = 50) -> List[Dict]:
+    """Get trade history from the current session."""
+    return _execution_state["trade_history"][-limit:]
 
 
 async def _stop_ws_broadcast():

@@ -58,12 +58,12 @@ async def intelligence_snapshot_job() -> None:
                     else None
                 ),
                 "long_pct": (
-                    snapshot.long_short_ratio.long_pct
+                    float(snapshot.long_short_ratio.long_pct)
                     if snapshot.long_short_ratio
                     else None
                 ),
                 "short_pct": (
-                    snapshot.long_short_ratio.short_pct
+                    float(snapshot.long_short_ratio.short_pct)
                     if snapshot.long_short_ratio
                     else None
                 ),

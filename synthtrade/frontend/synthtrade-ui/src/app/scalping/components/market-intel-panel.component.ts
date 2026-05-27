@@ -1,23 +1,55 @@
 /**
  * Market Intelligence Panel Component
+ * Displays real-time market data: funding rate, OI, CVD, Fear&Greed, Signal Score.
+ * Polls backend every 60s for updates.
  */
 
-import { Component, OnInit } from '@angular/core';
-import { DecimalPipe } from '@angular/common';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { UpperCasePipe } from '@angular/common';
+import { Subscription, interval } from 'rxjs';
 import { IntelligenceApiService } from '../services/intelligence-api.service';
+import { MarketIntelSnapshot } from '../models/intelligence.model';
 
 @Component({
   selector: 'app-market-intel-panel',
   standalone: true,
-  imports: [DecimalPipe],
+  imports: [UpperCasePipe],
   template: `
     <div class="intel-panel">
       <h3>Market Intelligence</h3>
       <div class="intel-grid">
-        <div class="intel-item"><span class="label">Funding Rate</span><span class="value">{{ fundingRate }}%</span></div>
-        <div class="intel-item"><span class="label">Open Interest</span><span class="value">{{ openInterest | number:'1.0-0' }}</span></div>
-        <div class="intel-item"><span class="label">Fear & Greed</span><span class="value">{{ fearGreed }}</span></div>
-        <div class="intel-item"><span class="label">Signal Score</span><span class="value">{{ signalScore }}</span></div>
+        <div class="intel-item">
+          <span class="label">Signal Score</span>
+          <span class="value score" [class.bullish]="signalBias === 'bullish'" [class.bearish]="signalBias === 'bearish'">
+            {{ signalScore }}
+          </span>
+        </div>
+        <div class="intel-item">
+          <span class="label">Bias</span>
+          <span class="value" [class.bullish]="signalBias === 'bullish'" [class.bearish]="signalBias === 'bearish'">
+            {{ signalBias | uppercase }}
+          </span>
+        </div>
+        <div class="intel-item">
+          <span class="label">Funding Rate</span>
+          <span class="value" [class.cold]="fundingRateNum < 0" [class.hot]="fundingRateNum > 0">
+            {{ fundingRate }}
+          </span>
+        </div>
+        <div class="intel-item">
+          <span class="label">Fear & Greed</span>
+          <span class="value">{{ fearGreed }}</span>
+        </div>
+        <div class="intel-item">
+          <span class="label">Open Interest</span>
+          <span class="value">{{ openInterest }}</span>
+        </div>
+        <div class="intel-item">
+          <span class="label">CVD Trend</span>
+          <span class="value" [class.bullish]="cvdTrend === 'rising'" [class.bearish]="cvdTrend === 'falling'">
+            {{ cvdTrend | uppercase }}
+          </span>
+        </div>
       </div>
     </div>
   `,
@@ -28,52 +60,72 @@ import { IntelligenceApiService } from '../services/intelligence-api.service';
     .intel-item { display: flex; justify-content: space-between; padding: 6px 8px; background: var(--bg-elevated); border-radius: 4px; }
     .label { font-size: 11px; color: var(--text-secondary); }
     .value { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+    .value.score { font-size: 16px; }
+    .value.bullish { color: var(--color-buy, #0ECB81); }
+    .value.bearish { color: var(--color-sell, #F6465D); }
+    .value.hot { color: var(--color-buy, #0ECB81); }
+    .value.cold { color: var(--color-sell, #F6465D); }
   `],
 })
-export class MarketIntelPanelComponent implements OnInit {
+export class MarketIntelPanelComponent implements OnInit, OnDestroy {
   fundingRate = '--';
-  openInterest = 0;
+  fundingRateNum = 0;
+  openInterest = '--';
   fearGreed = '--';
   signalScore = '--';
+  signalBias: 'bullish' | 'bearish' | 'neutral' = 'neutral';
+  cvdTrend = '--';
+
+  private symbol = 'BTCUSDT';
+  private sub = new Subscription();
 
   constructor(private intelApi: IntelligenceApiService) {}
 
   ngOnInit(): void {
-    this.loadSnapshot('BTCUSDT');
+    this.loadSnapshot();
+    // Poll every 60 seconds
+    this.sub.add(
+      interval(60_000).subscribe(() => this.loadSnapshot())
+    );
   }
 
-  private loadSnapshot(symbol: string): void {
-    this.intelApi.getLatestSnapshot(symbol).subscribe({
-      next: (data) => {
-        console.log('Intelligence data:', data); // Debug
-        // Backend restituisce valori semplici: funding_rate (number), open_interest (number), signal_score (number)
-        if (data && typeof data === 'object') {
-          // Funding rate - può essere numero o dettagliato
-          if (typeof data.funding_rate === 'number') {
-            this.fundingRate = data.funding_rate.toFixed(4);
-          } else if (data.funding_rate !== undefined && data.funding_rate !== null) {
-            this.fundingRate = String(data.funding_rate);
-          }
+  ngOnDestroy(): void {
+    this.sub.unsubscribe();
+  }
 
-          // Open interest - può essere numero o dettagliato
-          if (typeof data.open_interest === 'number') {
-            this.openInterest = data.open_interest;
-          }
-
-          // Fear & Greed
-          if (data.fear_greed && typeof data.fear_greed === 'object' && data.fear_greed.label) {
-            this.fearGreed = data.fear_greed.label;
-          }
-
-          // Signal score
-          if (typeof data.signal_score === 'number') {
-            this.signalScore = data.signal_score.toString();
-          }
+  private loadSnapshot(): void {
+    this.intelApi.getLatestSnapshot(this.symbol).subscribe({
+      next: (data: MarketIntelSnapshot) => {
+        if (data.signal_score !== undefined) {
+          this.signalScore = data.signal_score.toFixed(1);
+        }
+        if (data.signal_bias) {
+          this.signalBias = data.signal_bias;
+        }
+        if (data.funding_rate !== undefined) {
+          this.fundingRate = data.funding_rate.toFixed(4);
+          this.fundingRateNum = data.funding_rate;
+        }
+        if (data.fear_greed_label) {
+          this.fearGreed = data.fear_greed_label;
+        }
+        if (data.open_interest !== undefined) {
+          this.openInterest = this.formatLargeNumber(data.open_interest);
+        }
+        if (data.cvd_trend) {
+          this.cvdTrend = data.cvd_trend;
         }
       },
-      error: (err) => {
+      error: (err: Error) => {
         console.error('Intelligence load error:', err);
       }
     });
+  }
+
+  private formatLargeNumber(num: number): string {
+    if (num >= 1_000_000_000) return (num / 1_000_000_000).toFixed(2) + 'B';
+    if (num >= 1_000_000) return (num / 1_000_000).toFixed(2) + 'M';
+    if (num >= 1_000) return (num / 1_000).toFixed(2) + 'K';
+    return num.toFixed(0);
   }
 }

@@ -30,7 +30,33 @@ export class PerformanceApiService {
   constructor(private http: HttpClient) {}
 
   /** Get performance metrics */
+  /** Backend raw response shape (snake_case) */
+  private _getMetricsRaw(): Observable<Record<string, number>> {
+    return this.http.get<Record<string, number>>(this.API_URL);
+  }
+
   getMetrics(): Observable<PerformanceMetrics> {
-    return this.http.get<PerformanceMetrics>(this.API_URL);
+    // Backend returns snake_case, interface uses camelCase — map it
+    return new Observable<PerformanceMetrics>((subscriber) => {
+      this._getMetricsRaw().subscribe({
+        next: (raw) => {
+          subscriber.next({
+            totalPnl: raw['total_pnl'] ?? 0,
+            totalPnlPct: raw['total_pnl_pct'] ?? 0,
+            winRate: (raw['win_rate'] ?? 0) / 100,
+            totalTrades: raw['total_trades'] ?? 0,
+            winningTrades: raw['winning_trades'] ?? 0,
+            losingTrades: raw['losing_trades'] ?? 0,
+            avgWin: raw['avg_win'] ?? 0,
+            avgLoss: raw['avg_loss'] ?? 0,
+            profitFactor: raw['profit_factor'] ?? 0,
+            maxDrawdown: raw['max_drawdown'] ?? 0,
+            consecutiveLosses: raw['consecutive_losses'] ?? 0,
+          });
+          subscriber.complete();
+        },
+        error: (err) => subscriber.error(err),
+      });
+    });
   }
 }

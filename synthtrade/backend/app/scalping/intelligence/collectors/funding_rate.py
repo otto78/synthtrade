@@ -48,7 +48,7 @@ class FundingRateCollector:
                 response = await client.get(BINANCE_FUNDING_RATE_URL, params=params)
                 response.raise_for_status()
 
-                data = await response.json()
+                data = response.json()
                 if not data:
                     return None
 

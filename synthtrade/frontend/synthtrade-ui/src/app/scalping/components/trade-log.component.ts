@@ -1,24 +1,12 @@
 /**
  * Trade Log Component
- * Displays trade history with signal score
+ * Displays trade history — updated in real-time via WS events.
  */
 
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { DatePipe, DecimalPipe, NgClass, NgForOf, NgIf } from '@angular/common';
-import { ScalpingWsService, SignalEvent } from '../services/scalping-ws.service';
-
-export interface TradeLogEntry {
-  id: string;
-  symbol: string;
-  side: 'BUY' | 'SELL';
-  entry_price: number;
-  exit_price: number;
-  pnl: number;
-  pnl_pct: number;
-  signal_score?: number;
-  opened_at: string;
-  closed_at: string;
-}
+import { Subscription } from 'rxjs';
+import { ScalpingWsService, TradeClosedEvent } from '../services/scalping-ws.service';
 
 @Component({
   selector: 'app-trade-log',
@@ -39,19 +27,17 @@ export interface TradeLogEntry {
               <th>Entry</th>
               <th>Exit</th>
               <th>PnL</th>
-              <th>Score</th>
             </tr>
           </thead>
           <tbody>
             <tr *ngFor="let trade of trades">
-              <td>{{ trade.opened_at | date:'shortTime' }}</td>
+              <td>{{ trade.timestamp | date:'shortTime' }}</td>
               <td [ngClass]="trade.side.toLowerCase()">{{ trade.side }}</td>
               <td>{{ trade.entry_price | number:'1.2-2' }}</td>
               <td>{{ trade.exit_price | number:'1.2-2' }}</td>
               <td [ngClass]="trade.pnl >= 0 ? 'profit' : 'loss'">
                 {{ trade.pnl | number:'1.2-2' }}
               </td>
-              <td>{{ trade.signal_score ?? '--' }}</td>
             </tr>
           </tbody>
         </table>
@@ -72,12 +58,23 @@ export interface TradeLogEntry {
     .loss { color: var(--accent-danger, #ef5350); }
   `],
 })
-export class TradeLogComponent implements OnInit {
-  trades: TradeLogEntry[] = [];
+export class TradeLogComponent implements OnInit, OnDestroy {
+  trades: TradeClosedEvent[] = [];
+  private sub?: Subscription;
 
-  constructor(private ws: ScalpingWsService) {}
+  constructor(
+    private ws: ScalpingWsService,
+    private cdr: ChangeDetectorRef
+  ) {}
 
   ngOnInit(): void {
-    // Placeholder - will be populated from actual trade data
+    this.sub = this.ws.tradeClosed$.subscribe((trade) => {
+      this.trades = [trade, ...this.trades];
+      this.cdr.detectChanges();
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.sub?.unsubscribe();
   }
 }

@@ -40,7 +40,7 @@ class OpenInterestCollector:
                 response = await client.get(BINANCE_OI_URL, params=params)
                 response.raise_for_status()
 
-                data = await response.json()
+                data = response.json()
                 return OpenInterest(
                     symbol=symbol.upper(),
                     value_usd=Decimal(str(data.get("openInterest", "0"))),

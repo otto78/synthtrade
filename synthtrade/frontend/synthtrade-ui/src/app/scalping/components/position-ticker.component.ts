@@ -1,10 +1,12 @@
 /**
  * Position Ticker Component
+ * Shows open position from WS events (candle, position updates).
  */
 
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { NgIf, NgClass, DecimalPipe, PercentPipe } from '@angular/common';
-import { PositionApiService } from '../services/position-api.service';
+import { Subscription } from 'rxjs';
+import { ScalpingWsService, PositionEvent } from '../services/scalping-ws.service';
 import { Position } from '../models/position.model';
 
 @Component({
@@ -48,15 +50,35 @@ import { Position } from '../models/position.model';
     .loss { color: var(--accent-danger, #ef5350); }
   `],
 })
-export class PositionTickerComponent implements OnInit {
+export class PositionTickerComponent implements OnInit, OnDestroy {
   position: Position | null = null;
+  private posSub?: Subscription;
+  private posUpdateSub?: Subscription;
 
-  constructor(private positionApi: PositionApiService) {}
+  constructor(
+    private ws: ScalpingWsService,
+    private cdr: ChangeDetectorRef
+  ) {}
 
   ngOnInit(): void {
-    this.positionApi.getCurrent().subscribe({
-      next: (data) => this.position = data,
-      error: () => this.position = null
+    // Subscribe to position events from WS — updates in real-time
+    this.posSub = this.ws.position$.subscribe((event: PositionEvent) => {
+      this.position = {
+        symbol: event.symbol,
+        side: event.side,
+        entry_price: event.entry_price,
+        current_price: event.current_price,
+        quantity: 0.001,
+        pnl: event.pnl,
+        pnl_pct: event.pnl_pct,
+        leverage: 1,
+        opened_at: new Date().toISOString()
+      };
+      this.cdr.detectChanges();
     });
+  }
+
+  ngOnDestroy(): void {
+    this.posSub?.unsubscribe();
   }
 }

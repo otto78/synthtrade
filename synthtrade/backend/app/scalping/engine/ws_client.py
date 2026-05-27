@@ -20,6 +20,9 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Binance Testnet only supports single-stream /ws endpoint, not combined /stream
+# Live Binance supports both. Use single-stream connections for compatibility.
+
 
 # ──────────────────────────────────────────────
 # Data Classes Eventi
@@ -134,18 +137,21 @@ class BinanceWSClient:
     # ── Lifecycle ─────────────────────────────
 
     async def start(self) -> None:
-        """Avvia un task per ogni simbolo (ciascuno con kline + trade stream)."""
+        """Avvia un task per ogni stream (kline + trade per simbolo)."""
         self._stop_event.clear()
         for symbol in self.symbols:
-            task = asyncio.create_task(
-                self._run_symbol_stream(symbol),
-                name=f"ws-{symbol}",
-            )
-            self._tasks.append(task)
+            # Two separate connections: one for kline, one for trade
+            # (testnet doesn't support combined /stream endpoint)
+            for stream_type in ("kline_1m", "trade"):
+                task = asyncio.create_task(
+                    self._run_symbol_stream(symbol, stream_type),
+                    name=f"ws-{symbol}-{stream_type}",
+                )
+                self._tasks.append(task)
         logger.info(
-            "BinanceWSClient avviato per %d simboli: %s",
+            "BinanceWSClient avviato per %d simboli, %d stream totali",
             len(self.symbols),
-            ", ".join(self.symbols),
+            len(self._tasks),
         )
 
     async def stop(self) -> None:
@@ -157,14 +163,19 @@ class BinanceWSClient:
         self._tasks.clear()
         logger.info("BinanceWSClient fermato.")
 
-    # ── Stream per singolo simbolo ────────────
+    # ── Stream per singolo stream ────────────
 
-    async def _run_symbol_stream(self, symbol: str) -> None:
-        """Mantiene la connessione WS per un simbolo con auto-riconnessione."""
+    async def _run_symbol_stream(self, symbol: str, stream_type: str) -> None:
+        """Mantiene la connessione WS per uno stream specifico con auto-riconnessione.
+        
+        Uses single-stream endpoint: wss://testnet.binance.vision/ws/SYMBOL@stream
+        (testnet does NOT support combined /stream endpoint, live does too).
+        """
         import websockets
 
-        streams = [f"{symbol}@kline_1m", f"{symbol}@trade"]
-        url = f"{settings.binance_ws_base_url}/{'/'.join(streams)}"
+        base = settings.binance_ws_base_url.rstrip('/')
+        url = f"{base}/{symbol}@{stream_type}"
+        is_candle = stream_type.startswith("kline")
 
         delay = 1.0
         while not self._stop_event.is_set():
@@ -176,16 +187,18 @@ class BinanceWSClient:
                     async for raw in ws:
                         if self._stop_event.is_set():
                             break
-                        # websockets può restituire bytes; decodifichiamo se necessario
                         text = raw.decode() if isinstance(raw, bytes) else raw
-                        await self._dispatch(text, symbol)
+                        if is_candle:
+                            await self._dispatch_candle(text, symbol)
+                        else:
+                            await self._dispatch_trade(text, symbol)
             except asyncio.CancelledError:
-                logger.debug("WS %s cancellato.", symbol)
+                logger.debug("WS %s@%s cancellato.", symbol, stream_type)
                 break
             except Exception as exc:
                 logger.warning(
-                    "WS %s disconnesso (%s). Reconnect in %.1fs...",
-                    symbol, exc, delay,
+                    "WS %s@%s disconnesso (%s). Reconnect in %.1fs...",
+                    symbol, stream_type, exc, delay,
                 )
                 self._emit_status(
                     ConnectionStatusEvent(symbol, connected=False, error=str(exc)),
@@ -197,27 +210,33 @@ class BinanceWSClient:
 
     # ── Dispatch messaggi ─────────────────────
 
-    async def _dispatch(self, raw: str, symbol: str) -> None:
-        """Parsa e smista un messaggio JSON grezzo da Binance."""
+    async def _dispatch_candle(self, raw: str, symbol: str) -> None:
+        """Parsa un messaggio kline da Binance e lo inserisce nella coda."""
         try:
             msg = json.loads(raw)
         except json.JSONDecodeError:
-            logger.warning("WS %s: messaggio JSON non valido: %s", symbol, raw[:100])
+            logger.warning("WS %s: messaggio kline JSON non valido: %s", symbol, raw[:100])
             return
 
-        event_type = msg.get("e")  # 'kline' | 'trade'
-        if event_type == "kline":
-            event = self._parse_candle(msg, symbol)
-            if event is not None:
-                self.candle_queue.put_nowait(event)
-                if self._on_candle:
-                    self._on_candle(event)
-        elif event_type == "trade":
-            event = self._parse_trade(msg, symbol)
-            if event is not None:
-                self.trade_queue.put_nowait(event)
-                if self._on_trade:
-                    self._on_trade(event)
+        event = self._parse_candle(msg, symbol)
+        if event is not None:
+            self.candle_queue.put_nowait(event)
+            if self._on_candle:
+                self._on_candle(event)
+
+    async def _dispatch_trade(self, raw: str, symbol: str) -> None:
+        """Parsa un messaggio trade da Binance e lo inserisce nella coda."""
+        try:
+            msg = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("WS %s: messaggio trade JSON non valido: %s", symbol, raw[:100])
+            return
+
+        event = self._parse_trade(msg, symbol)
+        if event is not None:
+            self.trade_queue.put_nowait(event)
+            if self._on_trade:
+                self._on_trade(event)
 
     # ── Parsing helpers ───────────────────────
 

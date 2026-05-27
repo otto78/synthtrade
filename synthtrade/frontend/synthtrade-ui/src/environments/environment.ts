@@ -1,7 +1,7 @@
 export const environment = {
   production: false,
   apiUrl: '/api',
-  wsUrl: 'ws://localhost:8888/ws',
+  wsUrl: '/ws',
   supabaseUrl: '',
   supabaseAnonKey: '',
 };

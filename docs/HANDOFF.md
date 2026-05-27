@@ -6,97 +6,79 @@
 
 ### Da: Cline → prossima sessione
 
-**Data:** 2026-05-22
+**Data:** 2026-05-27
 
-**Contesto:** Fix favicon — sostituita emoji saetta con path vettoriale, rimosso fallback icona Angular (.ico), fix budget warning build.
+**Contesto:** 14 bug fix sulla UI scalping — WS endpoint, proxy, session state, posizioni, trade log, performance, PnL live.
 
 ---
 
-### ✅ FASE COMPLETATA: Fix favicon (2026-05-22)
+### ✅ FASE COMPLETATA: Fix frontend scalping (2026-05-27)
 
 **Cosa è stato fatto:**
-- Sostituita favicon SVG: `<text>⚡</text>` → path vettoriale della saetta (`public/favicon.svg`, `src/favicon.svg`)
-- Rimosso fallback `.ico` (logo Angular) da `index.html`
-- Aumentato `anyComponentStyle` da 8kB a 10kB in `angular.json`
-- Build eseguita con successo (nessun warning)
-- Aggiornati `docs/STORY.md` e `docs/HANDOFF.md`
+- Fix Binance WS URL: da `/stream?streams=` combinato a connessioni separate `/ws/SYMBOL@kline` e `/ws/SYMBOL@trade`
+- Fix proxy.conf.json: aggiunto `"ws": true` alla regola `/api` per WS upgrade
+- Fix WS endpoint route: spostato da `/api/scalping/ws/scalping` a `/ws/scalping`
+- Fix initial session state: rimosso invio stato idle su WS connect
+- Fix session UI: rimosso polling, ChangeDetectorRef per aggiornamento reattivo
+- Fix position ticker: usa WS `position$` invece di REST call
+- Fix trade log: usa WS `trade_closed$` invece di polling REST
+- Fix performance panel: mappatura snake_case → camelCase, refresh su trade closed
+- Fix PnL live: `position_update` broadcast su ogni candela mock
+- Fix mock generator: avviato (mancava `asyncio.create_task`)
+- Fix collector bug: `await response.json()` → `response.json()` in 4 collectors
+- Fix Decimal serialization: `float()` per long_pct/short_pct in snapshot job
+- Nuovo endpoint `GET /api/scalping/trade-history`
+
+**Dati mock:** Candele simulate localmente (non Binance). WS funzionante.
 
 ---
 
 ### 📊 Stato Attuale
 
-
-**Fase corrente:** Fase 6 — Hardening & Deploy
+**Fase corrente:** Scalping Module v2.0 — Frontend Dashboard funzionante
 
 **Completato:**
-- ✅ Fase 0 — Setup & Infrastruttura
-- ✅ Fase 1 — Core Engine
-- ✅ Fase 2 — Backend API
-- ✅ Fase 3 — Frontend Angular (116 test)
-- ✅ Fase 4 — Execution Engine (Phase A Ready)
-- ✅ **Fase 5 — AI Evaluator** (51 test)
+- ✅ TASK-800 (ScalpingSettings)
+- ✅ TASK-801 (Estensione moduli core)
+- ✅ TASK-802 (DB Migrations)
+- ✅ TASK-803 (Binance WsClient)
+- ✅ TASK-804 (Intelligence Layer)
+- ✅ TASK-805 (TickProcessor + ExecutionLoop)
+- ✅ TASK-806 (AI Supervisor)
+- ✅ TASK-807 (Scheduler Centralizzato)
+- ✅ TASK-808 (Backtest Engine)
+- ✅ TASK-809 (Frontend Dashboard Scalping) — fix completati
+- 🔜 TASK-810 (Opportunity Monitor) — stub implementato
+- 🔜 TASK-811 (Regressione E2E)
+- 🔜 TASK-812 (Go Live)
 
-**Totale test:** 230 backend + 116 frontend = 346
-
-**In corso:** Fase 6 — Hardening & Deploy
-
-**Fase 4 dettagliata:** lista task completa aggiunta in TASKS.md (4.0→4.6)
-- Struttura: `backend/app/execution/` + `backend/app/scheduler/`
-- Nuovi schemi: `Signal`, `OrderRequest`, `OrderResult`, `RiskCheckResult`, `PositionSnapshot`
-- `SignalResolverProtocol` pluggabile via `importlib`
-- Scheduler APScheduler con job: pipeline, monitor_positions, heartbeat
-- 4 integration test scenari: pipeline completa, stop loss, risk reject, drawdown
-
-**Fase 6 dettagliata:** lista task completa aggiunta in TASKS.md (6.0→6.9)
-- Architettura: Supabase Cloud + VPS Linux + Docker + Nginx + HTTPS
-- Docker multi-stage: backend python:3.12-slim, frontend node:20-alpine + nginx:alpine
-- Nginx: reverse proxy, WebSocket upgrade, security headers, rate limiting login
-- Certbot/Let's Encrypt con rinnovo automatico senza downtime
-- Logging strutturato JSON con `request_id` middleware
-- Error handling globale con eccezioni custom
-- `scripts/deploy.sh` + `scripts/rollback.sh` + `scripts/smoke_test.sh`
-- Checklist pre-go-live: RLS, CORS, no hardcoded secrets, bundle size
-- Struttura: `backend/app/ai/` con 7 moduli
-- `EvalResult` con verdict PROMOTE/HOLD/DEMOTE, score, confidence, model_used
-- `ModelClient` con retry backoff + fallback primario/secondario
-- `EvalCache` su Supabase con TTL configurabile
-- `evaluate_all()` con `asyncio.Semaphore` per concorrenza limitata
-- Broadcast WS `eval_complete` + integrazione in `run_pipeline()`
-
----
-
-### 📁 Direttive LOOM da leggere prima di iniziare la Fase 3
-
-```
-loom/directives/frontend-angular.md    ← regole Angular 17+, pattern HTTP/WS, test Jest
-loom/directives/scss-tokens.md         ← tutti i design token (colori, font, spacing)
-loom/directives/component-patterns.md ← interfacce TS, pattern componenti, checklist pagine
-```
+**Componenti funzionanti:**
+- SessionControls (start/stop/pause/resume)
+- LiveChart (candele simulate)
+- PositionTicker (posizione aperta + PnL live)
+- TradeLog (trade chiusi via WS)
+- PerformancePanel (metriche su trade_closed)
+- MarketIntelPanel (dati reali API)
+- SignalScorecard (score aggregato)
 
 ---
 
 ### 🎯 Prossimi Step (in ordine)
 
-1. **3.0 Bootstrap** — `ng new`, rimuovere Karma, installare Jest, environments, proxy, eslint
-2. **3.1 Design Tokens** — `_variables.scss`, `_mixins.scss`, `_reset.scss`, `_animations.scss`
-3. **3.2 Modelli** — interfacce TypeScript per Strategy, Trade, Dashboard, Log, WsMessage
-4. **3.3 Interceptors & Guards** — TDD su auth interceptor, error interceptor, auth guard, no-auth guard
-5. **3.4 Services** — TDD su TokenStorage, Auth, Strategy, Dashboard, Log, WebSocket
-6. **3.5 Shared** — TDD su StatCard, BadgeStatus, PriceTicker, ConfirmDialog, pipes
-7. **3.6 Layout** — Sidebar, Topbar, AppShell
-8. **3.7 Routing** — lazy loading, guards
-9. **3.8 Pagine** — Login, Dashboard, Strategies, ActiveTrade, Logs
-10. **3.9 E2E** — Playwright
-
----
+1. **TASK-810 — Opportunity Monitor**: Completare scheduler + frontend feed
+2. **TASK-811 — Regressione E2E**: Test Playwright per scalping session, market intel
+3. **TASK-812 — Go Live**: Review sicurezza ordini, test LIVE con trade minimo
+4. **Fix Binance WS**: Connessione reale a Binance (al posto del mock)
+5. **Opportunities**: Collegare scheduler a endpoint, popolare tabella
 
 ### 📝 Note Importanti
 
-- Frontend va in `synthtrade/frontend/synthtrade-ui/` (dentro la struttura monorepo)
-- Backend gira su `localhost:8008` — usare proxy Angular per dev (porta 4208)
-- Design system completo in `PROJECT.md` e nelle direttive LOOM
-- `PAPER_TRADING=true` default — non toccare fino alla Fase 6
-- Comando test backend: `set PYTHONPATH=synthtrade\backend && .venv\Scripts\pytest`
+- Backend: `http://localhost:8888` (porta configurata in `.env`)
+- Frontend: `http://localhost:4208` (proxy → 8888)
+- WS endpoint: `/ws/scalping` (non `/api/scalping/ws/scalping`)
+- Modalità: PAPER default (cambia in `.env`: `TRADING_MODE=live`)
+- Test backend: `cd synthtrade/backend && python -m pytest`
+- Build frontend: `cd synthtrade/frontend/synthtrade-ui && ng build`
 
 ---
 

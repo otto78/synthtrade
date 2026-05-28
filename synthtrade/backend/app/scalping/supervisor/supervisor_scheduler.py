@@ -19,7 +19,7 @@ class SupervisorScheduler:
     def __init__(
         self,
         symbol: str = "BTCUSDT",
-        interval_seconds: int = 600,  # 10 minuti
+        interval_seconds: int = 600,
         client: Optional[SupervisorClient] = None,
         updater: Optional[ParameterUpdater] = None,
         score_engine: Optional[SignalScoreEngine] = None,
@@ -34,12 +34,10 @@ class SupervisorScheduler:
         self._loop: Optional[ExecutionLoop] = None
 
     def set_execution_loop(self, loop: ExecutionLoop) -> None:
-        """Imposta il reference all'ExecutionLoop."""
         self._loop = loop
         self._updater.set_execution_loop(loop)
 
     def start(self) -> None:
-        """Avvia lo scheduler."""
         if self._running:
             return
         self._running = True
@@ -47,14 +45,12 @@ class SupervisorScheduler:
         logger.info(f"Supervisor scheduler started for {self._symbol}")
 
     def stop(self) -> None:
-        """Ferma lo scheduler."""
         self._running = False
         if self._task:
             self._task.cancel()
         logger.info("Supervisor scheduler stopped")
 
     async def _run(self) -> None:
-        """Loop principale dello scheduler."""
         while self._running:
             try:
                 await self._tick()
@@ -63,19 +59,13 @@ class SupervisorScheduler:
             await asyncio.sleep(self._interval)
 
     async def run_once(self) -> Optional[SupervisorDecision]:
-        """Esegui un singolo ciclo di supervisione (usato dai job scheduler)."""
         return await self._tick()
 
     async def _tick(self) -> Optional[SupervisorDecision]:
-        """Esegui un ciclo di supervisione."""
-        # Get market intelligence
         snapshot = await self._score_engine.get_snapshot()
         score = await self._score_engine.compute()
-
-        # Get regime from execution loop if available
         regime = self._loop.regime if self._loop else None
 
-        # Get decision
         decision = await self._client.decide(
             symbol=self._symbol,
             snapshot=snapshot,
@@ -83,10 +73,51 @@ class SupervisorScheduler:
             score=score,
         )
 
-        logger.info(f"Supervisor decision: {decision.action} ({decision.reason})")
+        logger.info(
+            f"Supervisor decision: action={decision.action} | "
+            f"reason={decision.reason} | "
+            f"confidence={decision.confidence} | "
+            f"bias={decision.market_bias or 'N/A'} | "
+            f"signal={decision.primary_signal or 'N/A'} | "
+            f"new_strategy={decision.new_strategy} | "
+            f"new_params={decision.new_params}"
+        )
 
-        # Apply decision
         await self._updater.apply(decision)
 
-        # TODO: Save to Supabase supervisor_decisions table
-        # await self._save_decision(decision, snapshot, score)
+        # Broadcast via WebSocket to frontend
+        try:
+            from app.scalping.router import broadcast_scalping_event
+            now_iso = decision.decided_at.isoformat() if decision.decided_at else None
+            await broadcast_scalping_event("supervisor", {
+                "action": decision.action,
+                "reason": decision.reason,
+                "confidence": decision.confidence,
+                "market_bias": decision.market_bias or "neutral",
+                "primary_signal": decision.primary_signal or "",
+                "new_strategy": decision.new_strategy,
+                "new_params": decision.new_params,
+                "decided_at": now_iso,
+                "timestamp": now_iso,  # Frontend expects this field
+            })
+            logger.info("Supervisor decision broadcasted to frontend WS clients")
+        except Exception as broadcast_err:
+            logger.warning(f"Could not broadcast supervisor decision to frontend: {broadcast_err}")
+
+        # Save to DB
+        try:
+            from app.db.supabase_client import get_supabase
+            supabase = get_supabase()
+            session_id = getattr(self._loop, "session_id", None) if self._loop else None
+            supabase.table("supervisor_decisions").insert({
+                "session_id": session_id,
+                "action": decision.action,
+                "reason": decision.reason,
+                "confidence": decision.confidence,
+                "new_params": decision.new_params,
+                "new_strategy": decision.new_strategy,
+            }).execute()
+        except Exception as e:
+            logger.warning(f"Failed to save supervisor decision to DB: {e}")
+
+        return decision

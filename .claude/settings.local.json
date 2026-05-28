@@ -24,7 +24,15 @@
       "Bash(kill:*)",
       "Bash(cmd.exe /c \"taskkill /PID 43600 /F\")",
       "Bash(cmd.exe /c \"tasklist /FI \\\\\"PID eq 43600\\\\\"\")",
-      "Bash(find . -type f -name *.module.ts)"
+      "Bash(find . -type f -name *.module.ts)",
+      "Bash(git reset:*)",
+      "Bash(git rm:*)",
+      "Bash(npm run:*)",
+      "Bash(git pull:*)",
+      "Bash(curl -s http://localhost:8000/scalping/intelligence/BTCUSDT/snapshot)",
+      "Bash(grep -r scalping synthtrade/backend/app/*.py)",
+      "Bash(ls -la synthtrade/backend/tests/scalping/test_opportunity*.py)",
+      "Bash(ls -la tests/scalping/test_opportunity*.py)"
     ]
   }
 }

@@ -79,8 +79,8 @@ class WhaleCollector:
                         desc_elem = item.find("description")
                         
                         text = ""
-                        if title_elem is not None: text += title_elem.text.lower()
-                        if desc_elem is not None: text += desc_elem.text.lower()
+                        if title_elem is not None and title_elem.text is not None: text += title_elem.text.lower()
+                        if desc_elem is not None and desc_elem.text is not None: text += desc_elem.text.lower()
                         
                         if symbol in text:
                             count += 1
@@ -140,11 +140,22 @@ class WhaleCollector:
 
     @staticmethod
     def whale_to_score(data: WhaleData) -> float:
-        """Converte l'attività whale in un contributo score (-10 a +10)."""
-        if not data.recent_whale_activity:
-            return 0.0
+        """Converte l'attività whale in un contributo score (-10 a +10).
         
-        # Semplice: più whale transactions = più volatilità/bias
-        # In una versione avanzata: distinguere tra inflow (bearish) e outflow (bullish)
-        score = min(10.0, data.whale_transaction_count * 2.5)
-        return score
+        Usa whale_transaction_count come indicatore primario.
+        Se count è 0 ma large_transfer_volume è significativo (> 10 BTC),
+        calcola lo score dal volume come fallback.
+        """
+        if data.whale_transaction_count > 0:
+            score = min(10.0, data.whale_transaction_count * 2.5)
+            return score
+        
+        # Fallback: usa large_transfer_volume se significativo
+        vol = float(data.large_transfer_volume)
+        if vol > 10.0:
+            # Scala logaritmica: 10 BTC → 1, 100 BTC → 3, 1000 BTC → 5, 1M BTC → 10
+            import math
+            score = min(10.0, math.log10(max(vol, 1.0)) * 2.0)
+            return round(score, 1)
+        
+        return 0.0

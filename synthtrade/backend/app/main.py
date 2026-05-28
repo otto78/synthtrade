@@ -8,7 +8,7 @@ from app.api import auth, strategies, dashboard, logs, ws, trades, eval as eval_
 from app.scalping.router import router as scalping_router, ws_scalping_router
 from app.api import llm_models_api
 from app.scheduler.jobs import setup_scheduler
-from app.core.logging import setup_logging
+from app.core.logging import setup_logging, reconfigure_uvicorn_loggers
 from app.core.exceptions import (
     SynthTradeError,
     global_exception_handler,
@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
+    # Post-setup: override uvicorn loggers with our color formatter
+    reconfigure_uvicorn_loggers()
     logger.info("SynthTrade API starting...")
 
     # TASK-409: Singleton ExecutionEngine — istanziato una sola volta, condiviso da scheduler e API

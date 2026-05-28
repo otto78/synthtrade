@@ -62,8 +62,8 @@ import { ScalpingWsService } from '../services/scalping-ws.service';
     .performance-panel { padding: 12px; }
     h3 { margin: 0 0 12px 0; font-size: 14px; color: var(--text-secondary); }
     .loading { color: var(--text-secondary); font-size: 12px; }
-    .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .metric-item { display: flex; justify-content: space-between; padding: 6px 8px; background: var(--bg-elevated); border-radius: 4px; font-size: 12px; }
+    .metrics-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .metric-item { display: flex; justify-content: space-between; padding: 10px 12px; background: var(--bg-elevated); border-radius: 6px; font-size: 14px; }
     .label { color: var(--text-secondary); }
     .value { font-weight: 600; color: var(--text-primary); }
     .value.profit { color: var(--accent-success, #26a69a); }

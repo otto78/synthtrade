@@ -1,11 +1,7 @@
-/**
- * Session API Service
- * REST client for scalping session management
- */
-
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, BehaviorSubject } from 'rxjs';
+import { tap } from 'rxjs/operators';
 import { ScalpingSession, SessionControl } from '../models/session.model';
 
 @Injectable({
@@ -13,17 +9,29 @@ import { ScalpingSession, SessionControl } from '../models/session.model';
 })
 export class SessionApiService {
   private readonly API_URL = '/api/scalping/session';
+  private sessionSubject = new BehaviorSubject<ScalpingSession | null>(null);
+  session$ = this.sessionSubject.asObservable();
 
   constructor(private http: HttpClient) {}
 
   /** Get current session status */
   getStatus(): Observable<ScalpingSession> {
-    return this.http.get<ScalpingSession>(this.API_URL);
+    return this.http.get<ScalpingSession>(this.API_URL).pipe(
+      tap(session => this.sessionSubject.next(session))
+    );
   }
 
   /** Start/Pause/Stop session */
   controlSession(control: SessionControl): Observable<ScalpingSession> {
-    return this.http.post<ScalpingSession>(this.API_URL, control);
+    return this.http.post<ScalpingSession>(this.API_URL, control).pipe(
+      tap(session => {
+        if (control.action === 'stop') {
+          this.sessionSubject.next(null);
+        } else {
+          this.sessionSubject.next(session);
+        }
+      })
+    );
   }
 
   /** Start session with specific mode */

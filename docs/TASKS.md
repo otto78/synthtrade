@@ -415,6 +415,41 @@ Rilevamento automatico di opportunità di mercato (nuove listing, launchpool, ne
 
 ---
 
+### TASK-813 — Bug Fixes & Improvements (Epic 800)
+**Status:** To Do
+**Priorità:** Alta
+
+**Dettagli:**
+Risoluzione di bug critici, parziali e minori individuati durante l'analisi dell'implementazione dello scalping, necessari per rendere il modulo production-ready.
+
+**Piano:**
+1. **Fix WS Events (Critico):**
+   - Gestire l'evento `position_update` in `ScalpingWsService._dispatch()` per aggiornare il PnL in tempo reale.
+   - Resettare la posizione a `null` nel `PositionTickerComponent` quando si riceve un evento `trade_closed`.
+   - Emettere l'evento `intelligence` dal backend (SignalScoreEngine) tramite WebSocket ed evitare il polling REST ogni 60s nel `MarketIntelPanel`.
+   - Fermare correttamente i task WS in broadcast (`_stop_ws_broadcast`) cancellando esplicitamente i task.
+
+2. **Session Controls & Persistenza (Importante):**
+   - Aggiungere un dropdown nel `SessionControls` del frontend per selezionare il **Simbolo** (es. BTCUSDT, ETHUSDT). *Nota: Nessuno switch per paper/live, gestito a livello app.*
+   - Implementare il salvataggio dei dati di sessione (inizio, fine, trade, intelligence history, supervisor decisions) nelle tabelle Supabase previste (`scalping_sessions`, `scalping_trades`, `supervisor_decisions`).
+
+3. **Frontend Scorecard & Strategy Panel (Importante):**
+   - Connettere il `SignalScorecardComponent` ai dati reali dell'intelligence (rimuovere i dati hardcoded 50/neutral) mostrando il breakdown.
+   - Aggiornare lo `StrategyPanel` per renderlo reattivo ai messaggi `supervisor` (cambio strategia/parametri) dal WebSocket.
+
+4. **Risk Controls & Endpoint Fixes (Importante):**
+   - Implementare l'API `/api/scalping/risk/config` nel backend per permettere il salvataggio dei parametri dal `RiskControlsComponent`.
+   - Sistemare `total_pnl_pct` e `consecutive_losses` in `/scalping/performance`.
+   - Sistemare l'endpoint `GET /scalping/position` per calcolare correttamente il PnL e il prezzo corrente basato sui dati reali, anziché `entry_price=current_price`.
+
+5. **Miglioramenti Dashboard (Minore/Miglioramenti):**
+   - Pulire le directory: creare le strutture mancanti (es. `session/`, file `signal_generator.py`) e rimuovere le cartelle duplicate nel frontend (`synthtrade/frontend/synthtrade-ui/synthtrade/...`).
+   - Risolvere il problema della chiamata multipla a `ws.connect()` (es. da `LiveChart`).
+   - Aumentare i retry del WebSocket (`take(5)`) o implementare un avviso utente in caso di disconnessione definitiva.
+   - Aggiungere i pulsanti "Watch" e "Ignore" nel `OpportunityFeedComponent` che chiamano gli endpoint backend.
+
+---
+
 ### TASK-811 — Regressione E2E [📎 Dettaglio]
 **Status:** To Do
 **Priorità:** Media
@@ -489,10 +524,11 @@ Testare l'intero workflow.
 7. ~~**TASK-806** (AI Supervisor — estensione moduli core esistenti)~~ ✅
 8. ~~**TASK-807** (Scheduler Centralizzato)~~ ✅
 9. ~~**TASK-808** (Backtest Engine)~~ ✅
-10. **TASK-809** (Frontend Dashboard Scalping)
-11. **TASK-810** (Opportunity Monitor)
-12. **TASK-811** (Regressione E2E)
-13. **TASK-812** (Go Live)
+10. ~~**TASK-809** (Frontend Dashboard Scalping)~~ ✅
+11. ~~**TASK-810** (Opportunity Monitor)~~ ✅
+12. **TASK-813** (Bug Fixes & Improvements)
+13. **TASK-811** (Regressione E2E)
+14. **TASK-812** (Go Live)
 
 ---
 

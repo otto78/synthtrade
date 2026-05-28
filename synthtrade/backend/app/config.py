@@ -109,7 +109,7 @@ class Settings(BaseSettings):
     @computed_field
     @property
     def binance_ws_base_url(self) -> str:
-        return 'wss://testnet.binance.vision/ws' if self.TRADING_MODE == 'test' else 'wss://stream.binance.com:9443/ws'
+        return 'wss://stream.testnet.binance.vision/ws' if self.TRADING_MODE == 'test' else 'wss://stream.binance.com:9443/ws'
 
     # Auth
     APP_PASSWORD: str = 'changeme'

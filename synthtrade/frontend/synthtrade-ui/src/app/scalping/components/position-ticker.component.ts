@@ -76,9 +76,16 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
       };
       this.cdr.detectChanges();
     });
+    
+    // Clear position when a trade is closed
+    this.posUpdateSub = this.ws.tradeClosed$.subscribe(() => {
+      this.position = null;
+      this.cdr.detectChanges();
+    });
   }
 
   ngOnDestroy(): void {
     this.posSub?.unsubscribe();
+    this.posUpdateSub?.unsubscribe();
   }
 }

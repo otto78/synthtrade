@@ -40,6 +40,7 @@ from app.scalping.intelligence.collectors.cvd_calculator import CVDCalculator
 from app.scalping.intelligence.collectors.sentiment import SentimentCollector
 from app.scalping.intelligence.collectors.whale import WhaleCollector
 from app.scalping.intelligence.collectors.onchain import OnChainCollector
+from app.config import settings
 
 # Pesi normalizzati per ogni fonte (somma = 1.0)
 DEFAULT_WEIGHTS: Dict[str, float] = {
@@ -69,9 +70,11 @@ class SignalScoreEngine:
         self,
         symbol: str = "BTCUSDT",
         weights: Optional[Dict[str, float]] = None,
-        threshold: float = 30.0,
+        threshold: Optional[float] = None,
         timeout: float = 10.0,
     ):
+        if threshold is None:
+            threshold = settings.scalping.SCALPING_SIGNAL_STRENGTH_THRESHOLD
         self.symbol = symbol
         self.weights = weights or DEFAULT_WEIGHTS.copy()
         self.threshold = threshold

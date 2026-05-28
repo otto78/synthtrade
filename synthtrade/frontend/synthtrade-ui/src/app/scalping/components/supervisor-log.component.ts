@@ -51,7 +51,12 @@ export class SupervisorLogComponent implements OnInit {
   constructor(private ws: ScalpingWsService) {}
 
   ngOnInit(): void {
-    this.ws.supervisorDecision$.subscribe(decision => {
+    this.ws.supervisorDecision$.subscribe((decision: SupervisorDecision) => {
+      // Fix: ensure timestamp is populated from decided_at if missing
+      const d = decision as SupervisorDecision & { decided_at?: string };
+      if (!d.timestamp && d.decided_at) {
+        d.timestamp = d.decided_at;
+      }
       this.decisions = [decision, ...this.decisions.slice(0, 49)];
     });
   }

@@ -1,12 +1,13 @@
 /**
  * Opportunity Feed Component
  * Shows real-time trading opportunities detected by AI.
- * Polls backend every 60s (TASK-810 will add WebSocket streaming).
+ * Polls backend every 30s with switchMap to avoid race conditions.
  */
 
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { NgFor, NgIf, UpperCasePipe } from '@angular/common';
-import { Subscription, interval } from 'rxjs';
+import { Subscription, timer } from 'rxjs';
+import { switchMap, catchError } from 'rxjs/operators';
 import { OpportunityApiService } from '../services/opportunity-api.service';
 import { Opportunity, OpportunityUrgency } from '../models/opportunity.model';
 
@@ -35,6 +36,10 @@ import { Opportunity, OpportunityUrgency } from '../models/opportunity.model';
             <span *ngIf="opp.symbol" class="opp-symbol">{{ opp.symbol }}</span>
             <span class="opp-source">{{ opp.source }}</span>
           </div>
+          <div class="opp-actions">
+            <button class="btn-action watch" (click)="watchOpp(opp)">Watch</button>
+            <button class="btn-action ignore" (click)="ignoreOpp(opp)">Ignore</button>
+          </div>
         </div>
       </div>
     </div>
@@ -57,19 +62,42 @@ import { Opportunity, OpportunityUrgency } from '../models/opportunity.model';
     .opp-meta { display: flex; gap: 8px; align-items: center; }
     .opp-symbol { font-size: 10px; font-weight: 600; color: var(--accent-primary, #F0B90B); font-family: monospace; }
     .opp-source { font-size: 10px; color: var(--text-secondary, #848E9C); }
+    .opp-actions { display: flex; gap: 4px; margin-top: 6px; }
+    .btn-action { padding: 2px 6px; border-radius: 3px; font-size: 10px; border: none; cursor: pointer; font-weight: 600; }
+    .watch { background: rgba(38, 166, 154, 0.2); color: var(--accent-success, #26a69a); }
+    .ignore { background: rgba(239, 83, 80, 0.2); color: var(--accent-danger, #ef5350); }
   `],
 })
 export class OpportunityFeedComponent implements OnInit, OnDestroy {
   opportunities: Opportunity[] = [];
   private sub = new Subscription();
+  /** Counter to track how many times we've successfully fetched opportunities */
+  private fetchCount = 0;
 
-  constructor(private opportunityApi: OpportunityApiService) {}
+  constructor(
+    private opportunityApi: OpportunityApiService,
+    private cdr: ChangeDetectorRef,
+  ) {}
 
   ngOnInit(): void {
-    this.loadOpportunities();
-    // Poll every 60 seconds
+    // Poll every 30 seconds, using switchMap to cancel previous HTTP call if still in-flight
     this.sub.add(
-      interval(60_000).subscribe(() => this.loadOpportunities())
+      timer(0, 30_000).pipe(
+        switchMap(() =>
+          this.opportunityApi.getOpportunities({ limit: 50 }).pipe(
+            catchError((err) => {
+              console.error('Opportunities load error:', err);
+              return []; // Return empty array on error so the stream doesn't die
+            })
+          )
+        )
+      ).subscribe((data: Opportunity[]) => {
+        this.fetchCount++;
+        this.opportunities = data.slice(0, 20); // Keep max 20
+        // console.log(`[OpportunityFeed] Fetched ${data.length} opportunities (fetch #${this.fetchCount})`);
+        // Force change detection — Angular OnPush is not used but ensure UI update
+        this.cdr.detectChanges();
+      })
     );
   }
 
@@ -86,10 +114,34 @@ export class OpportunityFeedComponent implements OnInit, OnDestroy {
     return urgency === 'MEDIUM';
   }
 
+  watchOpp(opp: Opportunity): void {
+    if (!opp.id) return;
+    this.opportunityApi.watchOpportunity(opp.id).subscribe({
+      next: () => {
+        // console.log(`[OpportunityFeed] Watched opportunity: ${opp.title}`);
+        this.loadOpportunities();
+      },
+      error: (err: Error) => console.error('Watchlist add failed:', err)
+    });
+  }
+
+  ignoreOpp(opp: Opportunity): void {
+    if (!opp.id) return;
+    this.opportunityApi.ignoreOpportunity(opp.id).subscribe({
+      next: () => {
+        // console.log(`[OpportunityFeed] Ignored opportunity: ${opp.title}`);
+        this.loadOpportunities();
+      },
+      error: (err: Error) => console.error('Ignore failed:', err)
+    });
+  }
+
+  /** Force a manual refresh */
   private loadOpportunities(): void {
     this.opportunityApi.getOpportunities().subscribe({
       next: (data: Opportunity[]) => {
-        this.opportunities = data.slice(0, 20); // Keep max 20
+        this.opportunities = data.slice(0, 20);
+        this.cdr.detectChanges();
       },
       error: (err: Error) => {
         console.error('Opportunities load error:', err);

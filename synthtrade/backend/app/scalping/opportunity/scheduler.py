@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from app.scalping.opportunity.pollers.base import BasePoller
+from app.scalping.opportunity.pollers.base import PollerProtocol
 from app.scalping.opportunity.pollers.binance_rss import BinanceRSSPoller
 from app.scalping.opportunity.pollers.coingecko import CoinGeckoPoller
 from app.scalping.opportunity.pollers.whale_alert import WhaleAlertPoller
@@ -33,7 +33,7 @@ class OpportunityScheduler:
         classifier: Optional[OpportunityClassifier] = None,
         router: Optional[OpportunityRouter] = None,
     ):
-        self.pollers: List[BasePoller] = []
+        self.pollers: List[PollerProtocol] = []
         self.deduplicator = deduplicator or Deduplicator()
         self.classifier = classifier or OpportunityClassifier()
         self.router = router or OpportunityRouter()
@@ -58,7 +58,7 @@ class OpportunityScheduler:
 
         # Fetch from all pollers
         for poller in self.pollers:
-            results = await poller.run_once()
+            results = await poller.fetch()
             all_results.extend(results)
 
         logger.info(f"OpportunityScheduler: {len(all_results)} raw results")
@@ -108,10 +108,10 @@ class OpportunityScheduler:
 
         logger.info("OpportunityScheduler stopped")
 
-    def get_pollers(self) -> List[BasePoller]:
+    def get_pollers(self) -> List[PollerProtocol]:
         """Recupera i poller registrati."""
         return self.pollers
 
-    def add_poller(self, poller: BasePoller):
+    def add_poller(self, poller: PollerProtocol):
         """Aggiunge un poller personalizzato."""
         self.pollers.append(poller)

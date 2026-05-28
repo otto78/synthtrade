@@ -2,7 +2,9 @@
  * Signal Scorecard Component
  */
 
-import { Component } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { Subscription } from 'rxjs';
+import { ScalpingWsService, IntelligenceEvent } from '../services/scalping-ws.service';
 
 @Component({
   selector: 'app-signal-scorecard',
@@ -27,7 +29,26 @@ import { Component } from '@angular/core';
     .bias.bearish { color: #ef5350; }
   `],
 })
-export class SignalScorecardComponent {
+export class SignalScorecardComponent implements OnInit, OnDestroy {
   score = 50;
   bias: 'bullish' | 'bearish' | 'neutral' = 'neutral';
+  private sub?: Subscription;
+
+  constructor(private ws: ScalpingWsService, private cdr: ChangeDetectorRef) {}
+
+  ngOnInit(): void {
+    this.sub = this.ws.intelligence$.subscribe((data: IntelligenceEvent) => {
+      if (data.signal_score !== undefined) {
+        this.score = Math.round(data.signal_score);
+      }
+      if (data.signal_bias) {
+        this.bias = data.signal_bias;
+      }
+      this.cdr.detectChanges();
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.sub?.unsubscribe();
+  }
 }

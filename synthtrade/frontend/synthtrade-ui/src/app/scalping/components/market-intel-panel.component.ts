@@ -6,9 +6,10 @@
 
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { UpperCasePipe } from '@angular/common';
-import { Subscription, interval } from 'rxjs';
+import { Subscription } from 'rxjs';
 import { IntelligenceApiService } from '../services/intelligence-api.service';
 import { MarketIntelSnapshot } from '../models/intelligence.model';
+import { ScalpingWsService, IntelligenceEvent } from '../services/scalping-ws.service';
 
 @Component({
   selector: 'app-market-intel-panel',
@@ -56,11 +57,11 @@ import { MarketIntelSnapshot } from '../models/intelligence.model';
   styles: [`
     .intel-panel { padding: 12px; }
     h3 { margin: 0 0 12px 0; font-size: 14px; color: var(--text-secondary); }
-    .intel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .intel-item { display: flex; justify-content: space-between; padding: 6px 8px; background: var(--bg-elevated); border-radius: 4px; }
-    .label { font-size: 11px; color: var(--text-secondary); }
-    .value { font-size: 12px; font-weight: 600; color: var(--text-primary); }
-    .value.score { font-size: 16px; }
+    .intel-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .intel-item { display: flex; justify-content: space-between; padding: 10px 12px; background: var(--bg-elevated); border-radius: 6px; }
+    .label { font-size: 13px; color: var(--text-secondary); }
+    .value { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+    .value.score { font-size: 18px; }
     .value.bullish { color: var(--color-buy, #0ECB81); }
     .value.bearish { color: var(--color-sell, #F6465D); }
     .value.hot { color: var(--color-buy, #0ECB81); }
@@ -79,13 +80,37 @@ export class MarketIntelPanelComponent implements OnInit, OnDestroy {
   private symbol = 'BTCUSDT';
   private sub = new Subscription();
 
-  constructor(private intelApi: IntelligenceApiService) {}
+  constructor(
+    private intelApi: IntelligenceApiService,
+    private ws: ScalpingWsService
+  ) {}
 
   ngOnInit(): void {
     this.loadSnapshot();
-    // Poll every 60 seconds
+    
+    // Listen to real-time updates from WebSocket
     this.sub.add(
-      interval(60_000).subscribe(() => this.loadSnapshot())
+      this.ws.intelligence$.subscribe((data: IntelligenceEvent) => {
+        if (data.signal_score !== undefined) {
+          this.signalScore = data.signal_score.toFixed(1);
+        }
+        if (data.signal_bias) {
+          this.signalBias = data.signal_bias;
+        }
+        if (data.funding_rate !== undefined) {
+          this.fundingRate = data.funding_rate.toFixed(4);
+          this.fundingRateNum = data.funding_rate;
+        }
+        if (data.fear_greed_label) {
+          this.fearGreed = data.fear_greed_label;
+        }
+        if (data.open_interest !== undefined) {
+          this.openInterest = this.formatLargeNumber(data.open_interest);
+        }
+        if (data.cvd_trend) {
+          this.cvdTrend = data.cvd_trend;
+        }
+      })
     );
   }
 

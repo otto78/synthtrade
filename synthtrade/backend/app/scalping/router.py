@@ -36,6 +36,7 @@ from app.scalping.intelligence.signal_score_engine import SignalScoreEngine
 from app.scalping.engine.position_manager import PositionManager
 from app.scalping.models.intelligence import SignalScore, CVDData
 from app.scalping.engine.ws_client import BinanceWSClient, CandleEvent, TradeEvent
+from app.db.supabase_client import get_supabase
 from app.scalping.data.candle_buffer import CandleBuffer
 from app.scalping.engine.execution_loop import ExecutionLoop
 from app.scalping.engine.signal_aggregator import SignalAggregator
@@ -74,6 +75,14 @@ _execution_state: Dict[str, Any] = {
         "paper_balance": 10000.0,
     },
     "trade_history": [],        # List[dict] — trade history for performance calc
+    "risk_config": {
+        "max_position_size": 100,
+        "max_daily_loss": 50,
+        "max_drawdown": 10,
+        "leverage": 10,
+        "stop_loss_pct": 0.3,
+        "take_profit_pct": 0.5,
+    }
 }
 
 # WebSocket connections
@@ -159,6 +168,7 @@ async def _start_ws_broadcast(symbol: str):
     """
     client = BinanceWSClient(symbols=[symbol])
     _execution_state["ws_client"] = client
+    await client.start()
 
     # Create pipeline components
     candle_buffer = CandleBuffer()
@@ -177,6 +187,32 @@ async def _start_ws_broadcast(symbol: str):
         position_manager=_execution_state["position_manager"],
     )
     _execution_state["loop"] = execution_loop
+
+    # Warm up the candle buffer with historical candles so indicators are immediately ready
+    # and broadcast them to the frontend so the chart is populated immediately
+    try:
+        from app.scalping.backtest.historical_loader import HistoricalLoader
+        loader = HistoricalLoader()
+        logger.info(f"Pre-loading past 100 1m candles for {symbol.upper()} to warm up buffer...")
+        past_candles = await loader.load_ohlcv(symbol.upper(), interval="1m", limit=100)
+        if past_candles:
+            for c in past_candles:
+                candle_buffer.add(c)
+                # Broadcast each historical candle to frontend WS clients
+                await broadcast_scalping_event("candle", {
+                    "symbol": symbol,
+                    "open": float(c.open),
+                    "high": float(c.high),
+                    "low": float(c.low),
+                    "close": float(c.close),
+                    "volume": float(c.volume),
+                    "timestamp": c.timestamp.isoformat(),
+                })
+            logger.info(f"Successfully loaded and broadcast {len(past_candles)} historical candles for {symbol}. Buffer ready: {candle_buffer.is_ready(50)}")
+        else:
+            logger.warning(f"No historical candles returned for {symbol}, buffer will warm up live.")
+    except Exception as warmup_err:
+        logger.warning(f"Could not warm up candle buffer with historical data: {warmup_err}")
 
     # Mock data generator that creates synthetic candles when no real WS data arrives
     _mock_candle_counter = 0
@@ -273,7 +309,7 @@ async def _start_ws_broadcast(symbol: str):
                     pos = pm.get_open()
                     pnl = float(close_price - float(pos.entry_price)) * 0.001 * (1 if pos.side == "BUY" else -1)
                     pnl_pct = (pnl / (float(pos.entry_price) * 0.001)) * 100
-                    pm.close_position(pos.symbol)
+                    pm.close_position(Decimal(str(close_price)))
                     # Record in trade history and broadcast
                     trade_record = {
                         "symbol": pos.symbol,
@@ -287,6 +323,27 @@ async def _start_ws_broadcast(symbol: str):
                     _execution_state["trade_history"].append(trade_record)
                     await broadcast_scalping_event("trade_closed", trade_record)
                     logger.info(f"Mock position closed PnL: {pnl:.2f} ({pnl_pct:.2f}%)")
+
+                    # Save trade to Supabase
+                    try:
+                        db_sid = _execution_state["session"].get("db_session_id")
+                        supabase = get_supabase()
+                        supabase.table("scalping_trades").insert({
+                            "session_id": db_sid,
+                            "symbol": trade_record["symbol"],
+                            "side": trade_record["side"],
+                            "entry_price": trade_record["entry_price"],
+                            "exit_price": trade_record["exit_price"],
+                            "quantity": 0.001,
+                            "pnl": trade_record["pnl"],
+                            "pnl_pct": trade_record["pnl_pct"],
+                            "strategy_type": _execution_state["session"]["strategy"],
+                            "status": "closed",
+                            "entry_time": pos.entry_time.isoformat(),
+                            "exit_time": trade_record["timestamp"]
+                        }).execute()
+                    except Exception as db_e:
+                        logger.warning(f"Failed to insert mock trade in DB: {db_e}")
 
     # Pull events from BinanceWSClient queues and broadcast to scalping WS clients
     async def _candle_processor():
@@ -336,8 +393,8 @@ async def _start_ws_broadcast(symbol: str):
 
                         # Simulate trade execution for paper mode
                         pm = _execution_state["position_manager"]
+                        side = "BUY" if decision.confidence > 0 else "SELL"
                         if not pm.has_open():
-                            side = "BUY" if decision.confidence > 0 else "SELL"
                             pos_obj = pm.open_position(
                                 symbol=event.symbol.upper(),
                                 side=side,
@@ -354,6 +411,48 @@ async def _start_ws_broadcast(symbol: str):
                                 "pnl_pct": 0.0,
                             })
                             logger.info(f"Paper trade opened: {side} {event.symbol.upper()} @ {candle.close}")
+                        else:
+                            # If opposite signal, close position
+                            pos = pm.get_open()
+                            if pos.side != side:
+                                pnl = (float(candle.close) - float(pos.entry_price)) * 0.001 * (1 if pos.side == "BUY" else -1)
+                                pnl_pct = (pnl / (float(pos.entry_price) * 0.001)) * 100
+                                pm.close_position(Decimal(str(candle.close)))
+                                now_ts = datetime.now(timezone.utc)
+                                trade_record = {
+                                    "symbol": pos.symbol,
+                                    "side": pos.side,
+                                    "entry_price": float(pos.entry_price),
+                                    "exit_price": float(candle.close),
+                                    "pnl": round(pnl, 2),
+                                    "pnl_pct": round(pnl_pct, 2),
+                                    "timestamp": now_ts.isoformat(),
+                                }
+                                _execution_state["trade_history"].append(trade_record)
+                                await broadcast_scalping_event("trade_closed", trade_record)
+                                logger.info(f"Paper trade closed: {pos.side} {pos.symbol} PnL: {pnl:.2f} ({pnl_pct:.2f}%)")
+                                
+                                # Save trade to Supabase
+                                try:
+                                    db_sid = _execution_state["session"].get("db_session_id")
+                                    supabase = get_supabase()
+                                    supabase.table("scalping_trades").insert({
+                                        "session_id": db_sid,
+                                        "symbol": trade_record["symbol"],
+                                        "side": trade_record["side"],
+                                        "entry_price": trade_record["entry_price"],
+                                        "exit_price": trade_record["exit_price"],
+                                        "quantity": 0.001,
+                                        "pnl": trade_record["pnl"],
+                                        "pnl_pct": trade_record["pnl_pct"],
+                                        "strategy_type": _execution_state["session"]["strategy"],
+                                        "signal_reason": decision.reason,
+                                        "status": "closed",
+                                        "entry_time": pos.entry_time.isoformat(),
+                                        "exit_time": trade_record["timestamp"]
+                                    }).execute()
+                                except Exception as db_e:
+                                    logger.warning(f"Failed to insert real trade in DB: {db_e}")
                 except Exception as e:
                     logger.warning(f"Execution loop processing error: {e}")
 
@@ -399,11 +498,42 @@ async def _start_ws_broadcast(symbol: str):
                     "pnl_pct": round(pnl_pct, 2),
                 })
 
-    # Start processor tasks + mock generator
+    async def _intelligence_processor():
+        """Poll intelligence and broadcast."""
+        while _execution_state["session"]["status"] != "idle" and not client._stop_event.is_set():
+            if _execution_state["session"]["status"] == "running":
+                try:
+                    snapshot = await signal_engine.get_snapshot()
+                    intel_data = _snapshot_to_dict(symbol, snapshot)
+                    await broadcast_scalping_event("intelligence", intel_data)
+                    
+                    # Save to Supabase market_intel_snapshots table
+                    try:
+                        supabase = get_supabase()
+                        supabase.table("market_intel_snapshots").insert({
+                            "symbol": symbol,
+                            "funding_rate": intel_data.get("funding_rate"),
+                            "open_interest": intel_data.get("open_interest"),
+                            "long_pct": intel_data.get("long_pct"),
+                            "short_pct": intel_data.get("short_pct"),
+                            "cvd_trend": intel_data.get("cvd_trend"),
+                            "fear_greed_value": intel_data.get("fear_greed_value"),
+                            "fear_greed_label": intel_data.get("fear_greed_label"),
+                            "signal_score": intel_data.get("signal_score"),
+                            "signal_bias": intel_data.get("signal_bias")
+                        }).execute()
+                    except Exception as db_e:
+                        logger.warning(f"Failed to insert intelligence in DB: {db_e}")
+
+                except Exception as e:
+                    logger.warning(f"Intelligence broadcast error: {e}")
+            await asyncio.sleep(10.0)
+
+    # Start processor tasks (mock generator disabled — real Binance WS is active)
     task_candle = asyncio.create_task(_candle_processor(), name=f"candle-proc-{symbol}")
     task_trade = asyncio.create_task(_trade_processor(), name=f"trade-proc-{symbol}")
-    task_mock = asyncio.create_task(_mock_candle_generator(), name=f"mock-candle-{symbol}")
-    _execution_state["ws_tasks"] = [task_candle, task_trade, task_mock]
+    task_intel = asyncio.create_task(_intelligence_processor(), name=f"intel-proc-{symbol}")
+    _execution_state["ws_tasks"] = [task_candle, task_trade, task_intel]
 
     # Log how many frontend WS clients are connected
     ws_count = len(_scalping_ws_connections)
@@ -430,6 +560,11 @@ async def _stop_ws_broadcast():
         _execution_state["loop"] = None
     
     _execution_state["signal_engine"] = None
+
+    # Cancel all WS tasks
+    for task in _execution_state.get("ws_tasks", []):
+        task.cancel()
+    _execution_state["ws_tasks"] = []
 
 
 # ---------------------------------------------------------------------------
@@ -565,11 +700,19 @@ async def get_intel_snapshot(symbol: str) -> Dict:
 
 @router.get("/intelligence/{symbol}/history")
 async def get_intel_history(symbol: str, limit: int = 100) -> List[Dict]:
-    """Get historical intelligence snapshots.
-    
-    TODO: Caricare da Supabase tabella market_intel_snapshots quando disponibile.
-    """
-    return []
+    """Get historical intelligence snapshots from Supabase."""
+    try:
+        supabase = get_supabase()
+        response = supabase.table("market_intel_snapshots") \
+            .select("*") \
+            .eq("symbol", symbol) \
+            .order("recorded_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        return response.data
+    except Exception as e:
+        logger.warning(f"Failed to fetch intel history from DB: {e}")
+        return []
 
 
 def _snapshot_to_dict(symbol: str, snapshot: Any) -> Dict[str, Any]:
@@ -644,6 +787,32 @@ async def control_session(control: Dict) -> Dict:
             """Wrapper that logs any exception from _start_ws_broadcast."""
             try:
                 await _start_ws_broadcast(active_symbol.lower())
+                
+                # Save to Supabase after successful start
+                try:
+                    supabase = get_supabase()
+                    db_resp = supabase.table("scalping_sessions").insert({
+                        "symbol": session["symbol"],
+                        "mode": session["mode"].upper(),
+                        "timeframe": "1m",
+                        "status": "running",
+                        "started_at": session["started_at"]
+                    }).execute()
+                    if db_resp.data:
+                        session["db_session_id"] = db_resp.data[0]["id"]
+                        logger.info(f"Session saved to DB with id={session['db_session_id']}")
+                except Exception as db_e:
+                    logger.warning(f"Failed to insert session in DB: {db_e}")
+                    
+                # Start SupervisorScheduler (every 45s for live debugging/monitoring)
+                from app.scalping.supervisor.supervisor_scheduler import SupervisorScheduler
+                supervisor = SupervisorScheduler(symbol=active_symbol, interval_seconds=45)
+                # Attach db_session_id (UUID) so the supervisor can log it to DB
+                _execution_state["loop"].session_id = session.get("db_session_id")
+                supervisor.set_execution_loop(_execution_state["loop"])
+                supervisor.start()
+                _execution_state["supervisor_scheduler"] = supervisor
+                    
             except Exception as e:
                 logger.error(f"Scalping broadcast start FAILED for {active_symbol}: {e}", exc_info=True)
                 # Reset session if broadcast failed to start
@@ -667,18 +836,53 @@ async def control_session(control: Dict) -> Dict:
             name="scalping-ws-stop",
         )
         
+        # Stop SupervisorScheduler if running
+        if "supervisor_scheduler" in _execution_state and _execution_state["supervisor_scheduler"]:
+            _execution_state["supervisor_scheduler"].stop()
+            _execution_state["supervisor_scheduler"] = None
+            
         session["status"] = "idle"
         session["session_id"] = None
         session["started_at"] = None
         session["stopped_at"] = _now()
+        
+        # Update DB
+        try:
+            db_sid = _execution_state["session"].get("db_session_id")
+            if db_sid:
+                supabase = get_supabase()
+                supabase.table("scalping_sessions").update({
+                    "status": "stopped",
+                    "stopped_at": session["stopped_at"]
+                }).eq("id", db_sid).execute()
+        except Exception as e:
+            logger.warning(f"Failed to update session in DB: {e}")
 
     elif action == "pause":
         if session["status"] == "running":
             session["status"] = "paused"
+            try:
+                db_sid = session.get("db_session_id")
+                if db_sid:
+                    supabase = get_supabase()
+                    supabase.table("scalping_sessions").update({
+                        "status": "paused"
+                    }).eq("id", db_sid).execute()
+            except Exception as e:
+                logger.warning(f"Failed to update session in DB: {e}")
 
     elif action == "resume":
         if session["status"] == "paused":
             session["status"] = "running"
+            try:
+                db_sid = session.get("db_session_id")
+                if db_sid:
+                    supabase = get_supabase()
+                    supabase.table("scalping_sessions").update({
+                        "status": "running"
+                    }).eq("id", db_sid).execute()
+            except Exception as e:
+                logger.warning(f"Failed to update session in DB: {e}")
 
     return session.copy()
 
@@ -696,9 +900,22 @@ async def get_position() -> Optional[Dict]:
         return None
     
     # Calculate current PnL estimate
-    current_price = float(pos.entry_price)
-    pnl = 0.0
-    pnl_pct = 0.0
+    loop = _execution_state.get("loop")
+    if loop and len(loop.candle_buffer) > 0:
+        candles = loop.candle_buffer.get()
+        current_price = float(candles[-1].close)
+        qty = float(pos.quantity)
+        entry = float(pos.entry_price)
+        if pos.side == "BUY":
+            pnl = (current_price - entry) * qty
+            pnl_pct = (current_price - entry) / entry * 100
+        else:
+            pnl = (entry - current_price) * qty
+            pnl_pct = (entry - current_price) / entry * 100
+    else:
+        current_price = float(pos.entry_price)
+        pnl = 0.0
+        pnl_pct = 0.0
     
     return {
         "symbol": pos.symbol,
@@ -730,6 +947,19 @@ async def list_positions() -> List[Dict]:
         for p in positions
     ]
 
+
+# ---------------------------------------------------------------------------
+# Risk Config endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/risk/config")
+async def get_risk_config() -> Dict:
+    return _execution_state.get("risk_config", {})
+
+@router.post("/risk/config")
+async def update_risk_config(config: Dict) -> Dict:
+    _execution_state["risk_config"] = config
+    return config
 
 # ---------------------------------------------------------------------------
 # Performance endpoint
@@ -799,9 +1029,12 @@ async def get_performance() -> Dict:
         else:
             current_run = 0
     
+    initial_balance = _execution_state["session"].get("paper_balance", 10000.0)
+    total_pnl_pct = (total_pnl / initial_balance) * 100 if initial_balance else 0
+
     return {
         "total_pnl": round(total_pnl, 2),
-        "total_pnl_pct": 0,  # Would need initial capital
+        "total_pnl_pct": round(total_pnl_pct, 2),
         "win_rate": round(win_count / total * 100, 2) if total else 0,
         "total_trades": total,
         "winning_trades": win_count,
@@ -810,7 +1043,7 @@ async def get_performance() -> Dict:
         "avg_loss": round(avg_loss, 4),
         "profit_factor": profit_factor,
         "max_drawdown": round(max_dd, 2),
-        "consecutive_losses": cons_losses,
+        "consecutive_losses": max_cons_losses,
     }
 
 
@@ -827,6 +1060,7 @@ async def _get_opportunity_scheduler() -> OpportunityScheduler:
     global _opportunity_scheduler
     if _opportunity_scheduler is None:
         _opportunity_scheduler = OpportunityScheduler()
+        await _opportunity_scheduler.start(interval=60)
     return _opportunity_scheduler
 
 
@@ -854,7 +1088,7 @@ async def get_opportunities(
         limit=limit,
     )
 
-    return [
+    result = [
         {
             "id": opp.id,
             "symbol": opp.symbol,
@@ -873,6 +1107,18 @@ async def get_opportunities(
         }
         for opp in opportunities
     ]
+    
+    logger.info(
+        f"GET /opportunities: {len(result)} opportunities returned "
+        f"(filter urgency={urgency})"
+    )
+    for opp in result:
+        logger.info(
+            f"  opp: [{opp['urgency']}] {opp['title']} "
+            f"({opp['symbol']}) - {opp['source']}"
+        )
+    
+    return result
 
 
 @router.post("/opportunities/{opportunity_id}/watchlist")

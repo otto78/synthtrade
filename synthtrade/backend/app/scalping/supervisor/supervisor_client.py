@@ -47,10 +47,10 @@ class SupervisorClient:
 
     def __init__(self):
         self._client = ModelClient(
-            api_key=settings.ANTHROPIC_API_KEY,
-            api_base_url=settings.ANTHROPIC_BASE_URL,
-            cascade_models=settings.MODEL_CASCADE,
-            fallback_model=settings.MODEL_FALLBACK,
+            api_key=settings.OPENROUTER_API_KEY,
+            api_base_url=settings.AI_API_BASE_URL,
+            cascade_models=settings.ai_cascade_models_list,
+            fallback_model=settings.AI_FALLBACK_MODEL,
         )
 
     async def decide(

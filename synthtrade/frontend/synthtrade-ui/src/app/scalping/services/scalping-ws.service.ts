@@ -6,7 +6,7 @@
 import { Injectable, OnDestroy } from '@angular/core';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 import { Subject, timer } from 'rxjs';
-import { retryWhen, delayWhen, take } from 'rxjs/operators';
+import { retryWhen, delayWhen } from 'rxjs/operators';
 
 // Event types matching backend
 export type ScalpingEventType =
@@ -16,7 +16,9 @@ export type ScalpingEventType =
   | 'position'
   | 'supervisor'
   | 'risk_block'
-  | 'trade_closed';
+  | 'trade_closed'
+  | 'position_update'
+  | 'intelligence';
 
 export interface TradeClosedEvent {
   symbol: string;
@@ -28,9 +30,25 @@ export interface TradeClosedEvent {
   timestamp: string;
 }
 
+export interface IntelligenceEvent {
+  symbol: string;
+  signal_score?: number;
+  signal_bias?: 'bullish' | 'bearish' | 'neutral';
+  tradeable?: boolean;
+  confidence?: number;
+  funding_rate?: number;
+  open_interest?: number;
+  fear_greed_value?: number;
+  fear_greed_label?: string;
+  cvd_trend?: string;
+  long_pct?: number;
+  short_pct?: number;
+  recorded_at: string;
+}
+
 export interface ScalpingEvent {
   type: ScalpingEventType;
-  payload: CandleEvent | SignalEvent | PositionEvent | SupervisorDecision | RiskBlockEvent | TradeClosedEvent;
+  payload: CandleEvent | SignalEvent | PositionEvent | SupervisorDecision | RiskBlockEvent | TradeClosedEvent | IntelligenceEvent;
   timestamp: string;
 }
 
@@ -91,12 +109,15 @@ export interface StrategyParams {
 }
 
 export interface SupervisorDecision {
-  action: 'MODIFY_PARAMS' | 'CHANGE_STRATEGY' | 'PAUSE' | 'RESUME';
+  action: 'update_params' | 'change_strategy' | 'pause_trading' | 'resume_trading' | 'no_action';
   reason: string;
   confidence: number;
-  previous_params?: StrategyParams;
   new_params?: StrategyParams;
-  timestamp: string;
+  new_strategy?: string;
+  market_bias?: string;
+  primary_signal?: string;
+  decided_at?: string;
+  timestamp?: string;
 }
 
 export interface RiskBlockEvent {
@@ -131,6 +152,7 @@ export class ScalpingWsService implements OnDestroy {
   supervisorDecision$ = new Subject<SupervisorDecision>();
   riskBlock$ = new Subject<RiskBlockEvent>();
   tradeClosed$ = new Subject<TradeClosedEvent>();
+  intelligence$ = new Subject<IntelligenceEvent>();
 
   private connected = false;
 
@@ -143,8 +165,8 @@ export class ScalpingWsService implements OnDestroy {
       .pipe(
         retryWhen((errors) =>
           errors.pipe(
-            delayWhen((_) => timer(3000)),
-            take(5)
+            delayWhen((_) => timer(3000))
+            // Retry indefinitely instead of take(5)
           )
         )
       )
@@ -172,6 +194,7 @@ export class ScalpingWsService implements OnDestroy {
         this.signal$.next(event.payload as SignalEvent);
         break;
       case 'position':
+      case 'position_update':
         this.position$.next(event.payload as PositionEvent);
         break;
       case 'supervisor':
@@ -182,6 +205,9 @@ export class ScalpingWsService implements OnDestroy {
         break;
       case 'trade_closed':
         this.tradeClosed$.next(event.payload as TradeClosedEvent);
+        break;
+      case 'intelligence':
+        this.intelligence$.next(event.payload as IntelligenceEvent);
         break;
     }
   }

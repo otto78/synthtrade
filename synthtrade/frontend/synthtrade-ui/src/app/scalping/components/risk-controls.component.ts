@@ -6,6 +6,7 @@
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { NgIf } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
 
 export interface RiskConfig {
   max_position_size: number;
@@ -75,10 +76,22 @@ export interface RiskConfig {
 export class RiskControlsComponent implements OnInit {
   config?: RiskConfig;
 
-  constructor() {}
+  constructor(private http: HttpClient) {}
 
   ngOnInit(): void {
-    // Default config - will be loaded from backend
+    this.http.get<RiskConfig>('/api/scalping/risk/config').subscribe({
+      next: (cfg) => {
+        if (Object.keys(cfg).length > 0) {
+          this.config = cfg;
+        } else {
+          this.loadDefaultConfig();
+        }
+      },
+      error: () => this.loadDefaultConfig()
+    });
+  }
+
+  private loadDefaultConfig() {
     this.config = {
       max_position_size: 100,
       max_daily_loss: 50,
@@ -90,7 +103,10 @@ export class RiskControlsComponent implements OnInit {
   }
 
   saveConfig(): void {
-    // TODO: POST to /api/scalping/risk/config
-    console.log('Saving risk config:', this.config);
+    if (!this.config) return;
+    this.http.post<RiskConfig>('/api/scalping/risk/config', this.config).subscribe({
+      next: () => {},
+      error: (err: Error) => console.error('Failed to save risk config', err)
+    });
   }
 }

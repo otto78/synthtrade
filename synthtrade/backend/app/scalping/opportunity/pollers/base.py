@@ -4,12 +4,30 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Protocol, runtime_checkable
 
 from app.scalping.models.opportunity import PollerResult, OpportunitySource
 
 
 logger = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class PollerProtocol(Protocol):
+    """Protocol for poller interface."""
+    
+    @property
+    def source(self) -> OpportunitySource:
+        """Source of the opportunity."""
+        ...
+    
+    async def fetch(self) -> List[PollerResult]:
+        """Fetch new contents from the source."""
+        ...
+    
+    def get_default_interval(self) -> int:
+        """Return polling interval in seconds."""
+        ...
 
 
 class BasePoller(ABC):

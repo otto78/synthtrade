@@ -1,3 +1,4 @@
+from typing import Any
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -45,7 +46,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         }
     )
 
-async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+async def http_exception_handler(request: Request, exc: Any):
     """
     TASK-302: Handler HTTPException
     """
@@ -59,7 +60,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         }
     )
 
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
+async def validation_exception_handler(request: Request, exc: Any):
     """
     TASK-303: Handler RequestValidationError
     """
@@ -81,7 +82,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         }
     )
 
-async def synthtrade_exception_handler(request: Request, exc: SynthTradeError):
+async def synthtrade_exception_handler(request: Request, exc: Any):
     """Custom exception handler for SynthTrade specific errors"""
     request_id = request.headers.get("X-Request-ID", "unknown")
     return JSONResponse(

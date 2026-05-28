@@ -1,87 +1,195 @@
 /**
  * Strategy Panel Component
- * Displays active strategy and parameters
+ * Shows active strategy and parameters. Updated live by AI Supervisor decisions via WS.
  */
 
-import { Component, OnInit } from '@angular/core';
-import { NgForOf, NgIf } from '@angular/common';
-import { ScalpingWsService } from '../services/scalping-ws.service';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { NgForOf, NgIf, DecimalPipe, NgClass } from '@angular/common';
+import { Subscription } from 'rxjs';
+import { ScalpingWsService, SupervisorDecision } from '../services/scalping-ws.service';
+import { SessionApiService } from '../services/session-api.service';
 
 export interface StrategyParams {
   ema_fast?: number;
   ema_slow?: number;
   rsi_period?: number;
+  rsi_overbought?: number;
+  rsi_oversold?: number;
+  bb_period?: number;
   bb_std?: number;
   take_profit_pct?: number;
   stop_loss_pct?: number;
   [key: string]: number | undefined;
 }
 
-export interface ActiveStrategy {
-  name: string;
-  type: string;
-  params: StrategyParams;
-  enabled: boolean;
-}
+const STRATEGY_DEFAULTS: Record<string, { label: string; desc: string; params: StrategyParams }> = {
+  ema_cross: {
+    label: 'EMA Cross',
+    desc: 'Incrocio EMA veloce/lenta con filtro volume',
+    params: { ema_fast: 9, ema_slow: 21, take_profit_pct: 0.4, stop_loss_pct: 0.25 },
+  },
+  rsi_bollinger: {
+    label: 'RSI + Bollinger',
+    desc: 'RSI oversold/overbought + bande di Bollinger',
+    params: { rsi_period: 14, rsi_oversold: 30, rsi_overbought: 70, bb_period: 20, bb_std: 2, take_profit_pct: 0.5, stop_loss_pct: 0.3 },
+  },
+  vwap_reversion: {
+    label: 'VWAP Reversion',
+    desc: 'Mean reversion al VWAP giornaliero',
+    params: { take_profit_pct: 0.35, stop_loss_pct: 0.2 },
+  },
+  scalping_v2: {
+    label: 'Scalping v2',
+    desc: 'Auto-select via AI Signal Intelligence',
+    params: { ema_fast: 9, ema_slow: 21, take_profit_pct: 0.5, stop_loss_pct: 0.3 },
+  },
+};
 
 @Component({
   selector: 'app-strategy-panel',
   standalone: true,
-  imports: [NgForOf, NgIf],
+  imports: [NgForOf, NgIf, DecimalPipe, NgClass],
   template: `
     <div class="strategy-panel">
-      <h3>Strategy</h3>
+      <div class="panel-header">
+        <h3>Strategy</h3>
+        <span class="ai-badge" *ngIf="lastAiUpdate">AI</span>
+      </div>
 
-      <div *ngIf="!strategy" class="no-strategy">No strategy loaded</div>
+      <div *ngIf="!strategy" class="empty-state">
+        <span>Avvia una sessione per caricare la strategia</span>
+      </div>
 
-      <div *ngIf="strategy" class="strategy-info">
-        <div class="name">{{ strategy.name }}</div>
-        <div class="type">{{ strategy.type }}</div>
+      <ng-container *ngIf="strategy">
+        <div class="strategy-name">{{ strategy.label }}</div>
+        <div class="strategy-desc">{{ strategy.desc }}</div>
 
-        <div class="params" *ngIf="strategy.params">
-          <div class="param" *ngFor="let key of objectKeys(strategy.params)">
+        <div class="params-grid">
+          <div class="param-row" *ngFor="let key of paramKeys()">
             <span class="param-label">{{ formatParam(key) }}</span>
-            <span class="param-value">{{ strategy.params[key] }}</span>
+            <span class="param-value" [ngClass]="{'highlight': highlightedKeys.has(key)}">
+              {{ strategy.params[key] | number:'1.0-4' }}
+              <span *ngIf="key.endsWith('_pct')" class="unit">%</span>
+            </span>
           </div>
         </div>
-      </div>
+
+        <div *ngIf="lastAiUpdate" class="ai-note">
+          <span class="ai-icon">🤖</span>
+          <span>AI aggiornato · {{ lastAiUpdate }}</span>
+        </div>
+      </ng-container>
     </div>
   `,
   styles: [`
-    .strategy-panel { padding: 12px; }
-    h3 { margin: 0 0 12px 0; font-size: 14px; color: var(--text-secondary); }
-    .no-strategy { color: var(--text-secondary); font-size: 12px; }
-    .strategy-info { font-size: 12px; }
-    .name { font-weight: 600; color: var(--accent-primary, #F0B90B); margin-bottom: 4px; }
-    .type { color: var(--text-secondary); font-size: 11px; margin-bottom: 8px; }
-    .params { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-    .param { display: flex; justify-content: space-between; padding: 4px 6px; background: var(--bg-elevated); border-radius: 4px; }
-    .param-label { color: var(--text-secondary); text-transform: capitalize; }
-    .param-value { color: var(--text-primary); font-weight: 500; }
+    .strategy-panel { padding: 16px; display: flex; flex-direction: column; gap: 12px; height: 100%; }
+
+    .panel-header { display: flex; align-items: center; justify-content: space-between; }
+    h3 { margin: 0; font-size: 13px; color: var(--text-secondary); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+    .ai-badge {
+      font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 10px;
+      background: rgba(240,185,11,0.15); color: #F0B90B; border: 1px solid rgba(240,185,11,0.3);
+    }
+
+    .empty-state {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      color: var(--text-secondary); font-size: 12px; text-align: center; opacity: 0.6;
+    }
+
+    .strategy-name {
+      font-size: 16px; font-weight: 700; color: var(--accent-primary, #F0B90B);
+    }
+    .strategy-desc {
+      font-size: 11px; color: var(--text-secondary); line-height: 1.4;
+    }
+
+    .params-grid { display: flex; flex-direction: column; gap: 4px; }
+    .param-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 5px 8px; border-radius: 5px;
+      background: rgba(255,255,255,0.03);
+      transition: background 0.2s;
+    }
+    .param-row:hover { background: rgba(255,255,255,0.06); }
+    .param-label { font-size: 11px; color: var(--text-secondary); text-transform: capitalize; }
+    .param-value {
+      font-size: 12px; font-weight: 600; color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+      transition: color 0.4s;
+    }
+    .param-value.highlight { color: #F0B90B; }
+    .unit { font-size: 10px; opacity: 0.6; margin-left: 1px; }
+
+    .ai-note {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 10px; color: var(--text-secondary);
+      border-top: 1px solid rgba(255,255,255,0.05);
+      padding-top: 8px;
+    }
+    .ai-icon { font-size: 12px; }
   `],
 })
-export class StrategyPanelComponent implements OnInit {
-  strategy?: ActiveStrategy;
-  objectKeys = Object.keys;
+export class StrategyPanelComponent implements OnInit, OnDestroy {
+  strategy: { label: string; desc: string; params: StrategyParams } | null = null;
+  lastAiUpdate: string | null = null;
+  highlightedKeys: Set<string> = new Set();
 
-  constructor(private ws: ScalpingWsService) {}
+  private sub?: Subscription;
+  private sessionSub?: Subscription;
+
+  constructor(
+    private ws: ScalpingWsService,
+    private sessionApi: SessionApiService,
+    private cdr: ChangeDetectorRef
+  ) {}
 
   ngOnInit(): void {
-    // Default strategy for now - will be updated via WS when supervisor changes
-    this.strategy = {
-      name: 'Scalping v2.0',
-      type: 'EMA Cross + Signal Intelligence',
-      params: {
-        ema_fast: 9,
-        ema_slow: 21,
-        take_profit_pct: 0.5,
-        stop_loss_pct: 0.3
-      },
-      enabled: true
-    };
+    // Load strategy from current session reactively
+    this.sessionSub = this.sessionApi.session$.subscribe((session) => {
+      if (session && session.status !== 'idle' && session.strategy) {
+        this._loadStrategy(session.strategy);
+      } else {
+        this.strategy = null;
+      }
+      this.cdr.detectChanges();
+    });
+
+    // Listen for AI Supervisor decisions
+    this.sub = this.ws.supervisorDecision$.subscribe((decision: SupervisorDecision) => {
+      if (decision.new_strategy && STRATEGY_DEFAULTS[decision.new_strategy]) {
+        this.strategy = { ...STRATEGY_DEFAULTS[decision.new_strategy] };
+        this.highlightedKeys = new Set(Object.keys(this.strategy.params));
+      }
+      if (decision.new_params && this.strategy) {
+        const updated = decision.new_params as Record<string, number>;
+        this.highlightedKeys = new Set(Object.keys(updated));
+        this.strategy.params = { ...this.strategy.params, ...updated };
+        setTimeout(() => { this.highlightedKeys = new Set(); this.cdr.detectChanges(); }, 2000);
+      }
+      if (decision.action !== 'no_action') {
+        const now = new Date();
+        this.lastAiUpdate = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+      }
+      this.cdr.detectChanges();
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.sub?.unsubscribe();
+    this.sessionSub?.unsubscribe();
+  }
+
+  private _loadStrategy(strategyKey: string): void {
+    const def = STRATEGY_DEFAULTS[strategyKey] ?? STRATEGY_DEFAULTS['scalping_v2'];
+    this.strategy = { ...def };
+    this.cdr.detectChanges();
+  }
+
+  paramKeys(): string[] {
+    return this.strategy ? Object.keys(this.strategy.params) : [];
   }
 
   formatParam(key: string): string {
-    return key.replace(/_/g, ' ');
+    return key.replace(/_/g, ' ').replace('pct', '%');
   }
 }

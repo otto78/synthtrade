@@ -505,7 +505,7 @@ async def _start_ws_broadcast(symbol: str):
                                 
                             # Mode and trade values
                             _mode = _execution_state["session"].get("mode", "paper")
-                            _trade_val = float(_execution_state["session"].get("trade_value", 100.0))
+                            _trade_val = float(_execution_state["session"].get("trade_value", 10.0))
                             
                             if _mode == "live":
                                 exchange = _execution_state.get("exchange")
@@ -1032,6 +1032,7 @@ async def control_session(control: Dict) -> Dict:
         session["mode"] = control.get("mode", session.get("mode", "paper"))
         session["strategy"] = control.get("strategy", "scalping_v2")
         session["symbol"] = active_symbol
+        session["trade_value"] = float(control.get("trade_value", session.get("trade_value", 10.0)))
         session["started_at"] = _now()
         session["stopped_at"] = None
         

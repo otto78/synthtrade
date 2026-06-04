@@ -3,38 +3,40 @@
 import logging
 from typing import Optional
 
-from app.ai.model_client import ModelClient, AllModelsUnavailableError
+from app.ai.model_client import AllModelsUnavailableError
 from app.ai.eval_parser import parse_supervisor_decision
 from app.ai.supervisor_context import build_scalping_context
 from app.scalping.models.intelligence import MarketIntelSnapshot, SignalScore
 from app.scalping.models.market import MarketRegime
 from app.scalping.models.supervisor import SupervisorDecision
-from app.config import settings
+from app.services.llm_model_service import LLMModelService
 
 logger = logging.getLogger(__name__)
 
 # System prompt con gerarchia segnali v2.0
 _SUPERVISOR_SYSTEM_PROMPT = '''
-You are an AI trading supervisor for a scalping system. Analyze the intelligence data and provide a decision.
+Sei un supervisore AI esperto in trading scalping. Analizza i dati di intelligence forniti e prendi una decisione operativa.
 
-Signal Hierarchy (priority order):
-1. Funding Rate: > 0.1% = overleveraged long (short bias), < -0.1% = overleveraged short (long bias)
-2. CVD: positive = buy pressure, negative = sell pressure
-3. Open Interest: growing with sideways price = breakout imminent
-4. Long/Short Ratio: > 70% long = overexposed, > 70% short = oversold
-5. Fear & Greed: < 20 or > 80 = potential reversal
-6. On-chain Exchange Flow: inflow = bearish, outflow = bullish
-7. Sentiment: confirmation only
-8. Technical indicators (EMA, RSI, BB): timing filters only
+Gerarchia dei Segnali (ordine di priorità):
+1. Funding Rate: > 0.1% = leva eccessiva long (bias short), < -0.1% = leva eccessiva short (bias long)
+2. CVD: positivo = pressione acquisto, negativo = pressione vendita
+3. Open Interest: in crescita con prezzo laterale = breakout imminente
+4. Long/Short Ratio: > 70% long = sovraesposizione, > 70% short = oversold
+5. Fear & Greed: < 20 o > 80 = potenziale inversione
+6. Flusso Exchange On-chain: inflow = bearish, outflow = bullish
+7. Sentiment: solo per conferma
+8. Indicatori Tecnici (EMA, RSI, BB): solo come filtri di timing
 
-Respond ONLY with JSON:
+IMPORTANTE: Rispondi SEMPRE in lingua ITALIANA nel campo "reason".
+
+Rispondi SOLO con un oggetto JSON valido:
 ```json
 {
   "action": "update_params|change_strategy|pause_trading|resume_trading|no_action",
-  "reason": "explanation referencing real data",
+  "reason": "spiegazione dettagliata in italiano facendo riferimento ai dati reali",
   "confidence": 0.0-1.0,
   "market_bias": "bullish|bearish|neutral",
-  "primary_signal": "which signal drove the decision",
+  "primary_signal": "quale segnale ha guidato la decisione",
   "new_params": {...} or null,
   "new_strategy": "ema_cross|rsi_bollinger|vwap_reversion" or null
 }
@@ -46,12 +48,9 @@ class SupervisorClient:
     """Client per supervisor AI che riutilizza la cascata modelli esistente."""
 
     def __init__(self):
-        self._client = ModelClient(
-            api_key=settings.OPENROUTER_API_KEY,
-            api_base_url=settings.AI_API_BASE_URL,
-            cascade_models=settings.ai_cascade_models_list,
-            fallback_model=settings.AI_FALLBACK_MODEL,
-        )
+        """Create supervisor client using models from DB (or settings fallback)."""
+        service = LLMModelService()
+        self._client = service.create_model_client()
 
     async def decide(
         self,

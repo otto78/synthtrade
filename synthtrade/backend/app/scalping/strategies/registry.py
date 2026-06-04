@@ -6,6 +6,7 @@ from app.scalping.strategies.base import AbstractScalpingStrategy
 from app.scalping.strategies.ema_cross import EMACrossStrategy
 from app.scalping.strategies.rsi_bollinger import RSIBollingerStrategy
 from app.scalping.strategies.vwap_reversion import VWAPReversionStrategy
+from app.scalping.strategies.momentum_base import MomentumBaseStrategy
 
 
 class StrategyRegistry:
@@ -23,6 +24,7 @@ class StrategyRegistry:
             "ema_cross": EMACrossStrategy(),
             "rsi_bollinger": RSIBollingerStrategy(),
             "vwap_reversion": VWAPReversionStrategy(),
+            "momentum_base": MomentumBaseStrategy(),
         }
 
     @classmethod

@@ -30,18 +30,10 @@ def build_evaluator():
     # get_supabase is already imported above; ensure it's available for patching
     globals()['get_supabase'] = get_supabase
 
-    from app.ai.model_client import ModelClient
     from app.ai.evaluator import Evaluator
     from app.ai.cache import EvalCache
-    client = ModelClient(
-        api_key=settings.AI_API_KEY,
-        api_base_url=settings.AI_API_BASE_URL,
-        cascade_models=settings.ai_cascade_models_list,
-        fallback_model=settings.AI_FALLBACK_MODEL,
-        timeout=settings.AI_TIMEOUT_SECONDS,
-        max_retries=settings.AI_MAX_RETRIES,
-        backoff_base=settings.AI_BACKOFF_BASE,
-    )
+    from app.services.llm_model_service import LLMModelService
+    client = LLMModelService().create_model_client()
     cache = EvalCache(ttl_minutes=settings.AI_EVAL_CACHE_TTL_MINUTES)
     return Evaluator(model_client=client, cache=cache)
 

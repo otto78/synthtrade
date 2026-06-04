@@ -91,14 +91,27 @@ class BinanceExchangeAdapter:
         except Exception as e:
             raise ExchangeOrderError(str(e))
 
+    async def _get_ccxt_symbol(self, symbol: str) -> str:
+        """Risuelve il simbolo senza slash (es. BNBUSDC) nel formato CCXT (BNB/USDC)."""
+        markets = await self.client.load_markets()
+        if symbol in markets:
+            return symbol
+        
+        for ccxt_symbol, market in markets.items():
+            if market["id"] == symbol:
+                return ccxt_symbol
+        return symbol
+
     async def get_ticker_price(self, symbol: str) -> float:
-        ticker = await self.client.fetch_ticker(symbol)
+        ccxt_symbol = await self._get_ccxt_symbol(symbol)
+        ticker = await self.client.fetch_ticker(ccxt_symbol)
         return float(ticker["last"])
 
     async def place_market_order(self, symbol: str, side: str, quantity: float) -> Dict[str, Any]:
         try:
+            ccxt_symbol = await self._get_ccxt_symbol(symbol)
             order = await self.client.create_order(
-                symbol=symbol,
+                symbol=ccxt_symbol,
                 type="market",
                 side=side.lower(),
                 amount=quantity
@@ -121,25 +134,46 @@ class BinanceExchangeAdapter:
         return await self.place_market_order(symbol, opp_side, quantity)
 
     async def get_open_orders(self, symbol: str) -> List[Dict[str, Any]]:
-        orders = await self.client.fetch_open_orders(symbol)
+        ccxt_symbol = await self._get_ccxt_symbol(symbol)
+        orders = await self.client.fetch_open_orders(ccxt_symbol)
         return orders
 
     async def get_symbol_filters(self, symbol: str) -> Dict[str, Any]:
         """
-        TASK-089: Recupera filtri LOT_SIZE e MIN_NOTIONAL
+        TASK-089: Recupera filtri LOT_SIZE e MIN_NOTIONAL.
+        Returns stepSize, minQty, minNotional as floats, plus pricePrecision.
         """
         if symbol in self._filters_cache:
             return self._filters_cache[symbol]
 
         markets = await self.client.load_markets()
         if symbol not in markets:
-            raise ValueError(f"Symbol {symbol} not found on Binance")
+            # Try with slash format (e.g. BNB/USDC)
+            slash_symbol = None
+            for mk in markets:
+                if markets[mk]["id"] == symbol:
+                    slash_symbol = mk
+                    break
+            if not slash_symbol:
+                raise ValueError(f"Symbol {symbol} not found on Binance")
+            market = markets[slash_symbol]
+        else:
+            market = markets[symbol]
 
-        market = markets[symbol]
+        # CCXT precision.amount = number of decimals for quantity
+        # Convert to stepSize: e.g. precision 2 → stepSize 0.01
+        qty_precision = market["precision"]["amount"]
+        step_size = 10 ** (-qty_precision) if isinstance(qty_precision, (int, float)) else 0.001
+
+        price_precision = market["precision"]["price"]
+        tick_size = 10 ** (-price_precision) if isinstance(price_precision, (int, float)) else 0.01
+
         filters = {
-            "stepSize": market["precision"]["amount"],
-            "minQty": market["limits"]["amount"]["min"],
-            "minNotional": market["limits"]["cost"]["min"]
+            "stepSize": step_size,
+            "minQty": market["limits"]["amount"]["min"] or step_size,
+            "minNotional": market["limits"]["cost"]["min"] or 1.0,
+            "pricePrecision": price_precision,
+            "tickSize": tick_size,
         }
         self._filters_cache[symbol] = filters
         return filters
@@ -150,39 +184,46 @@ class BinanceExchangeAdapter:
                               price: float, stop_price: float,
                               take_profit_price: float | None = None) -> Dict[str, Any]:
         """
-        TASK-801: Piazzare un ordine OCO (One-Cancels-Other).
+        TASK-801: Place OCO (One-Cancels-Other) on Binance Spot.
 
-        Prova prima con l'ordine OCO nativo CCXT.
-        Se fallisce (es. Binance spot non supporta OCO via CCXT),
-        usa un synthetic OCO: market order + stop loss separato.
+        For a BUY entry → OCO SELL: price = TP (limit sell), stopPrice = SL trigger.
+        Uses Binance's native /api/v3/order/oco endpoint.
+        Falls back to synthetic (SL + TP as separate orders) if OCO fails.
         """
+        # stopLimitPrice: the actual limit price after stop triggers (slightly worse than stopPrice)
+        slippage = 0.001  # 0.1% slippage buffer
+        if side.lower() == "sell":
+            stop_limit_price = round(stop_price * (1 - slippage), 8)
+        else:
+            stop_limit_price = round(stop_price * (1 + slippage), 8)
+
         try:
-            params: dict = {
-                "type": "oco",
-                "price": price,
-                "stopPrice": stop_price,
-                "takeProfitPrice": take_profit_price,
-                "amount": quantity,
-            }
+            ccxt_symbol = await self._get_ccxt_symbol(symbol)
             order = await self.client.create_order(
-                symbol,
-                "oco",
+                ccxt_symbol,
+                "limit",  # the limit (TP) leg type
                 side.lower(),
                 quantity,
-                price,
-                params=params,
+                price,          # TP limit price
+                params={
+                    "stopPrice": stop_price,
+                    "stopLimitPrice": stop_limit_price,
+                    "stopLimitTimeInForce": "GTC",
+                    "type": "oco",
+                },
             )
+            logger.info(f"OCO order placed: {order.get('id', 'unknown')} for {symbol}")
             return {
                 "order_id": order.get("id", "unknown"),
                 "type": "oco",
                 "status": order.get("status", "unknown"),
-                "price": order.get("price", price),
+                "price": price,
                 "stop_price": stop_price,
-                "take_profit_price": take_profit_price,
-                "quantity": order.get("amount", quantity),
+                "take_profit_price": take_profit_price or price,
+                "quantity": quantity,
             }
         except Exception as oco_err:
-            logger.warning(f"OCO non supportato per {symbol}, fallback synthetic: {oco_err}")
+            logger.warning(f"OCO nativo fallito per {symbol}, fallback synthetic: {oco_err}")
             return await self._place_oco_synthetic(
                 symbol=symbol, side=side, quantity=quantity,
                 price=price, stop_price=stop_price,
@@ -194,12 +235,13 @@ class BinanceExchangeAdapter:
                                     stop_price: float,
                                     take_profit_price: float | None = None) -> Dict[str, Any]:
         """
-        Synthetic OCO: place market order + stop loss + limit take profit.
+        Synthetic OCO: stop loss (STOP_LOSS_LIMIT) + take profit (LIMIT) as separate orders.
+        NOTE: these are NOT truly linked — both could theoretically fill. The main loop
+        should cancel the remaining order when either fills.
         """
-        main_order = await self.place_market_order(symbol, side, quantity)
         sl_result = await self.place_stop_loss_order(
             symbol=symbol,
-            side="sell" if side.lower() == "buy" else "buy",
+            side=side.lower(),
             quantity=quantity,
             stop_price=stop_price,
         )
@@ -207,13 +249,13 @@ class BinanceExchangeAdapter:
         if take_profit_price:
             tp_result = await self.place_limit_order(
                 symbol=symbol,
-                side="sell" if side.lower() == "buy" else "buy",
+                side=side.lower(),
                 quantity=quantity,
                 limit_price=take_profit_price,
             )
         return {
             "type": "oco_synthetic",
-            "main_order_id": main_order.get("order_id"),
+            "order_id": sl_result.get("order_id"),
             "stop_loss_id": sl_result.get("order_id"),
             "take_profit_id": tp_result.get("order_id") if tp_result else None,
             "status": "placed",
@@ -222,18 +264,24 @@ class BinanceExchangeAdapter:
     async def place_stop_loss_order(self, symbol: str, side: str,
                                     quantity: float, stop_price: float) -> Dict[str, Any]:
         """
-        TASK-801: Piazzare uno stop loss order.
-
-        Usa stop_market (o stop_loss) di CCXT per piazzare
-        un ordine che si attiva quando il prezzo raggiunge stop_price.
+        TASK-801: Place a STOP_LOSS_LIMIT order (Spot-compatible).
+        Uses stopPrice as trigger and a slightly worse limit price for fill guarantee.
         """
+        slippage = 0.001
+        if side.lower() == "sell":
+            limit_price = round(stop_price * (1 - slippage), 8)
+        else:
+            limit_price = round(stop_price * (1 + slippage), 8)
+
         try:
+            ccxt_symbol = await self._get_ccxt_symbol(symbol)
             order = await self.client.create_order(
-                symbol=symbol,
-                type="stop_market",
+                symbol=ccxt_symbol,
+                type="STOP_LOSS_LIMIT",
                 side=side.lower(),
                 amount=quantity,
-                params={"stopPrice": stop_price},
+                price=limit_price,
+                params={"stopPrice": stop_price, "timeInForce": "GTC"},
             )
             return {
                 "order_id": order.get("id", "unknown"),
@@ -253,8 +301,9 @@ class BinanceExchangeAdapter:
         Usato come take profit (limit sell per long position).
         """
         try:
+            ccxt_symbol = await self._get_ccxt_symbol(symbol)
             order = await self.client.create_order(
-                symbol=symbol,
+                symbol=ccxt_symbol,
                 type="limit",
                 side=side.lower(),
                 amount=quantity,

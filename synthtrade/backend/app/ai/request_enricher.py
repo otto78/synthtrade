@@ -1,52 +1,15 @@
 import json
 import logging
 from app.execution.schemas import StrategyRequest
-from app.ai.model_client import ModelClient, AllModelsUnavailableError
-from app.config import settings
-from app.db.repositories.llm_model_repository import LLMModelRepository
-from app.db.supabase_client import get_supabase
+from app.ai.model_client import AllModelsUnavailableError
+from app.services.llm_model_service import LLMModelService
 
 logger = logging.getLogger(__name__)
 
-def get_model_client() -> ModelClient:
-    """Create a ModelClient using the models stored in Supabase.
 
-    If the ``llm_models`` table is empty or the Supabase client cannot be
-    reached, we fall back to the values defined in the environment settings
-    (the previous behaviour). This ensures the application continues to work
-    even before the migration is populated.
-    """
-    # Try to read models from Supabase
-    try:
-        repo = LLMModelRepository(get_supabase())
-        data = repo.get_models()
-        cascade = data.get("cascade", [])
-        fallback = data.get("fallback", "")
-        # If we got at least one model, use them; otherwise fallback to settings
-        if cascade or fallback:
-            cascade_models = cascade
-            fallback_model = fallback
-        else:
-            cascade_models = settings.ai_cascade_models_list
-            fallback_model = settings.AI_FALLBACK_MODEL
-    except Exception as exc:  # pragma: no cover – defensive fallback
-        # Log the error and revert to settings‑based configuration
-        import logging
-        logging.getLogger(__name__).warning(
-            "Unable to load LLM models from Supabase, using settings fallback: %s", exc
-        )
-        cascade_models = settings.ai_cascade_models_list
-        fallback_model = settings.AI_FALLBACK_MODEL
-
-    return ModelClient(
-        api_key=settings.AI_API_KEY,
-        api_base_url=settings.AI_API_BASE_URL,
-        cascade_models=cascade_models,
-        fallback_model=fallback_model,
-        timeout=settings.AI_TIMEOUT_SECONDS,
-        max_retries=settings.AI_MAX_RETRIES,
-        backoff_base=settings.AI_BACKOFF_BASE,
-    )
+def get_model_client():
+    """Create a ModelClient using models from DB (or settings fallback)."""
+    return LLMModelService().create_model_client()
 
 async def enrich_request_with_ai(req: StrategyRequest) -> StrategyRequest:
     """

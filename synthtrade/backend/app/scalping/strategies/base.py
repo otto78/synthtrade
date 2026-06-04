@@ -21,6 +21,14 @@ class AbstractScalpingStrategy(ABC):
         """Nome della strategia."""
         pass
 
+    def update_params(self, params: dict) -> None:
+        """Aggiorna parametri della strategia (usato dal supervisor).
+
+        Le sottoclassi possono fare override per personalizzare l'aggiornamento.
+        Default: memorizza come dizionario self._params.
+        """
+        self._params = params
+
     @abstractmethod
     def evaluate(
         self,

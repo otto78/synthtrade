@@ -416,33 +416,41 @@ Rilevamento automatico di opportunità di mercato (nuove listing, launchpool, ne
 ---
 
 ### TASK-813 — Bug Fixes & Improvements (Epic 800)
-**Status:** To Do
+**Status:** In Progress (Persistence fixes completed ✅)
 **Priorità:** Alta
 
 **Dettagli:**
 Risoluzione di bug critici, parziali e minori individuati durante l'analisi dell'implementazione dello scalping, necessari per rendere il modulo production-ready.
 
 **Piano:**
-1. **Fix WS Events (Critico):**
-   - Gestire l'evento `position_update` in `ScalpingWsService._dispatch()` per aggiornare il PnL in tempo reale.
-   - Resettare la posizione a `null` nel `PositionTickerComponent` quando si riceve un evento `trade_closed`.
+1. **✅ Fix Persistence (Critico - COMPLETATO):**
+   - ✅ Backend: GET /session recupera sessione da DB e ricrea ExecutionLoop automaticamente
+   - ✅ Frontend: BehaviorSubjects invece di Subjects per replay automatico valori
+   - ✅ Frontend: Filtro null values in tutti i componenti (chart, intelligence, position, strategy)
+   - ✅ Chart non più vuoto su page re-entry
+   - ✅ Intelligence panel mostra ultimo snapshot immediatamente
+   - Documentazione: `docs/PERSISTENCE_FIX.md`
+
+2. **Fix WS Events (Critico):**
+   - ✅ Gestire l'evento `position_update` in `ScalpingWsService._dispatch()` per aggiornare il PnL in tempo reale.
+   - ✅ Resettare la posizione a `null` nel `PositionTickerComponent` quando si riceve un evento `trade_closed`.
    - Emettere l'evento `intelligence` dal backend (SignalScoreEngine) tramite WebSocket ed evitare il polling REST ogni 60s nel `MarketIntelPanel`.
-   - Fermare correttamente i task WS in broadcast (`_stop_ws_broadcast`) cancellando esplicitamente i task.
+   - ✅ Fermare correttamente i task WS in broadcast (`_stop_ws_broadcast`) cancellando esplicitamente i task.
 
-2. **Session Controls & Persistenza (Importante):**
+3. **Session Controls & Persistenza (Importante):**
    - Aggiungere un dropdown nel `SessionControls` del frontend per selezionare il **Simbolo** (es. BTCUSDT, ETHUSDT). *Nota: Nessuno switch per paper/live, gestito a livello app.*
-   - Implementare il salvataggio dei dati di sessione (inizio, fine, trade, intelligence history, supervisor decisions) nelle tabelle Supabase previste (`scalping_sessions`, `scalping_trades`, `supervisor_decisions`).
+   - ✅ Implementare il salvataggio dei dati di sessione (inizio, fine, trade, intelligence history, supervisor decisions) nelle tabelle Supabase previste (`scalping_sessions`, `scalping_trades`, `supervisor_decisions`).
 
-3. **Frontend Scorecard & Strategy Panel (Importante):**
-   - Connettere il `SignalScorecardComponent` ai dati reali dell'intelligence (rimuovere i dati hardcoded 50/neutral) mostrando il breakdown.
-   - Aggiornare lo `StrategyPanel` per renderlo reattivo ai messaggi `supervisor` (cambio strategia/parametri) dal WebSocket.
+4. **Frontend Scorecard & Strategy Panel (Importante):**
+   - ✅ Connettere il `SignalScorecardComponent` ai dati reali dell'intelligence (rimuovere i dati hardcoded 50/neutral) mostrando il breakdown.
+   - ✅ Aggiornare lo `StrategyPanel` per renderlo reattivo ai messaggi `supervisor` (cambio strategia/parametri) dal WebSocket.
 
-4. **Risk Controls & Endpoint Fixes (Importante):**
-   - Implementare l'API `/api/scalping/risk/config` nel backend per permettere il salvataggio dei parametri dal `RiskControlsComponent`.
-   - Sistemare `total_pnl_pct` e `consecutive_losses` in `/scalping/performance`.
-   - Sistemare l'endpoint `GET /scalping/position` per calcolare correttamente il PnL e il prezzo corrente basato sui dati reali, anziché `entry_price=current_price`.
+5. **Risk Controls & Endpoint Fixes (Importante):**
+   - ✅ Implementare l'API `/api/scalping/risk/config` nel backend per permettere il salvataggio dei parametri dal `RiskControlsComponent`.
+   - ✅ Sistemare `total_pnl_pct` e `consecutive_losses` in `/scalping/performance`.
+   - ✅ Sistemare l'endpoint `GET /scalping/position` per calcolare correttamente il PnL e il prezzo corrente basato sui dati reali, anziché `entry_price=current_price`.
 
-5. **Miglioramenti Dashboard (Minore/Miglioramenti):**
+6. **Miglioramenti Dashboard (Minore/Miglioramenti):**
    - Pulire le directory: creare le strutture mancanti (es. `session/`, file `signal_generator.py`) e rimuovere le cartelle duplicate nel frontend (`synthtrade/frontend/synthtrade-ui/synthtrade/...`).
    - Risolvere il problema della chiamata multipla a `ws.connect()` (es. da `LiveChart`).
    - Aumentare i retry del WebSocket (`take(5)`) o implementare un avviso utente in caso di disconnessione definitiva.

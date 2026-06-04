@@ -1,6 +1,7 @@
 /**
  * Risk Controls Component
- * Displays and modifies risk manager configuration
+ * Displays and modifies risk manager configuration.
+ * Note: position_size is managed globally via "Valore Trade" in Session Controls.
  */
 
 import { Component, OnInit } from '@angular/core';
@@ -9,7 +10,6 @@ import { NgIf } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 
 export interface RiskConfig {
-  max_position_size: number;
   max_daily_loss: number;
   max_drawdown: number;
   leverage: number;
@@ -28,11 +28,6 @@ export interface RiskConfig {
       <div *ngIf="!config" class="loading">Loading...</div>
 
       <div *ngIf="config" class="risk-form">
-        <div class="field">
-          <label>Max Position Size ($)</label>
-          <input type="number" [(ngModel)]="config.max_position_size" />
-        </div>
-
         <div class="field">
           <label>Max Daily Loss ($)</label>
           <input type="number" [(ngModel)]="config.max_daily_loss" />
@@ -81,8 +76,10 @@ export class RiskControlsComponent implements OnInit {
   ngOnInit(): void {
     this.http.get<RiskConfig>('/api/scalping/risk/config').subscribe({
       next: (cfg) => {
-        if (Object.keys(cfg).length > 0) {
-          this.config = cfg;
+        if (cfg && Object.keys(cfg).length > 0) {
+          // Exclude position_size if it came from the backend (legacy)
+          const { ...rest } = cfg as RiskConfig & { position_size?: number };
+          this.config = rest as RiskConfig;
         } else {
           this.loadDefaultConfig();
         }
@@ -93,7 +90,6 @@ export class RiskControlsComponent implements OnInit {
 
   private loadDefaultConfig() {
     this.config = {
-      max_position_size: 100,
       max_daily_loss: 50,
       max_drawdown: 10,
       leverage: 10,

@@ -21,6 +21,14 @@ from app.scalping.engine.signal_aggregator import TechnicalSignal, ExecutionDeci
 
 logger = logging.getLogger(__name__)
 
+# ANSI color codes for logs
+GREEN = "\033[92m"
+RED = "\033[91m"
+YELLOW = "\033[93m"
+CYAN = "\033[96m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
+
 
 class ExecutionLoop:
     """Main execution loop per lo scalping.
@@ -54,6 +62,8 @@ class ExecutionLoop:
         self._current_regime: Optional[MarketRegime] = None
         self._running = False
         self._indicators: dict = {}
+        self.session_id: Optional[str] = None
+        self.paper_mode: bool = True  # Default paper — impostato da router al session start
         # Callback per eventi
         self._on_signal: Optional[Callable] = None
         self._on_trade: Optional[Callable] = None
@@ -70,6 +80,19 @@ class ExecutionLoop:
     def strategy(self) -> Optional[AbstractScalpingStrategy]:
         return self._strategy
 
+    def set_params(self, params: dict) -> None:
+        """Update strategy parameters (used by supervisor)."""
+        if self._strategy and hasattr(self._strategy, "update_params"):
+            self._strategy.update_params(params)
+            logger.info(f"Strategy params updated: {params}")
+        else:
+            logger.warning(f"Cannot update params: strategy has no update_params method. Params: {params}")
+
+    def set_strategy(self, strategy_name: str) -> None:
+        """Set strategy directly by name (used by supervisor)."""
+        from app.scalping.strategies.registry import StrategyRegistry
+        self._strategy = StrategyRegistry.get(strategy_name)
+
     def set_signal_callback(self, callback: Optional[Callable]) -> None:
         """Set callback per segnali generati."""
         self._on_signal = callback
@@ -80,9 +103,14 @@ class ExecutionLoop:
 
     async def process_candle(self, candle: Candle) -> Optional[ExecutionDecision]:
         """Processa una candela e genera un eventuale ordine."""
+        buf_before = len(self._candle_buffer)
         self._candle_buffer.add(candle)
 
         if not self._candle_buffer.is_ready():
+            if buf_before == 0:
+                logger.info(f"{CYAN}PIPELINE: buffer warmup started for {self._symbol} (need >=50 candles){RESET}")
+            elif buf_before % 10 == 0:
+                logger.info(f"{YELLOW}PIPELINE: buffer {buf_before}/50 candles for {self._symbol}{RESET}")
             return None
 
         candles = self._candle_buffer.get()
@@ -97,6 +125,7 @@ class ExecutionLoop:
         self._strategy = self._strategy_selector.select(self._current_regime)
 
         if not self._strategy:
+            logger.warning(f"{YELLOW}PIPELINE: no strategy selected for regime={self._current_regime.regime if self._current_regime else 'N/A'}{RESET}")
             return None
 
         # 4. Generate technical signal
@@ -105,8 +134,20 @@ class ExecutionLoop:
         # 5. Get market intelligence score
         market_score = await self._signal_engine.compute()
 
-        # 6. Aggregate signals
-        decision = self._signal_aggregator.should_execute(technical_signal, market_score)
+        # 6. Log pipeline state
+        regime_name = self._current_regime.regime if self._current_regime else "N/A"
+        logger.info(
+            f"{CYAN}PIPELINE: {self._symbol} regime={regime_name} "
+            f"strategy={self._strategy.name} "
+            f"tech={technical_signal.type}@{technical_signal.confidence:.2f} "
+            f"intel={market_score.total:.1f} ({market_score.bias}) "
+            f"tradeable={market_score.tradeable}{RESET}"
+        )
+
+        # 7. Aggregate signals
+        decision = self._signal_aggregator.should_execute(
+            technical_signal, market_score, symbol=self._symbol, paper_mode=self.paper_mode
+        )
 
         # 7. Risk check via RiskManager core (opzionale, se fornito)
         if decision and decision.execute and self._risk_manager:

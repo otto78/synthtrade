@@ -26,8 +26,8 @@ class ScalpingSettings(BaseSettings):
 
     # Timeframe e segnali
     SCALPING_TIMEFRAME: str = '1m'
-    SCALPING_SIGNAL_STRENGTH_THRESHOLD: float = 30.0
-    SCALPING_MIN_CONFIDENCE: float = 0.6
+    SCALPING_SIGNAL_STRENGTH_THRESHOLD: float = 15.0
+    SCALPING_MIN_CONFIDENCE: float = 0.4
     SCALPING_EXECUTION_INTERVAL_MS: int = 500
     SCALPING_CANDLE_BUFFER_SIZE: int = 100
 
@@ -122,10 +122,9 @@ class Settings(BaseSettings):
     AI_CASCADE_MAX_RETRIES: int = 2
 
     # AI Evaluator (Fase 5)
-    AI_API_KEY: str = ''
     AI_API_BASE_URL: str = 'https://openrouter.ai/api/v1'
     AI_CASCADE_MODELS: str = 'google/gemini-2.0-flash-exp:free,meta-llama/llama-3.1-8b-instruct:free,mistralai/mistral-7b-instruct:free'
-    AI_FALLBACK_MODEL: str = 'anthropic/claude-haiku-4'
+    AI_FALLBACK_MODEL: str = 'anthropic/claude-haiku-4.5'
     AI_MAX_TOKENS: int = 1024
     AI_TEMPERATURE: float = 0.2
     AI_TIMEOUT_SECONDS: float = 30.0
@@ -134,6 +133,12 @@ class Settings(BaseSettings):
     AI_EVAL_CACHE_TTL_MINUTES: int = 60
     PIPELINE_AI_EVAL_TOP_N: int = 10
     MAX_CONCURRENT_EVALS: int = 3
+
+    @computed_field
+    @property
+    def ai_api_key(self) -> str:
+        """Alias for OPENROUTER_API_KEY to maintain compatibility across modules."""
+        return self.OPENROUTER_API_KEY
 
     @computed_field
     @property

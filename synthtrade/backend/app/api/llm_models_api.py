@@ -128,7 +128,7 @@ async def check_models(
     if not all_models:
         return ModelsCheckResponse(checks=[], summary="all_down")
 
-    api_key = settings.OPENROUTER_API_KEY or settings.AI_API_KEY
+    api_key = settings.OPENROUTER_API_KEY
     api_base = settings.AI_API_BASE_URL
 
     # Ping all models in parallel

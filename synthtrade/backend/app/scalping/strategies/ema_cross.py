@@ -24,7 +24,11 @@ class EMACrossStrategy(AbstractScalpingStrategy):
         candles: List[Candle],
         indicators: Optional[dict] = None,
     ) -> TechnicalSignal:
-        """Valuta incrocio EMA per generare segnale di timing."""
+        """Valuta lo stato EMA per generare segnale di trend.
+        
+        Ritorna BUY se EMA veloce > EMA lenta (trend rialzista persistente).
+        Ritorna SELL se EMA veloce < EMA lenta (trend ribassista persistente).
+        """
         if len(candles) < 21:
             return TechnicalSignal(type="NONE", confidence=0.0)
 
@@ -32,22 +36,20 @@ class EMACrossStrategy(AbstractScalpingStrategy):
 
         ema_fast = ind.get("ema_fast", 0)
         ema_slow = ind.get("ema_slow", 0)
-        ema_fast_prev = ind.get("ema_fast_prev", 0)
-        ema_slow_prev = ind.get("ema_slow_prev", 0)
 
-        # EMA 9/21 Bullish cross
-        if ema_fast_prev <= ema_slow_prev and ema_fast > ema_slow:
+        # Stato Trend Rialzista
+        if ema_fast > ema_slow:
             return TechnicalSignal(
                 type="BUY",
-                confidence=0.85,
+                confidence=0.75, # Confidenza leggermente ridotta perche' segnale di stato
                 source=self.name,
             )
 
-        # EMA 9/21 Bearish cross
-        if ema_fast_prev >= ema_slow_prev and ema_fast < ema_slow:
+        # Stato Trend Ribassista
+        if ema_fast < ema_slow:
             return TechnicalSignal(
                 type="SELL",
-                confidence=0.85,
+                confidence=0.75,
                 source=self.name,
             )
 

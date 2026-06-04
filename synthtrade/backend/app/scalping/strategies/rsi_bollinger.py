@@ -38,7 +38,7 @@ class RSIBollingerStrategy(AbstractScalpingStrategy):
         if rsi < 30 and close <= bb_lower * 1.01:
             return TechnicalSignal(
                 type="BUY",
-                confidence=0.8,
+                confidence=0.7,
                 source=self.name,
             )
 
@@ -46,7 +46,7 @@ class RSIBollingerStrategy(AbstractScalpingStrategy):
         if rsi > 70 and close >= bb_upper * 0.99:
             return TechnicalSignal(
                 type="SELL",
-                confidence=0.8,
+                confidence=0.7,
                 source=self.name,
             )
 

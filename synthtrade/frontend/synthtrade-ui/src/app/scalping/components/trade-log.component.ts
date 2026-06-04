@@ -1,9 +1,12 @@
 /**
  * Trade Log Component
  * Displays trade history — updated in real-time via WS events.
+ * On init, fetches historical trades from REST API to populate the log
+ * when returning to the page with an active session.
  */
 
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { DatePipe, DecimalPipe, NgClass, NgForOf, NgIf } from '@angular/common';
 import { Subscription } from 'rxjs';
 import { ScalpingWsService, TradeClosedEvent } from '../services/scalping-ws.service';
@@ -27,6 +30,7 @@ import { ScalpingWsService, TradeClosedEvent } from '../services/scalping-ws.ser
               <th>Entry</th>
               <th>Exit</th>
               <th>PnL</th>
+              <th>Reason</th>
             </tr>
           </thead>
           <tbody>
@@ -38,6 +42,7 @@ import { ScalpingWsService, TradeClosedEvent } from '../services/scalping-ws.ser
               <td [ngClass]="trade.pnl >= 0 ? 'profit' : 'loss'">
                 {{ trade.pnl | number:'1.2-2' }}
               </td>
+              <td class="reason-cell">{{ trade.signal_reason || '-' }}</td>
             </tr>
           </tbody>
         </table>
@@ -56,25 +61,51 @@ import { ScalpingWsService, TradeClosedEvent } from '../services/scalping-ws.ser
     .sell { color: var(--accent-danger, #ef5350); }
     .profit { color: var(--accent-success, #26a69a); }
     .loss { color: var(--accent-danger, #ef5350); }
+    .reason-cell { font-size: 10px; opacity: 0.8; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   `],
 })
 export class TradeLogComponent implements OnInit, OnDestroy {
   trades: TradeClosedEvent[] = [];
   private sub?: Subscription;
+  private readonly API_URL = '/api/scalping/trade-history';
 
   constructor(
     private ws: ScalpingWsService,
+    private http: HttpClient,
     private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
+    // Step 1: Fetch historical trades from REST API to populate the log
+    // when returning to the page with an active session.
+    this.loadHistory();
+
+    // Step 2: Subscribe to live WS trade_closed events for real-time updates
     this.sub = this.ws.tradeClosed$.subscribe((trade) => {
       this.trades = [trade, ...this.trades];
+      this.cdr.markForCheck();
       this.cdr.detectChanges();
     });
   }
 
   ngOnDestroy(): void {
     this.sub?.unsubscribe();
+  }
+
+  private loadHistory(): void {
+    this.http.get<TradeClosedEvent[]>(this.API_URL).subscribe({
+      next: (history: TradeClosedEvent[]) => {
+        if (history.length > 0) {
+          // Reverse so oldest trades appear first, then prepend newer ones
+          this.trades = history.reverse();
+          this.cdr.markForCheck();
+          this.cdr.detectChanges();
+          console.log(`[TradeLog] Loaded ${history.length} historical trades`);
+        }
+      },
+      error: (err: Error) => {
+        console.warn('[TradeLog] Failed to load trade history:', err);
+      }
+    });
   }
 }

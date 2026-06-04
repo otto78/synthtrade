@@ -16,9 +16,9 @@ class StrategySelector:
     _regime_strategy_map = {
         "trending_up": "ema_cross",      # Follow the trend
         "trending_down": "ema_cross",    # Follow the trend
-        "ranging": "rsi_bollinger",      # Mean reversion
-        "volatile": "vwap_reversion",     # VWAP as anchor
-        "unknown": "ema_cross",          # Default
+        "ranging": "momentum_base",      # Segnali frequenti in ranging
+        "volatile": "momentum_base",     # Segnali frequenti in volatilita'
+        "unknown": "momentum_base",      # Default sicuro
     }
 
     def select(self, regime: MarketRegime) -> Optional[AbstractScalpingStrategy]:

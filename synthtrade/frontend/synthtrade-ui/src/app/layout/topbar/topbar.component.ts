@@ -1,23 +1,31 @@
 import { ChangeDetectionStrategy, Component, inject, OnInit, OnDestroy, signal } from '@angular/core';
 import { AsyncPipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { ConfigService } from '../../core/services/config.service';
 import { DashboardService } from '../../core/services/dashboard.service';
 import { LLMModelsService } from '../../core/services/llm-models.service';
+import { UiService } from '../../core/services/ui.service';
 import { BehaviorSubject, tap, catchError, of, Subscription, interval } from 'rxjs';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 
 @Component({
   selector: 'app-topbar',
   standalone: true,
-  imports: [AsyncPipe, ConfirmDialogComponent],
+  imports: [AsyncPipe, ConfirmDialogComponent, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <header class="topbar">
       <div class="topbar-left">
+        @if (ui.sidebarCollapsed()) {
+          <span class="logo">SynthTrade</span>
+        }
+      </div>
+
+      <div class="topbar-center">
         <!-- Badge modalità cliccabile — molto più visibile -->
         <button
-          class="mode-badge"
+          class="mode-badge status-badge"
           [class.test]="(mode$ | async)?.mode === 'test'"
           [class.live]="(mode$ | async)?.mode === 'live'"
           (click)="toggleDropdown()"
@@ -30,12 +38,10 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
           <span class="mode-badge-arrow">▾</span>
         </button>
 
-        <span class="status-detail">{{ (mode$ | async)?.details }}</span>
-
         <!-- Engine Status -->
         @if (engineStatus()) {
           <span
-            class="engine-badge"
+            class="engine-badge status-badge"
             [class.running]="engineStatus() === 'RUNNING'"
             [class.stopped]="engineStatus() !== 'RUNNING'"
             [class.offline]="engineStatus() === 'OFFLINE' || engineStatus() === '—'"
@@ -47,12 +53,13 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
 
         <!-- LLM Models Status -->
         @if (llmStatus(); as s) {
-          <span
-            class="llm-badge"
+          <a
+            routerLink="/llm-models"
+            class="llm-badge status-badge clickable"
             [class.all-ok]="s === 'all_ok'"
             [class.partial]="s === 'partial'"
             [class.all-down]="s === 'all_down'"
-            title="Stato modelli AI — {{ s === 'all_ok' ? 'tutti attivi' : s === 'partial' ? 'alcuni non rispondono' : 'nessuno attivo' }}"
+            title="Stato modelli AI — Clicca per gestire"
           >
             <span class="llm-indicator"></span>
             <span class="llm-label">
@@ -60,7 +67,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
               @if (s === 'partial') { ⚠️ }
               @if (s === 'all_down') { ✕ }
             </span>
-          </span>
+          </a>
         }
 
         <!-- Dropdown modalità -->
@@ -143,24 +150,46 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
       position: relative;
       z-index: 100;
     }
-    .topbar-left, .topbar-right { display: flex; align-items: center; gap: 12px; }
-
-    /* Badge modalità — ben visibile, sembra un pulsante */
-    .mode-badge {
+    .topbar-left, .topbar-right { display: flex; align-items: center; gap: 12px; flex: 1; }
+    .topbar-right { justify-content: flex-end; }
+    .topbar-center {
       display: flex;
       align-items: center;
+      justify-content: center;
+      gap: 32px;
+      flex: 2;
+    }
+    .logo { 
+      font-family: 'Chakra Petch', sans-serif; 
+      font-size: 14px; 
+      font-weight: 700; 
+      color: var(--accent-primary, #F0B90B);
+      letter-spacing: 0.5px;
+    }
+
+    /* Common Badge Style */
+    .status-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
       gap: 8px;
-      padding: 6px 14px 6px 10px;
+      padding: 6px 12px;
       border-radius: 20px;
       border: 1px solid rgba(234,236,239,0.1);
-      cursor: pointer;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 700;
       font-family: monospace;
       letter-spacing: 1px;
       text-transform: uppercase;
-      transition: all 0.2s ease;
+      min-width: 100px;
+      height: 32px;
       background: transparent;
+      transition: all 0.2s ease;
+    }
+
+    /* Badge modalità — ben visibile, sembra un pulsante */
+    .mode-badge {
+      cursor: pointer;
     }
     .mode-badge:hover {
       transform: translateY(-1px);
@@ -195,19 +224,6 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
     }
 
     /* Engine Status Badge */
-    .engine-badge {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 10px 4px 8px;
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: 600;
-      font-family: monospace;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      border: 1px solid rgba(234,236,239,0.1);
-    }
     .engine-badge.running {
       color: #0ECB81;
       border-color: rgba(14,203,129,0.3);
@@ -231,33 +247,40 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
     .engine-badge.offline .engine-indicator { background: #F6465D; }
 
     /* LLM Status Badge */
-    .llm-badge {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 10px 4px 8px;
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: 600;
-      font-family: monospace;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      border: 1px solid rgba(234,236,239,0.1);
+    .clickable {
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .clickable:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
     .llm-badge.all-ok {
       color: #0ECB81;
       border-color: rgba(14,203,129,0.3);
       background: rgba(14,203,129,0.08);
     }
+    .llm-badge.all-ok:hover {
+      background: rgba(14,203,129,0.15);
+      border-color: rgba(14,203,129,0.5);
+    }
     .llm-badge.partial {
       color: #F0B90B;
       border-color: rgba(240,185,11,0.3);
       background: rgba(240,185,11,0.08);
     }
+    .llm-badge.partial:hover {
+      background: rgba(240,185,11,0.15);
+      border-color: rgba(240,185,11,0.5);
+    }
     .llm-badge.all-down {
       color: #F6465D;
       border-color: rgba(246,70,93,0.3);
       background: rgba(246,70,93,0.08);
+    }
+    .llm-badge.all-down:hover {
+      background: rgba(246,70,93,0.15);
+      border-color: rgba(246,70,93,0.5);
     }
     .llm-indicator {
       width: 6px; height: 6px; border-radius: 50%; display: inline-block;
@@ -279,7 +302,8 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
 
     /* Dropdown */
     .mode-dropdown {
-      position: absolute; top: 50px; left: 24px;
+      position: absolute; top: 50px; left: 50%;
+      transform: translateX(-50%);
       background: var(--bg-surface, #0D1117);
       border: 1px solid var(--border-default, rgba(234,236,239,0.12));
       border-radius: 12px; padding: 16px; min-width: 300px;
@@ -361,6 +385,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
 export class TopbarComponent implements OnInit, OnDestroy {
   auth = inject(AuthService);
   configService = inject(ConfigService);
+  ui = inject(UiService);
   private dashboardService = inject(DashboardService);
   private llmModelsService = inject(LLMModelsService);
   private sub = new Subscription();

@@ -14,4 +14,9 @@ export interface Position {
   opened_at: string;
   stop_loss?: number;
   take_profit?: number;
+  // New fields for exit targets
+  stop_loss_price?: number;
+  take_profit_price?: number;
+  stop_loss_pct?: number;
+  take_profit_pct?: number;
 }

@@ -1,7 +1,7 @@
 /**
  * Opportunity Feed Component
  * Shows real-time trading opportunities detected by AI.
- * Polls backend every 30s with switchMap to avoid race conditions.
+ * Polls backend every 5m with switchMap to avoid race conditions.
  */
 
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
@@ -80,9 +80,9 @@ export class OpportunityFeedComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    // Poll every 30 seconds, using switchMap to cancel previous HTTP call if still in-flight
+    // Poll every 5 minutes, using switchMap to cancel previous HTTP call if still in-flight
     this.sub.add(
-      timer(0, 30_000).pipe(
+      timer(0, 300_000).pipe(
         switchMap(() =>
           this.opportunityApi.getOpportunities({ limit: 50 }).pipe(
             catchError((err) => {

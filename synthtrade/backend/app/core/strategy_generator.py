@@ -9,7 +9,7 @@ import pandas as pd
 from app.execution.schemas import StrategyRequest
 from app.ai.request_enricher import enrich_request_with_ai
 from app.ai.name_generator import generate_funny_name
-from app.ai.model_client import ModelClient
+from app.services.llm_model_service import LLMModelService
 from app.config import settings
 from app.services.market_data_service import MarketDataService
 from app.core.backtester import run_backtest, BacktestResult
@@ -245,14 +245,9 @@ async def generate_for_request(req: StrategyRequest, md_service: MarketDataServi
     now = datetime.now(timezone.utc)
 
     # Crea client AI prima del loop e set per tracciare nomi già generati
-    ai_name_client = ModelClient(
-        api_key=settings.AI_API_KEY,
-        api_base_url=settings.AI_API_BASE_URL,
-        cascade_models=settings.ai_cascade_models_list,
-        fallback_model=settings.AI_FALLBACK_MODEL,
+    ai_name_client = LLMModelService().create_model_client(
         timeout=min(settings.AI_TIMEOUT_SECONDS, 10.0),
         max_retries=1,
-        backoff_base=settings.AI_BACKOFF_BASE,
     )
     used_names: set[str] = set()
 

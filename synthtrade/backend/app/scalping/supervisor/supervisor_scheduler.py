@@ -89,8 +89,19 @@ class SupervisorScheduler:
         try:
             from app.scalping.router import broadcast_scalping_event
             now_iso = decision.decided_at.isoformat() if decision.decided_at else None
+            
+            # Map internal action to standardized string for frontend CSS mapping
+            action_map = {
+                "update_params": "update_params",
+                "change_strategy": "change_strategy",
+                "pause_trading": "pause_trading",
+                "resume_trading": "resume_trading",
+                "no_action": "no_action"
+            }
+            standard_action = action_map.get(decision.action, decision.action)
+
             await broadcast_scalping_event("supervisor", {
-                "action": decision.action,
+                "action": standard_action,
                 "reason": decision.reason,
                 "confidence": decision.confidence,
                 "market_bias": decision.market_bias or "neutral",
@@ -100,7 +111,7 @@ class SupervisorScheduler:
                 "decided_at": now_iso,
                 "timestamp": now_iso,  # Frontend expects this field
             })
-            logger.info("Supervisor decision broadcasted to frontend WS clients")
+            logger.info(f"Supervisor decision broadcasted: action={standard_action}")
         except Exception as broadcast_err:
             logger.warning(f"Could not broadcast supervisor decision to frontend: {broadcast_err}")
 

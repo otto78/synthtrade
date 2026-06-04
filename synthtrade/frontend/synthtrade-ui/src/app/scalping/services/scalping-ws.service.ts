@@ -5,7 +5,7 @@
 
 import { Injectable, OnDestroy } from '@angular/core';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
-import { Subject, timer } from 'rxjs';
+import { Subject, BehaviorSubject, timer } from 'rxjs';
 import { retryWhen, delayWhen } from 'rxjs/operators';
 
 // Event types matching backend
@@ -18,7 +18,9 @@ export type ScalpingEventType =
   | 'risk_block'
   | 'trade_closed'
   | 'position_update'
-  | 'intelligence';
+  | 'intelligence'
+  | 'session_restored'
+  | 'error';
 
 export interface TradeClosedEvent {
   symbol: string;
@@ -28,6 +30,7 @@ export interface TradeClosedEvent {
   pnl: number;
   pnl_pct: number;
   timestamp: string;
+  signal_reason?: string;
 }
 
 export interface IntelligenceEvent {
@@ -78,6 +81,11 @@ export interface PositionEvent {
   current_price: number;
   pnl: number;
   pnl_pct: number;
+  quantity?: number;
+  stop_loss_price?: number;
+  take_profit_price?: number;
+  stop_loss_pct?: number;
+  take_profit_pct?: number;
 }
 
 /** Strategy parameter values — extensible for different strategy types */
@@ -145,14 +153,14 @@ export class ScalpingWsService implements OnDestroy {
     return `${proto}//${loc.host}${this.WS_PATH}`;
   }
 
-  // Subjects per ogni tipo evento
-  candle$ = new Subject<CandleEvent>();
-  signal$ = new Subject<SignalEvent>();
-  position$ = new Subject<PositionEvent>();
-  supervisorDecision$ = new Subject<SupervisorDecision>();
-  riskBlock$ = new Subject<RiskBlockEvent>();
-  tradeClosed$ = new Subject<TradeClosedEvent>();
-  intelligence$ = new Subject<IntelligenceEvent>();
+  // BehaviorSubjects for automatic replay when reconnecting
+  candle$ = new BehaviorSubject<CandleEvent | null>(null);
+  signal$ = new BehaviorSubject<SignalEvent | null>(null);
+  position$ = new BehaviorSubject<PositionEvent | null>(null);
+  supervisorDecision$ = new BehaviorSubject<SupervisorDecision | null>(null);
+  riskBlock$ = new BehaviorSubject<RiskBlockEvent | null>(null);
+  tradeClosed$ = new Subject<TradeClosedEvent>();  // Keep as Subject (one-time events)
+  intelligence$ = new BehaviorSubject<IntelligenceEvent | null>(null);
 
   private connected = false;
 
@@ -183,6 +191,7 @@ export class ScalpingWsService implements OnDestroy {
       this.ws$.complete();
       this.connected = false;
     }
+    // Don't reset BehaviorSubjects - keep last values for replay
   }
 
   private _dispatch(event: ScalpingEvent): void {

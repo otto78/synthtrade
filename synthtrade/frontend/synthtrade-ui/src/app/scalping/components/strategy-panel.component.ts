@@ -6,6 +6,7 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { NgForOf, NgIf, DecimalPipe, NgClass } from '@angular/common';
 import { Subscription } from 'rxjs';
+import { filter } from 'rxjs/operators';
 import { ScalpingWsService, SupervisorDecision } from '../services/scalping-ws.service';
 import { SessionApiService } from '../services/session-api.service';
 
@@ -37,6 +38,11 @@ const STRATEGY_DEFAULTS: Record<string, { label: string; desc: string; params: S
     label: 'VWAP Reversion',
     desc: 'Mean reversion al VWAP giornaliero',
     params: { take_profit_pct: 0.35, stop_loss_pct: 0.2 },
+  },
+  momentum_base: {
+    label: 'Momentum Base',
+    desc: 'Trend following con momentum indicators',
+    params: { ema_fast: 12, ema_slow: 26, take_profit_pct: 0.6, stop_loss_pct: 0.35 },
   },
   scalping_v2: {
     label: 'Scalping v2',
@@ -155,7 +161,9 @@ export class StrategyPanelComponent implements OnInit, OnDestroy {
     });
 
     // Listen for AI Supervisor decisions
-    this.sub = this.ws.supervisorDecision$.subscribe((decision: SupervisorDecision) => {
+    this.sub = this.ws.supervisorDecision$.pipe(
+      filter(decision => decision !== null)
+    ).subscribe((decision: SupervisorDecision) => {
       if (decision.new_strategy && STRATEGY_DEFAULTS[decision.new_strategy]) {
         this.strategy = { ...STRATEGY_DEFAULTS[decision.new_strategy] };
         this.highlightedKeys = new Set(Object.keys(this.strategy.params));

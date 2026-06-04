@@ -12,6 +12,7 @@ export interface ScalpingSession {
   stopped_at?: string;
   paper_balance: number;
   live_balance?: number;
+  trade_value?: number;
 }
 
 export interface SessionControl {
@@ -19,4 +20,5 @@ export interface SessionControl {
   mode?: 'paper' | 'live';
   strategy?: string;
   symbol?: string;
+  trade_value?: number;
 }

@@ -4,6 +4,7 @@
 
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { Subscription } from 'rxjs';
+import { filter } from 'rxjs/operators';
 import { ScalpingWsService, IntelligenceEvent } from '../services/scalping-ws.service';
 
 @Component({
@@ -37,7 +38,9 @@ export class SignalScorecardComponent implements OnInit, OnDestroy {
   constructor(private ws: ScalpingWsService, private cdr: ChangeDetectorRef) {}
 
   ngOnInit(): void {
-    this.sub = this.ws.intelligence$.subscribe((data: IntelligenceEvent) => {
+    this.sub = this.ws.intelligence$.pipe(
+      filter(data => data !== null)
+    ).subscribe((data: IntelligenceEvent) => {
       if (data.signal_score !== undefined) {
         this.score = Math.round(data.signal_score);
       }

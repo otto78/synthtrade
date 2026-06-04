@@ -1,10 +1,13 @@
 """PositionManager - gestisce posizioni aperte."""
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional, List
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 
 class PositionStatus(str, Enum):
@@ -26,6 +29,9 @@ class Position:
     take_profit: Optional[Decimal] = None
     status: PositionStatus = PositionStatus.OPEN
     order_id: Optional[str] = None
+    oco_id: Optional[str] = None
+    sl_id: Optional[str] = None
+    tp_id: Optional[str] = None
 
 
 class PositionManager:
@@ -87,6 +93,24 @@ class PositionManager:
         pos = self.get_open()
         if pos:
             pos.take_profit = tp
+
+    def force_close_all(self, exit_price: Decimal) -> int:
+        """Chiude forzatamente TUTTE le posizioni aperte.
+        
+        Args:
+            exit_price: Prezzo di chiusura per tutte le posizioni aperte.
+            
+        Returns:
+            int: Numero di posizioni chiuse.
+        """
+        closed_count = 0
+        for pos in self._positions:
+            if pos.status == PositionStatus.OPEN:
+                pos.status = PositionStatus.CLOSED
+                closed_count += 1
+        if closed_count > 0:
+            logger.info(f"Force closed {closed_count} position(s) @ {exit_price}")
+        return closed_count
 
     def get_all(self) -> List[Position]:
         """Restituisce tutte le posizioni."""

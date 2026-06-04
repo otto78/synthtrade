@@ -12,7 +12,21 @@ export class SessionApiService {
   private sessionSubject = new BehaviorSubject<ScalpingSession | null>(null);
   session$ = this.sessionSubject.asObservable();
 
+  /** Preview symbol: updated when user selects a symbol (even before session start) */
+  private previewSymbolSubject = new BehaviorSubject<string>('BTCUSDT');
+  previewSymbol$ = this.previewSymbolSubject.asObservable();
+
   constructor(private http: HttpClient) {}
+
+  /** Set the preview symbol (fires live chart update immediately) */
+  setPreviewSymbol(symbol: string): void {
+    this.previewSymbolSubject.next(symbol);
+  }
+
+  /** Get the current active session snapshot (synchronous) */
+  getActiveSession(): import('../models/session.model').ScalpingSession | null {
+    return this.sessionSubject.getValue();
+  }
 
   /** Get current session status */
   getStatus(): Observable<ScalpingSession> {
@@ -35,8 +49,8 @@ export class SessionApiService {
   }
 
   /** Start session with specific mode */
-  start(mode: 'paper' | 'live' = 'paper', strategy?: string, symbol?: string): Observable<ScalpingSession> {
-    return this.controlSession({ action: 'start', mode, strategy, symbol });
+  start(mode: 'paper' | 'live' = 'paper', strategy?: string, symbol?: string, tradeValue?: number): Observable<ScalpingSession> {
+    return this.controlSession({ action: 'start', mode, strategy, symbol, trade_value: tradeValue });
   }
 
   /** Stop session */
@@ -52,5 +66,13 @@ export class SessionApiService {
   /** Resume session */
   resume(): Observable<ScalpingSession> {
     return this.controlSession({ action: 'resume' });
+  }
+
+  /** Update trade value on active session (takes effect from next trade) */
+  updateTradeValue(tradeValue: number): Observable<{ trade_value: number; status: string }> {
+    return this.http.patch<{ trade_value: number; status: string }>(
+      `${this.API_URL}/trade-value`,
+      { trade_value: tradeValue }
+    );
   }
 }

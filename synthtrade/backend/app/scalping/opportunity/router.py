@@ -94,7 +94,7 @@ class OpportunityRouter:
 
     def clear_old(self, max_age_days: int = 7) -> int:
         """Rimuove opportunità più vecchie di max_age_days."""
-        from datetime import timedelta
+        from datetime import datetime, timezone, timedelta
         cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
         original_count = len(self._opportunities)
         self._opportunities = [

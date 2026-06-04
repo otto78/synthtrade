@@ -43,6 +43,8 @@ from app.scalping.engine.signal_aggregator import SignalAggregator
 from app.scalping.engine.regime_detector import RegimeDetector
 from app.scalping.engine.strategy_selector import StrategySelector
 from app.scalping.models.market import Candle
+from app.execution.exchange import BinanceExchangeAdapter
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -73,10 +75,10 @@ _execution_state: Dict[str, Any] = {
         "started_at": None,
         "stopped_at": None,
         "paper_balance": 10000.0,
+        "trade_value": 100.0,   # USD value per trade — set by user in UI
     },
     "trade_history": [],        # List[dict] — trade history for performance calc
     "risk_config": {
-        "max_position_size": 100,
         "max_daily_loss": 50,
         "max_drawdown": 10,
         "leverage": 10,
@@ -160,13 +162,95 @@ def _now() -> str:
 # Helper: wire BinanceWSClient events → broadcast to scalping WS clients
 # ---------------------------------------------------------------------------
 
+async def _close_position_and_record(pm, close_price: float, pos, reason: str = "signal"):
+    """Helper to close position, deduct fees, calculate PnL and record trade."""
+    qty = float(pos.quantity)
+    
+    # --- LIVE EXECUTION OVERRIDE ---
+    mode = _execution_state["session"].get("mode", "paper")
+    exchange = _execution_state.get("exchange")
+    real_fees = None
+    
+    if mode == "live" and exchange:
+        try:
+            # 1. Cancel OCO / Stop Loss orders
+            if getattr(pos, "oco_id", None) or getattr(pos, "sl_id", None):
+                await exchange.client.cancel_all_orders(pos.symbol)
+                logger.info(f"Cancelled open OCO/SL orders for {pos.symbol}")
+            
+            # 2. Execute Market Close
+            opp_side = "sell" if pos.side.upper() == "BUY" else "buy"
+            market_res = await exchange.place_market_order(pos.symbol, opp_side, qty)
+            
+            # 3. Use real execution price
+            if market_res.get("price"):
+                close_price = float(market_res["price"])
+            logger.info(f"LIVE Market Close executed @ {close_price}")
+        except Exception as e:
+            logger.error(f"Failed to close live position for {pos.symbol}: {e}")
+    # -------------------------------
+    
+    entry_val = float(pos.entry_price) * qty
+    exit_val = close_price * qty
+    gross_pnl = (close_price - float(pos.entry_price)) * qty * (1 if pos.side == "BUY" else -1)
+    fees = (entry_val * 0.001) + (exit_val * 0.001)  # 0.1% entry + 0.1% exit
+    pnl = gross_pnl - fees
+    pnl_pct = (pnl / entry_val) * 100
+    pm.close_position(Decimal(str(close_price)))
+    now_ts = datetime.now(timezone.utc)
+    trade_record = {
+        "symbol": pos.symbol,
+        "side": pos.side,
+        "entry_price": float(pos.entry_price),
+        "exit_price": close_price,
+        "quantity": qty,
+        "pnl": round(pnl, 2),
+        "pnl_pct": round(pnl_pct, 2),
+        "timestamp": now_ts.isoformat(),
+    }
+    _execution_state["trade_history"].append(trade_record)
+    await broadcast_scalping_event("trade_closed", trade_record)
+    logger.info(f"Position closed ({reason}): {pos.side} {pos.symbol} PnL: {pnl:.2f} ({pnl_pct:.2f}%)")
+    
+    # Save trade to Supabase
+    try:
+        db_sid = _execution_state["session"].get("db_session_id")
+        if db_sid:
+            supabase = get_supabase()
+            supabase.table("scalping_trades").insert({
+                "session_id": db_sid,
+                "symbol": trade_record["symbol"],
+                "side": trade_record["side"],
+                "entry_price": trade_record["entry_price"],
+                "exit_price": trade_record["exit_price"],
+                "quantity": trade_record["quantity"],
+                "pnl": trade_record["pnl"],
+                "pnl_pct": trade_record["pnl_pct"],
+                "strategy_type": _execution_state["session"].get("strategy", "unknown"),
+                "signal_reason": reason,
+                "status": "closed",
+                "entry_time": pos.entry_time.isoformat(),
+                "exit_time": trade_record["timestamp"]
+            }).execute()
+    except Exception as db_e:
+        logger.warning(f"Failed to insert trade in DB: {db_e}")
+
+def _check_daily_loss() -> bool:
+    """Return True if max daily loss is exceeded."""
+    risk_cfg = _execution_state.get("risk_config", {})
+    max_loss = float(risk_cfg.get("max_daily_loss", 50.0))
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    total_pnl = sum(t["pnl"] for t in _execution_state["trade_history"] if t["timestamp"].startswith(now_str))
+    return total_pnl <= -max_loss
+
 async def _start_ws_broadcast(symbol: str):
     """Create BinanceWSClient, connect to Binance, and broadcast candle/trade events
     to all connected scalping WS clients.
     
     Also feeds the CandleBuffer and ExecutionLoop pipelines for signal generation.
     """
-    client = BinanceWSClient(symbols=[symbol])
+    is_testnet = _execution_state["session"].get("mode") != "live"
+    client = BinanceWSClient(symbols=[symbol], testnet=is_testnet)
     _execution_state["ws_client"] = client
     await client.start()
 
@@ -218,19 +302,34 @@ async def _start_ws_broadcast(symbol: str):
     _mock_candle_counter = 0
     _mock_last_price = None
 
+    # Symbol-appropriate base prices for mock data
+    _SYMBOL_BASE_PRICES = {
+        "BTCUSDT": 65000.0,
+        "ETHUSDT": 3500.0,
+        "BNBUSDT": 600.0,
+        "SOLUSDT": 150.0,
+        "ADAUSDT": 0.45,
+        "XRPUSDT": 0.50,
+        "DOTUSDT": 7.0,
+        "DOGEUSDT": 0.12,
+        "AVAXUSDT": 35.0,
+        "MATICUSDT": 0.55,
+    }
+
     async def _mock_candle_generator():
         """Generate synthetic candles every 5 seconds as fallback when no Binance WS data."""
         nonlocal _mock_candle_counter, _mock_last_price
-        base_price = 65000.0  # ~BTC price in testnet
+        base_price = _SYMBOL_BASE_PRICES.get(symbol.upper(), 100.0)  # Fallback 100 for unknown symbols
         _mock_last_price = base_price
         while _execution_state["session"]["status"] != "idle" and not client._stop_event.is_set():
             await asyncio.sleep(4.0)
             if _execution_state["session"]["status"] != "running":
                 continue
             _mock_candle_counter += 1
-            # Random-ish price movement
+            # Random-ish price movement proportional to price
             import random
-            movement = (random.random() - 0.48) * 200  # slight bullish bias
+            movement_pct = (random.random() - 0.48) * 0.003  # ±0.15% per tick with slight bullish bias
+            movement = movement_pct * base_price
             close_price = _mock_last_price + movement
             high_price = max(close_price, _mock_last_price) + abs(movement) * 0.5
             low_price = min(close_price, _mock_last_price) - abs(movement) * 0.5
@@ -251,15 +350,27 @@ async def _start_ws_broadcast(symbol: str):
             
             await broadcast_scalping_event("candle", candle_data)
             
-            # Update PnL on every candle if there's an open position
+            # Update PnL and check SL/TP on every candle if there's an open position
             pm = _execution_state["position_manager"]
             pos = pm.get_open()
             if pos:
                 entry_f = float(pos.entry_price)
                 current_f = close_price
                 qty_f = float(pos.quantity)
-                pnl = (current_f - entry_f) * qty_f if pos.side == "BUY" else (entry_f - current_f) * qty_f
-                pnl_pct = ((current_f - entry_f) / entry_f) * 100 if pos.side == "BUY" else ((entry_f - current_f) / entry_f) * 100
+                entry_val = entry_f * qty_f
+                current_val = current_f * qty_f
+                gross_pnl = (current_f - entry_f) * qty_f if pos.side == "BUY" else (entry_f - current_f) * qty_f
+                fees = (entry_val * 0.001) + (current_val * 0.001)
+                pnl = gross_pnl - fees
+                pnl_pct = (pnl / entry_val) * 100
+                
+                # Check SL/TP
+                risk_cfg = _execution_state.get("risk_config", {})
+                sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3)) / 100
+                tp_pct = float(risk_cfg.get("take_profit_pct", 0.5)) / 100
+                sl = entry_f * (1 - sl_pct) if pos.side == "BUY" else entry_f * (1 + sl_pct)
+                tp = entry_f * (1 + tp_pct) if pos.side == "BUY" else entry_f * (1 - tp_pct)
+                
                 await broadcast_scalping_event("position_update", {
                     "symbol": pos.symbol,
                     "side": pos.side,
@@ -268,7 +379,19 @@ async def _start_ws_broadcast(symbol: str):
                     "quantity": qty_f,
                     "pnl": round(pnl, 4),
                     "pnl_pct": round(pnl_pct, 4),
+                    "stop_loss_price": round(sl, 2),
+                    "take_profit_price": round(tp, 2),
                 })
+                
+                # Execute SL/TP Auto Close
+                hit_sl = (pos.side == "BUY" and current_f <= sl) or (pos.side == "SELL" and current_f >= sl)
+                hit_tp = (pos.side == "BUY" and current_f >= tp) or (pos.side == "SELL" and current_f <= tp)
+                if hit_sl:
+                    await _close_position_and_record(pm, current_f, pos, reason="stop_loss")
+                    continue
+                elif hit_tp:
+                    await _close_position_and_record(pm, current_f, pos, reason="take_profit")
+                    continue
 
             logger.debug(f"Mock candle #{_mock_candle_counter}: {candle_data['close']}")
 
@@ -287,13 +410,25 @@ async def _start_ws_broadcast(symbol: str):
 
                 # Open/close paper trades
                 pm = _execution_state["position_manager"]
+                risk_cfg = _execution_state.get("risk_config", {})
+                trade_value_usd = float(_execution_state["session"].get("trade_value", 100.0))
+                sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3)) / 100
+                tp_pct = float(risk_cfg.get("take_profit_pct", 0.5)) / 100
+                
                 if not pm.has_open():
+                    if _check_daily_loss():
+                        logger.warning("Max daily loss exceeded. Blocking new mock trade.")
+                        continue
+                        
+                    quantity = Decimal(str(round(trade_value_usd / close_price, 6)))
                     pos_obj = pm.open_position(
                         symbol=symbol.upper(),
                         side=side,
                         entry_price=Decimal(str(close_price)),
-                        quantity=Decimal("0.001"),
+                        quantity=quantity,
                     )
+                    sl_price = round(float(pos_obj.entry_price) * (1 - sl_pct), 2) if side == "BUY" else round(float(pos_obj.entry_price) * (1 + sl_pct), 2)
+                    tp_price = round(float(pos_obj.entry_price) * (1 + tp_pct), 2) if side == "BUY" else round(float(pos_obj.entry_price) * (1 - tp_pct), 2)
                     await broadcast_scalping_event("position", {
                         "symbol": pos_obj.symbol,
                         "side": pos_obj.side,
@@ -302,48 +437,17 @@ async def _start_ws_broadcast(symbol: str):
                         "quantity": float(pos_obj.quantity),
                         "pnl": 0.0,
                         "pnl_pct": 0.0,
+                        "stop_loss_price": sl_price,
+                        "take_profit_price": tp_price,
+                        "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
+                        "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
                     })
                     logger.info(f"Mock paper trade opened: {side} {symbol.upper()} @ {close_price:.2f}")
                 else:
                     # Close existing position and record trade
                     pos = pm.get_open()
-                    pnl = float(close_price - float(pos.entry_price)) * 0.001 * (1 if pos.side == "BUY" else -1)
-                    pnl_pct = (pnl / (float(pos.entry_price) * 0.001)) * 100
-                    pm.close_position(Decimal(str(close_price)))
-                    # Record in trade history and broadcast
-                    trade_record = {
-                        "symbol": pos.symbol,
-                        "side": pos.side,
-                        "entry_price": float(pos.entry_price),
-                        "exit_price": close_price,
-                        "pnl": round(pnl, 2),
-                        "pnl_pct": round(pnl_pct, 2),
-                        "timestamp": now_ts.isoformat(),
-                    }
-                    _execution_state["trade_history"].append(trade_record)
-                    await broadcast_scalping_event("trade_closed", trade_record)
-                    logger.info(f"Mock position closed PnL: {pnl:.2f} ({pnl_pct:.2f}%)")
-
-                    # Save trade to Supabase
-                    try:
-                        db_sid = _execution_state["session"].get("db_session_id")
-                        supabase = get_supabase()
-                        supabase.table("scalping_trades").insert({
-                            "session_id": db_sid,
-                            "symbol": trade_record["symbol"],
-                            "side": trade_record["side"],
-                            "entry_price": trade_record["entry_price"],
-                            "exit_price": trade_record["exit_price"],
-                            "quantity": 0.001,
-                            "pnl": trade_record["pnl"],
-                            "pnl_pct": trade_record["pnl_pct"],
-                            "strategy_type": _execution_state["session"]["strategy"],
-                            "status": "closed",
-                            "entry_time": pos.entry_time.isoformat(),
-                            "exit_time": trade_record["timestamp"]
-                        }).execute()
-                    except Exception as db_e:
-                        logger.warning(f"Failed to insert mock trade in DB: {db_e}")
+                    if pos.side != side:
+                        await _close_position_and_record(pm, close_price, pos, reason="reverse_signal")
 
     # Pull events from BinanceWSClient queues and broadcast to scalping WS clients
     async def _candle_processor():
@@ -395,64 +499,107 @@ async def _start_ws_broadcast(symbol: str):
                         pm = _execution_state["position_manager"]
                         side = "BUY" if decision.confidence > 0 else "SELL"
                         if not pm.has_open():
-                            pos_obj = pm.open_position(
-                                symbol=event.symbol.upper(),
-                                side=side,
-                                entry_price=Decimal(str(event.close)),
-                                quantity=Decimal("0.001"),  # minimal paper quantity
-                            )
-                            await broadcast_scalping_event("position", {
-                                "symbol": pos_obj.symbol,
-                                "side": pos_obj.side,
-                                "entry_price": float(pos_obj.entry_price),
-                                "current_price": float(candle.close),
-                                "quantity": float(pos_obj.quantity),
-                                "pnl": 0.0,
-                                "pnl_pct": 0.0,
-                            })
-                            logger.info(f"Paper trade opened: {side} {event.symbol.upper()} @ {candle.close}")
+                            if _check_daily_loss():
+                                logger.warning("Max daily loss exceeded. Blocking new real trade.")
+                                continue
+                                
+                            # Mode and trade values
+                            _mode = _execution_state["session"].get("mode", "paper")
+                            _trade_val = float(_execution_state["session"].get("trade_value", 100.0))
+                            
+                            if _mode == "live":
+                                exchange = _execution_state.get("exchange")
+                                if not exchange:
+                                    logger.error("Live mode requested but exchange is not initialized!")
+                                    continue
+                                    
+                                try:
+                                    # 1. Get exact symbol filters for precision
+                                    filters = await exchange.get_symbol_filters(event.symbol.upper())
+                                    
+                                    # 2. Compute exact quantity
+                                    _qty_raw = _trade_val / float(event.close)
+                                    step_size = float(filters["stepSize"])
+                                    _qty_precise = round(_qty_raw - (_qty_raw % step_size), 8)
+                                    
+                                    if _qty_precise < float(filters["minQty"]):
+                                        logger.error(f"Quantity too small: {_qty_precise} < {filters['minQty']}")
+                                        continue
+                                        
+                                    # 3. Execute Market Order
+                                    market_res = await exchange.place_market_order(event.symbol.upper(), side, _qty_precise)
+                                    exec_price = float(market_res.get("price") or event.close)
+                                    exec_qty = float(market_res.get("quantity") or _qty_precise)
+                                    
+                                    # 4. Calculate Risk SL/TP with proper price precision
+                                    risk_cfg = _execution_state.get("risk_config", {})
+                                    sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3)) / 100
+                                    tp_pct = float(risk_cfg.get("take_profit_pct", 0.5)) / 100
+                                    price_prec = int(filters.get("pricePrecision", 2))
+                                    
+                                    sl_price = round(exec_price * (1 - sl_pct), price_prec) if side == "BUY" else round(exec_price * (1 + sl_pct), price_prec)
+                                    tp_price = round(exec_price * (1 + tp_pct), price_prec) if side == "BUY" else round(exec_price * (1 - tp_pct), price_prec)
+                                    
+                                    # 5. Place OCO Risk Parachute
+                                    oco_res = await exchange.place_oco_order(
+                                        symbol=event.symbol.upper(),
+                                        side="SELL" if side == "BUY" else "BUY",
+                                        quantity=exec_qty,
+                                        price=tp_price,
+                                        stop_price=sl_price,
+                                        take_profit_price=tp_price
+                                    )
+                                    
+                                    # 6. Store locally for PnL tracking
+                                    pos_obj = pm.open_position(
+                                        symbol=event.symbol.upper(),
+                                        side=side,
+                                        entry_price=Decimal(str(exec_price)),
+                                        quantity=Decimal(str(exec_qty))
+                                    )
+                                    pos_obj.oco_id = oco_res.get("order_id")
+                                    pos_obj.sl_id = oco_res.get("stop_loss_id")
+                                    pos_obj.tp_id = oco_res.get("take_profit_id")
+                                    
+                                    await broadcast_scalping_event("position", {
+                                        "symbol": pos_obj.symbol,
+                                        "side": pos_obj.side,
+                                        "entry_price": float(pos_obj.entry_price),
+                                        "current_price": float(candle.close),
+                                        "quantity": float(pos_obj.quantity),
+                                        "pnl": 0.0,
+                                        "pnl_pct": 0.0,
+                                    })
+                                    logger.info(f"LIVE trade opened: {side} {event.symbol.upper()} @ {exec_price}")
+                                    
+                                except Exception as live_e:
+                                    logger.error(f"Live trade failed: {live_e}")
+                                    continue
+                            
+                            else:
+                                # Paper mode
+                                _qty = Decimal(str(round(_trade_val / float(event.close), 6)))
+                                pos_obj = pm.open_position(
+                                    symbol=event.symbol.upper(),
+                                    side=side,
+                                    entry_price=Decimal(str(event.close)),
+                                    quantity=_qty,
+                                )
+                                await broadcast_scalping_event("position", {
+                                    "symbol": pos_obj.symbol,
+                                    "side": pos_obj.side,
+                                    "entry_price": float(pos_obj.entry_price),
+                                    "current_price": float(candle.close),
+                                    "quantity": float(pos_obj.quantity),
+                                    "pnl": 0.0,
+                                    "pnl_pct": 0.0,
+                                })
+                                logger.info(f"Paper trade opened: {side} {event.symbol.upper()} @ {candle.close}")
                         else:
                             # If opposite signal, close position
                             pos = pm.get_open()
                             if pos.side != side:
-                                pnl = (float(candle.close) - float(pos.entry_price)) * 0.001 * (1 if pos.side == "BUY" else -1)
-                                pnl_pct = (pnl / (float(pos.entry_price) * 0.001)) * 100
-                                pm.close_position(Decimal(str(candle.close)))
-                                now_ts = datetime.now(timezone.utc)
-                                trade_record = {
-                                    "symbol": pos.symbol,
-                                    "side": pos.side,
-                                    "entry_price": float(pos.entry_price),
-                                    "exit_price": float(candle.close),
-                                    "pnl": round(pnl, 2),
-                                    "pnl_pct": round(pnl_pct, 2),
-                                    "timestamp": now_ts.isoformat(),
-                                }
-                                _execution_state["trade_history"].append(trade_record)
-                                await broadcast_scalping_event("trade_closed", trade_record)
-                                logger.info(f"Paper trade closed: {pos.side} {pos.symbol} PnL: {pnl:.2f} ({pnl_pct:.2f}%)")
-                                
-                                # Save trade to Supabase
-                                try:
-                                    db_sid = _execution_state["session"].get("db_session_id")
-                                    supabase = get_supabase()
-                                    supabase.table("scalping_trades").insert({
-                                        "session_id": db_sid,
-                                        "symbol": trade_record["symbol"],
-                                        "side": trade_record["side"],
-                                        "entry_price": trade_record["entry_price"],
-                                        "exit_price": trade_record["exit_price"],
-                                        "quantity": 0.001,
-                                        "pnl": trade_record["pnl"],
-                                        "pnl_pct": trade_record["pnl_pct"],
-                                        "strategy_type": _execution_state["session"]["strategy"],
-                                        "signal_reason": decision.reason,
-                                        "status": "closed",
-                                        "entry_time": pos.entry_time.isoformat(),
-                                        "exit_time": trade_record["timestamp"]
-                                    }).execute()
-                                except Exception as db_e:
-                                    logger.warning(f"Failed to insert real trade in DB: {db_e}")
+                                await _close_position_and_record(pm, float(candle.close), pos, reason=decision.reason or "signal")
                 except Exception as e:
                     logger.warning(f"Execution loop processing error: {e}")
 
@@ -482,12 +629,19 @@ async def _start_ws_broadcast(symbol: str):
                 entry = float(pos.entry_price)
                 current = event.price
                 qty = float(pos.quantity)
-                if pos.side == "BUY":
-                    pnl = (current - entry) * qty
-                    pnl_pct = (current - entry) / entry * 100
-                else:
-                    pnl = (entry - current) * qty
-                    pnl_pct = (entry - current) / entry * 100
+                entry_val = entry * qty
+                current_val = current * qty
+                
+                risk_cfg = _execution_state.get("risk_config", {})
+                sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3)) / 100
+                tp_pct = float(risk_cfg.get("take_profit_pct", 0.5)) / 100
+                sl = entry * (1 - sl_pct) if pos.side == "BUY" else entry * (1 + sl_pct)
+                tp = entry * (1 + tp_pct) if pos.side == "BUY" else entry * (1 - tp_pct)
+                
+                gross_pnl = (current - entry) * qty if pos.side == "BUY" else (entry - current) * qty
+                fees = (entry_val * 0.001) + (current_val * 0.001)
+                pnl = gross_pnl - fees
+                pnl_pct = (pnl / entry_val) * 100
                 await broadcast_scalping_event("position_update", {
                     "symbol": pos.symbol,
                     "side": pos.side,
@@ -496,7 +650,19 @@ async def _start_ws_broadcast(symbol: str):
                     "quantity": qty,
                     "pnl": round(pnl, 2),
                     "pnl_pct": round(pnl_pct, 2),
+                    "stop_loss_price": round(sl, 2),
+                    "take_profit_price": round(tp, 2),
+                    "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
+                    "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
                 })
+                
+                # Execute SL/TP Auto Close
+                hit_sl = (pos.side == "BUY" and current <= sl) or (pos.side == "SELL" and current >= sl)
+                hit_tp = (pos.side == "BUY" and current >= tp) or (pos.side == "SELL" and current <= tp)
+                if hit_sl:
+                    await _close_position_and_record(pm, current, pos, reason="stop_loss")
+                elif hit_tp:
+                    await _close_position_and_record(pm, current, pos, reason="take_profit")
 
     async def _intelligence_processor():
         """Poll intelligence and broadcast."""
@@ -529,11 +695,13 @@ async def _start_ws_broadcast(symbol: str):
                     logger.warning(f"Intelligence broadcast error: {e}")
             await asyncio.sleep(10.0)
 
-    # Start processor tasks (mock generator disabled — real Binance WS is active)
+    # Start processor tasks + mock generator fallback for testnet
     task_candle = asyncio.create_task(_candle_processor(), name=f"candle-proc-{symbol}")
     task_trade = asyncio.create_task(_trade_processor(), name=f"trade-proc-{symbol}")
+    task_mock = asyncio.create_task(_mock_candle_generator(), name=f"mock-candle-{symbol}")
     task_intel = asyncio.create_task(_intelligence_processor(), name=f"intel-proc-{symbol}")
-    _execution_state["ws_tasks"] = [task_candle, task_trade, task_intel]
+    _execution_state["ws_tasks"] = [task_candle, task_trade, task_mock, task_intel]
+    logger.info(f"Mock data generator started for {symbol} (fallback when Binance WS unavailable)")
 
     # Log how many frontend WS clients are connected
     ws_count = len(_scalping_ws_connections)
@@ -541,10 +709,101 @@ async def _start_ws_broadcast(symbol: str):
     logger.info(f"Mock data generator enabled (real Binance WS may be unavailable or slow)")
 
 
+@router.get("/binance/exchange-info")
+async def binance_exchange_info():
+    """Proxy Binance exchangeInfo to frontend (avoids CORS).
+    Returns only the fields the frontend needs: symbol, status, baseAsset, quoteAsset.
+    """
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get("https://api.binance.com/api/v3/exchangeInfo")
+            resp.raise_for_status()
+            data = resp.json()
+        # Slim down: only TRADING + stablecoin quote assets
+        allowed_quotes = {"USDT", "USDC", "FDUSD", "EUR"}
+        symbols = [
+            {
+                "symbol": s["symbol"],
+                "status": s["status"],
+                "baseAsset": s["baseAsset"],
+                "quoteAsset": s["quoteAsset"],
+            }
+            for s in data.get("symbols", [])
+            if s.get("quoteAsset") in allowed_quotes and s.get("status") == "TRADING"
+        ]
+        return {"symbols": symbols}
+    except Exception as e:
+        logger.error(f"Failed to proxy Binance exchangeInfo: {e}")
+        raise HTTPException(status_code=502, detail=f"Binance API unreachable: {e}")
+
+
 @router.get("/trade-history")
 async def get_trade_history(limit: int = 50) -> List[Dict]:
     """Get trade history from the current session."""
     return _execution_state["trade_history"][-limit:]
+
+
+@router.get("/candles/{symbol}")
+async def get_candles(symbol: str, limit: int = 100) -> List[Dict]:
+    """Get candle history for a symbol.
+
+    1. Tries the ExecutionLoop's candle buffer first (fast, already loaded).
+    2. Falls back to Binance REST API if buffer is empty (e.g. warmup still in progress).
+
+    Used by the frontend to load historical candles when a session starts.
+    """
+    # Strategy 1: try the in-memory candle buffer
+    loop = _execution_state.get("loop")
+    if loop and hasattr(loop, "_candle_buffer"):
+        try:
+            candles = loop._candle_buffer.get()
+            if candles:
+                result = []
+                for c in candles:
+                    if c.symbol.upper() != symbol.upper():
+                        continue
+                    result.append({
+                        "symbol": symbol,
+                        "open": float(c.open),
+                        "high": float(c.high),
+                        "low": float(c.low),
+                        "close": float(c.close),
+                        "volume": float(c.volume),
+                        "timestamp": c.timestamp.isoformat(),
+                    })
+                    if len(result) >= limit:
+                        break
+                if result:
+                    logger.info(f"Returning {len(result)} candles from buffer for {symbol}")
+                    return result
+        except Exception as e:
+            logger.warning(f"Buffer read failed for {symbol}: {e}")
+
+    # Strategy 2: fallback to Binance REST API
+    try:
+        from app.scalping.backtest.historical_loader import HistoricalLoader
+        loader = HistoricalLoader()
+        past_candles = await loader.load_ohlcv(symbol.upper(), interval="1m", limit=limit)
+        if past_candles:
+            result = [
+                {
+                    "symbol": symbol,
+                    "open": float(c.open),
+                    "high": float(c.high),
+                    "low": float(c.low),
+                    "close": float(c.close),
+                    "volume": float(c.volume),
+                    "timestamp": c.timestamp.isoformat(),
+                }
+                for c in past_candles
+            ]
+            logger.info(f"Returning {len(result)} candles from Binance REST for {symbol}")
+            return result
+    except Exception as e:
+        logger.warning(f"Binance REST fallback failed for {symbol}: {e}")
+
+    return []
 
 
 async def _stop_ws_broadcast():
@@ -775,6 +1034,27 @@ async def control_session(control: Dict) -> Dict:
         session["symbol"] = active_symbol
         session["started_at"] = _now()
         session["stopped_at"] = None
+        
+        # Reset trade history and position manager for the new session
+        _execution_state["trade_history"] = []
+        _execution_state["position_manager"] = PositionManager()
+        _execution_state["exchange"] = None
+        
+        if session["mode"] == "live":
+            api_key = settings.BINANCE_API_KEY_LIVE or settings.BINANCE_API_KEY
+            api_secret = settings.BINANCE_SECRET_KEY_LIVE or settings.BINANCE_SECRET_KEY
+            if not api_key or not api_secret:
+                raise HTTPException(status_code=400, detail="Mancano le API Key nel file .env per la modalità Live.")
+            # Scalping live → always real Binance, never testnet
+            _execution_state["exchange"] = BinanceExchangeAdapter(api_key, api_secret, testnet=False)
+            logger.info("BinanceExchangeAdapter initialized for LIVE execution (testnet=False).")
+        
+        # Store trade_value from UI (USD amount per trade)
+        if "trade_value" in control:
+            try:
+                session["trade_value"] = max(1.0, float(control["trade_value"]))
+            except (TypeError, ValueError):
+                pass  # keep existing value
 
         # Initialize SignalScoreEngine for the symbol
         try:
@@ -830,6 +1110,27 @@ async def control_session(control: Dict) -> Dict:
         logger.info(f"Session started: {session['session_id']} mode={session['mode']} symbol={active_symbol}")
 
     elif action == "stop":
+        # Force close open position if any
+        pm = _execution_state["position_manager"]
+        pos = pm.get_open()
+        if pos:
+            # Initialise close_price with a safe fallback (entry price) to guarantee the variable is bound
+            close_price: float = float(pos.entry_price)
+            try:
+                # Attempt to use the latest candle price if available
+                loop = _execution_state.get("loop")
+                if loop and hasattr(loop, "_candle_buffer") and getattr(loop, "_candle_buffer", None):
+                    latest = loop._candle_buffer.latest
+                    if latest:
+                        close_price = float(latest.close)
+                await _close_position_and_record(pm, close_price, pos, reason="session_stop")
+            except Exception as e:
+                logger.error(f"Error force closing position during session stop: {e}", exc_info=True)
+            finally:
+                # Guarantee local state reflects position closure – only attempt if we still have an open position
+                if pos.status == "open":
+                    pm.close_position(Decimal(str(close_price)))
+            
         # Stop BinanceWSClient and pipeline
         asyncio.create_task(
             _stop_ws_broadcast(),
@@ -845,6 +1146,11 @@ async def control_session(control: Dict) -> Dict:
         session["session_id"] = None
         session["started_at"] = None
         session["stopped_at"] = _now()
+        
+        if _execution_state.get("exchange"):
+            # We don't await the close here as it might block, or we can launch a task
+            asyncio.create_task(_execution_state["exchange"].close(), name="close_exchange")
+            _execution_state["exchange"] = None
         
         # Update DB
         try:
@@ -901,17 +1207,17 @@ async def get_position() -> Optional[Dict]:
     
     # Calculate current PnL estimate
     loop = _execution_state.get("loop")
-    if loop and len(loop.candle_buffer) > 0:
-        candles = loop.candle_buffer.get()
+    if loop and hasattr(loop, "_candle_buffer") and len(loop._candle_buffer) > 0:
+        candles = loop._candle_buffer.get()
         current_price = float(candles[-1].close)
         qty = float(pos.quantity)
         entry = float(pos.entry_price)
-        if pos.side == "BUY":
-            pnl = (current_price - entry) * qty
-            pnl_pct = (current_price - entry) / entry * 100
-        else:
-            pnl = (entry - current_price) * qty
-            pnl_pct = (entry - current_price) / entry * 100
+        entry_val = entry * qty
+        current_val = current_price * qty
+        gross_pnl = (current_price - entry) * qty if pos.side == "BUY" else (entry - current_price) * qty
+        fees = (entry_val * 0.001) + (current_val * 0.001)
+        pnl = gross_pnl - fees
+        pnl_pct = (pnl / entry_val) * 100
     else:
         current_price = float(pos.entry_price)
         pnl = 0.0
@@ -954,12 +1260,60 @@ async def list_positions() -> List[Dict]:
 
 @router.get("/risk/config")
 async def get_risk_config() -> Dict:
+    try:
+        supabase = get_supabase()
+        response = supabase.table("scalping_risk_config").select("*").eq("id", 1).execute()
+        if response.data and len(response.data) > 0:
+            db_config = response.data[0]
+            # Exclude id, updated_at from the active memory representation
+            clean_config = {k: v for k, v in db_config.items() if k not in ["id", "updated_at"]}
+            _execution_state["risk_config"] = clean_config
+            return clean_config
+    except Exception as e:
+        logger.error(f"Error fetching risk config from DB: {e}")
+    # Fallback to memory
     return _execution_state.get("risk_config", {})
 
 @router.post("/risk/config")
 async def update_risk_config(config: Dict) -> Dict:
-    _execution_state["risk_config"] = config
-    return config
+    # Exclude position_size if present (managed via trade_value instead)
+    clean_cfg = {k: v for k, v in config.items() if k != "position_size"}
+    _execution_state["risk_config"] = clean_cfg
+    
+    # Persist to Supabase
+    try:
+        supabase = get_supabase()
+        db_payload = {
+            "id": 1,
+            "max_daily_loss": clean_cfg.get("max_daily_loss", 50),
+            "max_drawdown": clean_cfg.get("max_drawdown", 10),
+            "leverage": clean_cfg.get("leverage", 10),
+            "stop_loss_pct": clean_cfg.get("stop_loss_pct", 0.3),
+            "take_profit_pct": clean_cfg.get("take_profit_pct", 0.5),
+        }
+        supabase.table("scalping_risk_config").upsert(db_payload).execute()
+        logger.info("Persisted risk config to Supabase")
+    except Exception as e:
+        logger.error(f"Error persisting risk config to DB: {e}")
+        
+    return clean_cfg
+
+
+@router.patch("/session/trade-value")
+async def update_trade_value(body: Dict) -> Dict:
+    """Update trade_value for the active session.
+    
+    This takes effect from the NEXT trade execution.
+    Accepts: {"trade_value": <number>}
+    """
+    session = _execution_state["session"]
+    try:
+        new_value = max(1.0, float(body["trade_value"]))
+        session["trade_value"] = new_value
+        logger.info(f"Trade value updated to {new_value} USD (effective from next trade)")
+        return {"trade_value": new_value, "status": session["status"]}
+    except (KeyError, TypeError, ValueError) as e:
+        raise HTTPException(status_code=422, detail=f"Invalid trade_value: {e}")
 
 # ---------------------------------------------------------------------------
 # Performance endpoint
@@ -1000,17 +1354,21 @@ async def get_performance() -> Dict:
     gross_loss = abs(sum(t.get("pnl", 0) for t in losing))
     profit_factor = round(gross_profit / gross_loss, 4) if gross_loss > 0 else 0
     
-    # Calculate max drawdown from running PnL
+    # Calculate max drawdown from running equity
     running_pnl = 0
-    peak = 0
-    max_dd = 0
+    base_balance = float(_execution_state["session"].get("paper_balance", 10000.0))
+    equity = base_balance
+    peak_equity = base_balance
+    max_dd_pct = 0.0
     for t in trades:
         running_pnl += t.get("pnl", 0)
-        if running_pnl > peak:
-            peak = running_pnl
-        dd = peak - running_pnl
-        if dd > max_dd:
-            max_dd = dd
+        equity = base_balance + running_pnl
+        if equity > peak_equity:
+            peak_equity = equity
+        if peak_equity > 0:
+            dd_pct = (peak_equity - equity) / peak_equity
+            if dd_pct > max_dd_pct:
+                max_dd_pct = dd_pct
     
     # Consecutive losses
     cons_losses = 0
@@ -1042,7 +1400,7 @@ async def get_performance() -> Dict:
         "avg_win": round(avg_win, 4),
         "avg_loss": round(avg_loss, 4),
         "profit_factor": profit_factor,
-        "max_drawdown": round(max_dd, 2),
+        "max_drawdown": max_dd_pct,
         "consecutive_losses": max_cons_losses,
     }
 

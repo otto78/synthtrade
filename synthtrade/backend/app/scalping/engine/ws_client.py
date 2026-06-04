@@ -90,9 +90,11 @@ class BinanceWSClient:
         self,
         symbols: Optional[list[str]] = None,
         reconnect_max_delay: float = 30.0,
+        testnet: Optional[bool] = None,
     ):
         self.symbols = [s.lower() for s in (symbols or ["btcusdt"])]
         self._reconnect_max_delay = reconnect_max_delay
+        self.testnet = testnet if testnet is not None else settings.BINANCE_TESTNET
 
         # Code asincrone per consumatori esterni
         self.candle_queue: asyncio.Queue[CandleEvent] = asyncio.Queue()
@@ -173,7 +175,11 @@ class BinanceWSClient:
         """
         import websockets
 
-        base = settings.binance_ws_base_url.rstrip('/')
+        if self.testnet:
+            base = 'wss://stream.testnet.binance.vision/ws'
+        else:
+            base = 'wss://stream.binance.com:9443/ws'
+
         url = f"{base}/{symbol}@{stream_type}"
         is_candle = stream_type.startswith("kline")
 

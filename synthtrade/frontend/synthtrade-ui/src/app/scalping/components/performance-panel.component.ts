@@ -95,6 +95,7 @@ export class PerformancePanelComponent implements OnInit, OnDestroy {
     this.perfApi.getMetrics().subscribe({
       next: (data) => {
         this.metrics = data;
+        this.cdr.markForCheck();
         this.cdr.detectChanges();
       },
       error: () => {}

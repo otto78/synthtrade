@@ -4,7 +4,7 @@
  * Polls backend every 60s for updates.
  */
 
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { UpperCasePipe } from '@angular/common';
 import { Subscription } from 'rxjs';
 import { IntelligenceApiService } from '../services/intelligence-api.service';
@@ -82,7 +82,8 @@ export class MarketIntelPanelComponent implements OnInit, OnDestroy {
 
   constructor(
     private intelApi: IntelligenceApiService,
-    private ws: ScalpingWsService
+    private ws: ScalpingWsService,
+    private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
@@ -90,7 +91,8 @@ export class MarketIntelPanelComponent implements OnInit, OnDestroy {
     
     // Listen to real-time updates from WebSocket
     this.sub.add(
-      this.ws.intelligence$.subscribe((data: IntelligenceEvent) => {
+      this.ws.intelligence$.subscribe((data: IntelligenceEvent | null) => {
+        if (!data) return;
         if (data.signal_score !== undefined) {
           this.signalScore = data.signal_score.toFixed(1);
         }
@@ -110,6 +112,7 @@ export class MarketIntelPanelComponent implements OnInit, OnDestroy {
         if (data.cvd_trend) {
           this.cvdTrend = data.cvd_trend;
         }
+        this.cdr.detectChanges();
       })
     );
   }

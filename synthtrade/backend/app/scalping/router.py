@@ -260,7 +260,16 @@ async def _start_ws_broadcast(symbol: str):
     if not signal_engine:
         signal_engine = SignalScoreEngine(symbol=symbol)
         _execution_state["signal_engine"] = signal_engine
-    
+
+    # Wire CVD calculator: accumulates real-time trade pressure from Binance WS
+    # and feeds it into the signal engine so cvd_trend is valorized.
+    from app.scalping.intelligence.collectors.cvd_calculator import CVDCalculator
+    cvd_calculator = CVDCalculator()
+    if hasattr(signal_engine, '_set_cvd_calculator'):
+        signal_engine._set_cvd_calculator(cvd_calculator)
+    _execution_state["cvd_calculator"] = cvd_calculator
+
+    _session_mode = _execution_state["session"].get("mode", "paper")
     execution_loop = ExecutionLoop(
         symbol=symbol,
         candle_buffer=candle_buffer,
@@ -270,7 +279,11 @@ async def _start_ws_broadcast(symbol: str):
         strategy_selector=StrategySelector(),
         position_manager=_execution_state["position_manager"],
     )
+    # paper_mode controls whether intelligence gating is bypassed for low-score markets.
+    # Must be False in live mode so the full intelligence + technical filter applies.
+    execution_loop.paper_mode = (_session_mode != "live")
     _execution_state["loop"] = execution_loop
+    logger.info(f"ExecutionLoop paper_mode={execution_loop.paper_mode} for {symbol} (mode={_session_mode})")
 
     # Warm up the candle buffer with historical candles so indicators are immediately ready
     # and broadcast them to the frontend so the chart is populated immediately
@@ -305,11 +318,17 @@ async def _start_ws_broadcast(symbol: str):
     # Symbol-appropriate base prices for mock data
     _SYMBOL_BASE_PRICES = {
         "BTCUSDT": 65000.0,
+        "BTCUSDC": 65000.0,
         "ETHUSDT": 3500.0,
-        "BNBUSDT": 600.0,
+        "ETHUSDC": 3500.0,
+        "BNBUSDT": 620.0,
+        "BNBUSDC": 620.0,
         "SOLUSDT": 150.0,
+        "SOLUSDC": 150.0,
         "ADAUSDT": 0.45,
+        "ADAUSDC": 0.45,
         "XRPUSDT": 0.50,
+        "XRPUSDC": 0.50,
         "DOTUSDT": 7.0,
         "DOGEUSDT": 0.12,
         "AVAXUSDT": 35.0,
@@ -574,6 +593,10 @@ async def _start_ws_broadcast(symbol: str):
                                     
                                 except Exception as live_e:
                                     logger.error(f"Live trade failed: {live_e}")
+                                    await broadcast_scalping_event("error", {
+                                        "code": "LIVE_TRADE_ERROR",
+                                        "message": f"Live trade failed: {live_e}",
+                                    })
                                     continue
                             
                             else:
@@ -604,7 +627,8 @@ async def _start_ws_broadcast(symbol: str):
                     logger.warning(f"Execution loop processing error: {e}")
 
     async def _trade_processor():
-        """Consume trade_queue and broadcast + update PnL."""
+        """Consume trade_queue and broadcast + update PnL + feed CVD."""
+        _cvd = _execution_state.get("cvd_calculator")
         while _execution_state["session"]["status"] != "idle" and not client._stop_event.is_set():
             try:
                 event = await asyncio.wait_for(client.trade_queue.get(), timeout=1.0)
@@ -612,6 +636,13 @@ async def _start_ws_broadcast(symbol: str):
                 if _execution_state["session"]["status"] == "idle":
                     break
                 continue
+
+            # Feed CVD calculator with real-time trade pressure
+            if _cvd is not None:
+                try:
+                    _cvd.on_trade(event.price, event.quantity, event.is_buyer_maker)
+                except Exception:
+                    pass  # Non-blocking
 
             # Broadcast to frontend WS clients
             await broadcast_scalping_event("trade", {
@@ -695,18 +726,27 @@ async def _start_ws_broadcast(symbol: str):
                     logger.warning(f"Intelligence broadcast error: {e}")
             await asyncio.sleep(10.0)
 
-    # Start processor tasks + mock generator fallback for testnet
+    # Start processor tasks
+    _session_mode = _execution_state["session"].get("mode", "paper")
     task_candle = asyncio.create_task(_candle_processor(), name=f"candle-proc-{symbol}")
     task_trade = asyncio.create_task(_trade_processor(), name=f"trade-proc-{symbol}")
-    task_mock = asyncio.create_task(_mock_candle_generator(), name=f"mock-candle-{symbol}")
     task_intel = asyncio.create_task(_intelligence_processor(), name=f"intel-proc-{symbol}")
-    _execution_state["ws_tasks"] = [task_candle, task_trade, task_mock, task_intel]
-    logger.info(f"Mock data generator started for {symbol} (fallback when Binance WS unavailable)")
+
+    # Mock generator: ONLY in paper/test mode — never in live.
+    # In live mode the real Binance WS provides candles; the mock would generate
+    # prices at the wrong scale (100 USD fallback) and open fake positions that
+    # then try to close against the real exchange → "Insufficient funds".
+    if _session_mode != "live":
+        task_mock = asyncio.create_task(_mock_candle_generator(), name=f"mock-candle-{symbol}")
+        _execution_state["ws_tasks"] = [task_candle, task_trade, task_mock, task_intel]
+        logger.info(f"Mock data generator started for {symbol} (paper/test mode fallback)")
+    else:
+        _execution_state["ws_tasks"] = [task_candle, task_trade, task_intel]
+        logger.info(f"Mock data generator DISABLED for {symbol} (live mode — real Binance WS only)")
 
     # Log how many frontend WS clients are connected
     ws_count = len(_scalping_ws_connections)
     logger.info(f"Scalping broadcast started for {symbol} — {ws_count} frontend WS client(s) connected")
-    logger.info(f"Mock data generator enabled (real Binance WS may be unavailable or slow)")
 
 
 @router.get("/binance/exchange-info")
@@ -819,6 +859,7 @@ async def _stop_ws_broadcast():
         _execution_state["loop"] = None
     
     _execution_state["signal_engine"] = None
+    _execution_state["cvd_calculator"] = None
 
     # Cancel all WS tasks
     for task in _execution_state.get("ws_tasks", []):

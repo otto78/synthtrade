@@ -27,6 +27,8 @@ async def intelligence_snapshot_job() -> None:
     """Job: intelligence snapshot periodico.
 
     Chiama SignalScoreEngine.get_snapshot() e salva su Supabase.
+    Usa il simbolo della sessione scalping attiva, se presente;
+    altrimenti usa BTCUSDT come fallback.
     Frequenza: settings.scalping.SCALPING_INTEL_UPDATE_INTERVAL_SEC (default 60s).
     """
     if not settings.scalping.SCALPING_SCHEDULER_INTEL_SNAPSHOT_ENABLED:
@@ -34,7 +36,18 @@ async def intelligence_snapshot_job() -> None:
     try:
         from app.scalping.intelligence.signal_score_engine import SignalScoreEngine
 
-        engine = SignalScoreEngine()
+        # Usa il simbolo della sessione attiva, se disponibile
+        active_symbol = "BTCUSDT"  # fallback
+        try:
+            from app.scalping.router import _execution_state
+            session_symbol = _execution_state.get("session", {}).get("symbol")
+            session_status = _execution_state.get("session", {}).get("status", "idle")
+            if session_symbol and session_status != "idle":
+                active_symbol = session_symbol
+        except Exception:
+            pass  # Keep fallback if import fails
+
+        engine = SignalScoreEngine(symbol=active_symbol)
         snapshot = await engine.get_snapshot()
         if snapshot is None:
             logger.warning("Intel snapshot job: snapshot is None")

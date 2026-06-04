@@ -161,6 +161,8 @@ export class ScalpingWsService implements OnDestroy {
   riskBlock$ = new BehaviorSubject<RiskBlockEvent | null>(null);
   tradeClosed$ = new Subject<TradeClosedEvent>();  // Keep as Subject (one-time events)
   intelligence$ = new BehaviorSubject<IntelligenceEvent | null>(null);
+  /** Backend errors (e.g. live trade failed, insufficient funds) */
+  error$ = new Subject<{ code: string; message: string }>();
 
   private connected = false;
 
@@ -217,6 +219,9 @@ export class ScalpingWsService implements OnDestroy {
         break;
       case 'intelligence':
         this.intelligence$.next(event.payload as IntelligenceEvent);
+        break;
+      case 'error':
+        this.error$.next(event.payload as { code: string; message: string });
         break;
     }
   }

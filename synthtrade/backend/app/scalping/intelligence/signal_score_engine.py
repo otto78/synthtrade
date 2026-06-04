@@ -17,8 +17,12 @@ Il SignalScoreEngine:
   4. Determina bias e tradeable basandosi sulla soglia configurata
 """
 
+import asyncio
+import logging
 from decimal import Decimal
 from typing import Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 from app.scalping.models.intelligence import (
     CVDData,
@@ -120,7 +124,6 @@ class SignalScoreEngine:
         Returns:
             MarketIntelSnapshot con dati grezzi e score.
         """
-        import asyncio
         from datetime import datetime, timezone
         from typing import cast
         from app.scalping.models.intelligence import (
@@ -129,16 +132,20 @@ class SignalScoreEngine:
         )
 
         # Raccogli dati da tutti i collector in parallelo
-        results = await asyncio.gather(
-            self._funding_rate.collect(self.symbol),
-            self._open_interest.collect(self.symbol),
-            self._long_short.collect(self.symbol),
-            self._fear_greed.collect(),
-            self._sentiment.collect(self.symbol),
-            self._whale.collect(self.symbol),
-            self._onchain.collect(self.symbol),
-            return_exceptions=True
-        )
+        try:
+            results = await asyncio.gather(
+                self._funding_rate.collect(self.symbol),
+                self._open_interest.collect(self.symbol),
+                self._long_short.collect(self.symbol),
+                self._fear_greed.collect(),
+                self._sentiment.collect(self.symbol),
+                self._whale.collect(self.symbol),
+                self._onchain.collect(self.symbol),
+                return_exceptions=True
+            )
+        except asyncio.CancelledError:
+            logger.debug("get_snapshot cancelled (shutdown)")
+            return MarketIntelSnapshot(symbol=self.symbol)
 
         # Estrai e casta i risultati (asyncio.gather restituisce una lista)
         # return_exceptions=True significa che ogni elemento può essere l'oggetto atteso o un'eccezione

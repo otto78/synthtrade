@@ -86,14 +86,18 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
     // React to active session changes
     this.sub.add(
       this.sessionApi.session$.subscribe((session) => {
-        if (session && session.symbol && session.symbol !== this.symbol) {
-          this.symbol = session.symbol;
-          this.lastPrice = 0;
-          if (this.candleSeries) {
-            this.candleSeries.setData([]);
-          }
-          this._loadHistoryCandles();
+        if (!session || session.symbol === this.symbol) {
+          // Symbol hasn't changed, but we may still need to reload 
+          // candles if the chart was just recreated (e.g. navigating back to page)
+          // This is handled in ngAfterViewInit
+          return;
         }
+        this.symbol = session.symbol;
+        this.lastPrice = 0;
+        if (this.candleSeries) {
+          this.candleSeries.setData([]);
+        }
+        this._loadHistoryCandles();
       })
     );
 
@@ -149,8 +153,13 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
     this._initChart();
     this._subscribeToCandles();
     this._setupResize();
-    // Load historical candles now that chart is initialized
-    // This handles the case where session was already active before chart init
+    
+    // Load historical candles now that chart is initialized.
+    // Use the active session symbol if available, otherwise keep the default.
+    const activeSession = this.sessionApi.getActiveSession();
+    if (activeSession && activeSession.symbol && activeSession.status !== 'idle') {
+      this.symbol = activeSession.symbol;
+    }
     this._loadHistoryCandles();
   }
 

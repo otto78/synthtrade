@@ -17,13 +17,16 @@ import { ChangeDetectionStrategy, Component, HostListener, input, output } from 
       </div>
     }
   `,
-  styles: [`
-    .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:1000; }
-    .modal { background:var(--bg-elevated,#161B22); border-radius:12px; padding:24px; min-width:320px; }
-    .modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
-    .btn-danger { background:var(--color-sell,#F6465D); color:#fff; border:none; padding:8px 16px; border-radius:4px; cursor:pointer; }
-    .btn-ghost  { background:transparent; color:var(--text-secondary,#848E9C); border:1px solid var(--border-default); padding:8px 16px; border-radius:4px; cursor:pointer; }
-  `]
+    styles: [`
+     .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:1000; }
+     .modal { background:var(--bg-elevated,#161B22); border-radius:16px; padding:28px; min-width:280px; max-width:360px; width:90%; box-shadow:0 8px 24px rgba(0,0,0,0.4); }
+     .modal-actions { display:flex; gap:12px; justify-content:flex-end; margin-top:20px; }
+     .btn-danger { background:var(--color-sell,#F6465D); color:#fff; border:none; padding:10px 20px; font-size:15px; font-weight:600; border-radius:6px; cursor:pointer; transition:all 0.2s; }
+     .btn-danger:hover { opacity:0.9; transform:translateY(-2px); }
+     .btn-ghost  { background:transparent; color:var(--text-primary,#FFFFFF); border:1px solid var(--border-default); padding:10px 20px; font-size:15px; font-weight:600; border-radius:6px; cursor:pointer; transition:all 0.2s; }
+     .btn-ghost:hover { opacity:0.9; transform:translateY(-2px); }
+     p { font-size:16px; line-height:1.5; color:var(--text-primary,#FFFFFF); margin:0 0 16px 0; }
+   `]
 })
 export class ConfirmDialogComponent {
   visible = input.required<boolean>();

@@ -23,6 +23,11 @@ export class SessionApiService {
     this.previewSymbolSubject.next(symbol);
   }
 
+  /** Update session data manually (e.g. from WebSocket) */
+  updateSession(session: ScalpingSession | null): void {
+    this.sessionSubject.next(session);
+  }
+
   /** Get the current active session snapshot (synchronous) */
   getActiveSession(): import('../models/session.model').ScalpingSession | null {
     return this.sessionSubject.getValue();

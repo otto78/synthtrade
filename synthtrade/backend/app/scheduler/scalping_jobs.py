@@ -36,16 +36,21 @@ async def intelligence_snapshot_job() -> None:
     try:
         from app.scalping.intelligence.signal_score_engine import SignalScoreEngine
 
-        # Usa il simbolo della sessione attiva, se disponibile
-        active_symbol = "BTCUSDT"  # fallback
+        # Legge il simbolo dalla sessione attiva
+        # Solo se c'è una sessione running, altrimenti skip (non fare snapshot su fallback)
+        active_symbol = None
         try:
             from app.scalping.router import _execution_state
             session_symbol = _execution_state.get("session", {}).get("symbol")
             session_status = _execution_state.get("session", {}).get("status", "idle")
-            if session_symbol and session_status != "idle":
+            if session_symbol and session_status == "running":
                 active_symbol = session_symbol
         except Exception:
-            pass  # Keep fallback if import fails
+            pass
+
+        if not active_symbol:
+            logger.debug("Intel snapshot job: no active session — skipping")
+            return
 
         engine = SignalScoreEngine(symbol=active_symbol)
         snapshot = await engine.get_snapshot()

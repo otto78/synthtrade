@@ -40,29 +40,16 @@ LD_MAP = {
 
 
 def _get_exchange() -> ccxt.Exchange:
-    """Restituisce istanza exchange via ExchangeFactory (TASK-431)."""
+    """Restituisce istanza exchange via ExchangeFactory (TASK-431).
+    
+    Usa la factory singleton che gestisce correttamente la riconnessione
+    al cambio di modalità TEST ↔ LIVE e applica set_sandbox_mode() in modo
+    pulito (senza sovrascrivere manualmente gli URL).
+    """
     from app.core.exchange_factory import get_exchange as _get_factory_exchange
     ex = _get_factory_exchange()
     ex.options["defaultType"] = "spot"
     ex.timeout = 5000
-    if settings.TRADING_MODE == 'test':
-        vision = "https://testnet.binance.vision"
-        ex.urls["api"] = {
-            "public": f"{vision}/api/v3",
-            "private": f"{vision}/api/v3",
-            "v3": f"{vision}/api/v3",
-            "v1": f"{vision}/api/v1",
-            "sapi": f"{vision}/sapi/v1",
-            "fapiPublic": f"{vision}/api/v3",
-            "fapiPrivate": f"{vision}/api/v3",
-            "dapiPublic": f"{vision}/api/v3",
-            "dapiPrivate": f"{vision}/api/v3",
-        }
-        ex.has["fetchCurrencies"] = False
-        ex.has["fetchPositions"] = False
-        ex.has["fetchFundingRate"] = False
-        ex.has["fetchFundingHistory"] = False
-        ex.has["fetchOpenInterest"] = False
     return ex
 
 

@@ -3,6 +3,7 @@
 Monitora flussi exchange, indirizzi attivi e salute della rete.
 """
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -79,14 +80,15 @@ class OnChainCollector:
                     data = response.json()
                     rows = data.get("result", {}).get("rows", [])
                     if rows:
-                        # Assumiamo che la query restituisca 'net_flow'
-                        # Cerchiamo vari nomi possibili per flessibilità
                         row = rows[0]
                         net_flow = row.get("net_flow") or row.get("netflow") or row.get("value")
                         if net_flow is not None:
                             return {"net_flow": Decimal(str(net_flow))}
                 elif response.status_code == 404:
                     logger.debug("Dune Query ID %s not found", query_id)
+        except asyncio.CancelledError:
+            logger.debug("Dune Analytics fetch cancelled (shutdown)")
+            return {}
         except Exception as e:
             logger.warning("Dune Analytics fetch error: %s", e)
         return {}

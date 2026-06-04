@@ -4,7 +4,7 @@
  * Paper/Live mode is global (top bar), not shown here.
  */
 import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
-import { NgIf, NgClass, NgFor, DatePipe } from '@angular/common';
+import { NgIf, NgClass, NgFor, DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SessionApiService } from '../services/session-api.service';
 import { BinanceSymbolsService } from '../services/binance-symbols.service';
@@ -14,7 +14,7 @@ import { ConfigService } from '../../core/services/config.service';
 @Component({
   selector: 'app-session-controls',
   standalone: true,
-  imports: [NgIf, NgClass, NgFor, DatePipe, FormsModule],
+  imports: [NgIf, NgClass, NgFor, DatePipe, DecimalPipe, FormsModule],
   template: `
     <div class="session-card">
 
@@ -100,6 +100,13 @@ import { ConfigService } from '../../core/services/config.service';
           <div class="meta-item">
             <span class="meta-label">Strategia</span>
             <span class="meta-value">{{ formatStrategy(session.strategy) }}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Saldo {{ session.mode === 'live' ? 'Live' : 'Paper' }}</span>
+            <span class="meta-value" [class.live-val]="session.mode === 'live'">
+              {{ (session.mode === 'live' ? (session.live_balance ?? session.paper_balance) : session.paper_balance) | number:'1.2-2' }}
+              {{ getQuoteAsset() }}
+            </span>
           </div>
           <div class="meta-item">
             <span class="meta-label">Avviata</span>
@@ -411,6 +418,7 @@ import { ConfigService } from '../../core/services/config.service';
       font-weight: 600;
       color: var(--text-primary);
     }
+    .meta-value.live-val { color: var(--accent-success, #26a69a); }
 
     /* Action buttons */
     .action-row {
@@ -447,7 +455,19 @@ export class SessionControlsComponent implements OnInit {
   session: ScalpingSession | null = null;
   selectedSymbol = 'BTCUSDT';
   selectedStrategy = 'scalping_v2';
-  tradeValue: number = 100;
+  
+  /** Trade value: restore from localStorage or default 100 */
+  tradeValue: number = (() => {
+    try {
+      const saved = localStorage.getItem('scalping_trade_value');
+      if (saved !== null) {
+        const parsed = parseFloat(saved);
+        if (!isNaN(parsed) && parsed > 0) return parsed;
+      }
+    } catch {}
+    return 100;
+  })();
+  
   applyingTradeValue = false;
   tradeValueApplied = false;
   isStopping = false;
@@ -514,8 +534,16 @@ export class SessionControlsComponent implements OnInit {
     this.cdr.detectChanges();
   }
 
+  /** Persist trade value to localStorage so it survives page reload */
+  private saveTradeValue(): void {
+    try {
+      localStorage.setItem('scalping_trade_value', String(this.tradeValue));
+    } catch {}
+  }
+
   startSession(): void {
     this.loading = true;
+    this.saveTradeValue();
     const executionMode = this.globalMode === 'live' ? 'live' : 'paper';
     this.sessionApi.start(executionMode, this.selectedStrategy, this.selectedSymbol, this.tradeValue).subscribe({
       next: (data: ScalpingSession) => {
@@ -535,6 +563,7 @@ export class SessionControlsComponent implements OnInit {
     if (!this.session || this.applyingTradeValue) return;
     this.applyingTradeValue = true;
     this.tradeValueApplied = false;
+    this.saveTradeValue();
     this.sessionApi.updateTradeValue(this.tradeValue).subscribe({
       next: () => {
         this.applyingTradeValue = false;

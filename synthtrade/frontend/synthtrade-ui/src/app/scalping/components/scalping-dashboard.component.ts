@@ -15,6 +15,7 @@ import { PerformancePanelComponent } from './performance-panel.component';
 import { SupervisorLogComponent } from './supervisor-log.component';
 import { RiskControlsComponent } from './risk-controls.component';
 import { ScalpingWsService } from '../services/scalping-ws.service';
+import { SessionApiService } from '../services/session-api.service';
 import { Subscription } from 'rxjs';
 import { NgFor, NgIf } from '@angular/common';
 
@@ -116,14 +117,25 @@ export class ScalpingDashboardComponent implements OnInit, OnDestroy {
   private _toastCounter = 0;
   private _sub = new Subscription();
 
-  constructor(private wsService: ScalpingWsService) {}
+  constructor(
+    private wsService: ScalpingWsService,
+    private sessionApi: SessionApiService
+  ) {}
 
   ngOnInit(): void {
     this.wsService.connect();
 
+    // Listen for backend errors
     this._sub.add(
       this.wsService.error$.subscribe((err) => {
         this._showError(err.message, err.code);
+      })
+    );
+
+    // Sync session state from WebSocket (e.g. live balance updates)
+    this._sub.add(
+      this.wsService.sessionRestored$.subscribe((session) => {
+        this.sessionApi.updateSession(session);
       })
     );
   }

@@ -44,6 +44,7 @@ from app.scalping.engine.regime_detector import RegimeDetector
 from app.scalping.engine.strategy_selector import StrategySelector
 from app.scalping.models.market import Candle
 from app.execution.exchange import BinanceExchangeAdapter
+from app.core.binance_balance import LD_MAP
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -158,9 +159,57 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _normalize_binance_total_balance(balance_total: Dict[str, Any]) -> Dict[str, float]:
+    """Normalize Binance total balances by mapping LD tokens to their base asset."""
+    normalized: Dict[str, float] = {}
+    for asset, amount in balance_total.items():
+        try:
+            amount_val = float(amount)
+        except (TypeError, ValueError):
+            continue
+        normalized_asset = LD_MAP.get(asset, asset)
+        normalized[normalized_asset] = normalized.get(normalized_asset, 0.0) + amount_val
+    return normalized
+
+
+def _select_preferred_quote_balance(balances: Dict[str, float], quote_asset: str) -> Optional[float]:
+    priority_assets = [quote_asset, "USDC", "USDT", "BUSD", "FDUSD"]
+    for asset in priority_assets:
+        if balances.get(asset, 0.0) > 0:
+            return float(balances[asset])
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Helper: wire BinanceWSClient events → broadcast to scalping WS clients
 # ---------------------------------------------------------------------------
+
+async def _refresh_session_balance():
+    """Refresh session live_balance from exchange."""
+    session = _execution_state["session"]
+    if session["mode"] == "live" and _execution_state.get("exchange"):
+        try:
+            adapter = _execution_state["exchange"]
+            symbol = session.get("symbol", "BTCUSDT")
+            filters = await adapter.get_symbol_filters(symbol)
+            quote = filters.get("quoteAsset", "USDT")
+
+            ccxt_balance = await adapter.client.fetch_balance()
+            total_balances = ccxt_balance.get("total", {})
+            normalized_balances = _normalize_binance_total_balance(total_balances)
+            bal = _select_preferred_quote_balance(normalized_balances, quote)
+
+            if bal is None or bal <= 0:
+                logger.warning(
+                    "Session balance refresh found no preferred quote asset balance. Keeping previous live_balance=%s",
+                    session.get("live_balance"),
+                )
+            else:
+                session["live_balance"] = bal
+                logger.info(f"Session balance refreshed: {bal} {quote}")
+                await broadcast_scalping_event("session_restored", session.copy())
+        except Exception as e:
+            logger.warning(f"Balance refresh failed: {e}")
 
 async def _close_position_and_record(pm, close_price: float, pos, reason: str = "signal"):
     """Helper to close position, deduct fees, calculate PnL and record trade."""
@@ -209,6 +258,10 @@ async def _close_position_and_record(pm, close_price: float, pos, reason: str = 
         "timestamp": now_ts.isoformat(),
     }
     _execution_state["trade_history"].append(trade_record)
+    
+    # Option 3: Refresh live balance after trade close
+    await _refresh_session_balance()
+    
     await broadcast_scalping_event("trade_closed", trade_record)
     logger.info(f"Position closed ({reason}): {pos.side} {pos.symbol} PnL: {pnl:.2f} ({pnl_pct:.2f}%)")
     
@@ -293,8 +346,13 @@ async def _start_ws_broadcast(symbol: str):
         logger.info(f"Pre-loading past 100 1m candles for {symbol.upper()} to warm up buffer...")
         past_candles = await loader.load_ohlcv(symbol.upper(), interval="1m", limit=100)
         if past_candles:
+            # Convert historical candles to Candle objects (they might be SimpleCandle from loader)
+            loaded_count = 0
             for c in past_candles:
-                candle_buffer.add(c)
+                # Ensure it's a proper Candle object with all fields
+                if hasattr(c, "timestamp") and hasattr(c, "open"):
+                    candle_buffer.add(c)
+                    loaded_count += 1
                 # Broadcast each historical candle to frontend WS clients
                 await broadcast_scalping_event("candle", {
                     "symbol": symbol,
@@ -303,13 +361,13 @@ async def _start_ws_broadcast(symbol: str):
                     "low": float(c.low),
                     "close": float(c.close),
                     "volume": float(c.volume),
-                    "timestamp": c.timestamp.isoformat(),
+                    "timestamp": c.timestamp.isoformat() if hasattr(c.timestamp, 'isoformat') else str(c.timestamp),
                 })
-            logger.info(f"Successfully loaded and broadcast {len(past_candles)} historical candles for {symbol}. Buffer ready: {candle_buffer.is_ready(50)}")
+            logger.info(f"Successfully loaded and broadcast {loaded_count} historical candles for {symbol}. Buffer size: {len(candle_buffer)}, ready: {candle_buffer.is_ready(50)}")
         else:
             logger.warning(f"No historical candles returned for {symbol}, buffer will warm up live.")
     except Exception as warmup_err:
-        logger.warning(f"Could not warm up candle buffer with historical data: {warmup_err}")
+        logger.error(f"Could not warm up candle buffer with historical data: {warmup_err}", exc_info=True)
 
     # Mock data generator that creates synthetic candles when no real WS data arrives
     _mock_candle_counter = 0
@@ -505,6 +563,7 @@ async def _start_ws_broadcast(symbol: str):
                 try:
                     decision = await execution_loop.process_candle(candle)
                     if decision and decision.execute:
+                        logger.info(f"TRADE DECISION APPROVED: {decision.reason} | confidence={decision.confidence}")
                         # A signal was generated — broadcast it
                         await broadcast_scalping_event("signal", {
                             "symbol": event.symbol.upper(),
@@ -541,8 +600,14 @@ async def _start_ws_broadcast(symbol: str):
                                     step_size = float(filters["stepSize"])
                                     _qty_precise = round(_qty_raw - (_qty_raw % step_size), 8)
                                     
+                                    logger.info(f"LIVE TRADE CALC: symbol={event.symbol}, trade_value={_trade_val}, price={event.close}, qty_raw={_qty_raw}, step_size={step_size}, qty_precise={_qty_precise}, min_qty={filters['minQty']}")
+                                    
                                     if _qty_precise < float(filters["minQty"]):
-                                        logger.error(f"Quantity too small: {_qty_precise} < {filters['minQty']}")
+                                        logger.error(f"Quantity too small: {_qty_precise} < {filters['minQty']} - TRADE BLOCKED")
+                                        await broadcast_scalping_event("error", {
+                                            "code": "QTY_TOO_SMALL",
+                                            "message": f"Trade quantity {_qty_precise} below minimum {filters['minQty']}",
+                                        })
                                         continue
                                         
                                     # 3. Execute Market Order
@@ -1056,8 +1121,16 @@ def _snapshot_to_dict(symbol: str, snapshot: Any) -> Dict[str, Any]:
 
 @router.get("/session")
 async def get_session() -> Dict:
-    """Get current session status."""
-    return _execution_state["session"].copy()
+    """Get current session status.
+    
+    For live sessions, automatically refreshes the balance from the exchange
+    so the frontend always shows the real balance, not a stale one.
+    """
+    session = _execution_state["session"]
+    # Refresh live balance if mode is live and exchange is initialized
+    if session.get("status") == "running" and session.get("mode") == "live":
+        await _refresh_session_balance()
+    return session.copy()
 
 
 @router.post("/session")
@@ -1088,8 +1161,52 @@ async def control_session(control: Dict) -> Dict:
             if not api_key or not api_secret:
                 raise HTTPException(status_code=400, detail="Mancano le API Key nel file .env per la modalità Live.")
             # Scalping live → always real Binance, never testnet
-            _execution_state["exchange"] = BinanceExchangeAdapter(api_key, api_secret, testnet=False)
+            adapter = BinanceExchangeAdapter(api_key, api_secret, testnet=False)
+            _execution_state["exchange"] = adapter
             logger.info("BinanceExchangeAdapter initialized for LIVE execution (testnet=False).")
+
+            # Get real balance from exchange — use same method as dashboard
+            live_bal = None
+            try:
+                logger.info(f"Starting balance fetch for symbol={active_symbol}")
+                
+                filters = await adapter.get_symbol_filters(active_symbol)
+                quote_asset = filters.get("quoteAsset", "USDT")
+                logger.info(f"✓ Symbol filters retrieved: quote_asset={quote_asset}")
+                
+                # Fetch balance using CCXT method (same as dashboard binance_balance.py)
+                logger.info("✓ Calling fetch_balance()...")
+                ccxt_balance = await adapter.client.fetch_balance()
+                logger.info(f"✓ fetch_balance() returned: type={type(ccxt_balance)}, keys={list(ccxt_balance.keys())}")
+                
+                all_balances = ccxt_balance.get("total", {})
+                logger.info(f"✓ Extracted 'total' dict with {len(all_balances)} assets: {list(all_balances.keys())[:20]}")
+
+                normalized_balances = _normalize_binance_total_balance(all_balances)
+                logger.info(
+                    "✓ Normalized total balances with LD aliases; sample keys=%s",
+                    list(normalized_balances.keys())[:20],
+                )
+
+                selected_balance = _select_preferred_quote_balance(normalized_balances, quote_asset)
+                if selected_balance is not None and selected_balance > 0:
+                    live_bal = selected_balance
+                    logger.info(f"✓ Selected quote balance: {live_bal} {quote_asset}")
+                else:
+                    logger.error(
+                        f"✗ No balance found in any preferred asset. Available assets: {list(normalized_balances.keys())}"
+                    )
+                    live_bal = session.get("paper_balance", 10000.0)
+                    logger.error(f"  Using fallback: {live_bal}")
+                
+                session["live_balance"] = live_bal
+                session["paper_balance"] = live_bal
+                logger.info(f"✓ FINAL: live_balance={live_bal}, paper_balance={live_bal}")
+                
+            except Exception as e:
+                logger.error(f"✗ Balance fetch failed with exception: {type(e).__name__}: {e}", exc_info=True)
+                session["live_balance"] = session.get("paper_balance", 10000.0)
+                logger.warning(f"  Using fallback balance: {session['live_balance']}")
         
         # Store trade_value from UI (USD amount per trade)
         if "trade_value" in control:
@@ -1110,6 +1227,12 @@ async def control_session(control: Dict) -> Dict:
             try:
                 await _start_ws_broadcast(active_symbol.lower())
                 
+                # Guard: check if session is still running BEFORE saving to DB
+                # Prevents race condition where user clicked stop while this task was starting
+                if session.get("status") != "running":
+                    logger.warning("Session status changed during broadcast startup — skipping DB insert (session already stopped by user)")
+                    return
+                
                 # Save to Supabase after successful start
                 try:
                     supabase = get_supabase()
@@ -1118,11 +1241,13 @@ async def control_session(control: Dict) -> Dict:
                         "mode": session["mode"].upper(),
                         "timeframe": "1m",
                         "status": "running",
-                        "started_at": session["started_at"]
+                        "started_at": session["started_at"],
+                        "strategy": session.get("strategy", "scalping_v2"),
+                        "trade_value": session.get("trade_value", 100.0),
                     }).execute()
                     if db_resp.data:
                         session["db_session_id"] = db_resp.data[0]["id"]
-                        logger.info(f"Session saved to DB with id={session['db_session_id']}")
+                        logger.info(f"Session saved to DB with id={session['db_session_id']} mode={session['mode']} trade_value={session.get('trade_value')}")
                 except Exception as db_e:
                     logger.warning(f"Failed to insert session in DB: {db_e}")
                     
@@ -1152,27 +1277,32 @@ async def control_session(control: Dict) -> Dict:
         logger.info(f"Session started: {session['session_id']} mode={session['mode']} symbol={active_symbol}")
 
     elif action == "stop":
-        # Force close open position if any
+        # Set session status to idle IMMEDIATELY to prevent race conditions
+        # (the _start_with_error_logging task checks this flag before saving to DB)
+        session["status"] = "idle"
+        
+        # Force close any open position at market price
         pm = _execution_state["position_manager"]
         pos = pm.get_open()
         if pos:
-            # Initialise close_price with a safe fallback (entry price) to guarantee the variable is bound
             close_price: float = float(pos.entry_price)
             try:
-                # Attempt to use the latest candle price if available
+                # Use latest candle price if available for more accurate close
                 loop = _execution_state.get("loop")
                 if loop and hasattr(loop, "_candle_buffer") and getattr(loop, "_candle_buffer", None):
                     latest = loop._candle_buffer.latest
                     if latest:
                         close_price = float(latest.close)
+                # Close position at market (this handles live order cancellation + market sell)
                 await _close_position_and_record(pm, close_price, pos, reason="session_stop")
+                logger.info(f"Position force-closed at market @ {close_price} due to session stop")
             except Exception as e:
                 logger.error(f"Error force closing position during session stop: {e}", exc_info=True)
             finally:
-                # Guarantee local state reflects position closure – only attempt if we still have an open position
+                # Guarantee local state reflects position closure
                 if pos.status == "open":
                     pm.close_position(Decimal(str(close_price)))
-            
+        
         # Stop BinanceWSClient and pipeline
         asyncio.create_task(
             _stop_ws_broadcast(),
@@ -1183,28 +1313,30 @@ async def control_session(control: Dict) -> Dict:
         if "supervisor_scheduler" in _execution_state and _execution_state["supervisor_scheduler"]:
             _execution_state["supervisor_scheduler"].stop()
             _execution_state["supervisor_scheduler"] = None
-            
-        session["status"] = "idle"
+        
+        # Clear session state
         session["session_id"] = None
         session["started_at"] = None
         session["stopped_at"] = _now()
         
         if _execution_state.get("exchange"):
-            # We don't await the close here as it might block, or we can launch a task
             asyncio.create_task(_execution_state["exchange"].close(), name="close_exchange")
             _execution_state["exchange"] = None
         
-        # Update DB
+        # Update DB: set status to "stopped"
         try:
-            db_sid = _execution_state["session"].get("db_session_id")
+            db_sid = session.get("db_session_id")
             if db_sid:
                 supabase = get_supabase()
                 supabase.table("scalping_sessions").update({
                     "status": "stopped",
                     "stopped_at": session["stopped_at"]
                 }).eq("id", db_sid).execute()
+                logger.info(f"Session {db_sid} set to stopped in DB")
         except Exception as e:
             logger.warning(f"Failed to update session in DB: {e}")
+        
+        logger.info(f"Session stopped — open positions closed at market")
 
     elif action == "pause":
         if session["status"] == "running":

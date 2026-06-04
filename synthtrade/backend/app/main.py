@@ -1,6 +1,7 @@
 import uuid
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
@@ -69,6 +70,77 @@ async def lifespan(app: FastAPI):
     sched = setup_scheduler(engine=engine)
     sched.start()
     logger.info("ExecutionEngine singleton ready (testnet=%s)", settings.BINANCE_TESTNET)
+
+    print("")
+    print("====================================================================")
+    print("")
+    print("   ____             _   _     _____              _      ")
+    print("  / ___| _   _ _ __ | |_| |__ |_   _| __ __ _  __| | ___ ")
+    print("  \\___ \\| | | | '_ \\| __| '_ \\  | || '__/ _` |/ _` |/ _ \\")
+    print("   ___) | |_| | | | | |_| | | | | || | | (_| | (_| |  __/")
+    print("  |____/ \\__, |_| |_|\\__|_| |_| |_||_|  \\__,_|\\__,_|\\___|")
+    print("         |___/                                            ")
+    print("")
+    print("  SynthTrade IS RUNNING!!!")
+    print("")
+    print("  Version   : 0.1.0")
+    print("  Mode      : %s" % ("TESTNET" if settings.BINANCE_TESTNET else "LIVENET"))
+    print("  Host      : 0.0.0.0:8000")
+    print("  API Docs  : http://0.0.0.0:8000/docs")
+    print("  Scheduler : Active")
+    print("")
+    print("====================================================================")
+    print("")
+
+    # --- Restore active scalping session from DB ---
+    try:
+        db = get_supabase()
+        active_sessions = db.table("scalping_sessions").select("*").eq("status", "running").limit(1).execute()
+        if active_sessions.data:
+            from app.scalping.router import _execution_state
+            sess = active_sessions.data[0]
+
+            session_mode = sess.get("mode", "paper").lower()
+            global_mode = getattr(settings, 'TRADING_MODE', 'test')
+
+            # MODE CONSISTENCY CHECK: only restore session if mode matches global mode
+            # A live session in DB would have wrong paper_balance if loaded while mode=test
+            if session_mode != global_mode:
+                logger.warning(
+                    "Skipping DB session restore: session mode=%s ≠ global mode=%s. "
+                    "Marking session as stopped to avoid stale state.",
+                    session_mode, global_mode,
+                )
+                # Mark session as stopped so it doesn't keep appearing on next restart
+                try:
+                    db.table("scalping_sessions").update({
+                        "status": "stopped",
+                        "stopped_at": datetime.utcnow().isoformat()
+                    }).eq("id", sess.get("id")).execute()
+                except Exception:
+                    pass
+            else:
+                _execution_state["session"]["session_id"] = sess.get("id")
+                _execution_state["session"]["status"] = "running"
+                _execution_state["session"]["mode"] = session_mode
+                _execution_state["session"]["strategy"] = sess.get("strategy", "scalping_v2")
+                _execution_state["session"]["symbol"] = sess.get("symbol", "BTCUSDT")
+                _execution_state["session"]["db_session_id"] = sess.get("id")
+                _execution_state["session"]["started_at"] = sess.get("started_at")
+                # Restore trade_value from DB (important: don't lose user-set value)
+                db_trade_value = sess.get("trade_value")
+                if db_trade_value is not None:
+                    _execution_state["session"]["trade_value"] = float(db_trade_value)
+                logger.info(
+                    "Restored active scalping session from DB: %s (%s / %s) trade_value=%s",
+                    sess.get("id"), sess.get("symbol"), session_mode,
+                    _execution_state["session"].get("trade_value"),
+                )
+        else:
+            logger.info("No active session found in DB")
+    except Exception as e:
+        logger.warning("Failed to restore active session from DB: %s", e)
+
     yield
     sched.shutdown(wait=False)
     await exchange.close()

@@ -7,6 +7,7 @@ import { Injectable, OnDestroy } from '@angular/core';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 import { Subject, BehaviorSubject, timer } from 'rxjs';
 import { retryWhen, delayWhen } from 'rxjs/operators';
+import { ScalpingSession } from '../models/session.model';
 
 // Event types matching backend
 export type ScalpingEventType =
@@ -49,9 +50,23 @@ export interface IntelligenceEvent {
   recorded_at: string;
 }
 
+export interface ErrorEventPayload {
+  code: string;
+  message: string;
+}
+
 export interface ScalpingEvent {
   type: ScalpingEventType;
-  payload: CandleEvent | SignalEvent | PositionEvent | SupervisorDecision | RiskBlockEvent | TradeClosedEvent | IntelligenceEvent;
+  payload:
+    | CandleEvent
+    | SignalEvent
+    | PositionEvent
+    | SupervisorDecision
+    | RiskBlockEvent
+    | TradeClosedEvent
+    | IntelligenceEvent
+    | ErrorEventPayload
+    | ScalpingSession;
   timestamp: string;
 }
 
@@ -162,7 +177,9 @@ export class ScalpingWsService implements OnDestroy {
   tradeClosed$ = new Subject<TradeClosedEvent>();  // Keep as Subject (one-time events)
   intelligence$ = new BehaviorSubject<IntelligenceEvent | null>(null);
   /** Backend errors (e.g. live trade failed, insufficient funds) */
-  error$ = new Subject<{ code: string; message: string }>();
+  error$ = new Subject<ErrorEventPayload>();
+  /** Session updates (balance, status changes) */
+  sessionRestored$ = new Subject<ScalpingSession>();
 
   private connected = false;
 
@@ -220,8 +237,11 @@ export class ScalpingWsService implements OnDestroy {
       case 'intelligence':
         this.intelligence$.next(event.payload as IntelligenceEvent);
         break;
+      case 'session_restored':
+        this.sessionRestored$.next(event.payload as ScalpingSession);
+        break;
       case 'error':
-        this.error$.next(event.payload as { code: string; message: string });
+        this.error$.next(event.payload as ErrorEventPayload);
         break;
     }
   }

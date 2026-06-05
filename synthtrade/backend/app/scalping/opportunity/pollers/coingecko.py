@@ -63,12 +63,24 @@ class CoinGeckoPoller:
 
         return results
 
+    _news_401_logged = False
+
     async def fetch_news(self) -> List[PollerResult]:
-        """Recupera news da CoinGecko."""
+        """Recupera news da CoinGecko.
+        
+        Note: CoinGecko /news endpoint requires an API key with a paid (pro) plan.
+        On free/analyst plans it returns 401 Unauthorized. We log this once and
+        silently skip on subsequent failures.
+        """
         results = []
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(NEWS_URL)
+                if resp.status_code == 401:
+                    if not self._news_401_logged:
+                        logger.warning("CoinGecko /news requires paid API key — permanently skipping")
+                        self._news_401_logged = True
+                    return results
                 resp.raise_for_status()
             data = resp.json()
 

@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 # RSS feeds crypto (no API key required)
 RSS_FEEDS = [
     "https://cointelegraph.com/rss",
-    "https://coindesk.com/arc/outboundfeeds/rss/",
-    "https://www.theblock.co/rss",
+    "https://www.coindesk.com/arc/outboundfeeds/rss",  # 308 redirect if trailing slash present
+    # Removed: https://www.theblock.co/rss returns 404 (RSS endpoint deprecated)
 ]
 
 
@@ -46,7 +46,7 @@ class NewsPoller:
         """Recupera un singolo feed RSS."""
         results = []
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
                 resp = await client.get(feed_url)
                 resp.raise_for_status()
 

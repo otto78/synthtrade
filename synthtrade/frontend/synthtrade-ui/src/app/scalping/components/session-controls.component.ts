@@ -628,8 +628,10 @@ export class SessionControlsComponent implements OnInit {
   }
 
   getQuoteAsset(): string {
-    if (this.selectedSymbol?.endsWith('USDC')) return 'USDC';
-    if (this.selectedSymbol?.endsWith('EUR')) return 'EUR';
+    // Use session symbol first (when session is running), fallback to selectedSymbol
+    const sym = (this.session?.symbol || this.selectedSymbol || '').toUpperCase();
+    if (sym.endsWith('USDC')) return 'USDC';
+    if (sym.endsWith('EUR')) return 'EUR';
     return 'USDT';
   }
 }

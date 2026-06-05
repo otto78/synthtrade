@@ -85,7 +85,8 @@ _execution_state: Dict[str, Any] = {
         "leverage": 10,
         "stop_loss_pct": 0.3,
         "take_profit_pct": 0.5,
-    }
+    },
+    "pending_live_close": False,  # set to True when a live BUY is executed
 }
 
 # WebSocket connections
@@ -115,11 +116,53 @@ async def scalping_websocket(ws: WebSocket):
     _scalping_ws_connections.append(ws)
     logger.info("Scalping WS client connected (%d total)", len(_scalping_ws_connections))
 
-    try:
-        # DON'T send initial session state — it would overwrite any running state
-        # that the user just set via POST /api/scalping/session.
-        # Session state is read by the client via GET /api/scalping/session when needed.
+    # ── FIX-2026-06-05: Send initial state to newly connected client ──
+    # Send the current position state so the frontend doesn't show stale data
+    # after a WS reconnect. The client receives position_update immediately.
+    pm = _execution_state["position_manager"]
+    pos = pm.get_open()
+    if pos:
+        entry_f = float(pos.entry_price)
+        qty_f = float(pos.quantity)
+        risk_cfg = _execution_state.get("risk_config", {})
+        sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3)) / 100
+        tp_pct = float(risk_cfg.get("take_profit_pct", 0.5)) / 100
+        sl_price = entry_f * (1 - sl_pct) if pos.side == "BUY" else entry_f * (1 + sl_pct)
+        tp_price = entry_f * (1 + tp_pct) if pos.side == "BUY" else entry_f * (1 - tp_pct)
+        try:
+            await ws.send_json({
+                "type": "position",
+                "payload": {
+                    "symbol": pos.symbol,
+                    "side": pos.side,
+                    "entry_price": entry_f,
+                    "current_price": entry_f,
+                    "quantity": qty_f,
+                    "pnl": 0.0,
+                    "pnl_pct": 0.0,
+                    "stop_loss_price": round(sl_price, 2),
+                    "take_profit_price": round(tp_price, 2),
+                    "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
+                    "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
+                },
+                "timestamp": _now(),
+            })
+            logger.info(f"Initial position state sent to new WS client: {pos.side} {pos.symbol}")
+        except Exception:
+            pass
+    else:
+        # Send explicit no-position state so frontend clears any stale position card
+        try:
+            await ws.send_json({
+                "type": "position",
+                "payload": None,
+                "timestamp": _now(),
+            })
+            logger.debug("Sent null position state to new WS client")
+        except Exception:
+            pass
 
+    try:
         while True:
             # Keep connection alive, receive any client messages
             data = await ws.receive_text()
@@ -130,7 +173,8 @@ async def scalping_websocket(ws: WebSocket):
             except json.JSONDecodeError:
                 pass
     except WebSocketDisconnect:
-        _scalping_ws_connections.remove(ws)
+        if ws in _scalping_ws_connections:
+            _scalping_ws_connections.remove(ws)
         logger.info("Scalping WS client disconnected (%d remaining)", len(_scalping_ws_connections))
     except Exception as e:
         if ws in _scalping_ws_connections:
@@ -211,34 +255,67 @@ async def _refresh_session_balance():
         except Exception as e:
             logger.warning(f"Balance refresh failed: {e}")
 
+async def _live_close_position(exchange, pos, qty: float) -> float:
+    """Execute live close on exchange: cancel open orders + market sell (with retry).
+    
+    Returns the actual execution price on success.
+    Raises Exception if close fails after all retries.
+    """
+    # 1. Cancel any open orders (OCO / Stop Loss) before attempting close
+    try:
+        open_orders = await exchange.get_open_orders(pos.symbol)
+        if open_orders:
+            ccxt_symbol = await exchange._get_ccxt_symbol(pos.symbol)
+            for o in open_orders:
+                try:
+                    await exchange.client.cancel_order(o["id"], ccxt_symbol)
+                except Exception:
+                    pass
+            logger.info(f"Cancelled {len(open_orders)} open orders for {pos.symbol}")
+    except Exception as order_e:
+        logger.warning(f"Could not cancel open orders (non-blocking): {order_e}")
+
+    # 2. Get actual available balance (after fees deducted by Binance on entry)
+    try:
+        actual_qty = await exchange._get_available_base_balance(pos.symbol)
+        if actual_qty > 0:
+            qty = actual_qty
+            logger.info(f"Using actual balance for {pos.symbol} close: {qty}")
+    except Exception:
+        pass  # fallback to original qty
+
+    # 3. Execute Market Close — retry up to 3 times with delay
+    opp_side = "sell" if pos.side.upper() == "BUY" else "buy"
+    market_res = None
+    for attempt in range(3):
+        try:
+            market_res = await exchange.place_market_order(pos.symbol, opp_side, qty)
+            break
+        except Exception as retry_e:
+            logger.warning(f"Market close attempt {attempt + 1}/3 failed for {pos.symbol}: {retry_e}")
+            if attempt < 2:
+                await asyncio.sleep(0.5)
+
+    if market_res is None:
+        raise RuntimeError(f"Failed to close live position for {pos.symbol} after 3 attempts")
+
+    # 3. Use real execution price
+    close_price = float(market_res.get("price") or pos.entry_price)
+    logger.info(f"LIVE Market Close executed @ {close_price}")
+    return close_price
+
+
 async def _close_position_and_record(pm, close_price: float, pos, reason: str = "signal"):
     """Helper to close position, deduct fees, calculate PnL and record trade."""
     qty = float(pos.quantity)
-    
-    # --- LIVE EXECUTION OVERRIDE ---
     mode = _execution_state["session"].get("mode", "paper")
     exchange = _execution_state.get("exchange")
-    real_fees = None
-    
+
+    # --- LIVE EXECUTION OVERRIDE ---
     if mode == "live" and exchange:
-        try:
-            # 1. Cancel OCO / Stop Loss orders
-            if getattr(pos, "oco_id", None) or getattr(pos, "sl_id", None):
-                await exchange.client.cancel_all_orders(pos.symbol)
-                logger.info(f"Cancelled open OCO/SL orders for {pos.symbol}")
-            
-            # 2. Execute Market Close
-            opp_side = "sell" if pos.side.upper() == "BUY" else "buy"
-            market_res = await exchange.place_market_order(pos.symbol, opp_side, qty)
-            
-            # 3. Use real execution price
-            if market_res.get("price"):
-                close_price = float(market_res["price"])
-            logger.info(f"LIVE Market Close executed @ {close_price}")
-        except Exception as e:
-            logger.error(f"Failed to close live position for {pos.symbol}: {e}")
+        close_price = await _live_close_position(exchange, pos, qty)
     # -------------------------------
-    
+
     entry_val = float(pos.entry_price) * qty
     exit_val = close_price * qty
     gross_pnl = (close_price - float(pos.entry_price)) * qty * (1 if pos.side == "BUY" else -1)
@@ -258,13 +335,13 @@ async def _close_position_and_record(pm, close_price: float, pos, reason: str = 
         "timestamp": now_ts.isoformat(),
     }
     _execution_state["trade_history"].append(trade_record)
-    
-    # Option 3: Refresh live balance after trade close
+
+    # Refresh live balance after trade close
     await _refresh_session_balance()
-    
+
     await broadcast_scalping_event("trade_closed", trade_record)
     logger.info(f"Position closed ({reason}): {pos.side} {pos.symbol} PnL: {pnl:.2f} ({pnl_pct:.2f}%)")
-    
+
     # Save trade to Supabase
     try:
         db_sid = _execution_state["session"].get("db_session_id")
@@ -301,13 +378,13 @@ async def _start_ws_broadcast(symbol: str):
     to all connected scalping WS clients.
     
     Also feeds the CandleBuffer and ExecutionLoop pipelines for signal generation.
+    
+    IMPORTANT: Warmup the candle buffer with historical data BEFORE starting the WS client
+    to avoid handshake timeouts (the WS will timeout if the event loop is busy loading data).
     """
     is_testnet = _execution_state["session"].get("mode") != "live"
-    client = BinanceWSClient(symbols=[symbol], testnet=is_testnet)
-    _execution_state["ws_client"] = client
-    await client.start()
 
-    # Create pipeline components
+    # Create pipeline components FIRST (before WS client)
     candle_buffer = CandleBuffer()
     signal_engine = _execution_state.get("signal_engine")
     if not signal_engine:
@@ -338,18 +415,17 @@ async def _start_ws_broadcast(symbol: str):
     _execution_state["loop"] = execution_loop
     logger.info(f"ExecutionLoop paper_mode={execution_loop.paper_mode} for {symbol} (mode={_session_mode})")
 
-    # Warm up the candle buffer with historical candles so indicators are immediately ready
-    # and broadcast them to the frontend so the chart is populated immediately
+    # Warm up the candle buffer with historical candles BEFORE starting WS client.
+    # This prevents: (1) WS handshake timeout from event loop being busy, and
+    # (2) the buffer being empty when the first WS closed candle arrives.
     try:
         from app.scalping.backtest.historical_loader import HistoricalLoader
         loader = HistoricalLoader()
         logger.info(f"Pre-loading past 100 1m candles for {symbol.upper()} to warm up buffer...")
         past_candles = await loader.load_ohlcv(symbol.upper(), interval="1m", limit=100)
         if past_candles:
-            # Convert historical candles to Candle objects (they might be SimpleCandle from loader)
             loaded_count = 0
             for c in past_candles:
-                # Ensure it's a proper Candle object with all fields
                 if hasattr(c, "timestamp") and hasattr(c, "open"):
                     candle_buffer.add(c)
                     loaded_count += 1
@@ -368,6 +444,11 @@ async def _start_ws_broadcast(symbol: str):
             logger.warning(f"No historical candles returned for {symbol}, buffer will warm up live.")
     except Exception as warmup_err:
         logger.error(f"Could not warm up candle buffer with historical data: {warmup_err}", exc_info=True)
+
+    # Now start the BinanceWS client (after warmup so handshake is not blocked)
+    client = BinanceWSClient(symbols=[symbol], testnet=is_testnet)
+    _execution_state["ws_client"] = client
+    await client.start()
 
     # Mock data generator that creates synthetic candles when no real WS data arrives
     _mock_candle_counter = 0
@@ -528,14 +609,97 @@ async def _start_ws_broadcast(symbol: str):
 
     # Pull events from BinanceWSClient queues and broadcast to scalping WS clients
     async def _candle_processor():
-        """Consume candle_queue and broadcast + feed execution loop."""
+        """Consume candle_queue and broadcast + feed execution loop.
+        
+        SAFETY: On first execution, verify the buffer has warmup data.
+        If warmup failed (e.g. REST timeout), force-reload candles here
+        so the buffer is ready for signal generation.
+        """
+        _first_candle = True
+        _last_event_time = datetime.now(timezone.utc)
+        
         while _execution_state["session"]["status"] != "idle" and not client._stop_event.is_set():
             try:
                 event = await asyncio.wait_for(client.candle_queue.get(), timeout=1.0)
+                _last_event_time = datetime.now(timezone.utc)
             except asyncio.TimeoutError:
                 if _execution_state["session"]["status"] == "idle":
                     break
+                
+                # ── FIX-2026-06-05: Watchdog — check if data is stale ──
+                # If no candle received for > 3 minutes, the Binance WS may be stuck.
+                # Force-reload historical candles via REST to keep the pipeline alive,
+                # and restart the WS client connection.
+                stale_seconds = (datetime.now(timezone.utc) - _last_event_time).total_seconds()
+                if stale_seconds > 180:  # 3 minutes
+                    logger.warning(
+                        f">>> CANDLE_PROC WATCHDOG: No data for {stale_seconds:.0f}s. "
+                        f"Force-reloading candles via REST API..."
+                    )
+                    _last_event_time = datetime.now(timezone.utc)  # reset to avoid spamming
+                    
+                    # Load fresh candles via REST API directly into the buffer
+                    try:
+                        from app.scalping.backtest.historical_loader import HistoricalLoader
+                        loader = HistoricalLoader()
+                        fresh_candles = await loader.load_ohlcv(symbol.upper(), interval="1m", limit=100)
+                        if fresh_candles:
+                            loaded = 0
+                            for c in fresh_candles:
+                                if hasattr(c, "timestamp") and hasattr(c, "open"):
+                                    execution_loop._candle_buffer.add(c)
+                                    loaded += 1
+                                await broadcast_scalping_event("candle", {
+                                    "symbol": symbol,
+                                    "open": float(c.open),
+                                    "high": float(c.high),
+                                    "low": float(c.low),
+                                    "close": float(c.close),
+                                    "volume": float(c.volume),
+                                    "timestamp": c.timestamp.isoformat() if hasattr(c.timestamp, 'isoformat') else str(c.timestamp),
+                                })
+                            logger.info(f">>> CANDLE_PROC WATCHDOG: Loaded {loaded} fresh candles via REST")
+                    except Exception as rest_e:
+                        logger.error(f">>> CANDLE_PROC WATCHDOG: REST reload failed: {rest_e}")
+                    
+                    # Try to reconnect the Binance WS client
+                    try:
+                        if not client._stop_event.is_set():
+                            logger.info(">>> CANDLE_PROC WATCHDOG: Restarting WS client...")
+                            asyncio.create_task(client.stop(), name="ws-stop-watchdog")
+                            await asyncio.sleep(2)
+                            if _execution_state["session"]["status"] == "running":
+                                new_client = BinanceWSClient(symbols=[symbol], testnet=is_testnet)
+                                _execution_state["ws_client"] = new_client
+                                await new_client.start()
+                                client = new_client
+                                logger.info(">>> CANDLE_PROC WATCHDOG: WS client restarted")
+                    except Exception as ws_e:
+                        logger.error(f">>> CANDLE_PROC WATCHDOG: WS restart failed: {ws_e}")
+                
                 continue
+
+            # SAFETY: On first candle event, check if buffer was properly warmed up.
+            # If not (warmup may have failed or buffer instances diverged), 
+            # force-load candles directly into the ExecutionLoop's buffer.
+            if _first_candle:
+                _first_candle = False
+                if len(execution_loop._candle_buffer) < 50:
+                    logger.warning(
+                        f">>> CANDLE_PROC SAFETY: buffer has only {len(execution_loop._candle_buffer)} candles. "
+                        f"Force-loading warmup data into ExecutionLoop buffer (id={id(execution_loop._candle_buffer)})..."
+                    )
+                    try:
+                        from app.scalping.backtest.historical_loader import HistoricalLoader
+                        loader = HistoricalLoader()
+                        past_candles = await loader.load_ohlcv(symbol.upper(), interval="1m", limit=100)
+                        if past_candles:
+                            for c in past_candles:
+                                if hasattr(c, "timestamp") and hasattr(c, "open"):
+                                    execution_loop._candle_buffer.add(c)
+                            logger.info(f">>> CANDLE_PROC SAFETY: Force-loaded {len(past_candles)} candles. Buffer now: {len(execution_loop._candle_buffer)}")
+                    except Exception as reload_err:
+                        logger.error(f">>> CANDLE_PROC SAFETY: Force-load failed: {reload_err}")
 
             # Broadcast to frontend WS clients
             await broadcast_scalping_event("candle", {
@@ -548,8 +712,16 @@ async def _start_ws_broadcast(symbol: str):
                 "timestamp": datetime.fromtimestamp(event.open_time / 1000, tz=timezone.utc).isoformat(),
             })
 
+            # TRACE: log every event to understand flow (debug-only, too noisy for info)
+            buf_size = len(execution_loop._candle_buffer) if execution_loop._candle_buffer else -1
+            logger.debug(f">>> CANDLE EVENT: {event.symbol} is_closed={event.is_closed} close={event.close} buffer={buf_size} session_status={_execution_state['session']['status']}")
+
             # Feed into execution loop for signal generation (only closed candles)
-            if event.is_closed and _execution_state["session"]["status"] == "running":
+            if event.is_closed:
+                if _execution_state["session"]["status"] != "running":
+                    logger.info(f">>> SKIP: session not running (status={_execution_state['session']['status']})")
+                    continue
+                
                 candle = Candle(
                     symbol=event.symbol.upper(),
                     open=Decimal(str(event.open)),
@@ -560,10 +732,11 @@ async def _start_ws_broadcast(symbol: str):
                     timestamp=datetime.fromtimestamp(event.open_time / 1000, tz=timezone.utc),
                     closed=True,
                 )
+                logger.info(f">>> PROCESSING closed candle for {event.symbol} @ {candle.close}")
                 try:
                     decision = await execution_loop.process_candle(candle)
                     if decision and decision.execute:
-                        logger.info(f"TRADE DECISION APPROVED: {decision.reason} | confidence={decision.confidence}")
+                        logger.info(f">>> DECISION APPROVED -> {decision.reason} | confidence={decision.confidence}")
                         # A signal was generated — broadcast it
                         await broadcast_scalping_event("signal", {
                             "symbol": event.symbol.upper(),
@@ -573,9 +746,11 @@ async def _start_ws_broadcast(symbol: str):
                             "reason": decision.reason,
                         })
 
-                        # Simulate trade execution for paper mode
+                        # Simulate trade execution
                         pm = _execution_state["position_manager"]
                         side = "BUY" if decision.confidence > 0 else "SELL"
+                        logger.info(f">>> TRADE: side={side} has_open={pm.has_open()} daily_loss={_check_daily_loss()}")
+                        
                         if not pm.has_open():
                             if _check_daily_loss():
                                 logger.warning("Max daily loss exceeded. Blocking new real trade.")
@@ -596,9 +771,39 @@ async def _start_ws_broadcast(symbol: str):
                                     filters = await exchange.get_symbol_filters(event.symbol.upper())
                                     
                                     # 2. Compute exact quantity
+                                    _trade_val = max(float(filters.get("minNotional", 5.0)), _trade_val)
                                     _qty_raw = _trade_val / float(event.close)
                                     step_size = float(filters["stepSize"])
                                     _qty_precise = round(_qty_raw - (_qty_raw % step_size), 8)
+                                    
+                                    # 3. Check real free balance in quote asset BEFORE placing order
+                                    try:
+                                        ccxt_bal = await exchange.client.fetch_balance()
+                                        bal_total = ccxt_bal.get("total", {})
+                                        bal_free = ccxt_bal.get("free", {})
+                                        quote_asset = filters.get("quoteAsset", "USDT")
+                                        
+                                        free_quote = float(bal_free.get(quote_asset, 0.0))
+                                        total_quote = float(bal_total.get(quote_asset, 0.0))
+                                        
+                                        logger.info(
+                                            f"LIVE BALANCE: {quote_asset} free={free_quote} total={total_quote} "
+                                            f"trade_cost={_qty_precise * float(event.close):.2f}"
+                                        )
+                                        
+                                        if free_quote < _qty_precise * float(event.close):
+                                            logger.error(
+                                                f"Insufficient {quote_asset} in SPOT wallet. "
+                                                f"free={free_quote} (available for trading) vs total={total_quote} (includes Earn/Funding). "
+                                                f"Please move funds from Earn to Spot wallet."
+                                            )
+                                            await broadcast_scalping_event("error", {
+                                                "code": "INSUFFICIENT_SPOT_BALANCE",
+                                                "message": f"Insufficient {quote_asset} in Spot wallet (free={free_quote:.2f}, total={total_quote:.2f}). Move funds from Earn to Spot.",
+                                            })
+                                            continue
+                                    except Exception as bal_e:
+                                        logger.warning(f"Balance check failed (non-blocking): {bal_e}")
                                     
                                     logger.info(f"LIVE TRADE CALC: symbol={event.symbol}, trade_value={_trade_val}, price={event.close}, qty_raw={_qty_raw}, step_size={step_size}, qty_precise={_qty_precise}, min_qty={filters['minQty']}")
                                     
@@ -615,6 +820,16 @@ async def _start_ws_broadcast(symbol: str):
                                     exec_price = float(market_res.get("price") or event.close)
                                     exec_qty = float(market_res.get("quantity") or _qty_precise)
                                     
+                                    # 3b. Register position IMMEDIATELY after market fill, BEFORE OCO.
+                                    # This ensures the position is tracked even if OCO/stop-loss fails,
+                                    # so session stop can close it on Binance.
+                                    pos_obj = pm.open_position(
+                                        symbol=event.symbol.upper(),
+                                        side=side,
+                                        entry_price=Decimal(str(exec_price)),
+                                        quantity=Decimal(str(exec_qty))
+                                    )
+                                    
                                     # 4. Calculate Risk SL/TP with proper price precision
                                     risk_cfg = _execution_state.get("risk_config", {})
                                     sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3)) / 100
@@ -624,26 +839,24 @@ async def _start_ws_broadcast(symbol: str):
                                     sl_price = round(exec_price * (1 - sl_pct), price_prec) if side == "BUY" else round(exec_price * (1 + sl_pct), price_prec)
                                     tp_price = round(exec_price * (1 + tp_pct), price_prec) if side == "BUY" else round(exec_price * (1 - tp_pct), price_prec)
                                     
-                                    # 5. Place OCO Risk Parachute
-                                    oco_res = await exchange.place_oco_order(
-                                        symbol=event.symbol.upper(),
-                                        side="SELL" if side == "BUY" else "BUY",
-                                        quantity=exec_qty,
-                                        price=tp_price,
-                                        stop_price=sl_price,
-                                        take_profit_price=tp_price
-                                    )
+                                    # 5. Place OCO Risk Parachute (best-effort — failure is non-fatal)
+                                    oco_res = None
+                                    try:
+                                        oco_res = await exchange.place_oco_order(
+                                            symbol=event.symbol.upper(),
+                                            side="sell" if side == "BUY" else "buy",
+                                            quantity=exec_qty,
+                                            price=tp_price,
+                                            stop_price=sl_price,
+                                            take_profit_price=tp_price
+                                        )
+                                    except Exception as oco_e:
+                                        logger.warning(f"OCO placement failed (non-fatal, position already tracked): {oco_e}")
                                     
-                                    # 6. Store locally for PnL tracking
-                                    pos_obj = pm.open_position(
-                                        symbol=event.symbol.upper(),
-                                        side=side,
-                                        entry_price=Decimal(str(exec_price)),
-                                        quantity=Decimal(str(exec_qty))
-                                    )
-                                    pos_obj.oco_id = oco_res.get("order_id")
-                                    pos_obj.sl_id = oco_res.get("stop_loss_id")
-                                    pos_obj.tp_id = oco_res.get("take_profit_id")
+                                    if oco_res:
+                                        pos_obj.oco_id = oco_res.get("order_id")
+                                        pos_obj.sl_id = oco_res.get("stop_loss_id")
+                                        pos_obj.tp_id = oco_res.get("take_profit_id")
                                     
                                     await broadcast_scalping_event("position", {
                                         "symbol": pos_obj.symbol,
@@ -655,6 +868,9 @@ async def _start_ws_broadcast(symbol: str):
                                         "pnl_pct": 0.0,
                                     })
                                     logger.info(f"LIVE trade opened: {side} {event.symbol.upper()} @ {exec_price}")
+                                    
+                                    # Signal to session stop that we need a close on Binance
+                                    _execution_state["pending_live_close"] = True
                                     
                                 except Exception as live_e:
                                     logger.error(f"Live trade failed: {live_e}")
@@ -682,14 +898,153 @@ async def _start_ws_broadcast(symbol: str):
                                     "pnl": 0.0,
                                     "pnl_pct": 0.0,
                                 })
-                                logger.info(f"Paper trade opened: {side} {event.symbol.upper()} @ {candle.close}")
+                                logger.info(f">>> TRADE EXECUTED: {side} {event.symbol.upper()} @ {candle.close}")
                         else:
                             # If opposite signal, close position
                             pos = pm.get_open()
-                            if pos.side != side:
+                            if pos.side.lower() != side.lower():
+                                logger.info(f">>> CLOSING: {pos.side} position opposite to {side} signal")
                                 await _close_position_and_record(pm, float(candle.close), pos, reason=decision.reason or "signal")
+                            else:
+                                logger.info(f">>> HOLD: existing {pos.side} position matches {side} signal")
+                    else:
+                        reason_str = decision.reason if decision else "decision=None"
+                        logger.info(f">>> DECISION REJECTED: {reason_str}")
                 except Exception as e:
                     logger.warning(f"Execution loop processing error: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                
+                # ── FIX-2026-06-05: Position update broadcast on every closed candle ──
+                # This ensures the position card updates in the frontend even in live mode
+                # where trade events may be sporadic. Broadcasts PnL, current price, SL/TP.
+                pm = _execution_state["position_manager"]
+                pos = pm.get_open()
+                if pos:
+                    current_price_f = float(event.close)
+                    entry_f = float(pos.entry_price)
+                    qty_f = float(pos.quantity)
+                    entry_val = entry_f * qty_f
+                    current_val = current_price_f * qty_f
+                    gross_pnl = (current_price_f - entry_f) * qty_f if pos.side == "BUY" else (entry_f - current_price_f) * qty_f
+                    fees = (entry_val * 0.001) + (current_val * 0.001)
+                    pnl = gross_pnl - fees
+                    pnl_pct = (pnl / entry_val) * 100
+                    
+                    risk_cfg = _execution_state.get("risk_config", {})
+                    sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3)) / 100
+                    tp_pct = float(risk_cfg.get("take_profit_pct", 0.5)) / 100
+                    sl_price = entry_f * (1 - sl_pct) if pos.side == "BUY" else entry_f * (1 + sl_pct)
+                    tp_price = entry_f * (1 + tp_pct) if pos.side == "BUY" else entry_f * (1 - tp_pct)
+                    
+                    # Calculate progress percentage:
+                    # -100% = at SL, 0% = at entry, +100% = at TP
+                    if pos.side == "BUY":
+                        total_range = tp_price - sl_price
+                        current_offset = current_price_f - entry_f  # positive if above entry
+                    else:
+                        total_range = sl_price - tp_price
+                        current_offset = entry_f - current_price_f  # positive if below entry
+                    
+                    progress_pct = 0.0
+                    if total_range > 0:
+                        if pos.side == "BUY":
+                            # How far from entry towards TP or SL
+                            if current_price_f >= entry_f:
+                                progress_pct = ((current_price_f - entry_f) / (tp_price - entry_f)) * 100
+                            else:
+                                progress_pct = -((entry_f - current_price_f) / (entry_f - sl_price)) * 100
+                        else:
+                            if current_price_f <= entry_f:
+                                progress_pct = ((entry_f - current_price_f) / (entry_f - tp_price)) * 100
+                            else:
+                                progress_pct = -((current_price_f - entry_f) / (sl_price - entry_f)) * 100
+                    
+                    # Clamp to [-100, 100]
+                    progress_pct = max(-100.0, min(100.0, progress_pct))
+                    
+                    await broadcast_scalping_event("position_update", {
+                        "symbol": pos.symbol,
+                        "side": pos.side,
+                        "entry_price": entry_f,
+                        "current_price": round(current_price_f, 2),
+                        "quantity": qty_f,
+                        "pnl": round(pnl, 2),
+                        "pnl_pct": round(pnl_pct, 2),
+                        "stop_loss_price": round(sl_price, 2),
+                        "take_profit_price": round(tp_price, 2),
+                        "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
+                        "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
+                        "progress_pct": round(progress_pct, 1),         # -100 to +100
+                        "sl_distance_pct": round(max(0, (entry_f - current_price_f) / (entry_f - sl_price) * 100) if pos.side == "BUY" and (entry_f - sl_price) > 0 else 0, 1),
+                        "tp_distance_pct": round(min(100, (current_price_f - entry_f) / (tp_price - entry_f) * 100) if pos.side == "BUY" and (tp_price - entry_f) > 0 else 0, 1),
+                    })
+                    logger.debug(f"Position update broadcast @ {current_price_f}: PnL={pnl:.2f} ({pnl_pct:.2f}%) progress={progress_pct:.1f}%")
+                    
+                    # ── FIX-2026-06-05: Sync OCO order status with Binance ──
+                    # On every closed candle, fetch open orders from Binance to detect
+                    # if the TP or SL orders have been filled (OCO executed).
+                    # This prevents the "stale position" bug where Binance closes the trade
+                    # but the app still thinks it's open.
+                    _mode = _execution_state["session"].get("mode", "paper")
+                    exchange = _execution_state.get("exchange")
+                    if _mode == "live" and exchange:
+                        try:
+                            open_orders = await exchange.get_open_orders(event.symbol.upper())
+                            if not open_orders:
+                                # No open orders on Binance → OCO was fully executed (TP or SL hit)
+                                logger.info(f"No open orders on Binance for {event.symbol} — position was closed by exchange OCO")
+                                # The position in memory is still open, but the exchange already closed it.
+                                # Instead of force-closing (which would create another market order),
+                                # just record the position as closed at the current price.
+                                # Use the actual OCO fill price from the latest candle as exit price
+                                close_price_to_use = current_price_f
+                                
+                                # Try to get actual fill price from fetched orders history
+                                try:
+                                    filled_orders = await exchange.client.fetch_closed_orders(
+                                        await exchange._get_ccxt_symbol(event.symbol.upper()),
+                                        limit=5
+                                    )
+                                    if filled_orders:
+                                        for fo in filled_orders:
+                                            if fo.get("status") == "closed" and fo.get("side") != "BUY":
+                                                fill_price = float(fo.get("price", 0) or fo.get("average", 0))
+                                                if fill_price > 0:
+                                                    close_price_to_use = fill_price
+                                                    logger.info(f"Found actual OCO fill price: {fill_price}")
+                                                    break
+                                except Exception as hist_e:
+                                    logger.warning(f"Could not fetch filled orders history: {hist_e}")
+                                
+                                # Record the trade as closed
+                                now_ts = datetime.now(timezone.utc)
+                                trade_record = {
+                                    "symbol": pos.symbol,
+                                    "side": pos.side,
+                                    "entry_price": entry_f,
+                                    "exit_price": close_price_to_use,
+                                    "quantity": qty_f,
+                                    "pnl": round(gross_pnl - fees, 2),
+                                    "pnl_pct": round(pnl_pct, 2),
+                                    "timestamp": now_ts.isoformat(),
+                                }
+                                _execution_state["trade_history"].append(trade_record)
+                                pm.close_position(Decimal(str(close_price_to_use)))
+                                await broadcast_scalping_event("trade_closed", {
+                                    **trade_record,
+                                    "reason": "oco_filled",
+                                })
+                                logger.info(f"Position closed by OCO fill @ {close_price_to_use}: PnL={trade_record['pnl']:.2f}")
+                                
+                                # Refresh live balance
+                                await _refresh_session_balance()
+                            else:
+                                logger.debug(f"Open orders still active on Binance for {event.symbol}: {len(open_orders)} orders")
+                        except Exception as sync_e:
+                            logger.debug(f"Order sync check failed (non-fatal): {sync_e}")
+            else:
+                logger.debug(f">>> LIVE candle update (not closed yet): {event.symbol} close={event.close}")
 
     async def _trade_processor():
         """Consume trade_queue and broadcast + update PnL + feed CVD."""
@@ -1155,6 +1510,11 @@ async def control_session(control: Dict) -> Dict:
         _execution_state["position_manager"] = PositionManager()
         _execution_state["exchange"] = None
         
+        # Reset strategy override if there's an existing execution loop
+        existing_loop = _execution_state.get("loop")
+        if existing_loop:
+            existing_loop.reset_strategy_override()
+        
         if session["mode"] == "live":
             api_key = settings.BINANCE_API_KEY_LIVE or settings.BINANCE_API_KEY
             api_secret = settings.BINANCE_SECRET_KEY_LIVE or settings.BINANCE_SECRET_KEY
@@ -1168,41 +1528,27 @@ async def control_session(control: Dict) -> Dict:
             # Get real balance from exchange — use same method as dashboard
             live_bal = None
             try:
-                logger.info(f"Starting balance fetch for symbol={active_symbol}")
-                
                 filters = await adapter.get_symbol_filters(active_symbol)
                 quote_asset = filters.get("quoteAsset", "USDT")
-                logger.info(f"✓ Symbol filters retrieved: quote_asset={quote_asset}")
-                
-                # Fetch balance using CCXT method (same as dashboard binance_balance.py)
-                logger.info("✓ Calling fetch_balance()...")
+
                 ccxt_balance = await adapter.client.fetch_balance()
-                logger.info(f"✓ fetch_balance() returned: type={type(ccxt_balance)}, keys={list(ccxt_balance.keys())}")
-                
                 all_balances = ccxt_balance.get("total", {})
-                logger.info(f"✓ Extracted 'total' dict with {len(all_balances)} assets: {list(all_balances.keys())[:20]}")
 
                 normalized_balances = _normalize_binance_total_balance(all_balances)
-                logger.info(
-                    "✓ Normalized total balances with LD aliases; sample keys=%s",
-                    list(normalized_balances.keys())[:20],
-                )
 
                 selected_balance = _select_preferred_quote_balance(normalized_balances, quote_asset)
                 if selected_balance is not None and selected_balance > 0:
                     live_bal = selected_balance
-                    logger.info(f"✓ Selected quote balance: {live_bal} {quote_asset}")
                 else:
                     logger.error(
                         f"✗ No balance found in any preferred asset. Available assets: {list(normalized_balances.keys())}"
                     )
                     live_bal = session.get("paper_balance", 10000.0)
-                    logger.error(f"  Using fallback: {live_bal}")
-                
+
                 session["live_balance"] = live_bal
                 session["paper_balance"] = live_bal
-                logger.info(f"✓ FINAL: live_balance={live_bal}, paper_balance={live_bal}")
-                
+                logger.info(f"✓ \033[96m\033[1mStarting balance: {live_bal} {quote_asset}\033[0m")
+
             except Exception as e:
                 logger.error(f"✗ Balance fetch failed with exception: {type(e).__name__}: {e}", exc_info=True)
                 session["live_balance"] = session.get("paper_balance", 10000.0)
@@ -1286,21 +1632,21 @@ async def control_session(control: Dict) -> Dict:
         pos = pm.get_open()
         if pos:
             close_price: float = float(pos.entry_price)
+            # Use latest candle price if available for more accurate close
+            loop = _execution_state.get("loop")
+            if loop and hasattr(loop, "_candle_buffer") and getattr(loop, "_candle_buffer", None):
+                latest = loop._candle_buffer.latest
+                if latest:
+                    close_price = float(latest.close)
+            # Close position at market — _close_position_and_record now raises on live failure
             try:
-                # Use latest candle price if available for more accurate close
-                loop = _execution_state.get("loop")
-                if loop and hasattr(loop, "_candle_buffer") and getattr(loop, "_candle_buffer", None):
-                    latest = loop._candle_buffer.latest
-                    if latest:
-                        close_price = float(latest.close)
-                # Close position at market (this handles live order cancellation + market sell)
                 await _close_position_and_record(pm, close_price, pos, reason="session_stop")
                 logger.info(f"Position force-closed at market @ {close_price} due to session stop")
             except Exception as e:
                 logger.error(f"Error force closing position during session stop: {e}", exc_info=True)
-            finally:
-                # Guarantee local state reflects position closure
-                if pos.status == "open":
+                # If live close fails, do NOT mark position as closed — asset remains on exchange.
+                # The finally block below would mark it closed even on error, so we guard.
+                if pos.status == "open" and _execution_state["session"].get("mode") != "live":
                     pm.close_position(Decimal(str(close_price)))
         
         # Stop BinanceWSClient and pipeline
@@ -1576,6 +1922,65 @@ async def get_performance() -> Dict:
         "profit_factor": profit_factor,
         "max_drawdown": max_dd_pct,
         "consecutive_losses": max_cons_losses,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Diagnostic endpoint for pipeline debugging
+# ---------------------------------------------------------------------------
+
+@router.get("/debug/pipeline")
+async def debug_pipeline():
+    """Diagnostic endpoint to inspect pipeline state.
+    
+    Returns detailed state of:
+    - CandleBuffer: size, ready status, latest candle
+    - ExecutionLoop: buffer id, strategy, regime
+    - Session: status, mode, symbol
+    - WS client: connected status
+    """
+    loop = _execution_state.get("loop")
+    buffer_info = {"size": 0, "ready": False, "latest": None}
+    if loop and hasattr(loop, "_candle_buffer"):
+        buf = loop._candle_buffer
+        buffer_info = {
+            "buffer_id": id(buf),
+            "size": len(buf),
+            "ready": buf.is_ready(),
+            "latest_candle": {
+                "close": float(buf.latest.close),
+                "timestamp": str(buf.latest.timestamp),
+            } if buf.latest else None,
+        }
+
+    strategy_name = loop.strategy.name if loop and loop.strategy else None
+    regime_name = loop.regime.regime if loop and loop.regime else None
+
+    ws_client = _execution_state.get("ws_client")
+    ws_connected = ws_client is not None and not ws_client._stop_event.is_set() if ws_client else False
+
+    return {
+        "buffer": buffer_info,
+        "execution_loop": {
+            "strategy": strategy_name,
+            "regime": regime_name,
+            "running": loop.running if loop else False,
+            "paper_mode": loop.paper_mode if loop else None,
+        },
+        "session": {
+            "status": _execution_state["session"]["status"],
+            "mode": _execution_state["session"]["mode"],
+            "symbol": _execution_state["session"]["symbol"],
+            "session_id": _execution_state["session"]["session_id"],
+        },
+        "ws_client": {
+            "connected": ws_connected,
+            "symbols": ws_client.symbols if ws_client else [],
+        },
+        "position_manager": {
+            "has_open": _execution_state["position_manager"].has_open(),
+            "total_trades": len(_execution_state["trade_history"]),
+        },
     }
 
 

@@ -71,11 +71,11 @@ const STRATEGY_DEFAULTS: Record<string, { label: string; desc: string; params: S
         <div class="strategy-desc">{{ strategy.desc }}</div>
 
         <div class="params-grid">
-          <div class="param-row" *ngFor="let key of paramKeys()">
+          <div class="param-row" *ngFor="let key of numericParamKeys()">
             <span class="param-label">{{ formatParam(key) }}</span>
             <span class="param-value" [ngClass]="{'highlight': highlightedKeys.has(key)}">
               {{ strategy.params[key] | number:'1.0-4' }}
-              <span *ngIf="key.endsWith('_pct')" class="unit">%</span>
+              <span *ngIf="key.endsWith('_pct') || key.endsWith('_percent')" class="unit">%</span>
             </span>
           </div>
         </div>
@@ -197,7 +197,14 @@ export class StrategyPanelComponent implements OnInit, OnDestroy {
     return this.strategy ? Object.keys(this.strategy.params) : [];
   }
 
+  numericParamKeys(): string[] {
+    if (!this.strategy) return [];
+    return Object.keys(this.strategy.params).filter(
+      key => typeof this.strategy!.params[key] === 'number'
+    );
+  }
+
   formatParam(key: string): string {
-    return key.replace(/_/g, ' ').replace('pct', '%');
+    return key.replace(/_/g, ' ').replace('pct', '%').replace('_percent', '%');
   }
 }

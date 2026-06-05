@@ -87,7 +87,7 @@ class TestSignalAggregator:
 
         assert result.execute is False
         assert result.reason is not None
-        assert "sotto soglia" in result.reason.lower()
+        assert "soglia" in result.reason.lower()
 
     def test_blocks_neutral(self):
         """Bias neutrale blocca il trade."""

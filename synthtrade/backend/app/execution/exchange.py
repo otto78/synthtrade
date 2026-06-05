@@ -1,3 +1,4 @@
+import asyncio
 import ccxt.async_support as ccxt
 from typing import Protocol, Dict, Any, List, Literal, cast
 import logging
@@ -119,14 +120,22 @@ class BinanceExchangeAdapter:
         ticker = await self.client.fetch_ticker(ccxt_symbol)
         return float(ticker["last"])
 
+    async def _round_qty(self, symbol: str, qty: float) -> float:
+        """Arrotonda quantity a stepSize usando i filtri del simbolo."""
+        filters = await self.get_symbol_filters(symbol)
+        step_size = float(filters["stepSize"])
+        return round(qty - (qty % step_size), 8)
+
     async def place_market_order(self, symbol: str, side: OrderSide, quantity: float) -> Dict[str, Any]:
         try:
+            # Arrotonda quantità a stepSize PRIMA di chiamare Binance
+            qty_rounded = await self._round_qty(symbol, quantity)
             ccxt_symbol = await self._get_ccxt_symbol(symbol)
             order = await self.client.create_order(
                 symbol=ccxt_symbol,
                 type="market",
-                side=side.lower(),
-                amount=quantity
+                side=side,
+                amount=qty_rounded
             )
             return cast(Dict[str, Any], order)
         except ccxt.InsufficientFunds as e:
@@ -166,130 +175,331 @@ class BinanceExchangeAdapter:
         else:
             market = markets[symbol]
 
-        # CCXT precision.amount = number of decimals for quantity
-        # Convert to stepSize: e.g. precision 2 → stepSize 0.01
-        qty_precision = market["precision"]["amount"]
-        step_size = 10 ** (-qty_precision) if isinstance(qty_precision, (int, float)) else 0.001
+        from decimal import Decimal
+
+        # Try to extract LOT_SIZE from raw market info (most reliable for Binance)
+        raw_info = market.get("info", {})
+        lot_size_raw = None
+        if raw_info and "filters" in raw_info:
+            for f in raw_info["filters"]:
+                if f.get("filterType") == "LOT_SIZE":
+                    lot_size_raw = f
+                    break
+
+        if lot_size_raw:
+            step_size = float(lot_size_raw.get("stepSize", "0.001"))
+            min_qty = float(lot_size_raw.get("minQty", "0.001"))
+            min_notional_raw = None
+            if raw_info and "filters" in raw_info:
+                for f in raw_info["filters"]:
+                    if f.get("filterType") == "MIN_NOTIONAL":
+                        min_notional_raw = f
+                        break
+            min_notional = float(min_notional_raw.get("minNotional", "1.0")) if min_notional_raw else 1.0
+        else:
+            # Fallback: use CCXT precision fields
+            qty_precision = market["precision"]["amount"]
+            if isinstance(qty_precision, (int, float)) and qty_precision > 0 and qty_precision < 20:
+                step_size = 10 ** (-qty_precision)
+            else:
+                step_size = 0.001  # default for most Binance spot pairs
+            min_qty = market["limits"]["amount"]["min"] or step_size
+            min_notional = market["limits"]["cost"]["min"] or 1.0
 
         price_precision = market["precision"]["price"]
-        tick_size = 10 ** (-price_precision) if isinstance(price_precision, (int, float)) else 0.01
+        if isinstance(price_precision, (int, float)) and price_precision > 0 and price_precision < 20:
+            tick_size = 10 ** (-price_precision)
+        else:
+            # Extract tickSize from PRICE_FILTER if precision is float
+            tick_size = 0.01
+            if raw_info and "filters" in raw_info:
+                for f in raw_info["filters"]:
+                    if f.get("filterType") == "PRICE_FILTER":
+                        tick_size = float(f.get("tickSize", "0.01"))
+                        break
 
         filters = {
             "stepSize": step_size,
-            "minQty": market["limits"]["amount"]["min"] or step_size,
-            "minNotional": market["limits"]["cost"]["min"] or 1.0,
-            "pricePrecision": price_precision,
+            "minQty": min_qty,
+            "minNotional": min_notional,
+            "pricePrecision": price_precision if isinstance(price_precision, int) else 2,
             "tickSize": tick_size,
             "quoteAsset": market["quote"],
             "baseAsset": market["base"],
         }
+        # Popola anche il symbol cache se non è già presente
+        if symbol not in self._symbol_cache:
+            ccxt_id = market.get("id", symbol)
+            self._symbol_cache[symbol] = market["symbol"] if market["symbol"] != symbol else ccxt_id
         self._filters_cache[symbol] = filters
         return filters
 
-    # ── TASK-801: OCO, Stop Loss, Limit Orders ─────────────────────────
+    # ── TASK-801 + FIX-2026-06-05: Stop Loss, Take Profit, OCO ──────────────────
 
     async def place_oco_order(self, symbol: str, side: OrderSide, quantity: float,
                               price: float, stop_price: float,
                               take_profit_price: float | None = None) -> Dict[str, Any]:
         """
-        TASK-801: Place OCO (One-Cancels-Other) on Binance Spot.
-
-        For a BUY entry → OCO SELL: price = TP (limit sell), stopPrice = SL trigger.
-        Uses Binance's native /api/v3/order/oco endpoint.
-        Falls back to synthetic (SL + TP as separate orders) if OCO fails.
+        Place OCO (One-Cancels-Other) order.
+        
+        Strategy:
+        1. Try native Binance OCO first (single atomic order, no double-lock).
+        2. Fallback to synthetic OCO (TP LIMIT first, then SL STOP_LOSS) to avoid
+           the double-lock bug where SL reserves the balance and TP cannot be placed.
+        
+        Both orders persist on Binance even if the bot disconnects.
         """
-        # stopLimitPrice: the actual limit price after stop triggers (slightly worse than stopPrice)
-        slippage = 0.001  # 0.1% slippage buffer
-        if side.lower() == "sell":
-            stop_limit_price = round(stop_price * (1 - slippage), 8)
-        else:
-            stop_limit_price = round(stop_price * (1 + slippage), 8)
-
+        logger.info(f"Placing risk parachute for {symbol}: TP={price}, SL={stop_price}")
+        
+        # Strategy 1: Try native OCO (single atomic order, best for double-lock)
         try:
-            ccxt_symbol = await self._get_ccxt_symbol(symbol)
-            side_cast = cast(Literal["buy", "sell"], side.lower())
-            order = await self.client.create_order(
-                ccxt_symbol,
-                "limit",  # the limit (TP) leg type
-                side_cast,
-                quantity,
-                price,          # TP limit price
-                params={
-                    "stopPrice": stop_price,
-                    "stopLimitPrice": stop_limit_price,
-                    "stopLimitTimeInForce": "GTC",
-                    "type": "oco",
-                },
-            )
-            logger.info(f"OCO order placed: {order.get('id', 'unknown')} for {symbol}")
-            return {
-                "order_id": order.get("id", "unknown"),
-                "type": "oco",
-                "status": order.get("status", "unknown"),
-                "price": price,
-                "stop_price": stop_price,
-                "take_profit_price": take_profit_price or price,
-                "quantity": quantity,
-            }
-        except Exception as oco_err:
-            logger.warning(f"OCO nativo fallito per {symbol}, fallback synthetic: {oco_err}")
-            return await self._place_oco_synthetic(
+            result = await self._place_oco_native(
                 symbol=symbol, side=side, quantity=quantity,
                 price=price, stop_price=stop_price,
                 take_profit_price=take_profit_price,
             )
+            logger.info(f"Native OCO placed successfully for {symbol}")
+            return result
+        except Exception as oco_e:
+            logger.warning(f"Native OCO failed for {symbol}, falling back to synthetic: {oco_e}")
+        
+        # Strategy 2: Fallback to synthetic OCO (inverted: TP first, SL second)
+        return await self._place_oco_synthetic_inverted(
+            symbol=symbol, side=side, quantity=quantity,
+            price=price, stop_price=stop_price,
+            take_profit_price=take_profit_price,
+        )
+
+    async def _place_oco_native(self, symbol: str, side: OrderSide, quantity: float,
+                                price: float, stop_price: float,
+                                take_profit_price: float | None = None) -> Dict[str, Any]:
+        """
+        Native Binance OCO via direct API call POST /api/v3/order/oco.
+        
+        Binance OCO places a LIMIT TAKE_PROFIT + STOP_LOSS on the same quantity atomically,
+        avoiding the double-lock issue where separate orders lock each other's balance.
+        
+        OCO params for Binance API:
+        - symbol: raw symbol ID (e.g. BNBUSDC, no slash)
+        - side: 'SELL' (uppercase)
+        - quantity: amount
+        - price: LIMIT price (take profit)
+        - stopPrice: stop trigger price
+        - stopLimitPrice: limit price for stop (optional, executed as market if omitted)
+        - stopLimitTimeInForce: 'GTC'
+        
+        The CCXT method private_post_order_oco() maps directly to Binance's OCO endpoint.
+        """
+        try:
+            # Get raw Binance symbol ID (no slash, e.g. BNBUSDC)
+            filters = await self.get_symbol_filters(symbol)
+            # Use symbol directly — CCXT resolves it via the internal adapter
+            get_id = filters.get("baseAsset", "") + filters.get("quoteAsset", "")
+            raw_symbol = get_id if get_id else symbol
+            
+            params: Dict[str, Any] = {
+                "symbol": raw_symbol,
+                "side": side.upper(),
+                "quantity": quantity,
+                "price": price,
+                "stopPrice": stop_price,
+                "stopLimitTimeInForce": "GTC",
+            }
+            if stop_price is not None:
+                # stopLimitPrice = prezzo LIMITE per lo STOP LOSS (di solito uguale o leggermente sopra stopPrice)
+                # IMPORTANTE: NON usare take_profit_price qui! Altrimenti lo SL proverà a vendere al prezzo del TP,
+                # e quando il mercato scende sotto stopPrice, lo SL non sarà riempito perché il prezzo limite è sopra.
+                # Usando stop_price, lo SL vende a market non appena il trigger scatta.
+                params["stopLimitPrice"] = stop_price
+            
+            # Use the private OCO endpoint directly
+            response = await self.client.private_post_order_oco(params)
+            logger.info(f"Native OCO response: {response}")
+            
+            # Parse response
+            order_list_id = response.get("orderListId", "unknown")
+            orders = response.get("orderReports", [])
+            sl_id = None
+            tp_id = None
+            main_id = response.get("listClientOrderId", order_list_id)
+            
+            for o in orders:
+                if o.get("type") == "STOP_LOSS_LIMIT" or o.get("type") == "STOP_LOSS":
+                    sl_id = o.get("orderId", "unknown")
+                elif o.get("type") == "LIMIT" or o.get("type") == "LIMIT_MAKER":
+                    tp_id = o.get("orderId", "unknown")
+            
+            return {
+                "type": "oco",
+                "order_id": main_id,
+                "stop_loss_id": sl_id or response.get("orderListId", "unknown"),
+                "take_profit_id": tp_id or response.get("orderListId", "unknown"),
+                "status": "placed",
+                "native": True,
+                "order_list_id": order_list_id,
+            }
+        except Exception as e:
+            raise ExchangeOrderError(f"Native OCO failed for {symbol}: {e}")
+
+    async def _place_oco_synthetic_inverted(self, symbol: str, side: OrderSide, quantity: float,
+                                            price: float, stop_price: float,
+                                            take_profit_price: float | None = None) -> Dict[str, Any]:
+        """
+        Synthetic OCO with inverted order: TP LIMIT first, SL STOP_LOSS second.
+        
+        This avoids the double-lock bug where SL reserves the balance first and
+        then TP cannot be placed because the same quantity is already locked.
+        
+        By placing TP LIMIT first:
+        - Binance reserves the quantity for the LIMIT order
+        - The STOP_LOSS uses the same quantity but Binance allows overlapping
+          orders on the same balance (unlike LIMIT+STOP_LOSS which locks separately)
+        
+        Wait for balance settlement after market order before placing orders.
+        """
+        # Wait for balance settlement after the market fill
+        await asyncio.sleep(0.5)
+        try:
+            await self.client.fetch_balance()
+        except Exception:
+            pass
+        
+        # Get actual available base asset balance (after fee deduction)
+        actual_qty = await self._get_available_base_balance(symbol)
+        if actual_qty <= 0:
+            logger.warning(f"No {symbol} base asset balance available after trade")
+            return {"type": "oco_synthetic_inverted", "status": "no_balance"}
+        
+        qty_rounded = await self._round_qty(symbol, actual_qty)
+        logger.info(f"Actual available {symbol} balance after fee: {actual_qty} -> rounded: {qty_rounded}")
+        
+        # INVERTED ORDER: Place TP LIMIT first, SL STOP_LOSS second
+        # TP goes first so it's always placed. SL is placed right after on the same qty.
+        # Binance allows both orders to coexist as they track different price levels.
+        tp_result = None
+        if take_profit_price:
+            try:
+                tp_result = await self.place_limit_order(
+                    symbol=symbol,
+                    side=side,
+                    quantity=qty_rounded,
+                    limit_price=take_profit_price,
+                )
+                logger.info(f"Take profit limit placed first: {tp_result.get('order_id')}")
+            except Exception as tp_e:
+                logger.warning(f"Take profit limit failed (non-fatal): {tp_e}")
+        
+        sl_result = None
+        try:
+            sl_result = await self.place_stop_loss_order(
+                symbol=symbol,
+                side=side,
+                quantity=qty_rounded,
+                stop_price=stop_price,
+            )
+            logger.info(f"Stop loss placed: {sl_result.get('order_id')}")
+        except Exception as sl_e:
+            logger.warning(f"Stop loss placement failed (non-fatal, position tracked): {sl_e}")
+        
+        return {
+            "type": "oco_synthetic_inverted",
+            "order_id": sl_result.get("order_id") if sl_result else tp_result.get("order_id") if tp_result else None,
+            "stop_loss_id": sl_result.get("order_id") if sl_result else None,
+            "take_profit_id": tp_result.get("order_id") if tp_result else None,
+            "status": "placed",
+        }
+
+    async def _get_available_base_balance(self, symbol: str) -> float:
+        """Get the free (available) balance of the base asset for a symbol.
+        
+        After a market buy, Binance takes ~0.1% fee in the base asset (e.g. BNB),
+        so you might have 0.015984 BNB instead of 0.016. This function reads
+        the actual free balance from the exchange.
+        """
+        try:
+            filters = await self.get_symbol_filters(symbol)
+            base = filters["baseAsset"]
+            balance = await self.client.fetch_balance()
+            free = balance.get("free", {})
+            return float(free.get(base, 0.0))
+        except Exception as e:
+            logger.warning(f"Could not fetch base balance for {symbol}: {e}")
+            return 0.0
 
     async def _place_oco_synthetic(self, symbol: str, side: OrderSide, quantity: float,
                                     price: float, stop_price: float,
                                     take_profit_price: float | None = None) -> Dict[str, Any]:
         """
-        Synthetic OCO: stop loss (STOP_LOSS_LIMIT) + take profit (LIMIT) as separate orders.
-        NOTE: these are NOT truly linked — both could theoretically fill. The main loop
-        should cancel the remaining order when either fills.
+        Synthetic OCO: stop loss (STOP_LOSS market) + take profit (LIMIT) as separate orders.
+        
+        Wait for balance settlement after market order before placing stop loss,
+        otherwise Binance returns "insufficient balance" because the asset
+        hasn't settled yet.
+        
+        IMPORTANT: After a market buy, Binance deducts ~0.1% fee in the base asset.
+        So if you bought 0.016 BNB, you may only have 0.015984 BNB to sell.
+        This function reads the ACTUAL balance from the exchange after settlement.
         """
-        sl_result = await self.place_stop_loss_order(
-            symbol=symbol,
-            side=side,
-            quantity=quantity,
-            stop_price=stop_price,
-        )
-        tp_result = None
-        if take_profit_price:
-            tp_result = await self.place_limit_order(
+        # Wait for balance settlement after the market fill
+        await asyncio.sleep(0.5)
+        try:
+            await self.client.fetch_balance()
+        except Exception:
+            pass
+        
+        # Get actual available base asset balance (after fee deduction)
+        actual_qty = await self._get_available_base_balance(symbol)
+        if actual_qty <= 0:
+            logger.warning(f"No {symbol} base asset balance available after trade")
+            return {"type": "oco_synthetic", "status": "no_balance"}
+        
+        qty_rounded = await self._round_qty(symbol, actual_qty)
+        logger.info(f"Actual available {symbol} balance after fee: {actual_qty} -> rounded: {qty_rounded}")
+        
+        sl_result = None
+        try:
+            sl_result = await self.place_stop_loss_order(
                 symbol=symbol,
                 side=side,
-                quantity=quantity,
-                limit_price=take_profit_price,
+                quantity=qty_rounded,
+                stop_price=stop_price,
             )
+        except Exception as sl_e:
+            logger.warning(f"Stop loss placement failed (non-fatal, position tracked): {sl_e}")
+        
+        tp_result = None
+        if take_profit_price:
+            try:
+                tp_result = await self.place_limit_order(
+                    symbol=symbol,
+                    side=side,
+                    quantity=qty_rounded,
+                    limit_price=take_profit_price,
+                )
+            except Exception as tp_e:
+                logger.warning(f"Take profit limit failed (non-fatal): {tp_e}")
+        
         return {
             "type": "oco_synthetic",
-            "order_id": sl_result.get("order_id"),
-            "stop_loss_id": sl_result.get("order_id"),
+            "order_id": sl_result.get("order_id") if sl_result else None,
+            "stop_loss_id": sl_result.get("order_id") if sl_result else None,
             "take_profit_id": tp_result.get("order_id") if tp_result else None,
             "status": "placed",
         }
 
     async def place_stop_loss_order(self, symbol: str, side: OrderSide, quantity: float, stop_price: float) -> Dict[str, Any]:
         """
-        TASK-801: Place a STOP_LOSS_LIMIT order.
+        Place a STOP_LOSS (market) order — executes as market sell when stop_price is hit.
+        More reliable on Binance mainnet than STOP_LOSS_LIMIT which requires extra params.
         """
-        # slippage buffer for stop limit
-        slippage = 0.001
-        if side.lower() == "sell":
-            stop_limit_price = round(stop_price * (1 - slippage), 8)
-        else:
-            stop_limit_price = round(stop_price * (1 + slippage), 8)
-
         try:
             ccxt_symbol = await self._get_ccxt_symbol(symbol)
-            side_cast = cast(Literal["buy", "sell"], side.lower())
-            order_type_cast = cast(Any, "STOP_LOSS_LIMIT")
+            order_type_cast = cast(Any, "STOP_LOSS")
             order = await self.client.create_order(
                 ccxt_symbol,
                 order_type_cast,
-                side_cast,
+                side,
                 quantity,
-                stop_limit_price,
                 params={"stopPrice": stop_price}
             )
             return {
@@ -309,11 +519,10 @@ class BinanceExchangeAdapter:
         """
         try:
             ccxt_symbol = await self._get_ccxt_symbol(symbol)
-            side_cast = cast(Literal["buy", "sell"], side.lower())
             order = await self.client.create_order(
                 ccxt_symbol,
                 "limit",
-                side_cast,
+                side,
                 quantity,
                 limit_price
             )

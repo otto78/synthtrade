@@ -10,6 +10,7 @@ import { HttpClient } from '@angular/common/http';
 import { DatePipe, DecimalPipe, NgClass, NgForOf, NgIf } from '@angular/common';
 import { Subscription } from 'rxjs';
 import { ScalpingWsService, TradeClosedEvent } from '../services/scalping-ws.service';
+import { SessionApiService } from '../services/session-api.service';
 
 @Component({
   selector: 'app-trade-log',
@@ -71,21 +72,38 @@ export class TradeLogComponent implements OnInit, OnDestroy {
 
   constructor(
     private ws: ScalpingWsService,
+    private sessionApi: SessionApiService,
     private http: HttpClient,
     private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
-    // Step 1: Fetch historical trades from REST API to populate the log
-    // when returning to the page with an active session.
-    this.loadHistory();
+    // Step 1: Clear trades when a new session starts (stop + restart)
+    this.sub = this.sessionApi.session$.subscribe((session) => {
+      if (!session || session.status === 'idle') {
+        this.trades = [];
+        this.cdr.markForCheck();
+        this.cdr.detectChanges();
+      } else if (session.status === 'running') {
+        // New session started — reload history (will be empty for fresh session)
+        this.trades = [];
+        this.cdr.markForCheck();
+        this.cdr.detectChanges();
+        this.loadHistory();
+      }
+    });
 
     // Step 2: Subscribe to live WS trade_closed events for real-time updates
-    this.sub = this.ws.tradeClosed$.subscribe((trade) => {
-      this.trades = [trade, ...this.trades];
-      this.cdr.markForCheck();
-      this.cdr.detectChanges();
-    });
+    this.sub.add(
+      this.ws.tradeClosed$.subscribe((trade) => {
+        this.trades = [trade, ...this.trades];
+        this.cdr.markForCheck();
+        this.cdr.detectChanges();
+      })
+    );
+
+    // Step 3: Initial load
+    this.loadHistory();
   }
 
   ngOnDestroy(): void {

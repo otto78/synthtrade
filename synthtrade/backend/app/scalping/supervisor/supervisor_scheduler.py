@@ -62,8 +62,20 @@ class SupervisorScheduler:
         return await self._tick()
 
     async def _tick(self) -> Optional[SupervisorDecision]:
+        # SAFETY: Check if stopped before starting expensive AI call
+        # (prevents race condition where old tick completes after new session starts)
+        if not self._running:
+            logger.debug("Supervisor tick skipped: scheduler not running")
+            return None
+            
         snapshot = await self._score_engine.get_snapshot()
         score = await self._score_engine.compute()
+        
+        # Check again after data collection
+        if not self._running:
+            logger.debug("Supervisor tick aborted after data collection: scheduler stopped")
+            return None
+            
         regime = self._loop.regime if self._loop else None
 
         decision = await self._client.decide(
@@ -72,6 +84,11 @@ class SupervisorScheduler:
             regime=regime,
             score=score,
         )
+        
+        # Final safety check — may have been stopped during the AI call
+        if not self._running:
+            logger.debug("Supervisor tick aborted after AI call: scheduler stopped")
+            return None
 
         logger.info(
             f"Supervisor decision: action={decision.action} | "

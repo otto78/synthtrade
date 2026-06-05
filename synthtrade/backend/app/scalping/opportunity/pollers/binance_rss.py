@@ -36,7 +36,12 @@ class BinanceRSSPoller:
                 resp = await client.get(self.rss_url)
                 resp.raise_for_status()
 
-            root = ElementTree.fromstring(resp.text)
+            text = resp.text.strip()
+            if not text:
+                logger.warning("BinanceRSSPoller: empty response body")
+                return results
+
+            root = ElementTree.fromstring(text)
             items = root.findall(".//item")
 
             for item in items[:20]:  # Limit to latest 20

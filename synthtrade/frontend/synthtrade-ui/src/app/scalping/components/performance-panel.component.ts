@@ -9,6 +9,7 @@ import { DecimalPipe, PercentPipe, NgIf } from '@angular/common';
 import { Subscription } from 'rxjs';
 import { PerformanceApiService, PerformanceMetrics } from '../services/performance-api.service';
 import { ScalpingWsService } from '../services/scalping-ws.service';
+import { SessionApiService } from '../services/session-api.service';
 
 @Component({
   selector: 'app-performance-panel',
@@ -78,13 +79,30 @@ export class PerformancePanelComponent implements OnInit, OnDestroy {
   constructor(
     private perfApi: PerformanceApiService,
     private ws: ScalpingWsService,
+    private sessionApi: SessionApiService,
     private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
-    this.loadMetrics();
+    // Reset metrics when a new session starts
+    this.sub = this.sessionApi.session$.subscribe((session) => {
+      if (!session || session.status === 'idle') {
+        this.metrics = undefined;
+        this.cdr.markForCheck();
+        this.cdr.detectChanges();
+      } else if (session.status === 'running') {
+        this.metrics = undefined;
+        this.cdr.markForCheck();
+        this.cdr.detectChanges();
+        this.loadMetrics();
+      }
+    });
+
     // Refresh only when a trade closes — no polling
-    this.sub = this.ws.tradeClosed$.subscribe(() => this.loadMetrics());
+    this.sub.add(this.ws.tradeClosed$.subscribe(() => this.loadMetrics()));
+
+    // Initial load
+    this.loadMetrics();
   }
 
   ngOnDestroy(): void {

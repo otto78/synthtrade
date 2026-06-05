@@ -1,7 +1,7 @@
 /**
  * Market Intelligence Panel Component
  * Displays real-time market data: funding rate, OI, CVD, Fear&Greed, Signal Score.
- * Polls backend every 60s for updates.
+ * Listens to symbol changes from active session.
  */
 
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
@@ -10,6 +10,7 @@ import { Subscription } from 'rxjs';
 import { IntelligenceApiService } from '../services/intelligence-api.service';
 import { MarketIntelSnapshot } from '../models/intelligence.model';
 import { ScalpingWsService, IntelligenceEvent } from '../services/scalping-ws.service';
+import { SessionApiService } from '../services/session-api.service';
 
 @Component({
   selector: 'app-market-intel-panel',
@@ -17,7 +18,7 @@ import { ScalpingWsService, IntelligenceEvent } from '../services/scalping-ws.se
   imports: [UpperCasePipe],
   template: `
     <div class="intel-panel">
-      <h3>Market Intelligence</h3>
+      <h3>Market Intelligence <span class="sym-badge">{{ symbol }}</span></h3>
       <div class="intel-grid">
         <div class="intel-item">
           <span class="label">Signal Score</span>
@@ -57,6 +58,7 @@ import { ScalpingWsService, IntelligenceEvent } from '../services/scalping-ws.se
   styles: [`
     .intel-panel { padding: 12px; }
     h3 { margin: 0 0 12px 0; font-size: 14px; color: var(--text-secondary); }
+    .sym-badge { font-size: 11px; color: var(--accent-primary, #F0B90B); background: rgba(240,185,11,0.1); padding: 1px 6px; border-radius: 4px; font-weight: 600; }
     .intel-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
     .intel-item { display: flex; justify-content: space-between; padding: 10px 12px; background: var(--bg-elevated); border-radius: 6px; }
     .label { font-size: 13px; color: var(--text-secondary); }
@@ -77,22 +79,41 @@ export class MarketIntelPanelComponent implements OnInit, OnDestroy {
   signalBias: 'bullish' | 'bearish' | 'neutral' = 'neutral';
   cvdTrend = '--';
 
-  private symbol = 'BTCUSDT';
+  /** Symbol shown in template — updated from active session */
+  symbol: string = 'BTCUSDT';
   private sub = new Subscription();
 
   constructor(
     private intelApi: IntelligenceApiService,
     private ws: ScalpingWsService,
+    private sessionApi: SessionApiService,
     private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
+    // Sync symbol from active session
+    this.sub.add(
+      this.sessionApi.session$.subscribe((session) => {
+        if (session && session.symbol && session.status !== 'idle') {
+          if (session.symbol !== this.symbol) {
+            this.symbol = session.symbol;
+            this.loadSnapshot();
+          }
+        }
+      })
+    );
+
+    // Load initial snapshot
     this.loadSnapshot();
     
     // Listen to real-time updates from WebSocket
     this.sub.add(
       this.ws.intelligence$.subscribe((data: IntelligenceEvent | null) => {
         if (!data) return;
+        // If WS event has a symbol and it's ours — update
+        if (data.symbol && data.symbol.toUpperCase() !== this.symbol.toUpperCase()) {
+          return; // skip events for other symbols
+        }
         if (data.signal_score !== undefined) {
           this.signalScore = data.signal_score.toFixed(1);
         }

@@ -86,17 +86,17 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
     // React to active session changes
     this.sub.add(
       this.sessionApi.session$.subscribe((session) => {
-        if (!session || session.symbol === this.symbol) {
-          // Symbol hasn't changed, but we may still need to reload 
-          // candles if the chart was just recreated (e.g. navigating back to page)
-          // This is handled in ngAfterViewInit
+        if (!session || session.status === 'idle') {
           return;
         }
-        this.symbol = session.symbol;
+        const oldSymbol = this.symbol;
+        this.symbol = session.symbol || this.symbol;
         this.lastPrice = 0;
-        if (this.candleSeries) {
+        if (this.candleSeries && oldSymbol !== this.symbol) {
           this.candleSeries.setData([]);
         }
+        // Always reload candles when chart exists — handles both symbol change
+        // and page re-entry where chart was just recreated
         this._loadHistoryCandles();
       })
     );
@@ -143,9 +143,9 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
       if (this.chart) {
         this.chart.timeScale().scrollToRealTime();
       }
-      console.debug(`Loaded ${chartData.length} historical candles for ${this.symbol}`);
+      console.log(`Loaded ${chartData.length} historical candles for ${this.symbol}`);
     } catch (e) {
-      console.debug('Failed to load historical candles:', e);
+      console.log('Failed to load historical candles:', e);
     }
   }
 
@@ -226,30 +226,30 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
   private _subscribeToCandles(): void {
     this.sub.add(
       this.ws.candle$.pipe(
-        filter(candle => candle !== null)  // Filter out null initial values from BehaviorSubject
+        filter((candle): candle is NonNullable<typeof candle> => candle !== null)
       ).subscribe((candle) => {
         if (!this.candleSeries || !this.chart) return;
         
         // Filtra per simbolo (case-insensitive) — mostra solo candele del simbolo della sessione corrente
-        if (candle!.symbol.toUpperCase() !== this.symbol.toUpperCase()) {
+        if (candle.symbol.toUpperCase() !== this.symbol.toUpperCase()) {
           return;
         }
         
         try {
-          const ts = (new Date(candle!.timestamp).getTime() / 1000) as UTCTimestamp;
+          const ts = (new Date(candle.timestamp).getTime() / 1000) as UTCTimestamp;
           this.candleSeries.update({
             time: ts,
-            open: candle!.open,
-            high: candle!.high,
-            low: candle!.low,
-            close: candle!.close,
+            open: candle.open,
+            high: candle.high,
+            low: candle.low,
+            close: candle.close,
           });
-          this.lastPrice = candle!.close;
+          this.lastPrice = candle.close;
           // Auto-scroll to latest bar
           this.chart.timeScale().scrollToRealTime();
         } catch (e) {
           // If chart was disposed between the check and the call
-          console.debug('Chart update skipped (likely disposed):', e);
+          // console.log('Chart update skipped (likely disposed):', e);
         }
       })
     );
@@ -264,7 +264,7 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
           try {
             this.chart.applyOptions({ width, height: Math.max(height, 200) });
           } catch (e) {
-            console.debug('Chart resize skipped (likely disposed):', e);
+            // console.log('Chart resize skipped (likely disposed):', e);
           }
         }
       }

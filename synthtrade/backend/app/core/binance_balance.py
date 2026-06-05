@@ -48,7 +48,11 @@ def _get_exchange() -> ccxt.Exchange:
     """
     from app.core.exchange_factory import get_exchange as _get_factory_exchange
     ex = _get_factory_exchange()
-    ex.options["defaultType"] = "spot"
+    if ex is None:
+        raise RuntimeError("Exchange factory returned None")
+    # ccxt type stub defines options values as dict[str, dict[str, str]],
+    # but at runtime they accept plain str values like "spot"
+    ex.options["defaultType"] = "spot"  # type: ignore[arg-type]
     ex.timeout = 5000
     return ex
 

@@ -86,23 +86,37 @@ class SignalAggregator:
                 reason="nessun segnale tecnico",
             )
 
-        # In paper mode, se intelligence score è troppo basso o collector falliti,
-        # usa solo il segnale tecnico (permette debug senza API esterne)
-        if paper_mode and abs(market_score.total) < 5.0:
+        # Se lo score intelligence è trascurabile (collettori falliti/dati non disponibili),
+        # usa solo il segnale tecnico. Questo vale sia per paper mode che per live mode:
+        # quando non ci sono dati di intelligence, non ha senso bloccarsi su bias "neutral".
+        #
+        # In live mode, molti collector falliscono (funding_rate, open_interest, whale, etc.
+        # richiedono API keys). Lo score totale risulta spesso 5-15 da soli pochi collector
+        # (es. fear&greed). Il threshold tradeable=15.0 non viene mai raggiunto.
+        # Per questo motivo, in live mode, se pochi collector hanno risposto (breakdown size ≤ 3),
+        # trattiamo lo score come "no data" e usiamo solo il segnale tecnico.
+        # Se invece 4+ collector hanno risposto, applichiamo il filtro intelligence completo.
+        num_collectors_responded = len(market_score.breakdown) if market_score.breakdown else 0
+        mode_label = "PAPER" if paper_mode else "LIVE"
+
+        if abs(market_score.total) < 5.0 or (mode_label == "LIVE" and num_collectors_responded <= 3):
+            bypass_reason = f"score={market_score.total:.1f}"
+            if num_collectors_responded > 0:
+                bypass_reason += f" ({num_collectors_responded} collectors)"
             if technical.confidence >= self._min_confidence:
                 logger.info(
-                    f"{YELLOW}📋 PAPER MODE: {technical.type} {symbol} @ {technical.confidence:.2f} "
-                    f"(intelligence bypassed: score={market_score.total:.1f}){RESET}"
+                    f"{YELLOW}📋 {mode_label} MODE: {technical.type} {symbol} @ {technical.confidence:.2f} "
+                    f"(intelligence bypassed: {bypass_reason}){RESET}"
                 )
                 return ExecutionDecision(
                     execute=True,
                     confidence=technical.confidence,
-                    reason=f"paper_mode fallback: {technical.type}@{technical.confidence:.2f}",
+                    reason=f"{mode_label.lower()}_mode fallback (no intel): {technical.type}@{technical.confidence:.2f}",
                 )
             else:
                 return ExecutionDecision(
                     execute=False,
-                    reason=f"paper_mode: technical confidence {technical.confidence:.2f} < {self._min_confidence}",
+                    reason=f"{mode_label.lower()}_mode: technical confidence {technical.confidence:.2f} < {self._min_confidence}",
                 )
 
         # Se lo score non e' tradeable, blocca (solo in modalità normale)

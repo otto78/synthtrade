@@ -61,6 +61,7 @@ class ExecutionLoop:
         self._strategy: Optional[AbstractScalpingStrategy] = None
         self._current_regime: Optional[MarketRegime] = None
         self._running = False
+        self._strategy_overridden: bool = False  # True when supervisor has set a specific strategy
         self._indicators: dict = {}
         self.session_id: Optional[str] = None
         self.paper_mode: bool = True  # Default paper — impostato da router al session start
@@ -89,9 +90,20 @@ class ExecutionLoop:
             logger.warning(f"Cannot update params: strategy has no update_params method. Params: {params}")
 
     def set_strategy(self, strategy_name: str) -> None:
-        """Set strategy directly by name (used by supervisor)."""
+        """Set strategy directly by name (used by supervisor).
+        
+        Once set, process_candle() will NOT overwrite it with the regime-based selection
+        until the next session start (which calls reset_strategy_override()).
+        """
         from app.scalping.strategies.registry import StrategyRegistry
         self._strategy = StrategyRegistry.get(strategy_name)
+        self._strategy_overridden = True
+        logger.info(f"Strategy overridden to: {strategy_name} (locked until next session)")
+
+    def reset_strategy_override(self) -> None:
+        """Reset the strategy override flag — used at session start."""
+        self._strategy_overridden = False
+        self._strategy = None
 
     def set_signal_callback(self, callback: Optional[Callable]) -> None:
         """Set callback per segnali generati."""
@@ -106,9 +118,33 @@ class ExecutionLoop:
         buf_before = len(self._candle_buffer)
         self._candle_buffer.add(candle)
 
+        # DIAGNOSTIC: log buffer state on every call
+        buf_after = len(self._candle_buffer)
+        logger.debug(
+            f"process_candle called: symbol={candle.symbol} time={candle.timestamp} "
+            f"close={candle.close} buf_before={buf_before} buf_after={buf_after} "
+            f"ready={buf_after >= 50}"
+        )
+
         if not self._candle_buffer.is_ready():
             if buf_before == 0:
-                logger.info(f"{CYAN}PIPELINE: buffer warmup started for {self._symbol} (need >=50 candles){RESET}")
+                logger.info(
+                    f"{CYAN}PIPELINE: buffer warmup started for {self._symbol} "
+                    f"(need >=50 candles, have {buf_after}){RESET}"
+                )
+                # SAFETY: if warmup was supposed to load 100 candles but buffer is empty,
+                # the warmup may have loaded into a different buffer instance.
+                # Log the buffer IDs for debugging.
+                logger.warning(
+                    f"{YELLOW}PIPELINE: BUFFER MISMATCH — buf_before=0 despite warmup. "
+                    f"ExecutionLoop._candle_buffer id={id(self._candle_buffer)}. "
+                    f"This means the warmup loaded into a DIFFERENT buffer instance. "
+                    f"Check that ExecutionLoop receives the SAME CandleBuffer object as the warmup.{RESET}"
+                )
+                # WORKAROUND: if buffer is empty but we have at least 1 candle now,
+                # there's likely a warmup instance mismatch. Attempt to force-load
+                # candles from the enclosing scope is not possible here. 
+                # But we can at least accumulate WS candles and wait.
             elif buf_before % 10 == 0:
                 logger.info(f"{YELLOW}PIPELINE: buffer {buf_before}/50 candles for {self._symbol}{RESET}")
             return None
@@ -121,8 +157,14 @@ class ExecutionLoop:
         # 2. Detect regime (usa detect_trend/detect_volatility da app/core/indicators.py via RegimeDetector)
         self._current_regime = self._regime_detector.detect(candles, self._indicators)
 
-        # 3. Select strategy
-        self._strategy = self._strategy_selector.select(self._current_regime)
+        # 3. Select strategy — ONLY if not overridden by supervisor
+        if not self._strategy_overridden:
+            if self._strategy_selector:
+                self._strategy = self._strategy_selector.select(self._current_regime)
+            else:
+                self._strategy = None
+        else:
+            logger.debug(f"Strategy locked: {self._strategy.name if self._strategy else 'None'} (override active)")
 
         if not self._strategy:
             logger.warning(f"{YELLOW}PIPELINE: no strategy selected for regime={self._current_regime.regime if self._current_regime else 'N/A'}{RESET}")

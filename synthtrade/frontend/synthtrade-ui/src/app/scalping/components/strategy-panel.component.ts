@@ -30,8 +30,8 @@ const STRATEGY_DEFAULTS: Record<string, { label: string; desc: string; params: S
     params: { ema_fast: 9, ema_slow: 21, take_profit_pct: 0.4, stop_loss_pct: 0.25 },
   },
   rsi_bollinger: {
-    label: 'RSI + Bollinger',
-    desc: 'RSI oversold/overbought + bande di Bollinger',
+    label: 'RSI con Bollinger',
+    desc: 'RSI oversold/overbought con bande di Bollinger',
     params: { rsi_period: 14, rsi_oversold: 30, rsi_overbought: 70, bb_period: 20, bb_std: 2, take_profit_pct: 0.5, stop_loss_pct: 0.3 },
   },
   vwap_reversion: {
@@ -50,8 +50,8 @@ const STRATEGY_DEFAULTS: Record<string, { label: string; desc: string; params: S
     params: { ema_fast: 9, ema_slow: 21, take_profit_pct: 0.5, stop_loss_pct: 0.3 },
   },
   stoch_rsi_bb_squeeze: {
-    label: 'Stoch RSI con BB Squeeze',
-    desc: 'BB squeeze + StochRSI per breakout da volatilità',
+    label: 'Stoch RSI con Bollinger Bands Squeeze',
+    desc: 'Bollinger Bands squeeze + StochRSI per breakout da volatilità',
     params: { rsi_period: 14, bb_period: 20, bb_std: 2, take_profit_pct: 0.5, stop_loss_pct: 0.3 },
   },
 };

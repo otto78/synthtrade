@@ -57,7 +57,7 @@ import { ConfigService } from '../../core/services/config.service';
             <select [(ngModel)]="selectedStrategy" class="select">
               <option value="ema_cross">EMA Cross</option>
               <option value="rsi_bollinger">RSI con Bollinger</option>
-              <option value="stoch_rsi_bb_squeeze">Stoch RSI con BB Squeeze</option>
+              <option value="stoch_rsi_bb_squeeze">Stoch RSI con Bollinger Bands Squeeze</option>
               <option value="vwap_reversion">VWAP Reversion</option>
               <option value="momentum_base">Momentum Base</option>
               <option value="scalping_v2">Scalping</option>
@@ -621,7 +621,7 @@ export class SessionControlsComponent implements OnInit {
     const map: Record<string, string> = {
       ema_cross: 'EMA Cross',
       rsi_bollinger: 'RSI con Bollinger',
-      stoch_rsi_bb_squeeze: 'Stoch RSI con BB Squeeze',
+      stoch_rsi_bb_squeeze: 'Stoch RSI con Bollinger Bands Squeeze',
       vwap_reversion: 'VWAP Reversion',
       momentum_base: 'Momentum Base',
       scalping_v2: 'Scalping',

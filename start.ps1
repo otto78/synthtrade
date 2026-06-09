@@ -9,6 +9,27 @@ $venv = Join-Path $root ".venv\Scripts\Activate.ps1"
 Write-Host "SynthTrade -- avvio in corso..." -ForegroundColor Yellow
 
 chcp 65001 | Out-Null
+
+$existing = Get-NetTCPConnection -LocalPort 8888 -State Listen -ErrorAction SilentlyContinue
+if ($existing) {
+    Write-Host "Porta 8888 occupata, terminazione processi uvicorn esistenti..." -ForegroundColor Yellow
+    $uvicornProcs = Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object {
+        $_.CommandLine -like "*uvicorn*app.main*"
+    }
+    foreach ($proc in $uvicornProcs) {
+        Write-Host "  Uccisione PID $($proc.ProcessId) (StartTime: $($proc.CreationDate))" -ForegroundColor Gray
+        Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Seconds 2
+
+    if (Test-NetConnection -ComputerName 127.0.0.1 -Port 8888 -WarningAction SilentlyContinue -InformationLevel Quiet) {
+        Write-Host "  ATTENZIONE: porta ancora occupata, tentativo finale..." -ForegroundColor Red
+        Stop-Process -Name python -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 1
+    }
+}
+
+Write-Host "Avvio backend..." -ForegroundColor Green
 Start-Process pwsh -ArgumentList "-NoExit", "-Command", `
   "chcp 65001 | Out-Null; Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned -Force; & '$venv'; cd '$backend'; uvicorn app.main:app --reload --port 8888" `
   -WindowStyle Normal

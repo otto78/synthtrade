@@ -45,9 +45,14 @@ const STRATEGY_DEFAULTS: Record<string, { label: string; desc: string; params: S
     params: { ema_fast: 12, ema_slow: 26, take_profit_pct: 0.6, stop_loss_pct: 0.35 },
   },
   scalping_v2: {
-    label: 'Scalping v2',
+    label: 'Scalping',
     desc: 'Auto-select via AI Signal Intelligence',
     params: { ema_fast: 9, ema_slow: 21, take_profit_pct: 0.5, stop_loss_pct: 0.3 },
+  },
+  stoch_rsi_bb_squeeze: {
+    label: 'Stoch RSI con BB Squeeze',
+    desc: 'BB squeeze + StochRSI per breakout da volatilità',
+    params: { rsi_period: 14, bb_period: 20, bb_std: 2, take_profit_pct: 0.5, stop_loss_pct: 0.3 },
   },
 };
 

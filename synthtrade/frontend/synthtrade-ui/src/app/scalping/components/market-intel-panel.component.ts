@@ -80,7 +80,7 @@ export class MarketIntelPanelComponent implements OnInit, OnDestroy {
   cvdTrend = '--';
 
   /** Symbol shown in template — updated from active session */
-  symbol: string = 'BTCUSDT';
+  symbol: string = 'BNBUSDC';
   private sub = new Subscription();
 
   constructor(

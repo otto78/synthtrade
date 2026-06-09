@@ -101,8 +101,7 @@ export class PerformancePanelComponent implements OnInit, OnDestroy {
     // Refresh only when a trade closes — no polling
     this.sub.add(this.ws.tradeClosed$.subscribe(() => this.loadMetrics()));
 
-    // Initial load
-    this.loadMetrics();
+    // Refresh only when a trade closes — no polling, no initial load without session
   }
 
   ngOnDestroy(): void {

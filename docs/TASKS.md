@@ -39,111 +39,78 @@ Fix issues identified from live session logs:
 
 ---
 
-### TASK-817 — SignalAggregator: bypass mean-reversion per ranging (2026-06-09)
+### TASK-817 — SignalAggregator: bypass mean-reversion per ranging (2026-06-09) ✅
 
-**Priorità:** Media (sblocca SELL legittimi)
-
-**Problema:** Il SignalAggregator blocca i segnali SELL se il bias intelligence è bullish, anche quando la strategia attiva è rsi_bollinger (mean-reversion in ranging). In ranging, i SELL non sono short direzionali ma **chiusura di range** — il prezzo tocca la banda superiore di Bollinger e la strategia suggerisce di vendere perché è probabile un ritorno verso la media.
-
-**Soluzione:** Aggiungere bypass per strategie mean-reversion:
-```
-MEAN_REVERSION_STRATEGIES = ("rsi_bollinger", "stoch_rsi_bb_squeeze")
-if bias == "bullish" and technical.type == "SELL" and technical.source in MEAN_REVERSION_STRATEGIES:
-    # Permetti: non è short direzionale, è chiusura range
-```
+**Status:** Complete ✅
+**Commit:** `123976e`
+**File:** `signal_aggregator.py`
 
 **Modifiche:**
-- `signal_aggregator.py`: Bypass conflitto bias/segnale per strategie mean-reversion
-
-**Rischio:** Medio — potrebbe lasciar passare qualche falso SELL, ma la confidence ridotta (0.6) e la combined confidence check limitano il rischio.
+- `MEAN_REVERSION_STRATEGIES = ("rsi_bollinger", "stoch_rsi_bb_squeeze")`
+- Permette SELL da mean-reversion in ranging quando bias intelligence è bullish
+- Permette BUY da mean-reversion in ranging quando bias intelligence è bearish
 
 ---
 
-### TASK-818 — StrategySelector: mapping regimi corretto (2026-06-09)
+### TASK-818 — StrategySelector: mapping regimi corretto (2026-06-09) ✅
 
-**Priorità:** Media
-
-**Problema:** Il mapping regimi attuale assegna `momentum_base` a TUTTI i regimi (ranging, volatile, unknown). Momentum_base produce segnali frequenti ma non è ottimale per nessun regime specifico.
-
-**Soluzione:** Mappare i regimi alle strategie più adatte:
-- `ranging` → `rsi_bollinger` (mean-reversion)
-- `volatile` → `stoch_rsi_bb_squeeze` (cattura breakout)
-- `trending_up/trending_down` → `ema_cross` (trend following)
-- `unknown` → `momentum_base` (default sicuro)
+**Status:** Complete ✅
+**Commit:** `123976e`
+**File:** `strategy_selector.py`
 
 **Modifiche:**
-- `strategy_selector.py`: Mappa regimi aggiornata
-
-**Rischio:** Basso — le strategie sono testate singolarmente.
+- `ranging` → `rsi_bollinger`
+- `volatile` → `stoch_rsi_bb_squeeze`
+- `trending_up/down` → `ema_cross`
+- `unknown` → `momentum_base`
 
 ---
 
-### TASK-819 — Supervisor: cooldown e regime validation (2026-06-09)
+### TASK-819 — Supervisor: cooldown e regime validation (2026-06-09) ✅
 
-**Priorità:** Media (stabilizza il sistema)
+**Status:** Complete ✅
+**Commit:** `123976e`
+**File:** `supervisor_scheduler.py`, `supervisor_client.py`
 
-**Problema:** Il supervisor AI cambia strategia ogni 1-2 minuti (rsi_bollinger ↔ ema_cross ↔ rsi_bollinger), causando instabilità. Inoltre può proporre strategie sbagliate per il regime corrente (es. ema_cross in ranging).
-
-**Soluzione:**
+**Modifiche:**
 - Cooldown cambio strategia: 20 minuti
 - Cooldown aggiornamento parametri: 10 minuti
 - Regime validation: blocca strategie non compatibili col regime corrente
-- Se la strategia proposta non è ammessa, resetta il cooldown per permettere il prossimo tick valido
-
-**Regime→Strategie permesse:**
-| Regime | Strategie |
-|--------|-----------|
-| ranging | rsi_bollinger, momentum_base, stoch_rsi_bb_squeeze |
-| volatile | stoch_rsi_bb_squeeze, momentum_base |
-| trending_up/down | ema_cross |
-| unknown | momentum_base |
-
-**Modifiche:**
-- `supervisor_scheduler.py`: Cooldown + regime validation
-- `supervisor_client.py`: Regole mapping nel prompt AI
-
-**Rischio:** Basso — le validazioni sono barriere di sicurezza.
+- Se strategia proposta non ammessa, resetta cooldown per prossimo tick valido
+- `REGIME_ALLOWED_STRATEGIES` mapping completo nel prompt AI
 
 ---
 
-### TASK-820 — EMA Cross: rimuovere slope filter + registrazione nuove strategie (2026-06-09)
+### TASK-820 — EMA Cross: rimuovere slope filter + registrazione nuove strategie (2026-06-09) ✅
 
-**Priorità:** Alta (ripristina segnali EMA)
-
-**Problema 1 — Slope filter:** Il filtro pendenza EMA21 (MIN_SLOPE = 0.03%) blocca TUTTI i segnali in ranging perché le EMA sono piatte. Questo ha bloccato i segnali per ore durante i test. È un anti-pattern: se il mercato è in ranging, ema_cross non dovrebbe essere selezionata (task TASK-818), ma se viene selezionata per errore deve almeno produrre segnali.
-
-**Soluzione:** Rimuovere completamente MIN_SLOPE e la logica di pendenza da ema_cross.py. Ripristinare il comportamento originale: segnale BUY se EMA9 > EMA21, SELL se EMA9 < EMA21.
-
-**Problema 2 — Nuova strategia:** stoch_rsi_bb_squeeze non è registrata nel registry e il file non esiste.
-
-**Soluzione:** Creare il file `stoch_rsi_bb_squeeze.py` con la strategia StochRSI + BB Squeeze per regime volatile. Registrarla in `registry.py`.
+**Status:** Complete ✅
+**Commit:** `123976e`
+**File:** `ema_cross.py`, `stoch_rsi_bb_squeeze.py`, `registry.py`
 
 **Modifiche:**
-- `ema_cross.py`: Rimuovere slope filter (ripristinare versione semplice)
-- `stoch_rsi_bb_squeeze.py`: Creare nuova strategia (dallo stash)
-- `registry.py`: Registrare stoch_rsi_bb_squeeze
-
-**Rischio:** Basso — lo slope filter era un anti-pattern dimostrato. La nuova strategia è opzionale.
+- `ema_cross.py`: Rimosso MIN_SLOPE e logica pendenza — segnale BUY se EMA9 > EMA21, SELL se EMA9 < EMA21
+- `stoch_rsi_bb_squeeze.py`: Creata strategia StochRSI + BB Squeeze per regime volatile
+- `registry.py`: Registrata `stoch_rsi_bb_squeeze`
 
 ---
 
-### TASK-821 — Frontend: default BNBUSDC e rimozione initial load (2026-06-09)
+### TASK-821 — Frontend: default BNBUSDC e rimozione initial load (2026-06-09) ✅
 
-**Priorità:** Bassa
-
-**Problema:** Il frontend usa BTCUSDT come simbolo predefinito, ma l'utente fa trading principalmente su BNBUSDC. Inoltre la Trade Log e Performance Panel facevano chiamate API al caricamento, causando errori 404 quando non c'era una sessione attiva.
-
-**Soluzione:**
-- Cambiare default symbol da BTCUSDT a BNBUSDC in tutti i componenti scalping
-- Cambiare strategia default da scalping_v2 a momentum_base
-- Rimuovere initial load da TradeLog e PerformancePanel (attendono sessione attiva)
+**Status:** Complete ✅
 
 **Modifiche:**
-- `live-chart.component.ts`: default BNBUSDC
-- `market-intel-panel.component.ts`: default BNBUSDC
-- `session-controls.component.ts`: default BNBUSDC, strategia momentum_base
-- `session-api.service.ts`: default BNBUSDC
-- `trade-log.component.ts`: rimuovere initial load
-- `performance-panel.component.ts`: rimuovere initial load
+- Default symbol: BTCUSDT → BNBUSDC in tutti i componenti scalping
+- Default strategia: scalping_v2 → momentum_base
+- Dropdown strategie: aggiunto `stoch_rsi_bb_squeeze`, rimosso `scalping_v2`, nomi normalizzati
+  (`RSI + Bollinger` invece di `RSI con Bollinger`, `StochRSI BB Squeeze` invece di `Stoch RSI con BB Squeeze`)
+- Rimosso initial load da TradeLog e PerformancePanel (attendono sessione attiva)
+- `strategy-panel.component.ts`: fallback `STRATEGY_DEFAULTS['momentum_base']` invece di `scalping_v2`
 
-**Rischio:** Zero — solo valori di default.
+**File modificati:**
+- `session-controls.component.ts`
+- `live-chart.component.ts`
+- `market-intel-panel.component.ts`
+- `session-api.service.ts`
+- `trade-log.component.ts`
+- `performance-panel.component.ts`
+- `strategy-panel.component.ts`

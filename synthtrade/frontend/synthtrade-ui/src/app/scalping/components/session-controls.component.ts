@@ -56,10 +56,11 @@ import { ConfigService } from '../../core/services/config.service';
             <label>Strategia</label>
             <select [(ngModel)]="selectedStrategy" class="select">
               <option value="ema_cross">EMA Cross</option>
-              <option value="rsi_bollinger">RSI + Bollinger</option>
+              <option value="rsi_bollinger">RSI con Bollinger</option>
+              <option value="stoch_rsi_bb_squeeze">Stoch RSI con BB Squeeze</option>
               <option value="vwap_reversion">VWAP Reversion</option>
               <option value="momentum_base">Momentum Base</option>
-              <option value="scalping_v2">Scalping v2 (auto)</option>
+              <option value="scalping_v2">Scalping</option>
             </select>
           </div>
 
@@ -453,8 +454,8 @@ import { ConfigService } from '../../core/services/config.service';
 })
 export class SessionControlsComponent implements OnInit {
   session: ScalpingSession | null = null;
-  selectedSymbol = 'BTCUSDT';
-  selectedStrategy = 'scalping_v2';
+  selectedSymbol = 'BNBUSDC';
+  selectedStrategy = 'momentum_base';
   
   /** Trade value: restore from localStorage or default 100 */
   tradeValue: number = (() => {
@@ -619,10 +620,11 @@ export class SessionControlsComponent implements OnInit {
   formatStrategy(s: string): string {
     const map: Record<string, string> = {
       ema_cross: 'EMA Cross',
-      rsi_bollinger: 'RSI + Bollinger',
+      rsi_bollinger: 'RSI con Bollinger',
+      stoch_rsi_bb_squeeze: 'Stoch RSI con BB Squeeze',
       vwap_reversion: 'VWAP Reversion',
       momentum_base: 'Momentum Base',
-      scalping_v2: 'Scalping v2',
+      scalping_v2: 'Scalping',
     };
     return map[s] ?? s;
   }

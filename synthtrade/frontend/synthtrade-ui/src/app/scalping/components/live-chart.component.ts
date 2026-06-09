@@ -65,7 +65,7 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('chartContainer', { static: true })
   chartContainer!: ElementRef<HTMLDivElement>;
 
-  @Input() symbol: string = 'BTCUSDT';
+  @Input() symbol: string = 'BNBUSDC';
 
   lastPrice = 0;
 

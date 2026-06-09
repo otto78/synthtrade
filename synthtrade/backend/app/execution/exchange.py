@@ -243,29 +243,50 @@ class BinanceExchangeAdapter:
         Place OCO (One-Cancels-Other) order.
         
         Strategy:
-        1. Try native Binance OCO first (single atomic order, no double-lock).
-        2. Fallback to synthetic OCO (TP LIMIT first, then SL STOP_LOSS) to avoid
-           the double-lock bug where SL reserves the balance and TP cannot be placed.
+        1. Wait for balance settlement after the market fill (0.5s + fetch_balance).
+        2. Read the ACTUAL available base asset balance (post-fee deduction).
+        3. Try native Binance OCO first (single atomic order, no double-lock).
+        4. Fallback to synthetic OCO (TP LIMIT first, then SL STOP_LOSS).
+        
+        IMPORTANT: After a market buy, Binance deducts ~0.1% fee in the base asset.
+        The quantity passed by the caller (e.g. 0.016 BNB) may be higher than
+        the actual balance (e.g. 0.015984 BNB). We always read the real balance here.
         
         Both orders persist on Binance even if the bot disconnects.
         """
         logger.info(f"Placing risk parachute for {symbol}: TP={price}, SL={stop_price}")
         
+        # Wait for balance settlement after the market fill
+        await asyncio.sleep(0.5)
+        try:
+            await self.client.fetch_balance()
+        except Exception:
+            pass
+        
+        # Get actual available base asset balance (after fee deduction)
+        actual_qty = await self._get_available_base_balance(symbol)
+        if actual_qty <= 0:
+            logger.warning(f"No {symbol} base asset balance available after trade")
+            return {"type": "oco", "status": "no_balance"}
+        
+        qty_rounded = await self._round_qty(symbol, actual_qty)
+        logger.info(f"Actual available {symbol} balance after fee: {actual_qty} -> rounded: {qty_rounded}")
+        
         # Strategy 1: Try native OCO (single atomic order, best for double-lock)
         try:
             result = await self._place_oco_native(
-                symbol=symbol, side=side, quantity=quantity,
+                symbol=symbol, side=side, quantity=qty_rounded,
                 price=price, stop_price=stop_price,
                 take_profit_price=take_profit_price,
             )
-            logger.info(f"Native OCO placed successfully for {symbol}")
+            logger.info(f"Native OCO placed successfully for {symbol} with qty={qty_rounded}")
             return result
         except Exception as oco_e:
             logger.warning(f"Native OCO failed for {symbol}, falling back to synthetic: {oco_e}")
         
-        # Strategy 2: Fallback to synthetic OCO (inverted: TP first, SL second)
-        return await self._place_oco_synthetic_inverted(
-            symbol=symbol, side=side, quantity=quantity,
+        # Strategy 2: Fallback to synthetic OCO (TP LIMIT first, SL STOP_LOSS second)
+        return await self._place_oco_synthetic(
+            symbol=symbol, side=side, quantity=qty_rounded,
             price=price, stop_price=stop_price,
             take_profit_price=take_profit_price,
         )

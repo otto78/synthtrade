@@ -38,11 +38,13 @@ interface CandleResponse {
   standalone: true,
   template: `
     <div class="live-chart">
-      <span class="panel-title">Live Chart</span>
-      <div class="chart-meta">
-        <span class="symbol">{{ symbol }}</span>
-        <span class="timeframe">1m</span>
-        <span class="price-tag" *ngIf="lastPrice > 0">{{ lastPrice | number:'1.2-2' }}</span>
+      <div class="chart-header">
+        <span class="panel-title">Live Chart</span>
+        <div class="chart-meta">
+          <span class="symbol">{{ symbol }}</span>
+          <span class="timeframe">1m</span>
+          <span class="price-tag" *ngIf="lastPrice > 0">{{ lastPrice | number:'1.2-2' }}</span>
+        </div>
       </div>
       <div #chartContainer class="chart-container"></div>
     </div>
@@ -50,7 +52,7 @@ interface CandleResponse {
   imports: [NgIf, DecimalPipe],
   styles: [`
     .live-chart { padding: 12px; display: flex; flex-direction: column; height: 100%; }
-    .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+    .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
     .chart-meta { display: flex; align-items: center; gap: 8px; }
     .symbol { font-size: 13px; color: var(--accent-primary, #F0B90B); font-weight: 700; }
     .timeframe { font-size: 10px; color: var(--text-secondary); background: rgba(240,185,11,0.1); padding: 2px 6px; border-radius: 3px; }

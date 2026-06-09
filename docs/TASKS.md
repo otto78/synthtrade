@@ -2,58 +2,40 @@
 
 ## Active Tasks
 
-### TASK-814 — Live Mode Bug Fixes (2026-06-05 → 2026-06-09)
+### TASK-814 — Live Mode Bug Fixes (2026-06-05 → 2026-06-09) ✅
+
+**Status:** Complete ✅
 
 Fix issues identified from live session logs:
-- [x] **Issue 1**: WS initial handshake timeout — warmup blocks event loop
-- [x] **Issue 2**: Binance RSS Poller — empty/non-XML response
-- [x] **Issue 3**: CoinGecko News Poller — 401 Unauthorized (news endpoint needs API key)
-- [x] **Issue 4**: News RSS Feed URLs — CoinDesk redirect (add www), TheBlock 404
-- [x] **Issue 5**: No trades executing in live mode — *fixed: OCO balance settlement, logging visibility, session restore pipeline*
-- [x] **Issue 6**: Session restore non avviava il pipeline WS — *fix: `_restore_scalping_session()` ora chiama `_start_ws_broadcast()` con `restore_mode=True`*
-- [x] **Issue 7**: Log moduli scalping invisibili su Windows — *fix: handler forzato nei logger scalping in logging.py*
-- [x] **Issue 8**: OCO placement falliva per balance post-fee — *fix: `place_oco_order()` ora legge balance reale prima di piazzare*
+- [x] **Issue 1-8**: All fixed — WS handshake, RSS/CoinGecko/Whale pollers, OCO balance settlement, logging visibility, session restore pipeline, minNotional, OCO post-fee balance
 - [x] Update docs and commit
 
 ---
 
-### TASK-815 — SignalScoreEngine: soglia dinamica e pesi calibrati (2026-06-09)
+### TASK-815 — SignalScoreEngine: soglia dinamica e pesi calibrati (2026-06-09) ✅
 
-**Priorità:** Alta (sblocca tradeable=True)
-
-**Problema:** Con 7 collector configurati ma soli 3-4 che rispondono (funding_rate, OI, long/short, fear_greed falliscono su simboli USDC), la soglia fissa 15.0 blocca `tradeable=True` anche con score 12-14 validi.
-
-**Soluzione:** Applicare soglia scalata in base alla coverage dei collector che hanno effettivamente risposto:
-- `effective_threshold = threshold * total_weight`
-- Con coverage 0.5 (3 collector su 7): soglia ≈ 7.5 invece di 15.0
-- Con coverage 0.3 (2 collector): soglia ≈ 4.5
+**Status:** Complete ✅
+**Commit:** `123976e`
+**File:** `signal_score_engine.py`
 
 **Modifiche:**
-- `signal_score_engine.py`:
-  - Ridistribuire pesi: funding_rate 0.20, cvd 0.20, open_interest 0.15, long_short_ratio 0.15, fear_greed 0.15, whale 0.10, sentiment 0.05, onchain 0.0
-  - Normalizzare simbolo futures: USDC → USDT (Binance Futures non ha perpetual USDC)
-  - Soglia scalata: `total >= threshold * coverage` invece di `total >= threshold`
-
-**Rischio:** Basso — la soglia scalata è più permissiva ma riflette la reale affidabilità dei dati.
+- Pesi ridistribuiti (funding_rate 0.20, cvd 0.20, OI 0.15, L/S 0.15, F&G 0.15, whale 0.10, sentiment 0.05, onchain 0.0)
+- Normalizzazione USDC→USDT per collector futures
+- Soglia scalata: `effective_threshold = threshold * coverage`
 
 ---
 
-### TASK-816 — RSI Bollinger: soglie calibrate per mercato ranging (2026-06-09)
+### TASK-816 — RSI Bollinger: soglie calibrate per mercato ranging (2026-06-09) ✅
 
-**Priorità:** Alta (genera segnali in ranging)
+**Status:** Complete ✅
+**Commit:** `123976e`
+**File:** `rsi_bollinger.py`
 
-**Problema:** In mercato ranging a bassa volatilità (es. BNBUSDC), le soglie standard RSI 30/70 non vengono quasi mai toccate. La strategia rsi_bolligner produce solo segnali NONE.
-
-**Soluzione:** Abbassare le soglie per catturare mean-reversion anche su range stretti:
+**Modifiche:**
 - RSI_OVERSOLD: 30 → 38
 - RSI_OVERBOUGHT: 70 → 62
 - BB tolleranza: 1.01 → 1.015
-- Confidence: 0.7 → 0.6 (leggermente ridotta per evitare falsi)
-
-**Modifiche:**
-- `rsi_bollinger.py`: Soglie e tolleranza
-
-**Rischio:** Basso — confidence ridotta compensa il maggior numero di segnali.
+- Confidence: 0.7 → 0.6
 
 ---
 

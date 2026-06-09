@@ -18,11 +18,11 @@ import { ConfigService } from '../../core/services/config.service';
   template: `
     <div class="session-card">
 
-      <!-- IDLE: config + start -->
+      <!-- IDLE: Session header + config -->
       <ng-container *ngIf="!session || session.status === 'idle'">
-        <div class="card-header">
-          <span class="dot idle"></span>
-          <span class="title">Nuova Sessione</span>
+        <div class="session-header">
+          <span class="session-title">Session</span>
+          <span class="session-id" *ngIf="sessionId">{{ sessionId }}</span>
         </div>
 
         <div class="config-grid">
@@ -53,18 +53,6 @@ import { ConfigService } from '../../core/services/config.service';
           </div>
 
           <div class="field">
-            <label>Strategia</label>
-            <select [(ngModel)]="selectedStrategy" class="select">
-              <option value="ema_cross">EMA Cross</option>
-              <option value="rsi_bollinger">RSI con Bollinger</option>
-              <option value="stoch_rsi_bb_squeeze">Stoch RSI con Bollinger Bands Squeeze</option>
-              <option value="vwap_reversion">VWAP Reversion</option>
-              <option value="momentum_base">Momentum Base</option>
-              <option value="scalping_v2">Scalping</option>
-            </select>
-          </div>
-
-          <div class="field">
             <label>Valore Trade ($)</label>
             <div class="trade-value-row">
               <input
@@ -89,18 +77,21 @@ import { ConfigService } from '../../core/services/config.service';
 
       <!-- RUNNING / PAUSED -->
       <ng-container *ngIf="session && session.status !== 'idle'">
-        <div class="card-header">
-          <span class="dot" [ngClass]="session.status"></span>
-          <span class="title">{{ session.symbol }}</span>
-          <span class="status-pill" [ngClass]="session.status">
-            {{ session.status === 'running' ? 'LIVE' : 'PAUSED' }}
-          </span>
+        <div class="session-header">
+          <span class="session-title">Session</span>
+          <span class="session-id" *ngIf="sessionId">{{ sessionId }}</span>
         </div>
 
         <div class="session-meta">
           <div class="meta-item">
-            <span class="meta-label">Strategia</span>
-            <span class="meta-value">{{ formatStrategy(session.strategy) }}</span>
+            <span class="meta-label">Simbolo</span>
+            <span class="meta-value">{{ session.symbol }}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Stato</span>
+            <span class="meta-value" [ngClass]="session.status">
+              {{ session.status === 'running' ? 'LIVE' : 'PAUSED' }}
+            </span>
           </div>
           <div class="meta-item">
             <span class="meta-label">Saldo {{ session.mode === 'live' ? 'Live' : 'Paper' }}</span>
@@ -165,6 +156,29 @@ import { ConfigService } from '../../core/services/config.service';
       flex-direction: column;
       gap: 14px;
       height: 100%;
+    }
+
+    /* Session header */
+    .session-header {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(234,236,239,0.08);
+      margin-bottom: 4px;
+    }
+    .session-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: 0.3px;
+    }
+    .session-id {
+      font-size: 10px;
+      font-weight: 400;
+      color: var(--text-secondary);
+      opacity: 0.7;
+      font-family: monospace;
     }
 
     /* Header */
@@ -454,6 +468,7 @@ import { ConfigService } from '../../core/services/config.service';
 })
 export class SessionControlsComponent implements OnInit {
   session: ScalpingSession | null = null;
+  sessionId: string | null = null;
   selectedSymbol = 'BNBUSDC';
   selectedStrategy = 'momentum_base';
   
@@ -549,6 +564,7 @@ export class SessionControlsComponent implements OnInit {
     this.sessionApi.start(executionMode, this.selectedStrategy, this.selectedSymbol, this.tradeValue).subscribe({
       next: (data: ScalpingSession) => {
         this.session = data;
+        this.sessionId = data.session_id || null;
         this.loading = false;
         this.cdr.detectChanges();
       },

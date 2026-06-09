@@ -615,6 +615,7 @@ async def _start_ws_broadcast(symbol: str):
         If warmup failed (e.g. REST timeout), force-reload candles here
         so the buffer is ready for signal generation.
         """
+        nonlocal client
         _first_candle = True
         _last_event_time = datetime.now(timezone.utc)
         

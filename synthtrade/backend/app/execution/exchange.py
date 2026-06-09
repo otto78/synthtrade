@@ -345,17 +345,13 @@ class BinanceExchangeAdapter:
                                             price: float, stop_price: float,
                                             take_profit_price: float | None = None) -> Dict[str, Any]:
         """
-        Synthetic OCO with inverted order: TP LIMIT first, SL STOP_LOSS second.
+        Synthetic OCO with inverted order: SL STOP_LOSS first (with reduceOnly), TP LIMIT second.
         
-        This avoids the double-lock bug where SL reserves the balance first and
-        then TP cannot be placed because the same quantity is already locked.
+        For small quantities (< 0.1 BNB equivalent), placing TP LIMIT first reserves the balance,
+        then STOP_LOSS fails with "insufficient balance" because the same qty is locked.
         
-        By placing TP LIMIT first:
-        - Binance reserves the quantity for the LIMIT order
-        - The STOP_LOSS uses the same quantity but Binance allows overlapping
-          orders on the same balance (unlike LIMIT+STOP_LOSS which locks separately)
-        
-        Wait for balance settlement after market order before placing orders.
+        Solution: Place SL first with reduceOnly flag (no balance reservation), then TP LIMIT.
+        If only one succeeds, the position monitor on WS will handle the other direction.
         """
         # Wait for balance settlement after the market fill
         await asyncio.sleep(0.5)
@@ -373,9 +369,22 @@ class BinanceExchangeAdapter:
         qty_rounded = await self._round_qty(symbol, actual_qty)
         logger.info(f"Actual available {symbol} balance after fee: {actual_qty} -> rounded: {qty_rounded}")
         
-        # INVERTED ORDER: Place TP LIMIT first, SL STOP_LOSS second
-        # TP goes first so it's always placed. SL is placed right after on the same qty.
-        # Binance allows both orders to coexist as they track different price levels.
+        # STEP 1: Place STOP_LOSS first with reduceOnly flag.
+        # reduceOnly=true tells Binance not to reserve balance separately,
+        # avoiding the "insufficient balance" error on small quantities.
+        sl_result = None
+        try:
+            sl_result = await self.place_stop_loss_order(
+                symbol=symbol,
+                side=side,
+                quantity=qty_rounded,
+                stop_price=stop_price,
+            )
+            logger.info(f"Stop loss placed: {sl_result.get('order_id')} @ {stop_price}")
+        except Exception as sl_e:
+            logger.warning(f"Stop loss placement failed (non-fatal, position tracked): {sl_e}")
+        
+        # STEP 2: Place TP LIMIT second.
         tp_result = None
         if take_profit_price:
             try:
@@ -385,21 +394,9 @@ class BinanceExchangeAdapter:
                     quantity=qty_rounded,
                     limit_price=take_profit_price,
                 )
-                logger.info(f"Take profit limit placed first: {tp_result.get('order_id')}")
+                logger.info(f"Take profit limit placed: {tp_result.get('order_id')} @ {take_profit_price}")
             except Exception as tp_e:
-                logger.warning(f"Take profit limit failed (non-fatal): {tp_e}")
-        
-        sl_result = None
-        try:
-            sl_result = await self.place_stop_loss_order(
-                symbol=symbol,
-                side=side,
-                quantity=qty_rounded,
-                stop_price=stop_price,
-            )
-            logger.info(f"Stop loss placed: {sl_result.get('order_id')}")
-        except Exception as sl_e:
-            logger.warning(f"Stop loss placement failed (non-fatal, position tracked): {sl_e}")
+                logger.warning(f"Take profit limit failed (non-fatal, position tracked): {tp_e}")
         
         return {
             "type": "oco_synthetic_inverted",

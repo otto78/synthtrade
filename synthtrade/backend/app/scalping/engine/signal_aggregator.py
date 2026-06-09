@@ -128,22 +128,45 @@ class SignalAggregator:
                 reason=reason,
             )
 
+        # ── Mean-reversion bypass per strategie ranging ──────────────────────
+        # In regime ranging, strategie come rsi_bollinger generano SELL quando il
+        # prezzo tocca la banda superiore di Bollinger (mean-reversion). Questo
+        # non è uno short direzionale ma una chiusura del range. Bloccare questi
+        # SELL perché il bias intelligence è bullish impedisce qualsiasi trade
+        # in ranging — BNB sale, tocca BB superiore, genera SELL, ma viene bloccato.
+        # Lo stesso vale per BUY su BB inferiore con bias bearish.
+        MEAN_REVERSION_STRATEGIES = ("rsi_bollinger", "stoch_rsi_bb_squeeze")
+
         # Verifica allineamento bias intelligence vs segnale tecnico
         bias = market_score.bias
         if bias == "bullish" and technical.type not in ("BUY",):
-            reason = f"conflitto intelligence-tecnico: bias={bias}, segnale={technical.type}"
-            logger.warning(f"{RED}🔴 BLOCK: {symbol} {reason}{RESET}")
-            return ExecutionDecision(
-                execute=False,
-                reason=reason,
-            )
+            # Permetti SELL da mean-reversion in ranging (chiusura range, non short)
+            if technical.type == "SELL" and technical.source in MEAN_REVERSION_STRATEGIES:
+                logger.info(
+                    f"⚡ MEAN-REVERSION SELL permesso (source={technical.source}) "
+                    f"nonostante bias={bias} — chiusura range, non short direzionale"
+                )
+            else:
+                reason = f"conflitto intelligence-tecnico: bias={bias}, segnale={technical.type}"
+                logger.warning(f"{RED}🔴 BLOCK: {symbol} {reason}{RESET}")
+                return ExecutionDecision(
+                    execute=False,
+                    reason=reason,
+                )
         if bias == "bearish" and technical.type not in ("SELL", "CLOSE"):
-            reason = f"conflitto intelligence-tecnico: bias={bias}, segnale={technical.type}"
-            logger.warning(f"{RED}🔴 BLOCK: {symbol} {reason}{RESET}")
-            return ExecutionDecision(
-                execute=False,
-                reason=reason,
-            )
+            # Permetti BUY da mean-reversion in ranging (chiusura range, non long)
+            if technical.type == "BUY" and technical.source in MEAN_REVERSION_STRATEGIES:
+                logger.info(
+                    f"⚡ MEAN-REVERSION BUY permesso (source={technical.source}) "
+                    f"nonostante bias={bias} — chiusura range, non long direzionale"
+                )
+            else:
+                reason = f"conflitto intelligence-tecnico: bias={bias}, segnale={technical.type}"
+                logger.warning(f"{RED}🔴 BLOCK: {symbol} {reason}{RESET}")
+                return ExecutionDecision(
+                    execute=False,
+                    reason=reason,
+                )
         if bias == "neutral":
             reason = "bias intelligence neutrale, no trade"
             logger.warning(f"{YELLOW}🟡 SKIP: {symbol} {reason} (score={market_score.total:.1f}){RESET}")

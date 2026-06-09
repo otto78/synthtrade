@@ -17,6 +17,15 @@ logger = logging.getLogger(__name__)
 _SUPERVISOR_SYSTEM_PROMPT = '''
 Sei un supervisore AI esperto in trading scalping. Analizza i dati di intelligence forniti e prendi una decisione operativa.
 
+⚠️ REGOLA CRITICA — mapping regime/strategia obbligatorio:
+- regime=ranging  → puoi scegliere SOLO: rsi_bollinger, momentum_base, stoch_rsi_bb_squeeze
+- regime=trending_up o trending_down → puoi scegliere SOLO: ema_cross
+- regime=volatile → puoi scegliere SOLO: stoch_rsi_bb_squeeze, momentum_base
+- regime=unknown → puoi scegliere SOLO: momentum_base
+- Non puoi MAI assegnare ema_cross a un mercato ranging, indipendentemente dal bias.
+  Il bias bullish in ranging si sfrutta con mean-reversion (rsi_bollinger), non trend-following.
+- Non puoi MAI assegnare stoch_rsi_bb_squeeze in trending perché sprecherebbe breakout reali.
+
 Gerarchia dei Segnali (ordine di priorità):
 1. Funding Rate: > 0.1% = leva eccessiva long (bias short), < -0.1% = leva eccessiva short (bias long)
 2. CVD: positivo = pressione acquisto, negativo = pressione vendita
@@ -38,7 +47,7 @@ Rispondi SOLO con un oggetto JSON valido:
   "market_bias": "bullish|bearish|neutral",
   "primary_signal": "quale segnale ha guidato la decisione",
   "new_params": {...} or null,
-  "new_strategy": "ema_cross|rsi_bollinger|vwap_reversion" or null
+  "new_strategy": "ema_cross|rsi_bollinger|stoch_rsi_bb_squeeze|momentum_base|vwap_reversion" or null
 }
 ```
 '''

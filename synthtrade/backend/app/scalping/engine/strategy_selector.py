@@ -10,15 +10,19 @@ from app.scalping.strategies.base import AbstractScalpingStrategy
 class StrategySelector:
     """Seleziona la strategia appropriata in base al regime di mercato.
 
-    Mapping regime -> strategia ottimale.
+    Mapping regime -> strategia ottimale:
+      - trending_up/down:  ema_cross (trend following)
+      - ranging:           rsi_bollinger (mean reversion)
+      - volatile:          stoch_rsi_bb_squeeze (cattura breakout)
+      - unknown:           momentum_base (default sicuro)
     """
 
     _regime_strategy_map = {
-        "trending_up": "ema_cross",      # Follow the trend
-        "trending_down": "ema_cross",    # Follow the trend
-        "ranging": "momentum_base",      # Segnali frequenti in ranging
-        "volatile": "momentum_base",     # Segnali frequenti in volatilita'
-        "unknown": "momentum_base",      # Default sicuro
+        "trending_up": "ema_cross",              # Follow the trend
+        "trending_down": "ema_cross",            # Follow the trend
+        "ranging": "rsi_bollinger",              # Mean reversion per ranging
+        "volatile": "stoch_rsi_bb_squeeze",      # Cattura breakout da volatilità
+        "unknown": "momentum_base",              # Default sicuro
     }
 
     def select(self, regime: MarketRegime) -> Optional[AbstractScalpingStrategy]:

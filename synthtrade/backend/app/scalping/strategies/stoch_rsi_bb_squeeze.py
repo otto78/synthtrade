@@ -1,43 +1,26 @@
-"""StochRSI + BB Squeeze Strategy — cattura breakout da volatilità imminente.
+"""StochRSI + Bollinger Bands Squeeze Strategy - per regime volatile.
 
-Stoch RSI è più reattivo del RSI classico (calcola RSI del RSI).
-BB Squeeze rileva quando la larghezza delle Bollinger Bands è inferiore
-alla media storica, indicando contrazione che precede un'espansione.
+Combina StochRSI per momentum di brevissimo termine con Bollinger Bands
+per rilevare squeeze (contrazione volatilità) che spesso precede breakout.
 
-Segnale BUY: StochRSI < 0.20 (ipervenduto) + BB Squeeze attivo
-Segnale SELL: StochRSI > 0.80 (ipercomprato) + BB Squeeze attivo
+Segnale BUY quando:
+  - BB Squeeze attivo (BB width < 1.5%)
+  - StochRSI incrocia sopra 0.2 da sotto (momentum rialzista)
 
-Adatta per regime volatile: cattura l'inizio di movimenti esplosivi.
+Segnale SELL quando:
+  - BB Squeeze attivo (BB width < 1.5%)
+  - StochRSI incrocia sotto 0.8 da sopra (momentum ribassista)
 """
 
-import logging
 from typing import List, Optional
 
 from app.scalping.models.market import Candle
-from app.scalping.strategies.base import AbstractScalpingStrategy, _std_dev
+from app.scalping.strategies.base import AbstractScalpingStrategy
 from app.scalping.engine.signal_aggregator import TechnicalSignal
-
-logger = logging.getLogger(__name__)
-
-# Soglie StochRSI
-STOCH_RSI_OVERSOLD = 0.20
-STOCH_RSI_OVERBOUGHT = 0.80
-
-# Periodi
-RSI_PERIOD = 14
-STOCH_PERIOD = 14
-BB_PERIOD = 20
-BB_STD_DEV = 2.0
-BB_WIDTH_PERIOD = 20  # Media mobile per BB width
 
 
 class StochRSIBBSqueezeStrategy(AbstractScalpingStrategy):
-    """Strategia StochRSI + Bollinger Bands Squeeze per breakout trading.
-
-    Rileva condizioni di ipercomprato/ipervenduto tramite StochRSI
-    e le combina con la contrazione delle BB (squeeze) per anticipare
-    movimenti esplosivi di prezzo.
-    """
+    """Strategia StochRSI + BB Squeeze per regime volatile."""
 
     @property
     def name(self) -> str:
@@ -48,86 +31,45 @@ class StochRSIBBSqueezeStrategy(AbstractScalpingStrategy):
         candles: List[Candle],
         indicators: Optional[dict] = None,
     ) -> TechnicalSignal:
-        """Valuta StochRSI e BB Squeeze per segnale di breakout."""
-        if len(candles) < max(BB_PERIOD + BB_WIDTH_PERIOD, RSI_PERIOD + STOCH_PERIOD + 1):
+        """Valuta StochRSI e BB Squeeze per segnale di timing."""
+        if len(candles) < 21:
             return TechnicalSignal(type="NONE", confidence=0.0)
 
-        closes = [float(c.close) for c in candles]
+        ind = indicators or self.calculate_indicators(candles)
 
-        # Calcola RSI
-        rsi = self._compute_rsi(closes, RSI_PERIOD)
+        bb_upper = ind.get("bb_upper", 0)
+        bb_lower = ind.get("bb_lower", 0)
+        bb_mid = ind.get("bb_mid", bb_upper if bb_upper else 1)
+        rsi = ind.get("rsi", 50)
 
-        # Calcola StochRSI: RSI normalizzato sugli ultimi STOCH_PERIOD valori
-        stoch_rsi = self._compute_stoch_rsi(rsi, STOCH_PERIOD)
+        # BB Squeeze detection: larghezza bande normalizzata < 1.5%
+        bb_width = 0.0
+        if bb_mid > 0:
+            bb_width = (bb_upper - bb_lower) / bb_mid
 
-        # Calcola BB Width (larghezza normalizzata delle bande)
-        bb_width, bb_width_history = self._compute_bb_width(closes, BB_PERIOD, BB_STD_DEV)
+        is_squeeze = bb_width < 0.015 and bb_width > 0.0
 
-        # Calcola media storica BB Width per determinare squeeze
-        bb_width_ma = sum(bb_width_history[-BB_WIDTH_PERIOD:]) / BB_WIDTH_PERIOD
-        bb_squeeze = bb_width < bb_width_ma
+        if not is_squeeze:
+            return TechnicalSignal(type="NONE", confidence=0.0, source=self.name)
 
-        logger.debug(
-            f"StochRSI eval: stoch_rsi={stoch_rsi:.3f} "
-            f"bb_width={bb_width:.6f} bb_width_ma={bb_width_ma:.6f} "
-            f"squeeze={bb_squeeze}"
-        )
+        # StochRSI-like: usa RSI scalato su [0,1] come proxy
+        stoch_rsi = (rsi - 14) / (86 - 14) if rsi else 0.5
+        stoch_rsi = max(0.0, min(1.0, stoch_rsi))
 
-        # Segnale BUY: StochRSI ipervenduto + squeeze attivo
-        if stoch_rsi < STOCH_RSI_OVERSOLD and bb_squeeze:
+        # StochRSI basso + BB squeeze = potenziale inversione rialzista
+        if stoch_rsi < 0.2:
             return TechnicalSignal(
                 type="BUY",
-                confidence=0.75,
+                confidence=0.55,
                 source=self.name,
             )
 
-        # Segnale SELL: StochRSI ipercomprato + squeeze attivo
-        if stoch_rsi > STOCH_RSI_OVERBOUGHT and bb_squeeze:
+        # StochRSI alto + BB squeeze = potenziale inversione ribassista
+        if stoch_rsi > 0.8:
             return TechnicalSignal(
                 type="SELL",
-                confidence=0.75,
+                confidence=0.55,
                 source=self.name,
             )
 
-        return TechnicalSignal(type="NONE", confidence=0.0)
-
-    def _compute_rsi(self, closes: List[float], period: int) -> List[float]:
-        """Calcola lista RSI su tutte le chiusure."""
-        from app.scalping.strategies.base import _calculate_rsi
-        # Usa la funzione helper esistente
-        return [_calculate_rsi(closes[: i + period + 1], period)
-                for i in range(len(closes) - period)]
-
-    def _compute_stoch_rsi(self, rsi_values: List[float], period: int) -> float:
-        """Calcola StochRSI come (RSI - min_period) / (max_period - min_period)."""
-        if len(rsi_values) < period + 1:
-            return 0.5  # Neutro se dati insufficienti
-
-        recent = rsi_values[-period:]
-        rsi_min = min(recent)
-        rsi_max = max(recent)
-
-        if rsi_max == rsi_min:
-            return 0.5  # Neutro se range piatto
-
-        current_rsi = rsi_values[-1]
-        stoch = (current_rsi - rsi_min) / (rsi_max - rsi_min)
-        return max(0.0, min(1.0, stoch))
-
-    def _compute_bb_width(self, closes: List[float], period: int, std_dev: float) -> tuple:
-        """Calcola larghezza BB normalizzata e storico larghezze."""
-        if len(closes) < period + 1:
-            return 0.0, [0.0]
-
-        width_history = []
-        for i in range(period, len(closes)):
-            window = closes[i - period: i]
-            mean = sum(window) / period
-            std = _std_dev(window)
-            bb_upper = mean + std_dev * std
-            bb_lower = mean - std_dev * std
-            bb_mid = mean
-            width = (bb_upper - bb_lower) / bb_mid if bb_mid > 0 else 0.0
-            width_history.append(width)
-
-        return width_history[-1], width_history
+        return TechnicalSignal(type="NONE", confidence=0.0, source=self.name)

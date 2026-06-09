@@ -21,7 +21,7 @@ import { ScalpingWsService, IntelligenceEvent } from '../services/scalping-ws.se
   `,
   styles: [`
     .scorecard { padding: 12px; }
-    h3 { margin: 0 0 12px 0; font-size: 14px; color: var(--text-secondary); }
+    .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
     .score-display { display: flex; align-items: center; gap: 12px; }
     .score-circle { width: 60px; height: 60px; border-radius: 50%; background: var(--bg-elevated); display: flex; align-items: center; justify-content: center; }
     .score-value { font-size: 18px; font-weight: 700; }

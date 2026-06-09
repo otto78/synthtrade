@@ -59,7 +59,7 @@ export interface RiskConfig {
   `,
   styles: [`
     .risk-controls { padding: 12px; }
-    h3 { margin: 0 0 12px 0; font-size: 14px; color: var(--text-secondary); }
+    .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
     .loading { color: var(--text-secondary); font-size: 12px; }
     .risk-form { font-size: 12px; }
     .field { margin-bottom: 10px; }

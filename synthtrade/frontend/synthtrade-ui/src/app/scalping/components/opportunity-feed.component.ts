@@ -46,7 +46,7 @@ import { Opportunity, OpportunityUrgency } from '../models/opportunity.model';
   `,
   styles: [`
     .opportunity-feed { padding: 12px; }
-    h3 { margin: 0 0 12px 0; font-size: 14px; color: var(--text-secondary); }
+    .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
     .empty-state { padding: 20px; text-align: center; color: var(--text-secondary, #848E9C); font-size: 12px; }
     .opportunity-list { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; }
     .opportunity-item { padding: 8px; border-radius: 4px; background: var(--bg-elevated); border-left: 3px solid var(--text-secondary); }

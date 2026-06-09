@@ -63,7 +63,7 @@ const STRATEGY_DEFAULTS: Record<string, { label: string; desc: string; params: S
   template: `
     <div class="strategy-panel">
       <div class="panel-header">
-        <h3>Strategy</h3>
+        <span class="panel-title">Strategy</span>
         <span class="ai-badge" *ngIf="lastAiUpdate">AI</span>
       </div>
 

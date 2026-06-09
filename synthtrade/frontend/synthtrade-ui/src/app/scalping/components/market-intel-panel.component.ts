@@ -19,7 +19,7 @@ import { SessionApiService } from '../services/session-api.service';
   template: `
     <div class="intel-panel">
       <div class="panel-header">
-        <h3>Market Intelligence</h3>
+        <span class="panel-title">Market Intelligence</span>
         <span class="sym-badge">{{ symbol }}</span>
       </div>
       <div class="intel-grid">
@@ -60,7 +60,7 @@ import { SessionApiService } from '../services/session-api.service';
   `,
   styles: [`
     .intel-panel { padding: 12px; }
-    h3 { margin: 0 0 12px 0; font-size: 14px; color: var(--text-secondary); }
+    .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
     .sym-badge { font-size: 11px; color: var(--accent-primary, #F0B90B); background: rgba(240,185,11,0.1); padding: 1px 6px; border-radius: 4px; font-weight: 600; }
     .intel-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
     .intel-item { display: flex; justify-content: space-between; padding: 10px 12px; background: var(--bg-elevated); border-radius: 6px; }

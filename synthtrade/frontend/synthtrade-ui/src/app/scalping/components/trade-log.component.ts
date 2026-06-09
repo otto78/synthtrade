@@ -52,7 +52,7 @@ import { SessionApiService } from '../services/session-api.service';
   `,
   styles: [`
     .trade-log { padding: 12px; max-height: 300px; overflow-y: auto; }
-    h3 { margin: 0 0 12px 0; font-size: 14px; color: var(--text-secondary); }
+    .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
     .no-trades { color: var(--text-secondary); font-size: 12px; padding: 8px; }
     table { width: 100%; font-size: 11px; border-collapse: collapse; }
     th, td { text-align: left; padding: 4px 6px; }

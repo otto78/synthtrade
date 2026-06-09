@@ -50,6 +50,7 @@ interface CandleResponse {
   imports: [NgIf, DecimalPipe],
   styles: [`
     .live-chart { padding: 12px; display: flex; flex-direction: column; height: 100%; }
+    .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
     .chart-meta { display: flex; align-items: center; gap: 8px; }
     .symbol { font-size: 13px; color: var(--accent-primary, #F0B90B); font-weight: 700; }
     .timeframe { font-size: 10px; color: var(--text-secondary); background: rgba(240,185,11,0.1); padding: 2px 6px; border-radius: 3px; }

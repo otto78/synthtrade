@@ -17,7 +17,7 @@ import { Opportunity, OpportunityUrgency } from '../models/opportunity.model';
   imports: [NgFor, NgIf, UpperCasePipe],
   template: `
     <div class="opportunity-feed">
-      <h3>Opportunity Feed</h3>
+      <span class="panel-title">Opportunity Feed</span>
 
       <div *ngIf="opportunities.length === 0" class="empty-state">
         No opportunities yet

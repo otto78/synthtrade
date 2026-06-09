@@ -17,7 +17,7 @@ import { SessionApiService } from '../services/session-api.service';
   imports: [DecimalPipe, PercentPipe, NgIf],
   template: `
     <div class="performance-panel">
-      <h3>Performance</h3>
+      <span class="panel-title">Performance</span>
 
       <div *ngIf="!metrics" class="loading">Loading...</div>
 

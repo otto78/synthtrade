@@ -38,9 +38,8 @@ interface CandleResponse {
   standalone: true,
   template: `
     <div class="live-chart">
-      <div class="chart-header">
-        <h3>Live Chart</h3>
-        <div class="chart-meta">
+      <span class="panel-title">Live Chart</span>
+      <div class="chart-meta">
           <span class="symbol">{{ symbol }}</span>
           <span class="timeframe">1m</span>
           <span class="price-tag" *ngIf="lastPrice > 0">{{ lastPrice | number:'1.2-2' }}</span>

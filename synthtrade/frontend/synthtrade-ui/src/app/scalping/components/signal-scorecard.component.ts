@@ -12,7 +12,7 @@ import { ScalpingWsService, IntelligenceEvent } from '../services/scalping-ws.se
   standalone: true,
   template: `
     <div class="scorecard">
-      <h3>Signal Score</h3>
+      <span class="panel-title">Signal Score</span>
       <div class="score-display">
         <div class="score-circle"><span class="score-value">{{ score }}</span></div>
         <div class="bias" [class.bullish]="bias === 'bullish'" [class.bearish]="bias === 'bearish'">{{ bias }}</div>

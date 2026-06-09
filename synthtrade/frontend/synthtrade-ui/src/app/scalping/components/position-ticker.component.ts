@@ -17,7 +17,7 @@ import { Position } from '../models/position.model';
   imports: [NgIf, NgClass, DecimalPipe],
   template: `
     <div class="position-ticker">
-      <h3>Position</h3>
+      <span class="panel-title">Position</span>
 
       <div *ngIf="!position" class="no-position">
         No open position

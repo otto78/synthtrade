@@ -14,7 +14,7 @@ import { Subscription } from 'rxjs';
   imports: [DatePipe, DecimalPipe, NgClass, NgForOf, NgIf],
   template: `
     <div class="supervisor-log">
-      <h3>AI Supervisor Log</h3>
+      <span class="panel-title">AI Supervisor Log</span>
 
       <div *ngIf="!decisions.length" class="empty">No AI decisions yet</div>
 

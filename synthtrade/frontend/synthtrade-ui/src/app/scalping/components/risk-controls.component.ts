@@ -23,7 +23,7 @@ export interface RiskConfig {
   imports: [FormsModule, NgIf],
   template: `
     <div class="risk-controls">
-      <h3>Risk Controls</h3>
+      <span class="panel-title">Risk Controls</span>
 
       <div *ngIf="!config" class="loading">Loading...</div>
 

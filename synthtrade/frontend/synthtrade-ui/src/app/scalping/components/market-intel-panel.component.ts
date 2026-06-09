@@ -18,7 +18,10 @@ import { SessionApiService } from '../services/session-api.service';
   imports: [UpperCasePipe],
   template: `
     <div class="intel-panel">
-      <h3>Market Intelligence <span class="sym-badge">{{ symbol }}</span></h3>
+      <div class="panel-header">
+        <h3>Market Intelligence</h3>
+        <span class="sym-badge">{{ symbol }}</span>
+      </div>
       <div class="intel-grid">
         <div class="intel-item">
           <span class="label">Signal Score</span>

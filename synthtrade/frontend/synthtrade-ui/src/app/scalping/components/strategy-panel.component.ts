@@ -95,6 +95,14 @@ const STRATEGY_DEFAULTS: Record<string, { label: string; desc: string; params: S
   styles: [`
     .strategy-panel { padding: 16px; display: flex; flex-direction: column; gap: 12px; height: 100%; }
 
+    .panel-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
     .panel-header { display: flex; align-items: center; justify-content: space-between; }
     h3 { margin: 0; font-size: 13px; color: var(--text-secondary); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
     .ai-badge {

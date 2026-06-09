@@ -171,22 +171,31 @@ import { ConfigService } from '../../core/services/config.service';
     }
 
     /* Session header */
+    .panel-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
     .session-header {
       display: flex;
-      flex-direction: column;
-      gap: 2px;
+      align-items: baseline;
+      gap: 10px;
       padding-bottom: 12px;
       border-bottom: 1px solid rgba(234,236,239,0.08);
       margin-bottom: 4px;
     }
     .session-title {
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--text-primary);
-      letter-spacing: 0.3px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
     .session-id {
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 400;
       color: var(--text-secondary);
       opacity: 0.7;

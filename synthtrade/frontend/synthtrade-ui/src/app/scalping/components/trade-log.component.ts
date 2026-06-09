@@ -18,7 +18,7 @@ import { SessionApiService } from '../services/session-api.service';
   imports: [DatePipe, DecimalPipe, NgClass, NgForOf, NgIf],
   template: `
     <div class="trade-log">
-      <h3>Trade Log</h3>
+      <span class="panel-title">Trade Log</span>
 
       <div *ngIf="trades.length === 0" class="no-trades">No trades yet</div>
 

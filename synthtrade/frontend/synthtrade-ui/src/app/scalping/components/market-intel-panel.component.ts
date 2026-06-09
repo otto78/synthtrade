@@ -24,6 +24,10 @@ import { SessionApiService } from '../services/session-api.service';
       </div>
       <div class="intel-grid">
         <div class="intel-item">
+          <span class="label">Symbol</span>
+          <span class="value" style="color: #F0B90B;">{{ symbol }}</span>
+        </div>
+        <div class="intel-item">
           <span class="label">Signal Score</span>
           <span class="value score" [class.bullish]="signalBias === 'bullish'" [class.bearish]="signalBias === 'bearish'">
             {{ signalScore }}
@@ -61,6 +65,7 @@ import { SessionApiService } from '../services/session-api.service';
   styles: [`
     .intel-panel { padding: 12px; }
     .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+    .panel-header { margin-bottom: 14px; }
     .sym-badge { font-size: 11px; color: var(--accent-primary, #F0B90B); background: rgba(240,185,11,0.1); padding: 1px 6px; border-radius: 4px; font-weight: 600; }
     .intel-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
     .intel-item { display: flex; justify-content: space-between; padding: 10px 12px; background: var(--bg-elevated); border-radius: 6px; }

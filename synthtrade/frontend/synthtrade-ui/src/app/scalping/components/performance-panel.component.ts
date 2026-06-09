@@ -19,7 +19,7 @@ import { SessionApiService } from '../services/session-api.service';
     <div class="performance-panel">
       <span class="panel-title">Performance</span>
 
-      <div *ngIf="!metrics" class="loading">Loading...</div>
+      <div *ngIf="!metrics" class="no-data">No performance yet</div>
 
       <div *ngIf="metrics" class="metrics-grid">
         <div class="metric-item">
@@ -62,7 +62,7 @@ import { SessionApiService } from '../services/session-api.service';
   styles: [`
     .performance-panel { padding: 12px; }
     .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
-    .loading { color: var(--text-secondary); font-size: 12px; }
+    .no-data { color: var(--text-secondary); font-size: 12px; padding: 8px; }
     .metrics-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
     .metric-item { display: flex; justify-content: space-between; padding: 10px 12px; background: var(--bg-elevated); border-radius: 6px; font-size: 14px; }
     .label { color: var(--text-secondary); }

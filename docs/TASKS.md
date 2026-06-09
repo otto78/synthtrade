@@ -114,3 +114,24 @@ Fix issues identified from live session logs:
 - `trade-log.component.ts`
 - `performance-panel.component.ts`
 - `strategy-panel.component.ts`
+
+---
+
+### TASK-822 — Config panel: rimuovere sub-tab "Strategy" e aggiungere titolo "Session" con ID (2026-06-09)
+
+**Priorità:** Bassa
+
+**Problema:** Nel pannello di configurazione principale è presente una sub-scheda "Strategy" che mostra la strategia selezionata inizialmente ma non si aggiorna quando la strategia corrente cambia (es. dopo una decisione del supervisor AI). Esiste già una sezione più completa e aggiornata nel pannello Strategy dedicato.
+
+**Soluzione:**
+1. Rimuovere la sub-scheda "Strategy" dal pannello di configurazione principale
+2. Aggiungere un titolo principale "Session" al pannello di configurazione
+3. Mostrare l'ID della sessione in testo più piccolo sotto il titolo
+4. Mantenere visibili le impostazioni di configurazione del trade già esistenti nel sistema
+
+**Modifiche:**
+- Rimuovere sub-tab "Strategy" dal componente del pannello configurazione sessione
+- Aggiungere header con titolo "Session" + session ID
+- Lasciare al loro posto le impostazioni esistenti (symbol, strategy selector, trade value)
+
+**Rischio:** Basso — rimozione UI senza impatto su logica backend.

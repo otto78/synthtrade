@@ -26,6 +26,24 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - Paper trading obbligatorio fino alla Fase 6
 - TDD con pytest per backend, Jest per frontend
 
+### v1.1.0 — 2026-06-09
+
+**Milestone:** Scalping pipeline restore + logging visibility fix
+
+**Completato:**
+- Session restore ora avvia automaticamente il pipeline WS (BinanceWSClient + ExecutionLoop)
+- Aggiunto parametro `restore_mode` a `_start_ws_broadcast()` per saltare INSERT DB su restore
+- Fix logger invisibili su Windows/uvicorn: handler forzato sui moduli scalping
+- Aggiunto logging periodico "no data received" a 30s/60s
+- SupervisorScheduler avviato anche in restore_mode
+
+**File modificati:**
+- `synthtrade/backend/app/main.py` — `_restore_scalping_session()` Step 5
+- `synthtrade/backend/app/scalping/router.py` — restore_mode, logging watchdog
+- `synthtrade/backend/app/core/logging.py` — handler forzato per moduli scalping
+
+---
+
 ### v1.0.1 — 2026-05-07
 
 **Milestone:** Standardizzazione porte di sviluppo

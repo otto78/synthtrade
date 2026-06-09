@@ -53,6 +53,18 @@ import { ConfigService } from '../../core/services/config.service';
           </div>
 
           <div class="field">
+            <label>Strategia</label>
+            <select [(ngModel)]="selectedStrategy" class="select">
+              <option value="ema_cross">EMA Cross</option>
+              <option value="rsi_bollinger">RSI con Bollinger</option>
+              <option value="stoch_rsi_bb_squeeze">Stoch RSI con Bollinger Bands Squeeze</option>
+              <option value="vwap_reversion">VWAP Reversion</option>
+              <option value="momentum_base">Momentum Base</option>
+              <option value="scalping_v2">Scalping</option>
+            </select>
+          </div>
+
+          <div class="field">
             <label>Valore Trade ($)</label>
             <div class="trade-value-row">
               <input
@@ -510,6 +522,7 @@ export class SessionControlsComponent implements OnInit {
     
     this.sessionApi.session$.subscribe((data) => {
       this.session = data;
+      this.sessionId = data?.session_id || this.sessionId;
       // Sync tradeValue from session if available
       if (data?.trade_value) {
         this.tradeValue = data.trade_value;

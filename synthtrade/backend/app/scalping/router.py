@@ -373,7 +373,7 @@ def _check_daily_loss() -> bool:
     total_pnl = sum(t["pnl"] for t in _execution_state["trade_history"] if t["timestamp"].startswith(now_str))
     return total_pnl <= -max_loss
 
-async def _start_ws_broadcast(symbol: str):
+async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     """Create BinanceWSClient, connect to Binance, and broadcast candle/trade events
     to all connected scalping WS clients.
     
@@ -381,8 +381,20 @@ async def _start_ws_broadcast(symbol: str):
     
     IMPORTANT: Warmup the candle buffer with historical data BEFORE starting the WS client
     to avoid handshake timeouts (the WS will timeout if the event loop is busy loading data).
+    
+    Args:
+        symbol: Trading symbol (lowercase, e.g. "bnbusdc")
+        restore_mode: If True, this is a session restore at startup — skips operations
+                      that are only valid for a fresh session start (e.g. DB insert).
     """
-    is_testnet = _execution_state["session"].get("mode") != "live"
+    session = _execution_state["session"]
+    logger.info(
+        f">>> _start_ws_broadcast() ENTERED for {symbol} | "
+        f"session_status={session['status']} mode={session['mode']} "
+        f"restore_mode={restore_mode}"
+    )
+
+    is_testnet = session.get("mode") != "live"
 
     # Create pipeline components FIRST (before WS client)
     candle_buffer = CandleBuffer()
@@ -632,6 +644,19 @@ async def _start_ws_broadcast(symbol: str):
                 # Force-reload historical candles via REST to keep the pipeline alive,
                 # and restart the WS client connection.
                 stale_seconds = (datetime.now(timezone.utc) - _last_event_time).total_seconds()
+                
+                # LOG every 30s when no data received (for visibility, not just at 3min)
+                if 30 <= stale_seconds < 35:
+                    logger.info(
+                        f"⏳ No WS candle data for {stale_seconds:.0f}s for {symbol} — "
+                        f"waiting for Binance WS to deliver candles..."
+                    )
+                elif 60 <= stale_seconds < 65:
+                    logger.info(
+                        f"⏳ No WS candle data for {stale_seconds:.0f}s for {symbol} — "
+                        f"still waiting..."
+                    )
+                
                 if stale_seconds > 180:  # 3 minutes
                     logger.warning(
                         f">>> CANDLE_PROC WATCHDOG: No data for {stale_seconds:.0f}s. "
@@ -1147,6 +1172,19 @@ async def _start_ws_broadcast(symbol: str):
                     logger.warning(f"Intelligence broadcast error: {e}")
             await asyncio.sleep(10.0)
 
+    # ── Start SupervisorScheduler (ONLY in restore_mode; for normal start it's done in _start_with_error_logging) ──
+    if restore_mode:
+        try:
+            from app.scalping.supervisor.supervisor_scheduler import SupervisorScheduler
+            supervisor = SupervisorScheduler(symbol=symbol, interval_seconds=45)
+            _execution_state["loop"].session_id = _execution_state["session"].get("db_session_id")
+            supervisor.set_execution_loop(_execution_state["loop"])
+            supervisor.start()
+            _execution_state["supervisor_scheduler"] = supervisor
+            logger.info(f"SupervisorScheduler started for {symbol} (restore_mode)")
+        except Exception as e:
+            logger.warning(f"Failed to start SupervisorScheduler in restore_mode: {e}")
+
     # Start processor tasks
     _session_mode = _execution_state["session"].get("mode", "paper")
     task_candle = asyncio.create_task(_candle_processor(), name=f"candle-proc-{symbol}")
@@ -1168,6 +1206,7 @@ async def _start_ws_broadcast(symbol: str):
     # Log how many frontend WS clients are connected
     ws_count = len(_scalping_ws_connections)
     logger.info(f"Scalping broadcast started for {symbol} — {ws_count} frontend WS client(s) connected")
+    logger.info(f">>> _start_ws_broadcast() COMPLETE for {symbol}")
 
 
 @router.get("/binance/exchange-info")

@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 import time
 from contextlib import asynccontextmanager
@@ -24,10 +25,111 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _restore_scalping_session(db) -> None:
+    """
+    Tenta di ripristinare una sessione di scalping attiva dal DB all'avvio.
+    Ogni step ha il proprio try/except con exc_info=True per rendere visibile
+    esattamente dove fallisce, senza inghiottire silenziosamente gli errori.
+    """
+    # Step 1 — query DB
+    try:
+        result = db.table("scalping_sessions").select("*").eq("status", "running").limit(1).execute()
+    except Exception as e:
+        logger.error("Failed to query scalping_sessions from DB: %s", e, exc_info=True)
+        return
+
+    if not result.data:
+        logger.info("No active scalping session found in DB")
+        return
+
+    sess = result.data[0]
+    session_id   = sess.get("id")
+    session_mode = sess.get("mode", "paper").lower()
+    global_mode  = getattr(settings, 'TRADING_MODE', 'test')
+
+    logger.info(
+        "Found active scalping session in DB: id=%s symbol=%s mode=%s",
+        session_id, sess.get("symbol"), session_mode,
+    )
+
+    # Step 2 — mode consistency check
+    if session_mode != global_mode:
+        logger.warning(
+            "Skipping session restore: session mode=%s ≠ global mode=%s. "
+            "Marking session as stopped to avoid stale state.",
+            session_mode, global_mode,
+        )
+        try:
+            db.table("scalping_sessions").update({
+                "status": "stopped",
+                "stopped_at": datetime.utcnow().isoformat()
+            }).eq("id", session_id).execute()
+            logger.info("Stale session %s marked as stopped", session_id)
+        except Exception as e:
+            logger.error("Failed to mark stale session as stopped: %s", e, exc_info=True)
+        return
+
+    # Step 3 — import _execution_state
+    try:
+        from app.scalping.router import _execution_state
+    except Exception as e:
+        logger.error(
+            "Failed to import _execution_state from app.scalping.router: %s", e, exc_info=True
+        )
+        return
+
+    # Step 4 — populate state
+    try:
+        db_trade_value = sess.get("trade_value")
+
+        _execution_state["session"]["session_id"]    = session_id
+        _execution_state["session"]["status"]        = "running"
+        _execution_state["session"]["mode"]          = session_mode
+        _execution_state["session"]["strategy"]      = sess.get("strategy", "scalping_v2")
+        _execution_state["session"]["symbol"]        = sess.get("symbol", "BTCUSDT")
+        _execution_state["session"]["db_session_id"] = session_id
+        _execution_state["session"]["started_at"]    = sess.get("started_at")
+
+        if db_trade_value is not None:
+            _execution_state["session"]["trade_value"] = float(db_trade_value)
+
+        logger.info(
+            "Scalping session restored: id=%s symbol=%s mode=%s trade_value=%s",
+            session_id,
+            _execution_state["session"]["symbol"],
+            session_mode,
+            _execution_state["session"].get("trade_value"),
+        )
+    except Exception as e:
+        logger.error(
+            "Failed to populate _execution_state from DB session: %s", e, exc_info=True
+        )
+
+    # Step 5 — avvia il pipeline (WS, ExecutionLoop, candle processing)
+    # Questo è il passo che mancava: senza, la sessione appare "running" ma non
+    # ha alcun flusso dati attivo, nessun trade parte, nessun log del pipeline.
+    try:
+        restored_symbol = _execution_state["session"]["symbol"].lower()
+        _execution_state["session"]["status"] = "running"  # ensure before async task reads it
+
+        from app.scalping.router import _start_ws_broadcast
+        asyncio.create_task(
+            _start_ws_broadcast(restored_symbol, restore_mode=True),
+            name=f"scalping-restore-{restored_symbol}",
+        )
+        logger.info(
+            "Scalping pipeline ASYNC START scheduled for %s (restore_mode=True)",
+            restored_symbol,
+        )
+    except Exception as e:
+        logger.error(
+            "Failed to schedule _start_ws_broadcast for restored session: %s", e, exc_info=True
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
-    # Post-setup: override uvicorn loggers with our color formatter
     reconfigure_uvicorn_loggers()
     logger.info("SynthTrade API starting...")
 
@@ -50,11 +152,11 @@ async def lifespan(app: FastAPI):
         testnet=settings.TRADING_MODE == 'test',
     )
     risk_config = RiskConfig.from_settings(settings)
-    sl_service = StopLossService()
-    
+    sl_service  = StopLossService()
+
     # TASK-217: Iniezione del resolver configurato
     resolver = DefaultSignalResolver(strength_threshold=settings.SIGNAL_STRENGTH_THRESHOLD)
-    
+
     engine = ExecutionEngine(
         risk_manager=RiskManager(config=risk_config),
         order_tracker=OrderTracker(repo=trade_repo),
@@ -63,8 +165,7 @@ async def lifespan(app: FastAPI):
         signal_resolver=resolver,
     )
 
-    # Rende l'engine disponibile via request.app.state.engine
-    app.state.engine = engine
+    app.state.engine   = engine
     app.state.exchange = exchange
 
     sched = setup_scheduler(engine=engine)
@@ -93,55 +194,10 @@ async def lifespan(app: FastAPI):
     print("")
 
     # --- Restore active scalping session from DB ---
-    try:
-        db = get_supabase()
-        active_sessions = db.table("scalping_sessions").select("*").eq("status", "running").limit(1).execute()
-        if active_sessions.data:
-            from app.scalping.router import _execution_state
-            sess = active_sessions.data[0]
-
-            session_mode = sess.get("mode", "paper").lower()
-            global_mode = getattr(settings, 'TRADING_MODE', 'test')
-
-            # MODE CONSISTENCY CHECK: only restore session if mode matches global mode
-            # A live session in DB would have wrong paper_balance if loaded while mode=test
-            if session_mode != global_mode:
-                logger.warning(
-                    "Skipping DB session restore: session mode=%s ≠ global mode=%s. "
-                    "Marking session as stopped to avoid stale state.",
-                    session_mode, global_mode,
-                )
-                # Mark session as stopped so it doesn't keep appearing on next restart
-                try:
-                    db.table("scalping_sessions").update({
-                        "status": "stopped",
-                        "stopped_at": datetime.utcnow().isoformat()
-                    }).eq("id", sess.get("id")).execute()
-                except Exception:
-                    pass
-            else:
-                _execution_state["session"]["session_id"] = sess.get("id")
-                _execution_state["session"]["status"] = "running"
-                _execution_state["session"]["mode"] = session_mode
-                _execution_state["session"]["strategy"] = sess.get("strategy", "scalping_v2")
-                _execution_state["session"]["symbol"] = sess.get("symbol", "BTCUSDT")
-                _execution_state["session"]["db_session_id"] = sess.get("id")
-                _execution_state["session"]["started_at"] = sess.get("started_at")
-                # Restore trade_value from DB (important: don't lose user-set value)
-                db_trade_value = sess.get("trade_value")
-                if db_trade_value is not None:
-                    _execution_state["session"]["trade_value"] = float(db_trade_value)
-                logger.info(
-                    "Restored active scalping session from DB: %s (%s / %s) trade_value=%s",
-                    sess.get("id"), sess.get("symbol"), session_mode,
-                    _execution_state["session"].get("trade_value"),
-                )
-        else:
-            logger.info("No active session found in DB")
-    except Exception as e:
-        logger.warning("Failed to restore active session from DB: %s", e)
+    _restore_scalping_session(db)
 
     yield
+
     sched.shutdown(wait=False)
     await exchange.close()
     logger.info("🛑 SynthTrade API stopped")
@@ -159,17 +215,14 @@ app.add_exception_handler(SynthTradeError, synthtrade_exception_handler)
 @app.middleware("http")
 async def add_request_id(request: Request, call_next):
     request_id = str(uuid.uuid4())
-    # Inject request_id into context for logging
-    # Note: simple approach using a filter or contextvars would be better for complex apps
-    # but for now we'll just log it here and in the response header
     start_time = time.time()
-    
+
     response = await call_next(request)
-    
+
     process_time = (time.time() - start_time) * 1000
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Process-Time"] = f"{process_time:.2f}ms"
-    
+
     return response
 
 app.add_middleware(
@@ -180,22 +233,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router, prefix="/api")
-app.include_router(strategies.router, prefix="/api")
-app.include_router(dashboard.router, prefix="/api")
-app.include_router(logs.router, prefix="/api")
-app.include_router(ws.router, prefix="/api")
-app.include_router(trades.router, prefix="/api")
-app.include_router(eval_api.router, prefix="/api")
-app.include_router(pipeline.router, prefix="/api")
-app.include_router(exchange.router, prefix="/api")
-app.include_router(monitor.router, prefix="/api")
-app.include_router(config_api.router, prefix="/api")
+app.include_router(auth.router,        prefix="/api")
+app.include_router(strategies.router,  prefix="/api")
+app.include_router(dashboard.router,   prefix="/api")
+app.include_router(logs.router,        prefix="/api")
+app.include_router(ws.router,          prefix="/api")
+app.include_router(trades.router,      prefix="/api")
+app.include_router(eval_api.router,    prefix="/api")
+app.include_router(pipeline.router,    prefix="/api")
+app.include_router(exchange.router,    prefix="/api")
+app.include_router(monitor.router,     prefix="/api")
+app.include_router(config_api.router,  prefix="/api")
 app.include_router(llm_models_api.router, prefix="/api")
-app.include_router(scalping_router, prefix="/api")
+app.include_router(scalping_router,    prefix="/api")
 # Scalping WebSocket — mounted at /ws to match the proxy rule /ws (ws: true)
 # which properly handles WS upgrade. Full path: /ws/scalping
 app.include_router(ws_scalping_router, prefix="/ws")
+
 
 @app.get("/")
 def read_root():

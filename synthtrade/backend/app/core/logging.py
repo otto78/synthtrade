@@ -39,6 +39,22 @@ def setup_logging():
         force=True,
     )
 
+    # ── FIX: Ensure scalping router logs appear even if imported before setup ──
+    # On Windows with uvicorn, loggers created before basicConfig may not
+    # propagate correctly. Force-add the handler to key modules.
+    for forced_logger_name in (
+        "app.scalping.router",
+        "app.scalping.engine.execution_loop",
+        "app.scalping.engine.signal_aggregator",
+        "app.scalping.engine.ws_client",
+        "app.scalping.intelligence.signal_score_engine",
+    ):
+        forced_logger = logging.getLogger(forced_logger_name)
+        forced_logger.handlers.clear()
+        forced_logger.addHandler(handler)
+        forced_logger.setLevel(logging.INFO)
+        forced_logger.propagate = False  # Avoid duplicate via root
+
     # Silence/standardize third-party loggers that use their own format
     for logger_name in (
         "httpx",

@@ -201,16 +201,19 @@ class SupervisorScheduler:
         # Save to DB
         try:
             from app.db.supabase_client import get_supabase
-            supabase = get_supabase()
-            session_id = getattr(self._loop, "session_id", None) if self._loop else None
-            supabase.table("supervisor_decisions").insert({
-                "session_id": session_id,
-                "action": decision.action,
-                "reason": decision.reason,
-                "confidence": decision.confidence,
-                "new_params": decision.new_params,
-                "new_strategy": decision.new_strategy,
-            }).execute()
+            def _db_op():
+                supabase = get_supabase()
+                session_id = getattr(self._loop, "session_id", None) if self._loop else None
+                supabase.table("supervisor_decisions").insert({
+                    "session_id": session_id,
+                    "action": decision.action,
+                    "reason": decision.reason,
+                    "confidence": decision.confidence,
+                    "new_params": decision.new_params,
+                    "new_strategy": decision.new_strategy,
+                }).execute()
+            import asyncio
+            await asyncio.to_thread(_db_op)
         except Exception as e:
             logger.warning(f"Failed to save supervisor decision to DB: {e}")
 

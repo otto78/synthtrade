@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.0.0-alpha.5] — 2026-06-10
+
+### Fixed
+- **Event Loop Blocking**: Risolto blocco dell'event loop causato dalle chiamate sincrone di Supabase (`.execute()`). Avvolte tutte le query DB in `asyncio.to_thread()` in `router.py`, `jobs.py`, `run_pipeline.py` e nei moduli supervisor/scheduler, risolvendo i timeout di connessione WebSocket e ritardi degli heartbeat.
+- **Offline Trade Sync**: Risolto bug per cui le chiusure di posizione avvenute offline su Binance generavano un PnL fittizio a 0. `_restore_scalping_session` in `main.py` ora recupera l'effettivo `exit_price` interrogando storicamente CCXT (`fetch_my_trades`) con filtro temporale e media pesata per i partial fills.
+- **UI Trade Log**: Spostato il fetch iniziale della `trade_history` post-sincronizzazione, garantendo che l'interfaccia UI e le metriche di Performance mostrino dati coerenti con l'exchange fin dal riavvio.
+
+---
+
 ## [2.0.0-alpha.4] — 2026-05-27
 
 ### Added

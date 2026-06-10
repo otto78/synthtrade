@@ -37,7 +37,9 @@ async def _restore_scalping_session(db) -> None:
     """
     # Step 1 — query DB
     try:
-        result = db.table("scalping_sessions").select("*").eq("status", "running").limit(1).execute()
+        def _db_op1():
+            return db.table("scalping_sessions").select("*").eq("status", "running").limit(1).execute()
+        result = await asyncio.to_thread(_db_op1)
     except Exception as e:
         logger.error("Failed to query scalping_sessions from DB: %s", e, exc_info=True)
         return
@@ -64,10 +66,12 @@ async def _restore_scalping_session(db) -> None:
             session_mode, global_mode,
         )
         try:
-            db.table("scalping_sessions").update({
-                "status": "stopped",
-                "stopped_at": datetime.utcnow().isoformat()
-            }).eq("id", session_id).execute()
+            def _db_op2():
+                db.table("scalping_sessions").update({
+                    "status": "stopped",
+                    "stopped_at": datetime.utcnow().isoformat()
+                }).eq("id", session_id).execute()
+            await asyncio.to_thread(_db_op2)
             logger.info("Stale session %s marked as stopped", session_id)
         except Exception as e:
             logger.error("Failed to mark stale session as stopped: %s", e, exc_info=True)
@@ -109,33 +113,6 @@ async def _restore_scalping_session(db) -> None:
             "Failed to populate _execution_state from DB session: %s", e, exc_info=True
         )
 
-    # Step 5 — Carica trade history dal DB per popolare la lista trade e performance
-    try:
-        db_trades = db.table("scalping_trades") \
-            .select("*") \
-            .eq("session_id", session_id) \
-            .order("exit_time", desc=True) \
-            .limit(200) \
-            .execute()
-        if db_trades.data:
-            trade_list = []
-            for t in db_trades.data:
-                trade_list.append({
-                    "symbol": t.get("symbol"),
-                    "side": t.get("side"),
-                    "entry_price": t.get("entry_price", 0),
-                    "exit_price": t.get("exit_price", 0),
-                    "quantity": t.get("quantity", 0),
-                    "pnl": t.get("pnl", 0),
-                    "pnl_pct": t.get("pnl_pct", 0),
-                    "timestamp": t.get("exit_time") or t.get("entry_time"),
-                    "signal_reason": t.get("signal_reason", ""),
-                })
-            _execution_state["trade_history"] = trade_list
-            logger.info("Restored %d historical trades for session %s", len(trade_list), session_id)
-    except Exception as e:
-        logger.error("Failed to restore trade history from DB: %s", e, exc_info=True)
-
     # Step 6 — Inizializza balance live se la modalità è live
     if session_mode == "live":
         try:
@@ -172,12 +149,14 @@ async def _restore_scalping_session(db) -> None:
 
     # Step 7 — Restore open position from DB (if any trade with status='open' exists)
     try:
-        open_trades = db.table("scalping_trades") \
-            .select("*") \
-            .eq("session_id", session_id) \
-            .eq("status", "open") \
-            .limit(1) \
-            .execute()
+        def _db_op4():
+            return db.table("scalping_trades") \
+                .select("*") \
+                .eq("session_id", session_id) \
+                .eq("status", "open") \
+                .limit(1) \
+                .execute()
+        open_trades = await asyncio.to_thread(_db_op4)
         if open_trades.data:
             ot = open_trades.data[0]
             side = ot.get("side", "BUY")
@@ -185,20 +164,130 @@ async def _restore_scalping_session(db) -> None:
             quantity = ot.get("quantity", 0)
             symbol = ot.get("symbol", _execution_state["session"]["symbol"])
             if entry_price and quantity and entry_price > 0 and quantity > 0:
-                from decimal import Decimal
-                pm = _execution_state["position_manager"]
-                pos_obj = pm.open_position(
-                    symbol=symbol,
-                    side=side,
-                    entry_price=Decimal(str(entry_price)),
-                    quantity=Decimal(str(quantity)),
-                )
-                logger.info(
-                    "Open position restored from DB: %s %s @ %s qty=%s",
-                    side, symbol, entry_price, quantity,
-                )
+                # Verify the position actually exists on the exchange
+                # (it may have been closed externally, e.g. by SL/TP or manually)
+                verified = True
+                if session_mode == "live" and _execution_state.get("exchange"):
+                    try:
+                        adapter = _execution_state["exchange"]
+                        filters = await adapter.get_symbol_filters(symbol)
+                        base_asset = filters.get("baseAsset", "")
+                        ccxt_bal = await adapter.client.fetch_balance()
+                        free_bal = float(ccxt_bal.get("free", {}).get(base_asset, 0))
+                        min_qty = float(filters.get("minQty", 0.001))
+                        if free_bal < min_qty:
+                            logger.warning(
+                                "Open position %s %s found in DB but exchange has %.8f %s "
+                                "(below minQty=%.4f). Marking DB trade as closed (position closed externally).",
+                                side, symbol, free_bal, base_asset, min_qty,
+                            )
+                            # Mark the DB trade as closed since the position was closed externally
+                            trade_id = ot.get("id")
+                            if trade_id:
+                                real_exit_price = float(entry_price)
+                                pnl = 0.0
+                                pnl_pct = 0.0
+                                try:
+                                    entry_time_str = ot.get("entry_time")
+                                    since_ms = None
+                                    if entry_time_str:
+                                        try:
+                                            clean_time_str = entry_time_str.replace("Z", "+00:00")
+                                            entry_dt = datetime.fromisoformat(clean_time_str)
+                                            since_ms = int(entry_dt.timestamp() * 1000)
+                                        except Exception as dt_e:
+                                            logger.warning(f"Could not parse entry_time {entry_time_str}: {dt_e}")
+
+                                    # Fetch recent trades to find the real exit price
+                                    ccxt_symbol = await adapter._get_ccxt_symbol(symbol)
+                                    if since_ms:
+                                        my_trades = await adapter.client.fetch_my_trades(ccxt_symbol, since=since_ms)
+                                    else:
+                                        my_trades = await adapter.client.fetch_my_trades(ccxt_symbol, limit=20)
+                                        
+                                    close_side = "sell" if side.lower() == "buy" else "buy"
+                                    valid_trades = [t for t in my_trades if t.get("side", "").lower() == close_side]
+                                    
+                                    if valid_trades:
+                                        total_cost = sum(float(t.get("cost", t.get("price", 0) * t.get("amount", 0))) for t in valid_trades)
+                                        total_amt = sum(float(t.get("amount", 0)) for t in valid_trades)
+                                        if total_amt > 0:
+                                            real_exit_price = total_cost / total_amt
+                                        else:
+                                            real_exit_price = float(valid_trades[-1].get("price", entry_price))
+
+                                    
+                                    if real_exit_price > 0 and entry_price > 0:
+                                        if side.lower() == "buy":
+                                            pnl_pct = ((real_exit_price - entry_price) / entry_price) * 100
+                                        else:
+                                            pnl_pct = ((entry_price - real_exit_price) / entry_price) * 100
+                                        # Parse trade_value safely
+                                        trade_val_str = _execution_state["session"].get("trade_value", 10.0)
+                                        trade_val = float(trade_val_str) if trade_val_str else 10.0
+                                        pnl = (pnl_pct / 100.0) * trade_val
+                                        
+                                except Exception as my_trade_e:
+                                    logger.warning(f"Could not fetch my_trades to get real exit price: {my_trade_e}")
+
+                                def _db_op5():
+                                    db.table("scalping_trades").update({
+                                        "status": "closed",
+                                        "exit_price": real_exit_price,
+                                        "pnl": pnl,
+                                        "pnl_pct": pnl_pct,
+                                        "exit_time": datetime.now(timezone.utc).isoformat(),
+                                        "signal_reason": "closed_externally_or_sl_tp",
+                                    }).eq("id", trade_id).execute()
+                                await asyncio.to_thread(_db_op5)
+                            verified = False
+                    except Exception as bal_e:
+                        logger.warning(f"Could not verify position on exchange: {bal_e}")
+
+                if verified:
+                    from decimal import Decimal
+                    pm = _execution_state["position_manager"]
+                    pos_obj = pm.open_position(
+                        symbol=symbol,
+                        side=side,
+                        entry_price=Decimal(str(entry_price)),
+                        quantity=Decimal(str(quantity)),
+                    )
+                    logger.info(
+                        "Open position restored from DB: %s %s @ %s qty=%s",
+                        side, symbol, entry_price, quantity,
+                    )
     except Exception as e:
         logger.error("Failed to restore open position from DB: %s", e, exc_info=True)
+
+    # Step 7.5 — Carica trade history dal DB per popolare la lista trade e performance (DOPO aver chiuso i trade esterni)
+    try:
+        def _db_op3():
+            return db.table("scalping_trades") \
+                .select("*") \
+                .eq("session_id", session_id) \
+                .order("exit_time", desc=True) \
+                .limit(200) \
+                .execute()
+        db_trades = await asyncio.to_thread(_db_op3)
+        if db_trades.data:
+            trade_list = []
+            for t in db_trades.data:
+                trade_list.append({
+                    "symbol": t.get("symbol"),
+                    "side": t.get("side"),
+                    "entry_price": t.get("entry_price", 0),
+                    "exit_price": t.get("exit_price", 0),
+                    "quantity": t.get("quantity", 0),
+                    "pnl": t.get("pnl", 0),
+                    "pnl_pct": t.get("pnl_pct", 0),
+                    "timestamp": t.get("exit_time") or t.get("entry_time"),
+                    "signal_reason": t.get("signal_reason", ""),
+                })
+            _execution_state["trade_history"] = trade_list
+            logger.info("Restored %d historical trades for session %s", len(trade_list), session_id)
+    except Exception as e:
+        logger.error("Failed to restore trade history from DB: %s", e, exc_info=True)
 
     # Step 8 — avvia il pipeline (WS, ExecutionLoop, candle processing)
     # Questo è il passo che mancava: senza, la sessione appare "running" ma non

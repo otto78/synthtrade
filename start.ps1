@@ -118,7 +118,7 @@ Start-Process pwsh -ArgumentList "-NoExit", "-Command", `
    & '$venv'; `
    cd '$backend'; `
    Write-Host 'Backend SynthTrade avviato' -ForegroundColor Green; `
-   uvicorn app.main:app --port $BACKEND_PORT" `
+    uvicorn app.main:app --port $BACKEND_PORT --ws-ping-interval 60 --ws-ping-timeout 30" `
   -WindowStyle Normal
 
 # ── AVVIO FRONTEND ──────────────────────────────────────────────────────────

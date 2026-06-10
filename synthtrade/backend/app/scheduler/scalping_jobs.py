@@ -104,7 +104,10 @@ async def intelligence_snapshot_job() -> None:
                 ),
                 "recorded_at": datetime.now(timezone.utc).isoformat(),
             }
-            db.table("market_intel_snapshots").insert(data).execute()
+            import asyncio
+            def _db_op():
+                db.table("market_intel_snapshots").insert(data).execute()
+            await asyncio.to_thread(_db_op)
         except Exception as db_err:
             logger.warning(f"Intel snapshot job: DB save failed (non-bloccante): {db_err}")
 

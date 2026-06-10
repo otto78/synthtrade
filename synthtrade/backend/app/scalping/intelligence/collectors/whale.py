@@ -106,12 +106,13 @@ class WhaleCollector:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 response = await client.get(CRYPTOCOMPARE_NEWS_URL, params=params)
                 if response.status_code == 200:
-                    data = response.json().get("Data", [])
-                    count = 0
-                    for news in data:
-                        title = news.get("title", "").lower()
-                        if "whale" in title or "large transaction" in title:
-                            count += 1
+                    news_data = response.json().get("Data")
+                    if isinstance(news_data, list):
+                        count = 0
+                        for news in news_data:
+                            title = news.get("title", "").lower()
+                            if "whale" in title or "large transaction" in title:
+                                count += 1
                     return {"count": count, "volume": Decimal("0")}
         except:
             pass

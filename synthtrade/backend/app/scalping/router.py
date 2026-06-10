@@ -311,22 +311,24 @@ async def _save_open_position_to_db(pos, db_session_id: str):
     so session restore can pick it up after restart.
     """
     try:
-        supabase = get_supabase()
-        supabase.table("scalping_trades").insert({
-            "session_id": db_session_id,
-            "symbol": pos.symbol,
-            "side": pos.side,
-            "entry_price": float(pos.entry_price),
-            "exit_price": None,
-            "quantity": float(pos.quantity),
-            "pnl": None,
-            "pnl_pct": None,
-            "strategy_type": _execution_state["session"].get("strategy", "unknown"),
-            "signal_reason": "entry",
-            "status": "open",
-            "entry_time": datetime.now(timezone.utc).isoformat(),
-            "exit_time": None,
-        }).execute()
+        def _db_op():
+            supabase = get_supabase()
+            supabase.table("scalping_trades").insert({
+                "session_id": db_session_id,
+                "symbol": pos.symbol,
+                "side": pos.side,
+                "entry_price": float(pos.entry_price),
+                "exit_price": None,
+                "quantity": float(pos.quantity),
+                "pnl": None,
+                "pnl_pct": None,
+                "strategy_type": _execution_state["session"].get("strategy", "unknown"),
+                "signal_reason": "entry",
+                "status": "open",
+                "entry_time": datetime.now(timezone.utc).isoformat(),
+                "exit_time": None,
+            }).execute()
+        await asyncio.to_thread(_db_op)
     except Exception as db_e:
         logger.warning(f"Failed to save open position to DB: {db_e}")
 
@@ -339,43 +341,45 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
         db_sid = _execution_state["session"].get("db_session_id")
         if not db_sid:
             return
-        supabase = get_supabase()
-        # Find the latest open trade for this session and entry price
-        resp = supabase.table("scalping_trades") \
-            .select("id") \
-            .eq("session_id", db_sid) \
-            .eq("entry_price", float(pos.entry_price)) \
-            .eq("status", "open") \
-            .order("entry_time", desc=True) \
-            .limit(1) \
-            .execute()
-        if resp.data:
-            trade_id = resp.data[0]["id"]
-            supabase.table("scalping_trades").update({
-                "exit_price": close_price,
-                "pnl": round(pnl, 2),
-                "pnl_pct": round(pnl_pct, 2),
-                "signal_reason": reason,
-                "status": "closed",
-                "exit_time": datetime.now(timezone.utc).isoformat(),
-            }).eq("id", trade_id).execute()
-        else:
-            # Fallback: insert new row if no open row found (backward compat)
-            supabase.table("scalping_trades").insert({
-                "session_id": db_sid,
-                "symbol": pos.symbol,
-                "side": pos.side,
-                "entry_price": float(pos.entry_price),
-                "exit_price": close_price,
-                "quantity": float(pos.quantity),
-                "pnl": round(pnl, 2),
-                "pnl_pct": round(pnl_pct, 2),
-                "strategy_type": _execution_state["session"].get("strategy", "unknown"),
-                "signal_reason": reason,
-                "status": "closed",
-                "entry_time": pos.entry_time.isoformat(),
-                "exit_time": datetime.now(timezone.utc).isoformat(),
-            }).execute()
+        def _db_op():
+            supabase = get_supabase()
+            # Find the latest open trade for this session and entry price
+            resp = supabase.table("scalping_trades") \
+                .select("id") \
+                .eq("session_id", db_sid) \
+                .eq("entry_price", float(pos.entry_price)) \
+                .eq("status", "open") \
+                .order("entry_time", desc=True) \
+                .limit(1) \
+                .execute()
+            if resp.data:
+                trade_id = resp.data[0]["id"]
+                supabase.table("scalping_trades").update({
+                    "exit_price": close_price,
+                    "pnl": round(pnl, 2),
+                    "pnl_pct": round(pnl_pct, 2),
+                    "signal_reason": reason,
+                    "status": "closed",
+                    "exit_time": datetime.now(timezone.utc).isoformat(),
+                }).eq("id", trade_id).execute()
+            else:
+                # Fallback: insert new row if no open row found (backward compat)
+                supabase.table("scalping_trades").insert({
+                    "session_id": db_sid,
+                    "symbol": pos.symbol,
+                    "side": pos.side,
+                    "entry_price": float(pos.entry_price),
+                    "exit_price": close_price,
+                    "quantity": float(pos.quantity),
+                    "pnl": round(pnl, 2),
+                    "pnl_pct": round(pnl_pct, 2),
+                    "strategy_type": _execution_state["session"].get("strategy", "unknown"),
+                    "signal_reason": reason,
+                    "status": "closed",
+                    "entry_time": pos.entry_time.isoformat(),
+                    "exit_time": datetime.now(timezone.utc).isoformat(),
+                }).execute()
+        await asyncio.to_thread(_db_op)
     except Exception as db_e:
         logger.warning(f"Failed to update closed position in DB: {db_e}")
 
@@ -1273,19 +1277,21 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     
                     # Save to Supabase market_intel_snapshots table
                     try:
-                        supabase = get_supabase()
-                        supabase.table("market_intel_snapshots").insert({
-                            "symbol": symbol,
-                            "funding_rate": intel_data.get("funding_rate"),
-                            "open_interest": intel_data.get("open_interest"),
-                            "long_pct": intel_data.get("long_pct"),
-                            "short_pct": intel_data.get("short_pct"),
-                            "cvd_trend": intel_data.get("cvd_trend"),
-                            "fear_greed_value": intel_data.get("fear_greed_value"),
-                            "fear_greed_label": intel_data.get("fear_greed_label"),
-                            "signal_score": intel_data.get("signal_score"),
-                            "signal_bias": intel_data.get("signal_bias")
-                        }).execute()
+                        def _db_op():
+                            supabase = get_supabase()
+                            supabase.table("market_intel_snapshots").insert({
+                                "symbol": symbol,
+                                "funding_rate": intel_data.get("funding_rate"),
+                                "open_interest": intel_data.get("open_interest"),
+                                "long_pct": intel_data.get("long_pct"),
+                                "short_pct": intel_data.get("short_pct"),
+                                "cvd_trend": intel_data.get("cvd_trend"),
+                                "fear_greed_value": intel_data.get("fear_greed_value"),
+                                "fear_greed_label": intel_data.get("fear_greed_label"),
+                                "signal_score": intel_data.get("signal_score"),
+                                "signal_bias": intel_data.get("signal_bias")
+                            }).execute()
+                        await asyncio.to_thread(_db_op)
                     except Exception as db_e:
                         logger.warning(f"Failed to insert intelligence in DB: {db_e}")
 

@@ -110,7 +110,9 @@ async def run_pipeline(
                 "status": "PENDING",
                 "expires_at": expires_at,
             }
-            db.table("strategies").upsert(row).execute()
+            def _upsert():
+                db.table("strategies").upsert(row).execute()
+            await asyncio.to_thread(_upsert)
             saved_strategies.append(row)
             saved += 1
 
@@ -138,8 +140,10 @@ async def run_pipeline(
                 if eval_result is None:
                     continue
                 if eval_result.verdict == "DEMOTE":
-                    db.table("strategies").update({"status": "REJECTED"}).eq(
-                        "id", eval_result.strategy_id).execute()
+                    def _demote():
+                        db.table("strategies").update({"status": "REJECTED"}).eq(
+                            "id", eval_result.strategy_id).execute()
+                    await asyncio.to_thread(_demote)
                     logger.info(f"Strategy {eval_result.strategy_id} DEMOTED → REJECTED")
                 elif eval_result.verdict == "PROMOTE":
                     logger.info(f"Strategy {eval_result.strategy_id} PROMOTED score={eval_result.score:.3f}")

@@ -80,7 +80,10 @@ class SentimentCollector:
                 response = await client.get(CRYPTOCOMPARE_NEWS_URL, params=params, headers=headers)
                 if response.status_code == 200:
                     data = response.json()
-                    return data.get("Data", [])[:10]
+                    news_data = data.get("Data")
+                    if isinstance(news_data, list):
+                        return news_data[:10]
+                    return []
         except Exception as e:
             logger.warning("CryptoCompare fetch error: %s", e)
         return []

@@ -46,11 +46,14 @@ class ParameterUpdater:
             db_sid = _execution_state["session"].get("db_session_id")
             if db_sid:
                 from app.db.supabase_client import get_supabase
-                supabase = get_supabase()
-                supabase.table("scalping_sessions") \
-                    .update({"strategy_params": new_params}) \
-                    .eq("id", db_sid) \
-                    .execute()
+                def _db_op():
+                    supabase = get_supabase()
+                    supabase.table("scalping_sessions") \
+                        .update({"strategy_params": new_params}) \
+                        .eq("id", db_sid) \
+                        .execute()
+                import asyncio
+                await asyncio.to_thread(_db_op)
                 logger.info(f"Strategy params saved to DB session {db_sid}")
         except Exception as e:
             logger.warning(f"Failed to save strategy params to DB: {e}")
@@ -74,14 +77,17 @@ class ParameterUpdater:
                 db_sid = _execution_state["session"].get("db_session_id")
                 if db_sid:
                     from app.db.supabase_client import get_supabase
-                    supabase = get_supabase()
-                    supabase.table("scalping_sessions") \
-                        .update({
-                            "strategy": new_strategy,
-                            "active_strategy": new_strategy,
-                        }) \
-                        .eq("id", db_sid) \
-                        .execute()
+                    def _db_op():
+                        supabase = get_supabase()
+                        supabase.table("scalping_sessions") \
+                            .update({
+                                "strategy": new_strategy,
+                                "active_strategy": new_strategy,
+                            }) \
+                            .eq("id", db_sid) \
+                            .execute()
+                    import asyncio
+                    await asyncio.to_thread(_db_op)
                     logger.info(f"Strategy saved to DB session {db_sid}: {new_strategy}")
             except Exception as e:
                 logger.warning(f"Failed to persist strategy change to session: {e}")

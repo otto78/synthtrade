@@ -63,7 +63,9 @@ async def monitor_pnl_job(engine=None) -> None:
         from app.db.supabase_client import get_supabase
         db = get_supabase()
         # Recupera tutte le strategie ACTIVE
-        res = db.table("strategies").select("*").eq("status", "ACTIVE").execute()
+        def _db_op1():
+            return db.table("strategies").select("*").eq("status", "ACTIVE").execute()
+        res = await asyncio.to_thread(_db_op1)
         active_strategies = res.data or []
         if not active_strategies:
             return
@@ -72,7 +74,9 @@ async def monitor_pnl_job(engine=None) -> None:
         for strategy in active_strategies:
             strategy_id = strategy["id"]
             # Recupera trade OPEN per questa strategia
-            trades_res = db.table("trades").select("*").eq("strategy_id", strategy_id).eq("status", "OPEN").execute()
+            def _db_op2():
+                return db.table("trades").select("*").eq("strategy_id", strategy_id).eq("status", "OPEN").execute()
+            trades_res = await asyncio.to_thread(_db_op2)
             open_trades = trades_res.data or []
 
             if not open_trades:
@@ -107,9 +111,11 @@ async def monitor_pnl_job(engine=None) -> None:
             )
 
             # Aggiorna DB con current_value
-            db.table("strategies").update({
-                "current_value_usdt": round(current_value, 2),
-            }).eq("id", strategy_id).execute()
+            def _db_op3():
+                db.table("strategies").update({
+                    "current_value_usdt": round(current_value, 2),
+                }).eq("id", strategy_id).execute()
+            await asyncio.to_thread(_db_op3)
 
         logger.info("Monitor P&L job completed")
     except Exception as e:
@@ -142,7 +148,9 @@ async def run_active_strategies_job(engine=None) -> None:
         from app.db.supabase_client import get_supabase
         from app.execution.strategy_runner import StrategyRunner
         db = get_supabase()
-        res = db.table("strategies").select("*").eq("status", "ACTIVE").execute()
+        def _db_op4():
+            return db.table("strategies").select("*").eq("status", "ACTIVE").execute()
+        res = await asyncio.to_thread(_db_op4)
         active_strategies = res.data or []
         if not active_strategies:
             return

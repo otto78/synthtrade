@@ -1,57 +1,81 @@
-# Fix ECONNABORTED ws proxy — causa: WebSocket backend senza keepalive
+# Fix ECONNABORTED ws proxy — piano implementazione backend
 
-## Root cause confermata
+## Root cause confermato
 
-Il messaggio `Page reload sent to client(s)` + `ECONNABORTED` è generato da Vite quando il **browser chiude la connessione WS** e Vite prova a scrivere sul socket già chiuso.  
-In un progetto Angular CLI (che usa Vite internamente in dev), questo accade quando:
+Vite (`[vite] ws proxy error: write ECONNABORTED`) riceve un `Page reload sent to client(s)` dal browser, che chiude la connessione WS. Vite poi prova a scrivere verso il backend su un socket già killato → errore.  
+Quando il backend WS uccide la connessione per inattività (timeout uvicon troppo stretti), il browser/WS client chiude e ricrea, innescando il reload loop.
 
-1. Il frontend non invia ping → il backend/uvicorn/eventuale proxy intermedio considera la connessione idle e la chiude dopo il timeout di default (~20s per uvicorn).
-2. Il client riceve `close` silenzioso, il WS viene ricreato dal `retryWhen`, ma **Vite non sa che il client è già andato via** e continua a scrivere verso il backend → schermata `ECONNABORTED`.
+## Implementazione
 
-## Piano (solo backend)
+### 1. Aumentare timeout WebSocket in `start.ps1`
+**File**: `start.ps1` (linea 121)  
+**Cambiamento**: aggiungere flag uvicorn per WS keepalive.
 
-### 1\. Aggiungere keepalive all'endpoint WebSocket scalping  
-File: `synthtrade/backend/app/scalping/router.py`
+```powershell
+# PRIMA
+uvicorn app.main:app --port $BACKEND_PORT
 
-- La route esistente (`@ws_scalping_router.websocket("/scalping")`) accetta già un ping applicativo (`"type": "ping"` → `"type": "pong"`), ma **non invia ping attivi**.  
-- Aggiungere un task asincrono interno che, dopo `N` secondi di inattività, invia automaticamente un ping al client.  
-- Se il client non risponde entro il timeout, chiudere la connessione.  
-- Importante: **non bloccante** e cancellabile al disconnect.
+# DOPO
+uvicorn app.main:app --port $BACKEND_PORT --ws-ping-interval 60 --ws-ping-timeout 30 --ws-close-timeout 10
+```
 
-### 2\. Aumentare i timeout di Uvicorn per i WebSocket  
-File: `start.ps1` e `synthtrade/backend/app/main.py`
+Valori:
+- `--ws-ping-interval 60`: uvicorn pinga ogni 60s (default 20)
+- `--ws-ping-timeout 30`: attende 30s la risposta (default 20)
+- `--ws-close-timeout 10`: concede 10s al client per confermare close (default 10)
 
-- Uvicorn usa di default `ws_ping_interval=20`, `ws_ping_timeout=20`, `ws_close_timeout=10`.  
-- Aumentare questi valori solo per il WS scalping (senza intaccare le API HTTP).
+### 2. Aggiungere ping attivo nell'endpoint scalping WS
+**File**: `synthtrade/backend/app/scalping/router.py`  
+**Luogo**: funzione `scalping_websocket` (riga 102)
 
-Opzioni:
-- **A**: parametri globali di uvicorn in `start.ps1` → `--ws-ping-interval 60 --ws-ping-timeout 30 --ws-close-timeout 10`
-- **B**: `WebSocket` ASGI `subprotocols` + middleware custom (più complesso, non serve qui).
-- **C**: configurare la classe `WebSocket` in FastAPI con timeout custom.
+Dopo `await ws.accept()` (riga 115), aggiungere task asincrono di keepalive:
 
-Scelta consigliata: **A** (semplice, impatta solo WS e non le API REST).
+```python
+async def _ws_keepalive(ws: WebSocket, interval: int = 30):
+    """Mantiene viva la connessione WS inviando ping ogni interval secondi."""
+    try:
+        while True:
+            await asyncio.sleep(interval)
+            await ws.send_json({"type": "ping", "timestamp": _now()})
+    except Exception:
+        pass  # client disconnesso o altro errore — silent exit
 
-### 3\. Spezzare il loop di broadcast pesante quando il client non sta scrivendo  
-File: `synthtrade/backend/app/scalping/router.py:185` (`broadcast_scalping_event`)
+keepalive_task = asyncio.create_task(_ws_keepalive(ws))
+try:
+    # ... codice esistente del loop ...
+finally:
+    keepalive_task.cancel()
+    try:
+        await keepalive_task
+    except asyncio.CancelledError:
+        pass
+```
 
-- Se un client WS è chiuso ma ancora in lista, ogni `send_json` fallisce e viene aggiunto a `dead`.  
-- Già gestito, ma aggiungere un contatore di errori consecutivi e un log chiaro quando un client viene rimosso per capire se sono i client a morire per timeout.
+Importante: integrare con il try/except esistente senza rompere la logica di pulizia `_scalping_ws_connections.remove(ws)`.
 
-### 4\. (Opzionale ma utile) Aggiornare il frontend per mandare pong/pro puppare WS anche senza dati  
-File: `synthtrade/frontend/synthtrade-ui/src/app/scalping/scalping-ws.service.ts`
+### 3. Gestire `ping` in arrivo dal backend → rispondere `pong`
+Già implementato nella sezione `msg.get("type") == "ping"` (righe 171-172).  
+Verificare che continui a funzionare. **Nessuna modifica necessaria qui**.
 
-- Aggiungere un timer locale che invia `ping` ogni 15s verso il backend.  
-- Questo NON risolve il problema di fondo (è il backend che chiude), ma rende esplicito che il client è vivo e aiuta a capire chi sta morendo.
+### 4. Logging migliorato per disconnect
+**File**: `synthtrade/backend/app/scalping/router.py` (righe 175-182)
 
----
+Aggiungere log dell'eccezione esatta per capire se i client si disconnettono per timeout, errore di rete, o altro:
 
-## Domande
+```python
+except WebSocketDisconnect as e:
+    if ws in _scalping_ws_connections:
+        _scalping_ws_connections.remove(ws)
+    logger.info("Scalping WS client disconnected (%d remaining): %s", len(_scalping_ws_connections), e)
+except Exception as e:
+    if ws in _scalping_ws_connections:
+        _scalping_ws_connections.remove(ws)
+    logger.error("Scalping WS error (%d remaining): %s", len(_scalping_ws_connections), e)
+```
 
-1. **Vuoi modificare solo `start.ps1` (Opzione A) o anche aggiungere il ping attivo nel backend?**  
-   Consiglio entrambi: aumentare il timeout uvicorn E aggiungere il ping attivo nel WS scalping.
+## Note
 
-2. **Hai bisogno di mantenere il supporto a `--reload`?**  
-   Se sì, le modifiche a uvicorn in `start.ps1` non toccano il reload; se no, rimuovere `--reload` evita anche altri problemi di WS durante i reload del codice.
-
-3. **Vuoi loggare ogni disconnect del WS scalping con l'eccezione esatta (errore + client IP)?**  
-   Utile per capire se i client si disconnettono sempre dallo stesso browser o da più fonti.
+- Non toccare il frontend: il problema è nel backend che chiude WS troppo presto.
+- Non rimuovere `--reload` da uvicorn: serve in dev.
+- Dopo le modifiche, riavviare backend e testare reload del browser: gli errori `ECONNABORTED` dovrebbero sparire o ridursi drasticamente.
+- Se persistono, il prossimo step è aggiungere il ping anche dal frontend (`ScalpingWsService`) per avere un keepalive bidirezionale.

@@ -60,6 +60,7 @@ import { Position } from '../models/position.model';
             <span class="label-current">{{ position.pnl_pct | number:'1.1-1' }}%</span>
             <span class="label-tp">TP</span>
           </div>
+          <div class="progress-state" [ngClass]="getProgressClass()">{{ getProgressText() }}</div>
           <div class="progress-bar">
             <div class="progress-fill" [style.width.%]="getProgressPct()" [ngClass]="getProgressClass()"></div>
           </div>
@@ -136,16 +137,23 @@ import { Position } from '../models/position.model';
     .label-current { color: var(--text-primary); font-weight: 700; }
     .label-tp { color: var(--accent-success, #26a69a); font-weight: 600; }
     .progress-bar {
-      height: 8px;
-      background: rgba(255,255,255,0.08);
-      border-radius: 4px;
+      height: 10px;
+      background: rgba(255,255,255,0.12);
+      border-radius: 5px;
       overflow: hidden;
       position: relative;
+    }
+    .progress-state {
+      font-size: 11px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
     }
     .progress-fill {
       height: 100%;
       transition: width 0.3s ease, background-color 0.3s ease;
-      border-radius: 4px;
+      border-radius: 5px;
     }
     .progress-fill.danger {
       background: linear-gradient(90deg, #ef5350, #ff6b6b);
@@ -247,13 +255,29 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
   
   getProgressPct(): number {
     if (!this.position) return 0;
-    const tpPct = this.position.take_profit_pct ?? 0;
-    const slPct = this.position.stop_loss_pct ?? 0;
-    const range = tpPct - slPct;
-    const current = this.position.pnl_pct - slPct;
-    return Math.max(0, Math.min(100, (current / range) * 100));
+    const { side, current_price, stop_loss_price, take_profit_price } = this.position;
+    if (stop_loss_price == null || take_profit_price == null) return 0;
+
+    if (side === 'BUY') {
+      const totalRange = take_profit_price - stop_loss_price;
+      if (totalRange <= 0) return 0;
+      const progress = ((current_price - stop_loss_price) / totalRange) * 100;
+      return Math.max(0, Math.min(100, progress));
+    }
+
+    const totalRange = stop_loss_price - take_profit_price;
+    if (totalRange <= 0) return 0;
+    const progress = ((stop_loss_price - current_price) / totalRange) * 100;
+    return Math.max(0, Math.min(100, progress));
   }
-  
+
+  getProgressText(): string {
+    const progress = this.getProgressPct();
+    if (progress <= 10) return 'Near SL';
+    if (progress >= 90) return 'Near TP';
+    return 'In range';
+  }
+
   getProgressClass(): string {
     const progress = this.getProgressPct();
     if (progress < 30) return 'danger';

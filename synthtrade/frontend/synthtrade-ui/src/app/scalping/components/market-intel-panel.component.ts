@@ -20,7 +20,6 @@ import { SessionApiService } from '../services/session-api.service';
     <div class="intel-panel">
       <div class="panel-header">
         <span class="panel-title">Market Intelligence</span>
-        <span class="sym-badge">{{ symbol }}</span>
       </div>
       <div class="intel-grid">
         <div class="intel-item">

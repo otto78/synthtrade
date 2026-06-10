@@ -24,6 +24,7 @@ export interface RiskConfig {
   template: `
     <div class="risk-controls">
       <span class="panel-title">Risk Controls</span>
+      <div class="title-hr"></div>
 
       <div *ngIf="!config" class="loading">Loading...</div>
 
@@ -60,6 +61,7 @@ export interface RiskConfig {
   styles: [`
     .risk-controls { padding: 12px; }
     .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+    .title-hr { height: 1px; background: rgba(234,236,239,0.08); margin: 10px 0 12px 0; }
     .loading { color: var(--text-secondary); font-size: 12px; }
     .risk-form { font-size: 12px; }
     .field { margin-bottom: 10px; }

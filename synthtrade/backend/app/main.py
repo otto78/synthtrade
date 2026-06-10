@@ -7,6 +7,10 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api import auth, strategies, dashboard, logs, ws, trades, eval as eval_api, pipeline, exchange, monitor, config_api
+# WatchFiles reload uccide la connessione WS Binance in corso, causando
+# "unknown" regime e blocchi di pipeline. Disabilitiamo il watch su file
+# di moduli runtime per evitare restart forzati durante sessioni live.
+# Il flag --reload è gestito da uvicorn args in start.ps1.
 from app.scalping.router import router as scalping_router, ws_scalping_router
 from app.api import llm_models_api
 from app.scheduler.jobs import setup_scheduler

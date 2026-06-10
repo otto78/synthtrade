@@ -18,7 +18,7 @@ Write-Host ""
 chcp 65001 | Out-Null
 
 # ── FUNZIONE: Kill tutti i processi Python sulla porta specificata ──────────
-function Kill-PortProcesses {
+function Stop-PortProcesses {
     param([int]$Port)
 
     # Metodo 1: via netstat — trova il PID che ascolta sulla porta
@@ -74,7 +74,7 @@ function Kill-PortProcesses {
 $backendOccupied = netstat -ano | Select-String ":$BACKEND_PORT\s" | Select-String "LISTEN"
 if ($backendOccupied) {
     Write-Host "Cleanup porta $BACKEND_PORT..." -ForegroundColor Yellow
-    $ok = Kill-PortProcesses -Port $BACKEND_PORT
+    $ok = Stop-PortProcesses -Port $BACKEND_PORT
     if (-not $ok) {
         Write-Host "Impossibile liberare la porta. Uscita." -ForegroundColor Red
         exit 1
@@ -88,7 +88,7 @@ if ($backendOccupied) {
 $frontendOccupied = netstat -ano | Select-String ":$FRONTEND_PORT\s" | Select-String "LISTEN"
 if ($frontendOccupied) {
     Write-Host "Cleanup porta $FRONTEND_PORT..." -ForegroundColor Yellow
-    Kill-PortProcesses -Port $FRONTEND_PORT | Out-Null
+    Stop-PortProcesses -Port $FRONTEND_PORT | Out-Null
     Write-Host "  ✓ Porta $FRONTEND_PORT libera" -ForegroundColor Green
 } else {
     Write-Host "  ✓ Porta $FRONTEND_PORT libera" -ForegroundColor Green
@@ -118,7 +118,7 @@ Start-Process pwsh -ArgumentList "-NoExit", "-Command", `
    & '$venv'; `
    cd '$backend'; `
    Write-Host 'Backend SynthTrade avviato' -ForegroundColor Green; `
-   uvicorn app.main:app --reload --port $BACKEND_PORT" `
+   uvicorn app.main:app --port $BACKEND_PORT" `
   -WindowStyle Normal
 
 # ── AVVIO FRONTEND ──────────────────────────────────────────────────────────

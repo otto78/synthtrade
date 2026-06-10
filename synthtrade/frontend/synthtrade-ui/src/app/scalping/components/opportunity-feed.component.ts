@@ -18,6 +18,7 @@ import { Opportunity, OpportunityUrgency } from '../models/opportunity.model';
   template: `
     <div class="opportunity-feed">
       <span class="panel-title">Opportunity Feed</span>
+      <div class="title-hr"></div>
 
       <div *ngIf="opportunities.length === 0" class="empty-state">
         No opportunities yet
@@ -47,6 +48,7 @@ import { Opportunity, OpportunityUrgency } from '../models/opportunity.model';
   styles: [`
     .opportunity-feed { padding: 12px; }
     .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+    .title-hr { height: 1px; background: rgba(234,236,239,0.08); margin: 10px 0 12px 0; }
     .empty-state { padding: 20px; text-align: center; color: var(--text-secondary, #848E9C); font-size: 12px; }
     .opportunity-list { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; }
     .opportunity-item { padding: 8px; border-radius: 4px; background: var(--bg-elevated); border-left: 3px solid var(--text-secondary); }

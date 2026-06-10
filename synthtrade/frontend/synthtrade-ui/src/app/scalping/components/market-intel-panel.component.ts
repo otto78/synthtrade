@@ -21,6 +21,7 @@ import { SessionApiService } from '../services/session-api.service';
       <div class="panel-header">
         <span class="panel-title">Market Intelligence</span>
       </div>
+      <div class="title-hr"></div>
       <div class="intel-grid">
         <div class="intel-item">
           <span class="label">Symbol</span>
@@ -64,7 +65,8 @@ import { SessionApiService } from '../services/session-api.service';
   styles: [`
     .intel-panel { padding: 12px; }
     .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
-    .panel-header { margin-bottom: 14px; }
+    .panel-header { margin-bottom: 10px; }
+    .title-hr { height: 1px; background: rgba(234,236,239,0.08); margin: 10px 0 12px 0; }
     .sym-badge { font-size: 11px; color: var(--accent-primary, #F0B90B); background: rgba(240,185,11,0.1); padding: 1px 6px; border-radius: 4px; font-weight: 600; }
     .intel-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
     .intel-item { display: flex; justify-content: space-between; padding: 10px 12px; background: var(--bg-elevated); border-radius: 6px; }

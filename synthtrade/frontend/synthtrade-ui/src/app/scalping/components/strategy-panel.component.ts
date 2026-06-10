@@ -66,6 +66,7 @@ const STRATEGY_DEFAULTS: Record<string, { label: string; desc: string; params: S
         <span class="panel-title">Strategy</span>
         <span class="ai-badge" *ngIf="lastAiUpdate">AI</span>
       </div>
+      <div class="title-hr"></div>
 
       <div *ngIf="!strategy" class="empty-state">
         <span>Avvia una sessione per caricare la strategia</span>
@@ -102,6 +103,7 @@ const STRATEGY_DEFAULTS: Record<string, { label: string; desc: string; params: S
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
+    .title-hr { height: 1px; background: rgba(234,236,239,0.08); margin: -6px 0 12px 0; }
 
     .panel-header { display: flex; align-items: center; justify-content: space-between; }
     h3 { margin: 0; font-size: 13px; color: var(--text-secondary); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }

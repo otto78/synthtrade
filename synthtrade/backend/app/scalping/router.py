@@ -408,6 +408,7 @@ async def _close_position_and_record(pm, close_price: float, pos, reason: str = 
         "pnl": round(pnl, 2),
         "pnl_pct": round(pnl_pct, 2),
         "timestamp": now_ts.isoformat(),
+        "signal_reason": reason,
     }
     _execution_state["trade_history"].append(trade_record)
 
@@ -425,7 +426,7 @@ def _check_daily_loss() -> bool:
     risk_cfg = _execution_state.get("risk_config", {})
     max_loss = float(risk_cfg.get("max_daily_loss", 50.0))
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    total_pnl = sum(t["pnl"] for t in _execution_state["trade_history"] if t["timestamp"].startswith(now_str))
+    total_pnl = sum(t.get("pnl") or 0.0 for t in _execution_state["trade_history"] if t["timestamp"].startswith(now_str))
     return total_pnl <= -max_loss
 
 async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
@@ -507,6 +508,60 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     "timestamp": c.timestamp.isoformat() if hasattr(c.timestamp, 'isoformat') else str(c.timestamp),
                 })
             logger.info(f"Successfully loaded and broadcast {loaded_count} historical candles for {symbol}. Buffer size: {len(candle_buffer)}, ready: {candle_buffer.is_ready(50)}")
+            
+            # ── SAFETY: Fix buffer mismatch ───────────────────────────────────
+            # Nonostante candle_buffer venga passato all'ExecutionLoop,
+            # a volte il buffer interno risulta vuoto (stesso ID oggetto ma
+            # contenuto diverso). Forziamo il caricamento direttamente dentro
+            # execution_loop._candle_buffer per sicurezza.
+            if len(execution_loop._candle_buffer) < 50:
+                logger.warning(
+                    f"Buffer mismatch detected — warmup loaded into candle_buffer "
+                    f"(id={id(candle_buffer)}, len={len(candle_buffer)}) but "
+                    f"execution_loop._candle_buffer (id={id(execution_loop._candle_buffer)}) "
+                    f"has only {len(execution_loop._candle_buffer)}. Force-loading..."
+                )
+                for c in past_candles:
+                    if hasattr(c, "timestamp") and hasattr(c, "open"):
+                        execution_loop._candle_buffer.add(c)
+                logger.info(
+                    f"Force-loaded {len(past_candles)} candles into execution_loop buffer. "
+                    f"Buffer now: {len(execution_loop._candle_buffer)}, "
+                    f"ready: {execution_loop._candle_buffer.is_ready(50)}"
+                )
+
+            # ── FORCE FIRST PIPELINE PROCESS ──────────────────────────────────
+            # Dopo il warmup, il buffer ha 100 candele ma process_candle() non viene
+            # chiamato finché non arriva una candela chiusa da Binance WS. In caso di
+            # riconnessione post-reload, la WS Binance può impiegare minuti a
+            # riconnettersi, lasciando il regime su "unknown" (confidence 0.00) e
+            # il supervisor in loop infinito a chiamare l'AI.
+            # 
+            # Forziamo process_candle() sull'ultima candela del warmup per calcolare
+            # subito il regime e attivare la strategia corretta.
+            if past_candles and loaded_count >= 50:
+                last = past_candles[-1]
+                forced_candle = Candle(
+                    symbol=symbol.upper(),
+                    open=Decimal(str(last.open)),
+                    high=Decimal(str(last.high)),
+                    low=Decimal(str(last.low)),
+                    close=Decimal(str(last.close)),
+                    volume=Decimal(str(last.volume)),
+                    timestamp=getattr(last, 'timestamp', datetime.now(timezone.utc)),
+                    closed=True,
+                )
+                try:
+                    _forced_decision = await execution_loop.process_candle(forced_candle)
+                    if _forced_decision:
+                        logger.info(
+                            f">>> FORCED FIRST PIPELINE: regime={execution_loop._current_regime.regime if execution_loop._current_regime else 'N/A'} "
+                            f"strategy={execution_loop._strategy.name if execution_loop._strategy else 'N/A'} "
+                            f"decision={_forced_decision}"
+                        )
+                except Exception as forced_err:
+                    logger.warning(f"First forced process_candle failed (non-fatal): {forced_err}")
+            
         else:
             logger.warning(f"No historical candles returned for {symbol}, buffer will warm up live.")
     except Exception as warmup_err:
@@ -1073,9 +1128,14 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     # if the TP or SL orders have been filled (OCO executed).
                     # This prevents the "stale position" bug where Binance closes the trade
                     # but the app still thinks it's open.
+                    #
+                    # FIX-2026-06-10: Skip OCO sync during restore_mode (first few candles).
+                    # After a restart, the open position is restored from DB but OCO orders
+                    # are not re-placed. The first OCO sync would see "no open orders" and
+                    # force-close the in-memory position, while the real asset is still on Binance.
                     _mode = _execution_state["session"].get("mode", "paper")
                     exchange = _execution_state.get("exchange")
-                    if _mode == "live" and exchange:
+                    if _mode == "live" and exchange and not restore_mode:
                         try:
                             open_orders = await exchange.get_open_orders(event.symbol.upper())
                             if not open_orders:
@@ -1301,8 +1361,22 @@ async def binance_exchange_info():
 
 @router.get("/trade-history")
 async def get_trade_history(limit: int = 50) -> List[Dict]:
-    """Get trade history from the current session."""
-    return _execution_state["trade_history"][-limit:]
+    """Get trade history from the current session.
+    
+    Returns only closed trades (those with exit_price set), sorted by
+    most recent first (timestamp DESC). Filters out any open positions
+    that don't have an exit price yet.
+    """
+    trades = _execution_state["trade_history"]
+    # Filter out trades without exit_price (open positions not yet closed)
+    closed_trades = [t for t in trades if t.get("exit_price") is not None]
+    # Sort by timestamp descending (most recent first)
+    sorted_trades = sorted(
+        closed_trades,
+        key=lambda t: t.get("timestamp", ""),
+        reverse=True,
+    )
+    return sorted_trades[:limit]
 
 
 @router.get("/candles/{symbol}")
@@ -1960,29 +2034,29 @@ async def get_performance() -> Dict:
             "consecutive_losses": 0,
         }
     
-    winning = [t for t in trades if t.get("pnl", 0) > 0]
-    losing = [t for t in trades if t.get("pnl", 0) < 0]
+    winning = [t for t in trades if (t.get("pnl") or 0) > 0]
+    losing = [t for t in trades if (t.get("pnl") or 0) < 0]
     
-    total_pnl = sum(t.get("pnl", 0) for t in trades)
+    total_pnl = sum((t.get("pnl") or 0) for t in trades)
     win_count = len(winning)
     lose_count = len(losing)
     total = len(trades)
     
-    avg_win = sum(t.get("pnl", 0) for t in winning) / win_count if win_count else 0
-    avg_loss = abs(sum(t.get("pnl", 0) for t in losing) / lose_count) if lose_count else 0
+    avg_win = sum((t.get("pnl") or 0) for t in winning) / win_count if win_count else 0
+    avg_loss = abs(sum((t.get("pnl") or 0) for t in losing) / lose_count) if lose_count else 0
     
-    gross_profit = sum(t.get("pnl", 0) for t in winning)
-    gross_loss = abs(sum(t.get("pnl", 0) for t in losing))
+    gross_profit = sum((t.get("pnl") or 0) for t in winning)
+    gross_loss = abs(sum((t.get("pnl") or 0) for t in losing))
     profit_factor = round(gross_profit / gross_loss, 4) if gross_loss > 0 else 0
     
     # Calculate max drawdown from running equity
-    running_pnl = 0
-    base_balance = float(_execution_state["session"].get("paper_balance", 10000.0))
+    running_pnl = 0.0
+    base_balance = float(_execution_state["session"].get("paper_balance", 10000.0) or 10000.0)
     equity = base_balance
     peak_equity = base_balance
     max_dd_pct = 0.0
     for t in trades:
-        running_pnl += t.get("pnl", 0)
+        running_pnl += (t.get("pnl") or 0)
         equity = base_balance + running_pnl
         if equity > peak_equity:
             peak_equity = equity
@@ -1995,14 +2069,14 @@ async def get_performance() -> Dict:
     cons_losses = 0
     max_cons_losses = 0
     for t in reversed(trades):
-        if t.get("pnl", 0) < 0:
+        if (t.get("pnl") or 0) < 0:
             cons_losses += 1
         else:
             break
     # Also calculate historical max consecutive losses
     current_run = 0
     for t in trades:
-        if t.get("pnl", 0) < 0:
+        if (t.get("pnl") or 0) < 0:
             current_run += 1
             max_cons_losses = max(max_cons_losses, current_run)
         else:
@@ -2150,11 +2224,6 @@ async def get_opportunities(
         f"GET /opportunities: {len(result)} opportunities returned "
         f"(filter urgency={urgency})"
     )
-    for opp in result:
-        logger.info(
-            f"  opp: [{opp['urgency']}] {opp['title']} "
-            f"({opp['symbol']}) - {opp['source']}"
-        )
     
     return result
 

@@ -27,7 +27,7 @@ class ScalpingSettings(BaseSettings):
     # Timeframe e segnali
     SCALPING_TIMEFRAME: str = '1m'
     SCALPING_SIGNAL_STRENGTH_THRESHOLD: float = 15.0
-    SCALPING_MIN_CONFIDENCE: float = 0.4
+    SCALPING_MIN_CONFIDENCE: float = 0.3
     SCALPING_EXECUTION_INTERVAL_MS: int = 500
     SCALPING_CANDLE_BUFFER_SIZE: int = 100
 
@@ -188,7 +188,7 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.CORS_ORIGINS.split(',')]
 
     # Scalping
-    @cached_property
+    @property
     def scalping(self) -> ScalpingSettings:
         return ScalpingSettings()
 

@@ -46,13 +46,15 @@ interface CandleResponse {
           <span class="price-tag" *ngIf="lastPrice > 0">{{ lastPrice | number:'1.2-2' }}</span>
         </div>
       </div>
+      <div class="title-hr"></div>
       <div #chartContainer class="chart-container"></div>
     </div>
   `,
   imports: [NgIf, DecimalPipe],
   styles: [`
     .live-chart { padding: 12px; display: flex; flex-direction: column; height: 100%; }
-    .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .chart-header { display: flex; justify-content: space-between; align-items: center; }
+    .title-hr { height: 1px; background: rgba(234,236,239,0.08); margin: 8px 0 12px 0; }
     .chart-meta { display: flex; align-items: center; gap: 8px; }
     .symbol { font-size: 13px; color: var(--accent-primary, #F0B90B); font-weight: 700; }
     .timeframe { font-size: 10px; color: var(--text-secondary); background: rgba(240,185,11,0.1); padding: 2px 6px; border-radius: 3px; }
@@ -72,6 +74,8 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
   private candleSeries: ISeriesApi<'Candlestick'> | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private sub = new Subscription();
+  private _loadingCandles = false;
+  private _candlesLoaded = false;
 
   private readonly API_BASE = '/api/scalping';
 
@@ -91,44 +95,46 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
         const oldSymbol = this.symbol;
         this.symbol = session.symbol || this.symbol;
         this.lastPrice = 0;
+        this._candlesLoaded = false;
         if (this.candleSeries && oldSymbol !== this.symbol) {
           this.candleSeries.setData([]);
         }
-        // Always reload candles when chart exists — handles both symbol change
-        // and page re-entry where chart was just recreated
         this._loadHistoryCandles();
       })
     );
 
     // React to preview symbol changes (user selects a symbol before starting session)
-    // Only activate if there is no active session running
     this.sub.add(
       this.sessionApi.previewSymbol$.subscribe((previewSym) => {
-        // Skip if session is active — session$ subscriber handles symbol changes
         const activeSession = this.sessionApi.getActiveSession();
         if (activeSession && activeSession.status !== 'idle') {
-          return; // session is in control
+          return;
         }
         if (previewSym && previewSym !== this.symbol) {
           this.symbol = previewSym;
           this.lastPrice = 0;
+          this._candlesLoaded = false;
           if (this.candleSeries) {
             this.candleSeries.setData([]);
           }
-          this._loadHistoryCandles();
+          if (this.candleSeries) {
+            this._loadHistoryCandles();
+          }
         }
       })
     );
   }
 
   private async _loadHistoryCandles(): Promise<void> {
-    if (!this.candleSeries) return;
+    if (this._loadingCandles || this._candlesLoaded) return;
+    if (!this.candleSeries) return; // chart not ready, will be called again from ngAfterViewInit
+    this._loadingCandles = true;
     try {
       const candles = await firstValueFrom(
         this.http.get<CandleResponse[]>(`${this.API_BASE}/candles/${this.symbol}?limit=100`)
       );
       if (!candles || candles.length === 0) return;
-      
+
       const chartData: CandlestickData[] = candles.map(c => ({
         time: (new Date(c.timestamp).getTime() / 1000) as UTCTimestamp,
         open: c.open,
@@ -136,15 +142,17 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
         low: c.low,
         close: c.close,
       }));
-      
+
       this.candleSeries.setData(chartData);
       this.lastPrice = chartData[chartData.length - 1].close;
       if (this.chart) {
         this.chart.timeScale().scrollToRealTime();
       }
-      console.log(`Loaded ${chartData.length} historical candles for ${this.symbol}`);
+      this._candlesLoaded = true;
     } catch (e) {
       console.log('Failed to load historical candles:', e);
+    } finally {
+      this._loadingCandles = false;
     }
   }
 
@@ -152,9 +160,8 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
     this._initChart();
     this._subscribeToCandles();
     this._setupResize();
-    
+
     // Load historical candles now that chart is initialized.
-    // Use the active session symbol if available, otherwise keep the default.
     const activeSession = this.sessionApi.getActiveSession();
     if (activeSession && activeSession.symbol && activeSession.status !== 'idle') {
       this.symbol = activeSession.symbol;
@@ -228,12 +235,11 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
         filter((candle): candle is NonNullable<typeof candle> => candle !== null)
       ).subscribe((candle) => {
         if (!this.candleSeries || !this.chart) return;
-        
-        // Filtra per simbolo (case-insensitive) — mostra solo candele del simbolo della sessione corrente
+
         if (candle.symbol.toUpperCase() !== this.symbol.toUpperCase()) {
           return;
         }
-        
+
         try {
           const ts = (new Date(candle.timestamp).getTime() / 1000) as UTCTimestamp;
           this.candleSeries.update({
@@ -244,10 +250,8 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
             close: candle.close,
           });
           this.lastPrice = candle.close;
-          // Auto-scroll to latest bar
           this.chart.timeScale().scrollToRealTime();
         } catch (e) {
-          // If chart was disposed between the check and the call
           // console.log('Chart update skipped (likely disposed):', e);
         }
       })

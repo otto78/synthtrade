@@ -15,6 +15,7 @@ import { Subscription } from 'rxjs';
   template: `
     <div class="supervisor-log">
       <span class="panel-title">AI Supervisor Log</span>
+      <div class="title-hr"></div>
 
       <div *ngIf="!decisions.length" class="empty">No AI decisions yet</div>
 
@@ -36,6 +37,7 @@ import { Subscription } from 'rxjs';
   styles: [`
     .supervisor-log { padding: 12px; max-height: 400px; overflow-y: auto; }
     .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+    .title-hr { height: 1px; background: rgba(234,236,239,0.08); margin: 10px 0 12px 0; }
     .empty { color: var(--text-secondary); font-size: 12px; padding: 8px; }
     .decisions-list { font-size: 12px; }
     .decision-item { padding: 10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; margin-bottom: 8px; }

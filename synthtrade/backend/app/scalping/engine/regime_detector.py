@@ -27,6 +27,15 @@ class RegimeDetector:
     ) -> MarketRegime:
         """Detect market regime from candles."""
         if len(candles) < 20:
+            # Se abbiamo meno di 20 candele ma > 0, usiamo "ranging" come fallback
+            # con bassa confidenza piuttosto che "unknown" a 0.0.
+            # "unknown" blocca il supervisor e impedisce qualsiasi strategia,
+            # perché il supervisor usa REGIME_ALLOWED_STRATEGIES che richiede
+            # 'ranging' per rsi_bollinger o 'unknown' → momentum_base.
+            # In un mercato reale con dati parziali, 'ranging' è un'ipotesi
+            # migliore di 'unknown' che blocca tutto.
+            if len(candles) >= 5:
+                return MarketRegime(regime="ranging", confidence=0.3)
             return MarketRegime(regime="unknown", confidence=0.0)
 
         ind = indicators or {}

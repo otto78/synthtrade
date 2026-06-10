@@ -19,6 +19,7 @@ import { SessionApiService } from '../services/session-api.service';
   template: `
     <div class="trade-log">
       <span class="panel-title">Trade Log</span>
+      <div class="title-hr"></div>
 
       <div *ngIf="trades.length === 0" class="no-trades">No trades yet</div>
 
@@ -43,7 +44,7 @@ import { SessionApiService } from '../services/session-api.service';
               <td [ngClass]="trade.pnl >= 0 ? 'profit' : 'loss'">
                 {{ trade.pnl | number:'1.2-2' }}
               </td>
-              <td class="reason-cell">{{ trade.signal_reason || '-' }}</td>
+              <td class="reason-cell" [ngClass]="getReasonClass(trade.signal_reason)">{{ trade.signal_reason || '-' }}</td>
             </tr>
           </tbody>
         </table>
@@ -53,6 +54,7 @@ import { SessionApiService } from '../services/session-api.service';
   styles: [`
     .trade-log { padding: 12px; max-height: 300px; overflow-y: auto; }
     .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+    .title-hr { height: 1px; background: rgba(234,236,239,0.08); margin: 10px 0 12px 0; }
     .no-trades { color: var(--text-secondary); font-size: 12px; padding: 8px; }
     table { width: 100%; font-size: 11px; border-collapse: collapse; }
     th, td { text-align: left; padding: 4px 6px; }
@@ -63,6 +65,8 @@ import { SessionApiService } from '../services/session-api.service';
     .profit { color: var(--accent-success, #26a69a); }
     .loss { color: var(--accent-danger, #ef5350); }
     .reason-cell { font-size: 10px; opacity: 0.8; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .reason-stop-loss { color: var(--accent-danger, #ef5350); font-weight: 600; }
+    .reason-take-profit { color: var(--accent-success, #26a69a); font-weight: 600; }
   `],
 })
 export class TradeLogComponent implements OnInit, OnDestroy {
@@ -109,12 +113,22 @@ export class TradeLogComponent implements OnInit, OnDestroy {
     this.sub?.unsubscribe();
   }
 
+  getReasonClass(reason: string | undefined): string {
+    if (!reason) return '';
+    const r = reason.toLowerCase().replace(/\s+/g, '-');
+    if (r.includes('stop-loss') || r.includes('stop_loss') || r === 'stop') return 'reason-stop-loss';
+    if (r.includes('take-profit') || r.includes('take_profit') || r === 'tp' || r === 'take') return 'reason-take-profit';
+    return '';
+  }
+
   private loadHistory(): void {
     this.http.get<TradeClosedEvent[]>(this.API_URL).subscribe({
       next: (history: TradeClosedEvent[]) => {
         if (history.length > 0) {
-          // Reverse so oldest trades appear first, then prepend newer ones
-          this.trades = history.reverse();
+          // Backend already returns sorted by timestamp DESC (most recent first).
+          // Do NOT reverse — that would put oldest first, and then new WS trades
+          // prepended would make the order wrong (oldest + new on top).
+          this.trades = history;
           this.cdr.markForCheck();
           this.cdr.detectChanges();
           console.log(`[TradeLog] Loaded ${history.length} historical trades`);

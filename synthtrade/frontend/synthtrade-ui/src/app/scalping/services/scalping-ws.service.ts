@@ -5,8 +5,8 @@
 
 import { Injectable, OnDestroy } from '@angular/core';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
-import { Subject, BehaviorSubject, timer } from 'rxjs';
-import { retryWhen, delayWhen } from 'rxjs/operators';
+import { Subject, BehaviorSubject, timer, defer } from 'rxjs';
+import { retryWhen, delayWhen, tap } from 'rxjs/operators';
 import { ScalpingSession } from '../models/session.model';
 
 // Event types matching backend
@@ -153,7 +153,8 @@ export interface RiskBlockEvent {
   providedIn: 'root',
 })
 export class ScalpingWsService implements OnDestroy {
-  private ws$!: WebSocketSubject<ScalpingEvent>;
+  private ws$: WebSocketSubject<ScalpingEvent> | null = null;
+  private _reconnectAttempt = 0;
   /**
    * WS endpoint mounted at /ws/scalping in backend main.py.
    * This matches the /ws proxy rule in proxy.conf.json which handles WS upgrade
@@ -185,29 +186,48 @@ export class ScalpingWsService implements OnDestroy {
 
   connect(): void {
     if (this.connected) return;
+    this._reconnectAttempt = 0;
 
-    this.ws$ = webSocket<ScalpingEvent>(this._wsUrl);
+    // Using defer() ensures a NEW WebSocketSubject is created on each subscription,
+    // which is necessary because WebSocketSubject cannot be reused after disconnect.
+    // Without this, retryWhen resubscribes to the same errored Subject and never
+    // actually opens a new WebSocket connection.
+    const wsFactory = () => {
+      this.ws$ = webSocket<ScalpingEvent>(this._wsUrl);
+      return this.ws$;
+    };
 
-    this.ws$
+    defer(wsFactory)
       .pipe(
         retryWhen((errors) =>
           errors.pipe(
-            delayWhen((_) => timer(3000))
-            // Retry indefinitely instead of take(5)
+            tap(() => {
+              this._reconnectAttempt++;
+              console.log(`Scalping WS reconnecting (attempt ${this._reconnectAttempt})...`);
+            }),
+            delayWhen((_) => timer(this._reconnectAttempt > 5 ? 10000 : 3000))
+            // Retry indefinitely with backoff after 5 attempts
           )
         )
       )
       .subscribe({
         next: (event) => this._dispatch(event),
         error: (err) => console.error('Scalping WS error:', err),
+        complete: () => {
+          this.connected = false;
+          console.log('Scalping WS completed');
+        },
       });
 
+    // connected flag set ON SUBSCRIBE, not before — defer creates a fresh
+    // WebSocketSubject on each retry, and the subscribe triggers the connection.
     this.connected = true;
   }
 
   disconnect(): void {
     if (this.ws$) {
       this.ws$.complete();
+      this.ws$ = null;
       this.connected = false;
     }
     // Don't reset BehaviorSubjects - keep last values for replay

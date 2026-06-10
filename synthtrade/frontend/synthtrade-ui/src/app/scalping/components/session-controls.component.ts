@@ -21,8 +21,11 @@ import { ConfigService } from '../../core/services/config.service';
       <!-- IDLE: Session header + config -->
       <ng-container *ngIf="!session || session.status === 'idle'">
         <div class="session-header">
-          <span class="session-title">Session</span>
-          <span class="session-id" *ngIf="sessionId">{{ sessionId }}</span>
+          <span class="panel-title">Session</span>
+        </div>
+        <div class="title-hr"></div>
+        <div class="session-id-row" *ngIf="sessionId">
+          <span class="session-id">{{ sessionId }}</span>
         </div>
 
         <div class="config-grid">
@@ -91,7 +94,10 @@ import { ConfigService } from '../../core/services/config.service';
       <ng-container *ngIf="session && session.status !== 'idle'">
         <div class="session-header">
           <span class="session-title">Session</span>
-          <span class="session-id" *ngIf="sessionId">{{ sessionId }}</span>
+        </div>
+        <div class="title-hr"></div>
+        <div class="session-id-row" *ngIf="sessionId">
+          <span class="session-id">{{ sessionId }}</span>
         </div>
 
         <div class="session-meta">
@@ -183,16 +189,6 @@ import { ConfigService } from '../../core/services/config.service';
       display: flex;
       align-items: baseline;
       gap: 10px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid rgba(234,236,239,0.08);
-      margin-bottom: 4px;
-    }
-    .session-title {
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--text-secondary);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
     }
     .session-id {
       font-size: 11px;
@@ -200,6 +196,12 @@ import { ConfigService } from '../../core/services/config.service';
       color: var(--text-secondary);
       opacity: 0.7;
       font-family: monospace;
+    }
+    .session-id-row { margin-bottom: 4px; }
+    .title-hr {
+      height: 1px;
+      background: rgba(234,236,239,0.08);
+      margin: -6px 0 12px 0;
     }
 
     /* Header */

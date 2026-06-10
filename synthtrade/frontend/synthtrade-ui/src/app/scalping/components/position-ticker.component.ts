@@ -18,6 +18,7 @@ import { Position } from '../models/position.model';
   template: `
     <div class="position-ticker">
       <span class="panel-title">Position</span>
+      <div class="title-hr"></div>
 
       <div *ngIf="!position" class="no-position">
         No open position
@@ -71,6 +72,7 @@ import { Position } from '../models/position.model';
   styles: [`
     .position-ticker { padding: 12px; }
     .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+    .title-hr { height: 1px; background: rgba(234,236,239,0.08); margin: 10px 0 12px 0; }
     .no-position { color: var(--text-secondary); font-size: 12px; }
     .position-content { font-size: 12px; display: flex; flex-direction: column; gap: 10px; }
     .row { display: flex; justify-content: space-between; margin-bottom: 4px; }

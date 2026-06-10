@@ -63,9 +63,8 @@ class OpportunityScheduler:
 
         logger.info(f"OpportunityScheduler: {len(all_results)} raw results")
 
-        # Deduplicate
         unique_results = self.deduplicator.process(all_results)
-        logger.info(f"OpportunityScheduler: {len(unique_results)} unique results")
+        logger.info(f"OpportunityScheduler: {len(unique_results)} unique")
 
         # Classify
         opportunities = await self.classifier.classify_batch(unique_results)

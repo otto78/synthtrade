@@ -25,7 +25,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def _restore_scalping_session(db) -> None:
+async def _restore_scalping_session(db) -> None:
     """
     Tenta di ripristinare una sessione di scalping attiva dal DB all'avvio.
     Ogni step ha il proprio try/except con exc_info=True per rendere visibile
@@ -105,7 +105,98 @@ def _restore_scalping_session(db) -> None:
             "Failed to populate _execution_state from DB session: %s", e, exc_info=True
         )
 
-    # Step 5 — avvia il pipeline (WS, ExecutionLoop, candle processing)
+    # Step 5 — Carica trade history dal DB per popolare la lista trade e performance
+    try:
+        db_trades = db.table("scalping_trades") \
+            .select("*") \
+            .eq("session_id", session_id) \
+            .order("exit_time", desc=True) \
+            .limit(200) \
+            .execute()
+        if db_trades.data:
+            trade_list = []
+            for t in db_trades.data:
+                trade_list.append({
+                    "symbol": t.get("symbol"),
+                    "side": t.get("side"),
+                    "entry_price": t.get("entry_price", 0),
+                    "exit_price": t.get("exit_price", 0),
+                    "quantity": t.get("quantity", 0),
+                    "pnl": t.get("pnl", 0),
+                    "pnl_pct": t.get("pnl_pct", 0),
+                    "timestamp": t.get("exit_time") or t.get("entry_time"),
+                    "signal_reason": t.get("signal_reason", ""),
+                })
+            _execution_state["trade_history"] = trade_list
+            logger.info("Restored %d historical trades for session %s", len(trade_list), session_id)
+    except Exception as e:
+        logger.error("Failed to restore trade history from DB: %s", e, exc_info=True)
+
+    # Step 6 — Inizializza balance live se la modalità è live
+    if session_mode == "live":
+        try:
+            from app.execution.exchange import BinanceExchangeAdapter
+            from app.config import settings as app_settings
+
+            api_key = app_settings.BINANCE_API_KEY_LIVE or app_settings.BINANCE_API_KEY
+            api_secret = app_settings.BINANCE_SECRET_KEY_LIVE or app_settings.BINANCE_SECRET_KEY
+            if api_key and api_secret:
+                adapter = BinanceExchangeAdapter(api_key, api_secret, testnet=False)
+                _execution_state["exchange"] = adapter
+
+                symbol = _execution_state["session"]["symbol"]
+                from app.scalping.router import _normalize_binance_total_balance, _select_preferred_quote_balance
+
+                ccxt_balance = await adapter.client.fetch_balance()
+                all_balances = ccxt_balance.get("total", {})
+                normalized = _normalize_binance_total_balance(all_balances)
+
+                filters = await adapter.get_symbol_filters(symbol)
+                quote = filters.get("quoteAsset", "USDT")
+                live_bal = _select_preferred_quote_balance(normalized, quote)
+
+                if live_bal is not None and live_bal > 0:
+                    _execution_state["session"]["live_balance"] = live_bal
+                    _execution_state["session"]["paper_balance"] = live_bal
+                    logger.info("Live balance restored: %s %s", live_bal, quote)
+                else:
+                    logger.warning("No live balance found — keeping previous value")
+            else:
+                logger.warning("No API keys for live mode — balance not refreshed during restore")
+        except Exception as e:
+            logger.error("Failed to initialize exchange adapter during restore: %s", e, exc_info=True)
+
+    # Step 7 — Restore open position from DB (if any trade with status='open' exists)
+    try:
+        open_trades = db.table("scalping_trades") \
+            .select("*") \
+            .eq("session_id", session_id) \
+            .eq("status", "open") \
+            .limit(1) \
+            .execute()
+        if open_trades.data:
+            ot = open_trades.data[0]
+            side = ot.get("side", "BUY")
+            entry_price = ot.get("entry_price", 0)
+            quantity = ot.get("quantity", 0)
+            symbol = ot.get("symbol", _execution_state["session"]["symbol"])
+            if entry_price and quantity and entry_price > 0 and quantity > 0:
+                from decimal import Decimal
+                pm = _execution_state["position_manager"]
+                pos_obj = pm.open_position(
+                    symbol=symbol,
+                    side=side,
+                    entry_price=Decimal(str(entry_price)),
+                    quantity=Decimal(str(quantity)),
+                )
+                logger.info(
+                    "Open position restored from DB: %s %s @ %s qty=%s",
+                    side, symbol, entry_price, quantity,
+                )
+    except Exception as e:
+        logger.error("Failed to restore open position from DB: %s", e, exc_info=True)
+
+    # Step 8 — avvia il pipeline (WS, ExecutionLoop, candle processing)
     # Questo è il passo che mancava: senza, la sessione appare "running" ma non
     # ha alcun flusso dati attivo, nessun trade parte, nessun log del pipeline.
     try:
@@ -194,7 +285,7 @@ async def lifespan(app: FastAPI):
     print("")
 
     # --- Restore active scalping session from DB ---
-    _restore_scalping_session(db)
+    await _restore_scalping_session(db)
 
     yield
 

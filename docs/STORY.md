@@ -502,7 +502,27 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
 
-**Ultima modifica:** 2026-05-27 — Claude (TASK-810 completato)
+
+
+### v1.1.0-hotfix.1 — 2026-06-10
+
+**Milestone:** 🔴 Fix persistenza sessione scalping — saldo, trade history, posizione aperta
+
+**Completato:**
+- ✅ **Bug 1 — Saldo 10,000 falso**: `_restore_scalping_session()` ora inizializza `BinanceExchangeAdapter` e fa `fetch_balance()` da Binance per sessioni live, mostrando il saldo reale invece del default 10,000
+- ✅ **Bug 2 — Lista trade vuota**: Ora carica fino a 200 trade storici da `scalping_trades` su DB e popola `trade_history` in memoria
+- ✅ **Bug 3 — Performance vuota**: Stessa causa del Bug 2 — risolto, ora la performance è calcolata sui dati reali
+- ✅ **Bug 4 — Trade notturni persi**: Aggiunta persistenza posizione aperta su DB (`status='open'`) subito dopo `pm.open_position()`. Alla chiusura UPDATE della stessa riga (non più INSERT). Al restore sessione, la posizione aperta viene ricaricata in memoria.
+- ✅ **Migration 010**: Aggiunta colonna `trade_value FLOAT` a `scalping_sessions`
+- ✅ Funzione `_save_open_position_to_db()` per INSERT posizione aperta
+- ✅ Funzione `_update_closed_position_in_db()` per UPDATE chiusura (UPDATE vs INSERT)
+- ✅ Step 7 in `_restore_scalping_session()`: carica posizione aperta da DB
+
+**File modificati:**
+- `synthtrade/backend/app/main.py` — `_restore_scalping_session()` resa async, Steps 5-8
+- `synthtrade/backend/app/scalping/router.py` — funzioni helper persistenza, chiamate dopo open_position
+
+**Ultima modifica:** 2026-06-10 — Cline (TASK-823 bug fix persistenza)
 
 ---
 

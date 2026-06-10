@@ -117,6 +117,36 @@ Fix issues identified from live session logs:
 
 ---
 
+### TASK-823 — Fix persistenza sessione scalping: saldo, trade history, posizione aperta (2026-06-10) ✅
+
+**Status:** Complete ✅
+
+**Bug 1 — Saldo 10,000 falso dopo restart:**
+- `_restore_scalping_session()` ora inizializza `BinanceExchangeAdapter` e fa `fetch_balance()` da Binance per sessioni live
+- Usa `_normalize_binance_total_balance()` e `_select_preferred_quote_balance()` per trovare il saldo corretto
+
+**Bug 2 — Lista trade vuota dopo restart:**
+- Step 5: carica fino a 200 trade dalla tabella `scalping_trades` via `session_id`
+- Popola `_execution_state["trade_history"]` in memoria
+
+**Bug 3 — Performance vuota dopo restart:**
+- Stessa causa del Bug 2 — dipende da `trade_history` popolato
+
+**Bug 4 — Trade persi al restart (posizione aperta non persistita):**
+- Nuova funzione `_save_open_position_to_db()`: salva posizione aperta su DB con `status='open'` subito dopo `pm.open_position()`
+- Nuova funzione `_update_closed_position_in_db()`: UPDATE della stessa riga alla chiusura (anziché INSERT)
+- La funzione `_close_position_and_record()` ora usa `_update_closed_position_in_db()` invece di INSERTare ex-novo
+- Step 7: carica eventuale posizione con `status='open'` da DB e la ripristina in `PositionManager`
+- `_restore_scalping_session()` resa async per supportare le chiamate CCXT
+
+**Migration 010:** Aggiunta colonna `trade_value FLOAT` a `scalping_sessions`
+
+**File modificati:**
+- `synthtrade/backend/app/main.py` — `_restore_scalping_session()` async, Steps 5-8
+- `synthtrade/backend/app/scalping/router.py` — funzioni helper persistenza
+
+---
+
 ### TASK-822 — Config panel: rimuovere sub-tab "Strategy" e aggiungere titolo "Session" con ID (2026-06-09)
 
 **Priorità:** Bassa

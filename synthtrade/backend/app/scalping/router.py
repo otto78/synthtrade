@@ -305,6 +305,81 @@ async def _live_close_position(exchange, pos, qty: float) -> float:
     return close_price
 
 
+async def _save_open_position_to_db(pos, db_session_id: str):
+    """Save opened position to Supabase with status='open' and no exit/pnl yet.
+    Called immediately after pm.open_position() to persist the current trade
+    so session restore can pick it up after restart.
+    """
+    try:
+        supabase = get_supabase()
+        supabase.table("scalping_trades").insert({
+            "session_id": db_session_id,
+            "symbol": pos.symbol,
+            "side": pos.side,
+            "entry_price": float(pos.entry_price),
+            "exit_price": None,
+            "quantity": float(pos.quantity),
+            "pnl": None,
+            "pnl_pct": None,
+            "strategy_type": _execution_state["session"].get("strategy", "unknown"),
+            "signal_reason": "entry",
+            "status": "open",
+            "entry_time": datetime.now(timezone.utc).isoformat(),
+            "exit_time": None,
+        }).execute()
+    except Exception as db_e:
+        logger.warning(f"Failed to save open position to DB: {db_e}")
+
+
+async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl_pct: float, reason: str):
+    """Update the open position row in DB to 'closed' with exit price and PnL.
+    Matches by session_id + entry_price + status='open' (latest match).
+    """
+    try:
+        db_sid = _execution_state["session"].get("db_session_id")
+        if not db_sid:
+            return
+        supabase = get_supabase()
+        # Find the latest open trade for this session and entry price
+        resp = supabase.table("scalping_trades") \
+            .select("id") \
+            .eq("session_id", db_sid) \
+            .eq("entry_price", float(pos.entry_price)) \
+            .eq("status", "open") \
+            .order("entry_time", desc=True) \
+            .limit(1) \
+            .execute()
+        if resp.data:
+            trade_id = resp.data[0]["id"]
+            supabase.table("scalping_trades").update({
+                "exit_price": close_price,
+                "pnl": round(pnl, 2),
+                "pnl_pct": round(pnl_pct, 2),
+                "signal_reason": reason,
+                "status": "closed",
+                "exit_time": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", trade_id).execute()
+        else:
+            # Fallback: insert new row if no open row found (backward compat)
+            supabase.table("scalping_trades").insert({
+                "session_id": db_sid,
+                "symbol": pos.symbol,
+                "side": pos.side,
+                "entry_price": float(pos.entry_price),
+                "exit_price": close_price,
+                "quantity": float(pos.quantity),
+                "pnl": round(pnl, 2),
+                "pnl_pct": round(pnl_pct, 2),
+                "strategy_type": _execution_state["session"].get("strategy", "unknown"),
+                "signal_reason": reason,
+                "status": "closed",
+                "entry_time": pos.entry_time.isoformat(),
+                "exit_time": datetime.now(timezone.utc).isoformat(),
+            }).execute()
+    except Exception as db_e:
+        logger.warning(f"Failed to update closed position in DB: {db_e}")
+
+
 async def _close_position_and_record(pm, close_price: float, pos, reason: str = "signal"):
     """Helper to close position, deduct fees, calculate PnL and record trade."""
     qty = float(pos.quantity)
@@ -339,31 +414,11 @@ async def _close_position_and_record(pm, close_price: float, pos, reason: str = 
     # Refresh live balance after trade close
     await _refresh_session_balance()
 
+    # Update DB: change status from 'open' to 'closed' with exit data
+    await _update_closed_position_in_db(pos, close_price, pnl, pnl_pct, reason)
+
     await broadcast_scalping_event("trade_closed", trade_record)
     logger.info(f"Position closed ({reason}): {pos.side} {pos.symbol} PnL: {pnl:.2f} ({pnl_pct:.2f}%)")
-
-    # Save trade to Supabase
-    try:
-        db_sid = _execution_state["session"].get("db_session_id")
-        if db_sid:
-            supabase = get_supabase()
-            supabase.table("scalping_trades").insert({
-                "session_id": db_sid,
-                "symbol": trade_record["symbol"],
-                "side": trade_record["side"],
-                "entry_price": trade_record["entry_price"],
-                "exit_price": trade_record["exit_price"],
-                "quantity": trade_record["quantity"],
-                "pnl": trade_record["pnl"],
-                "pnl_pct": trade_record["pnl_pct"],
-                "strategy_type": _execution_state["session"].get("strategy", "unknown"),
-                "signal_reason": reason,
-                "status": "closed",
-                "entry_time": pos.entry_time.isoformat(),
-                "exit_time": trade_record["timestamp"]
-            }).execute()
-    except Exception as db_e:
-        logger.warning(f"Failed to insert trade in DB: {db_e}")
 
 def _check_daily_loss() -> bool:
     """Return True if max daily loss is exceeded."""
@@ -551,6 +606,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     "pnl_pct": round(pnl_pct, 4),
                     "stop_loss_price": round(sl, 2),
                     "take_profit_price": round(tp, 2),
+                    "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
+                    "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
                 })
                 
                 # Execute SL/TP Auto Close
@@ -855,6 +912,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                         entry_price=Decimal(str(exec_price)),
                                         quantity=Decimal(str(exec_qty))
                                     )
+                                    # Persist open position to DB immediately
+                                    await _save_open_position_to_db(pos_obj, session.get("db_session_id"))
                                     
                                     # 4. Calculate Risk SL/TP with proper price precision
                                     risk_cfg = _execution_state.get("risk_config", {})
@@ -915,6 +974,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     entry_price=Decimal(str(event.close)),
                                     quantity=_qty,
                                 )
+                                # Persist open position to DB immediately
+                                await _save_open_position_to_db(pos_obj, session.get("db_session_id"))
                                 await broadcast_scalping_event("position", {
                                     "symbol": pos_obj.symbol,
                                     "side": pos_obj.side,

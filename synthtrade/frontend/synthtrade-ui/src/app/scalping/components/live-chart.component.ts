@@ -1,12 +1,9 @@
 /**
  * Live Chart Component
- * Mostra le ultime 100 candele 1m del simbolo corrente.
- * 
- * Strategia semplice e robusta:
- *  1. Al mount, carica 100 candele via REST (sempre, anche prima della sessione)
- *  2. Ascolta i candle WS e aggiorna in real-time con series.update()
- *  3. Se il simbolo cambia (sessione avviata o utente ne sceglie uno nuovo), ricarica le 100 candele
- *  4. Se la sessione viene ripristinata (restore), usa il simbolo della sessione
+ * Candlestick chart 1m del simbolo corrente.
+ *
+ * Approccio: switchMap pulisce le richieste HTTP in-flight quando il simbolo cambia.
+ * finalize() garantisce che loading torni sempre false, anche in caso di eccezione.
  */
 
 import {
@@ -16,7 +13,6 @@ import {
   AfterViewInit,
   ViewChild,
   ElementRef,
-  ChangeDetectorRef,
 } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import {
@@ -31,8 +27,22 @@ import {
 import { ScalpingWsService } from '../services/scalping-ws.service';
 import { SessionApiService } from '../services/session-api.service';
 import { NgIf, DecimalPipe } from '@angular/common';
-import { Subscription, combineLatest } from 'rxjs';
-import { filter, distinctUntilKeyChanged, distinctUntilChanged, map, debounceTime } from 'rxjs/operators';
+import {
+  Subject,
+  Subscription,
+  combineLatest,
+  of,
+} from 'rxjs';
+import {
+  switchMap,
+  distinctUntilChanged,
+  debounceTime,
+  map,
+  catchError,
+  finalize,
+  filter,
+  tap,
+} from 'rxjs/operators';
 
 interface CandleResponse {
   symbol: string;
@@ -54,7 +64,7 @@ interface CandleResponse {
         <div class="chart-meta">
           <span class="symbol">{{ currentSymbol }}</span>
           <span class="timeframe">1m</span>
-          <span class="price-tag" *ngIf="lastPrice > 0">{{ lastPrice | number:'1.2-2' }}</span>
+          <span class="price-tag" *ngIf="lastPrice > 0">{{ lastPrice | number:'1.2-4' }}</span>
           <span class="loading-dot" *ngIf="loading" title="Caricamento candele...">⟳</span>
         </div>
       </div>
@@ -71,7 +81,7 @@ interface CandleResponse {
     .symbol { font-size: 13px; color: var(--accent-primary, #F0B90B); font-weight: 700; }
     .timeframe { font-size: 10px; color: var(--text-secondary); background: rgba(240,185,11,0.1); padding: 2px 6px; border-radius: 3px; }
     .price-tag { font-size: 13px; color: #26a69a; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .loading-dot { font-size: 14px; color: #F0B90B; animation: spin 1s linear infinite; }
+    .loading-dot { font-size: 14px; color: #F0B90B; display: inline-block; animation: spin 1s linear infinite; }
     .chart-container { flex: 1; min-height: 280px; width: 100%; }
     @keyframes spin { to { transform: rotate(360deg); } }
   `],
@@ -88,7 +98,9 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
   private candleSeries: ISeriesApi<'Candlestick'> | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private sub = new Subscription();
-  private _chartReady = false;
+
+  /** Emette il simbolo corrente → triggera il reload delle candele */
+  private symbolTrigger$ = new Subject<string>();
 
   private readonly API_BASE = '/api/scalping';
 
@@ -96,53 +108,75 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
     private ws: ScalpingWsService,
     private sessionApi: SessionApiService,
     private http: HttpClient,
-    private cdr: ChangeDetectorRef,
   ) {}
 
   ngOnInit(): void {
-    // Determina il simbolo attivo: sessione running ha priorità, altrimenti preview
-    // Usiamo distinctUntilChanged per evitare reload multipli per lo stesso simbolo
+    // ── Determina simbolo attivo: sessione running > preview ──────────────
     const activeSymbol$ = combineLatest([
       this.sessionApi.session$,
       this.sessionApi.previewSymbol$,
     ]).pipe(
-      map(([session, preview]) => {
-        if (session && session.status !== 'idle' && session.symbol) {
-          return session.symbol.toUpperCase();
-        }
-        return (preview || 'BNBUSDC').toUpperCase();
-      }),
+      map(([session, preview]) =>
+        (session?.status !== 'idle' && session?.symbol
+          ? session.symbol
+          : preview || 'BNBUSDC'
+        ).toUpperCase()
+      ),
       distinctUntilChanged(),
-      // Piccolo debounce per evitare doppio-caricamento all'avvio
-      debounceTime(150),
     );
 
     this.sub.add(
       activeSymbol$.subscribe((symbol) => {
-        if (symbol !== this.currentSymbol) {
-          this.currentSymbol = symbol;
-          this.cdr.markForCheck();
-        }
-        // Ricarica storico se il chart è già pronto, altrimenti ngAfterViewInit lo farà
-        if (this._chartReady) {
-          this._reloadCandles(symbol);
-        }
+        this.currentSymbol = symbol;
+        this.symbolTrigger$.next(symbol);
       })
+    );
+
+    // ── switchMap: cancella HTTP in-flight se il simbolo cambia ───────────
+    // finalize() è il "finally" di RxJS: gira sempre, anche se l'observable
+    // termina con errore o viene annullato dal switchMap.
+    this.sub.add(
+      this.symbolTrigger$.pipe(
+        debounceTime(100),
+        switchMap((symbol) => {
+          if (!this.candleSeries) {
+            // chart non ancora pronto, retry quando sarà inizializzato
+            return of(null);
+          }
+          this.loading = true;
+          // Pulisci il chart immediatamente
+          try { this.candleSeries.setData([]); } catch (_) {}
+
+          return this.http
+            .get<CandleResponse[]>(`${this.API_BASE}/candles/${symbol}?limit=100`)
+            .pipe(
+              tap((candles) => this._applyCandles(symbol, candles)),
+              catchError((err) => {
+                console.warn('[LiveChart] HTTP error loading candles for', symbol, err);
+                return of(null);
+              }),
+              finalize(() => {
+                // Garantito: loading = false sia in successo che in errore
+                this.loading = false;
+              })
+            );
+        })
+      ).subscribe()
     );
   }
 
   ngAfterViewInit(): void {
     this._initChart();
-    this._subscribeToCandles();
+    this._subscribeToWsCandles();
     this._setupResize();
-    this._chartReady = true;
 
-    // Prima inizializzazione: carica le candele del simbolo corrente
-    this._reloadCandles(this.currentSymbol);
+    // Ora che il chart è pronto, triggera il caricamento del simbolo corrente
+    this.symbolTrigger$.next(this.currentSymbol);
   }
 
   ngOnDestroy(): void {
     this.sub.unsubscribe();
+    this.symbolTrigger$.complete();
     this.resizeObserver?.disconnect();
     if (this.chart) {
       try { this.chart.remove(); } catch (_) {}
@@ -151,63 +185,48 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  // ─── Caricamento storico ───────────────────────────────────────────────────
+  // ─── Applica dati ricevuti dal backend ────────────────────────────────────
 
-  private _reloadCandles(symbol: string): void {
-    if (!this.candleSeries || !this.chart) return;
-    if (this.loading) return;
+  private _applyCandles(symbol: string, candles: CandleResponse[] | null): void {
+    if (!candles || candles.length === 0 || !this.candleSeries || !this.chart) return;
 
-    this.loading = true;
-    this.cdr.markForCheck();
+    try {
+      // Ordina per timestamp crescente (oldest → newest)
+      const sorted = [...candles].sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
 
-    // Svuota il chart prima di caricare i nuovi dati
-    this.candleSeries.setData([]);
+      // Deduplica: tieni solo l'ultima candela per ogni timestamp
+      // (il buffer potrebbe avere duplicati per la candela corrente)
+      const seen = new Map<number, CandlestickData>();
+      for (const c of sorted) {
+        const ts = Math.floor(new Date(c.timestamp).getTime() / 1000) as UTCTimestamp;
+        seen.set(ts, {
+          time: ts,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+        });
+      }
 
-    this.http
-      .get<CandleResponse[]>(`${this.API_BASE}/candles/${symbol}?limit=100`)
-      .subscribe({
-        next: (candles) => {
-          if (!candles || candles.length === 0) {
-            this.loading = false;
-            this.cdr.markForCheck();
-            return;
-          }
+      const chartData = Array.from(seen.values()).sort((a, b) =>
+        (a.time as number) - (b.time as number)
+      );
 
-          // Ordina per timestamp crescente (più vecchio → più recente)
-          // Il backend dovrebbe già mandarle in ordine, ma per sicurezza
-          const sorted = [...candles].sort(
-            (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-          );
+      if (chartData.length === 0) return;
 
-          const chartData: CandlestickData[] = sorted.map((c) => ({
-            time: (new Date(c.timestamp).getTime() / 1000) as UTCTimestamp,
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-          }));
-
-          if (this.candleSeries) {
-            this.candleSeries.setData(chartData);
-            this.lastPrice = chartData[chartData.length - 1].close;
-          }
-          if (this.chart) {
-            this.chart.timeScale().scrollToRealTime();
-          }
-          this.loading = false;
-          this.cdr.markForCheck();
-        },
-        error: (e) => {
-          console.warn('[LiveChart] Failed to load candles for', symbol, e);
-          this.loading = false;
-          this.cdr.markForCheck();
-        },
-      });
+      this.candleSeries.setData(chartData);
+      this.lastPrice = chartData[chartData.length - 1].close;
+      this.chart.timeScale().scrollToRealTime();
+    } catch (err) {
+      console.warn('[LiveChart] Error applying candle data:', err);
+    }
   }
 
   // ─── WS real-time updates ─────────────────────────────────────────────────
 
-  private _subscribeToCandles(): void {
+  private _subscribeToWsCandles(): void {
     this.sub.add(
       this.ws.candle$
         .pipe(filter((c): c is NonNullable<typeof c> => c !== null))
@@ -216,7 +235,9 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
           if (candle.symbol.toUpperCase() !== this.currentSymbol.toUpperCase()) return;
 
           try {
-            const ts = (new Date(candle.timestamp).getTime() / 1000) as UTCTimestamp;
+            const ts = Math.floor(
+              new Date(candle.timestamp).getTime() / 1000
+            ) as UTCTimestamp;
             this.candleSeries.update({
               time: ts,
               open: candle.open,

@@ -260,6 +260,11 @@ async def _live_close_position(exchange, pos, qty: float) -> float:
     
     Returns the actual execution price on success.
     Raises Exception if close fails after all retries.
+    
+    FIX-2026-06-11: Properly handles 3 scenarios:
+    1. OCO already executed → balance < minQty → fetch fill price from closed orders
+    2. Balance check fails → fallback to original qty parameter
+    3. Balance >= minQty → use actual balance, round to stepSize, market close
     """
     # 1. Cancel any open orders (OCO / Stop Loss) before attempting close
     try:
@@ -276,20 +281,55 @@ async def _live_close_position(exchange, pos, qty: float) -> float:
         logger.warning(f"Could not cancel open orders (non-blocking): {order_e}")
 
     # 2. Get actual available balance (after fees deducted by Binance on entry)
+    #    to determine if the position is still held or already closed by OCO.
     try:
         actual_qty = await exchange._get_available_base_balance(pos.symbol)
-        if actual_qty > 0:
-            qty = actual_qty
-            logger.info(f"Using actual balance for {pos.symbol} close: {qty}")
-    except Exception:
-        pass  # fallback to original qty
+        filters = await exchange.get_symbol_filters(pos.symbol)
+        min_qty = float(filters.get("minQty", 0.001))
+
+        if actual_qty < min_qty:
+            # ── SCENARIO 1: OCO già eseguito da Binance ──
+            # Binance ha già venduto (TP o SL), è rimasta solo polvere < minQty.
+            logger.info(f"Balance {actual_qty} is below minQty {min_qty}. Position already closed by exchange (OCO).")
+            close_price_to_use = float(pos.entry_price)  # fallback
+            
+            # Try to get actual fill price from closed orders history
+            try:
+                filled_orders = await exchange.client.fetch_closed_orders(
+                    await exchange._get_ccxt_symbol(pos.symbol),
+                    limit=10
+                )
+                if filled_orders:
+                    filled_orders.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+                    for fo in filled_orders:
+                        if fo.get("status") == "closed" and fo.get("side", "").upper() != pos.side.upper():
+                            fill_price = float(fo.get("price", 0) or fo.get("average", 0))
+                            if fill_price > 0:
+                                close_price_to_use = fill_price
+                                logger.info(f"Found actual OCO fill price: {fill_price}")
+                                break
+            except Exception as hist_e:
+                logger.warning(f"Could not fetch filled orders history: {hist_e}")
+            
+            return close_price_to_use
+
+        # ── SCENARIO 3: Posizione ancora aperta, balance >= minQty ──
+        qty = actual_qty
+        logger.info(f"Using actual balance for {pos.symbol} close: {qty}")
+
+    except Exception as bal_err:
+        # ── SCENARIO 2: Balance check fallito → usa qty originale ──
+        # `qty` mantiene il valore del parametro passato alla funzione.
+        logger.warning(f"Balance check failed (fallback to original qty param {qty}): {bal_err}")
 
     # 3. Execute Market Close — retry up to 3 times with delay
     opp_side = "sell" if pos.side.upper() == "BUY" else "buy"
     market_res = None
     for attempt in range(3):
         try:
-            market_res = await exchange.place_market_order(pos.symbol, opp_side, qty)
+            # Round qty to stepSize BEFORE placing order to avoid Binance precision errors
+            qty_rounded = await exchange._round_qty(pos.symbol, qty)
+            market_res = await exchange.place_market_order(pos.symbol, opp_side, qty_rounded)
             break
         except Exception as retry_e:
             logger.warning(f"Market close attempt {attempt + 1}/3 failed for {pos.symbol}: {retry_e}")
@@ -299,7 +339,6 @@ async def _live_close_position(exchange, pos, qty: float) -> float:
     if market_res is None:
         raise RuntimeError(f"Failed to close live position for {pos.symbol} after 3 attempts")
 
-    # 3. Use real execution price
     close_price = float(market_res.get("price") or pos.entry_price)
     logger.info(f"LIVE Market Close executed @ {close_price}")
     return close_price
@@ -1277,10 +1316,14 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 # Execute SL/TP Auto Close
                 hit_sl = (pos.side == "BUY" and current <= sl) or (pos.side == "SELL" and current >= sl)
                 hit_tp = (pos.side == "BUY" and current >= tp) or (pos.side == "SELL" and current <= tp)
-                if hit_sl:
-                    await _close_position_and_record(pm, current, pos, reason="stop_loss")
-                elif hit_tp:
-                    await _close_position_and_record(pm, current, pos, reason="take_profit")
+                try:
+                    if hit_sl:
+                        await _close_position_and_record(pm, current, pos, reason="stop_loss")
+                    elif hit_tp:
+                        await _close_position_and_record(pm, current, pos, reason="take_profit")
+                except Exception as auto_close_err:
+                    logger.error(f"Auto-close failed in _trade_processor (will retry on next tick or candle sync): {auto_close_err}")
+
 
     async def _intelligence_processor():
         """Poll intelligence and broadcast."""

@@ -141,7 +141,7 @@ class SignalAggregator:
         bias = market_score.bias
         if bias == "bullish" and technical.type not in ("BUY",):
             # Permetti SELL da mean-reversion in ranging (chiusura range, non short)
-            if technical.type == "SELL" and technical.source in MEAN_REVERSION_STRATEGIES:
+            if technical.type == "SELL" and technical.source and any(technical.source.startswith(s) for s in MEAN_REVERSION_STRATEGIES):
                 logger.info(
                     f"⚡ MEAN-REVERSION SELL permesso (source={technical.source}) "
                     f"nonostante bias={bias} — chiusura range, non short direzionale"
@@ -155,7 +155,7 @@ class SignalAggregator:
                 )
         if bias == "bearish" and technical.type not in ("SELL", "CLOSE"):
             # Permetti BUY da mean-reversion in ranging (chiusura range, non long)
-            if technical.type == "BUY" and technical.source in MEAN_REVERSION_STRATEGIES:
+            if technical.type == "BUY" and technical.source and any(technical.source.startswith(s) for s in MEAN_REVERSION_STRATEGIES):
                 logger.info(
                     f"⚡ MEAN-REVERSION BUY permesso (source={technical.source}) "
                     f"nonostante bias={bias} — chiusura range, non long direzionale"

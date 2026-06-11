@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, OnInit, OnDestroy, signal } from '@angular/core';
 import { AsyncPipe } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { RouterLink, Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { ConfigService } from '../../core/services/config.service';
 import { DashboardService } from '../../core/services/dashboard.service';
@@ -384,6 +384,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
 })
 export class TopbarComponent implements OnInit, OnDestroy {
   auth = inject(AuthService);
+  router = inject(Router);
   configService = inject(ConfigService);
   ui = inject(UiService);
   private dashboardService = inject(DashboardService);
@@ -485,11 +486,11 @@ export class TopbarComponent implements OnInit, OnDestroy {
           if (
             !this._redirectedToModels &&
             res.summary === 'all_down' &&
-            !window.location.pathname.endsWith('/llm-models')
+            !this.router.url.includes('/llm-models')
           ) {
             this._redirectedToModels = true;
             this.showToast('⚠️ Nessun modello AI attivo! Reindirizzamento...', 'error');
-            setTimeout(() => { window.location.href = '/llm-models'; }, 2000);
+            setTimeout(() => { this.router.navigate(['/llm-models']); }, 2000);
           }
         },
         error: () => this.llmStatus.set('all_down'),

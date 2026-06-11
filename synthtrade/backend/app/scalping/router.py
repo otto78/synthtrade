@@ -290,26 +290,54 @@ async def _live_close_position(exchange, pos, qty: float) -> float:
         if actual_qty < min_qty:
             # ── SCENARIO 1: OCO già eseguito da Binance ──
             # Binance ha già venduto (TP o SL), è rimasta solo polvere < minQty.
+            # 
+            # FIX-2026-06-11: CRITICO — Non usare entry_price come fallback!
+            # Se il balance è < minQty, significa che l'OCO ha già eseguito
+            # la vendita. Dobbiamo recuperare il VERO prezzo di fill dallo
+            # storico ordini di Binance, NON usare entry_price (che crea
+            # un falso trade entry=exit con PnL=0).
             logger.info(f"Balance {actual_qty} is below minQty {min_qty}. Position already closed by exchange (OCO).")
-            close_price_to_use = float(pos.entry_price)  # fallback
+            close_price_to_use = None  # forced to be found, no fallback
             
             # Try to get actual fill price from closed orders history
             try:
                 filled_orders = await exchange.client.fetch_closed_orders(
                     await exchange._get_ccxt_symbol(pos.symbol),
-                    limit=10
+                    limit=20  # increased from 10 to find the right order
                 )
                 if filled_orders:
+                    # Sort by most recent first
                     filled_orders.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
                     for fo in filled_orders:
+                        # Match: status=closed, side opposite to position (sell for BUY), 
+                        # price near entry (within 5% range)
                         if fo.get("status") == "closed" and fo.get("side", "").upper() != pos.side.upper():
                             fill_price = float(fo.get("price", 0) or fo.get("average", 0))
                             if fill_price > 0:
-                                close_price_to_use = fill_price
-                                logger.info(f"Found actual OCO fill price: {fill_price}")
-                                break
+                                # Validate: the exit price should be within 5% of entry
+                                entry_f = float(pos.entry_price)
+                                price_ratio = abs(fill_price - entry_f) / entry_f
+                                if price_ratio < 0.05:  # within 5% is a valid SL/TP
+                                    close_price_to_use = fill_price
+                                    logger.info(f"Found actual OCO fill price: {fill_price} (ratio={price_ratio:.4f})")
+                                    break
+                                else:
+                                    logger.debug(f"Skipping order fill {fill_price}: ratio {price_ratio:.4f} > 0.05 (wrong order)")
             except Exception as hist_e:
                 logger.warning(f"Could not fetch filled orders history: {hist_e}")
+            
+            # Ultimate fallback: if we still don't have a price, use current market
+            if close_price_to_use is None:
+                try:
+                    ticker = await exchange.client.fetch_ticker(
+                        await exchange._get_ccxt_symbol(pos.symbol)
+                    )
+                    close_price_to_use = float(ticker.get("last", ticker.get("close", 0)))
+                    if close_price_to_use > 0:
+                        logger.info(f"Using current market price as fallback: {close_price_to_use}")
+                except Exception as ticker_e:
+                    logger.warning(f"Ticker fetch failed, using entry with warning: {ticker_e}")
+                    close_price_to_use = float(pos.entry_price)
             
             return close_price_to_use
 

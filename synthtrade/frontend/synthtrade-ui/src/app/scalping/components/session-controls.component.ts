@@ -160,7 +160,6 @@ import { ConfigService } from '../../core/services/config.service';
             {{ isStopping ? 'Arresto...' : '⏹ Stop' }}
           </button>
         </div>
-        <br>
         <div class="session-id-row" *ngIf="sessionId">
           <span class="session-id">{{ sessionId }}</span>
         </div>

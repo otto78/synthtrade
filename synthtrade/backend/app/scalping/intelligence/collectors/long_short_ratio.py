@@ -11,12 +11,14 @@ Documentazione API:
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
+import logging
 
 import httpx
 
 from app.scalping.models.intelligence import LongShortRatio
 
 BINANCE_LS_URL = "https://fapi.binance.com/futures/data/globalLongShortAccountRatio"
+logger = logging.getLogger(__name__)
 
 
 class LongShortRatioCollector:
@@ -50,16 +52,19 @@ class LongShortRatioCollector:
                     return None
 
                 entry = data[0]
+                long_val = Decimal(str(entry.get("longAccount", "0")))
+                short_val = Decimal(str(entry.get("shortAccount", "0")))
+                
+                logger.debug("Raw LS data for %s: long=%s, short=%s", symbol, long_val, short_val)
+
                 return LongShortRatio(
                     symbol=symbol.upper(),
-                    long_pct=Decimal(str(entry.get("longAccount", "0"))),
-                    short_pct=Decimal(str(entry.get("shortAccount", "0"))),
+                    long_pct=long_val * 100,
+                    short_pct=short_val * 100,
                     timestamp=datetime.fromtimestamp(entry.get("timestamp", 0) / 1000),
                 )
 
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning("LongShortRatioCollector error for %s: %s", symbol, e)
             return None
 

@@ -93,12 +93,9 @@ import { ConfigService } from '../../core/services/config.service';
       <!-- RUNNING / PAUSED -->
       <ng-container *ngIf="session && session.status !== 'idle'">
         <div class="session-header">
-          <span class="session-title">Session</span>
+          <span class="panel-title">Session</span>
         </div>
         <div class="title-hr"></div>
-        <div class="session-id-row" *ngIf="sessionId">
-          <span class="session-id">{{ sessionId }}</span>
-        </div>
 
         <div class="session-meta">
           <div class="meta-item">
@@ -112,7 +109,7 @@ import { ConfigService } from '../../core/services/config.service';
             </span>
           </div>
           <div class="meta-item">
-            <span class="meta-label">Saldo {{ session.mode === 'live' ? 'Live' : 'Paper' }}</span>
+            <span class="meta-label">Saldo {{ session.mode === 'live' ? 'Free' : 'Paper' }}</span>
             <span class="meta-value" [class.live-val]="session.mode === 'live'">
               {{ (session.mode === 'live' ? (session.live_balance ?? session.paper_balance) : session.paper_balance) | number:'1.2-2' }}
               {{ getQuoteAsset() }}
@@ -162,6 +159,10 @@ import { ConfigService } from '../../core/services/config.service';
           <button class="btn-action stop" (click)="stopSession()" [disabled]="isStopping">
             {{ isStopping ? 'Arresto...' : '⏹ Stop' }}
           </button>
+        </div>
+        <br>
+        <div class="session-id-row" *ngIf="sessionId">
+          <span class="session-id">{{ sessionId }}</span>
         </div>
       </ng-container>
 

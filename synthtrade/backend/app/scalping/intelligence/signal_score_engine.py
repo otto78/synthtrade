@@ -191,11 +191,13 @@ class SignalScoreEngine:
             weighted_score += cvd_score * self.weights.get("cvd", 0.20)
             total_weight += self.weights.get("cvd", 0.20)
 
-        # Open Interest
+        # Open Interest — usa baseline rolling dinamica invece di valore fisso
         if oi is not None:
-            oi_score = OpenInterestCollector.oi_to_score(
-                oi.value_usd, Decimal("1000000000")
-            )
+            baseline = self._open_interest.get_baseline(futures_symbol)
+            if baseline == 0:
+                # Prima chiamata: usa il valore corrente come baseline (score = 0, neutro)
+                baseline = oi.value_usd
+            oi_score = OpenInterestCollector.oi_to_score(oi.value_usd, baseline)
             breakdown["open_interest"] = round(oi_score, 2)
             weighted_score += oi_score * self.weights.get("open_interest", 0.15)
             total_weight += self.weights.get("open_interest", 0.15)
@@ -221,8 +223,9 @@ class SignalScoreEngine:
             weighted_score += sent_score * self.weights.get("sentiment", 0.05)
             total_weight += self.weights.get("sentiment", 0.05)
 
-        # Whale Movements
-        if whale is not None:
+        # Whale Movements — includi nel peso SOLO se abbiamo dati reali (not None)
+        # Se whale è None (nessuna sorgente ha risposto), non distorcere la normalizzazione
+        if whale is not None and whale.recent_whale_activity is not None:
             whale_score = WhaleCollector.whale_to_score(whale)
             breakdown["whale"] = round(whale_score, 2)
             weighted_score += whale_score * self.weights.get("whale", 0.10)

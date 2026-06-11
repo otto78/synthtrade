@@ -2,7 +2,7 @@
  * Scalping Dashboard Component - Main page
  */
 
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { MarketIntelPanelComponent } from './market-intel-panel.component';
 import { OpportunityFeedComponent } from './opportunity-feed.component';
 import { SessionControlsComponent } from './session-controls.component';
@@ -13,7 +13,7 @@ import { TradeLogComponent } from './trade-log.component';
 import { PerformancePanelComponent } from './performance-panel.component';
 import { SupervisorLogComponent } from './supervisor-log.component';
 import { RiskControlsComponent } from './risk-controls.component';
-import { ScalpingWsService } from '../services/scalping-ws.service';
+import { ScalpingWsService, WsConnectionStatus } from '../services/scalping-ws.service';
 import { SessionApiService } from '../services/session-api.service';
 import { Subscription } from 'rxjs';
 import { NgFor, NgIf } from '@angular/common';
@@ -43,6 +43,21 @@ interface ErrorToast {
   ],
   template: `
     <div class="scalping-dashboard">
+
+      <!-- WS Reconnect Banner -->
+      <div class="ws-banner ws-banner--connecting" *ngIf="wsStatus === 'connecting'">
+        <span class="ws-spinner"></span>
+        <span>Connessione al server in corso...</span>
+      </div>
+      <div class="ws-banner ws-banner--disconnected" *ngIf="wsStatus === 'disconnected'">
+        <span class="ws-icon">⚡</span>
+        <span>Connessione WebSocket persa — riconnessione automatica in corso...</span>
+      </div>
+      <div class="ws-banner ws-banner--reconnected" *ngIf="showReconnectedFlash">
+        <span class="ws-icon">✅</span>
+        <span>Connessione ripristinata</span>
+      </div>
+
       <!-- Error Toast Notifications -->
       <div class="error-toasts" *ngIf="errorToasts.length > 0">
         <div class="error-toast" *ngFor="let toast of errorToasts" [attr.data-id]="toast.id">
@@ -72,6 +87,47 @@ interface ErrorToast {
     .card { background: var(--bg-surface, #161B22); border: 1px solid var(--border-default, rgba(234,236,239,0.1)); border-radius: 8px; }
     .chart-card { grid-column: span 2; }
 
+    /* WS Status Banners */
+    .ws-banner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 10px;
+      animation: slideIn 0.25s ease;
+    }
+    .ws-banner--connecting {
+      background: rgba(240, 185, 11, 0.12);
+      border: 1px solid rgba(240, 185, 11, 0.35);
+      color: #F0B90B;
+    }
+    .ws-banner--disconnected {
+      background: rgba(239, 83, 80, 0.12);
+      border: 1px solid rgba(239, 83, 80, 0.35);
+      color: #ef9a9a;
+    }
+    .ws-banner--reconnected {
+      background: rgba(38, 166, 154, 0.12);
+      border: 1px solid rgba(38, 166, 154, 0.35);
+      color: #26a69a;
+    }
+    .ws-spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(240,185,11,0.3);
+      border-top-color: #F0B90B;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    .ws-icon { font-size: 14px; flex-shrink: 0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Error Toasts */
     .error-toasts {
       display: flex;
       flex-direction: column;
@@ -111,16 +167,39 @@ interface ErrorToast {
 })
 export class ScalpingDashboardComponent implements OnInit, OnDestroy {
   errorToasts: ErrorToast[] = [];
+  wsStatus: WsConnectionStatus = 'disconnected';
+  showReconnectedFlash = false;
+
   private _toastCounter = 0;
   private _sub = new Subscription();
+  private _prevStatus: WsConnectionStatus = 'disconnected';
+  private _reconnectedTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private wsService: ScalpingWsService,
-    private sessionApi: SessionApiService
+    private sessionApi: SessionApiService,
+    private cdr: ChangeDetectorRef,
   ) {}
 
   ngOnInit(): void {
     this.wsService.connect();
+
+    // Track WS connection status for banner
+    this._sub.add(
+      this.wsService.connectionStatus$.subscribe((status) => {
+        // Mostra il flash "Connessione ripristinata" se siamo tornati da disconnected/connecting
+        if (
+          status === 'connected' &&
+          (this._prevStatus === 'disconnected' || this._prevStatus === 'connecting') &&
+          this._prevStatus !== 'disconnected' // Non mostrarlo alla prima connessione
+        ) {
+          this._showReconnectedFlash();
+        }
+        this._prevStatus = status;
+        this.wsStatus = status;
+        this.cdr.markForCheck();
+      })
+    );
 
     // Listen for backend errors
     this._sub.add(
@@ -140,6 +219,7 @@ export class ScalpingDashboardComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.wsService.disconnect();
     this._sub.unsubscribe();
+    if (this._reconnectedTimer) clearTimeout(this._reconnectedTimer);
   }
 
   dismissToast(id: number): void {
@@ -151,5 +231,14 @@ export class ScalpingDashboardComponent implements OnInit, OnDestroy {
     this.errorToasts.push({ id, message, code });
     // Auto-dismiss after 8 seconds
     setTimeout(() => this.dismissToast(id), 8000);
+  }
+
+  private _showReconnectedFlash(): void {
+    this.showReconnectedFlash = true;
+    if (this._reconnectedTimer) clearTimeout(this._reconnectedTimer);
+    this._reconnectedTimer = setTimeout(() => {
+      this.showReconnectedFlash = false;
+      this.cdr.markForCheck();
+    }, 3000);
   }
 }

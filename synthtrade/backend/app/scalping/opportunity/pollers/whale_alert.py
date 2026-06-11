@@ -28,12 +28,16 @@ class WhaleAlertPoller:
         self.min_value_usd = min_value_usd
         self._last_hashes: set = set()
 
+    _no_key_logged: bool = False
+
     async def fetch(self) -> List[PollerResult]:
         """Recupera whale transactions."""
         results = []
 
         if not self.api_key:
-            logger.warning("WhaleAlert API key not configured, skipping")
+            if not WhaleAlertPoller._no_key_logged:
+                logger.warning("WhaleAlert API key not configured — poller disabilitato (imposta WHALE_ALERT_API_KEY per abilitarlo)")
+                WhaleAlertPoller._no_key_logged = True
             return results
 
         try:

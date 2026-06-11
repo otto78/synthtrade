@@ -26,6 +26,9 @@ class OnChainCollector:
         self._timeout = timeout_seconds
         self._dune_key = settings.scalping.DUNE_API_KEY
 
+    # Chain supportate da Blockchair
+    _SUPPORTED_CHAINS = {"btc", "eth", "ltc"}
+
     async def collect(self, symbol: str = "BTC") -> Optional[OnChainData]:
         """Recupera dati on-chain per un simbolo.
 
@@ -35,15 +38,22 @@ class OnChainCollector:
         Returns:
             OnChainData se la raccolta ha successo, None altrimenti.
         """
-        base_symbol = symbol.replace("USDT", "").replace("USD", "").lower()
-        
+        base_symbol = symbol.replace("USDT", "").replace("USDC", "").replace("USD", "").lower()
+
+        # Skip rapido: se il simbolo non è supportato da Blockchair E Dune non è configurato,
+        # non fare chiamate HTTP inutili.
+        has_dune = bool(self._dune_key)
+        has_blockchair = base_symbol in self._SUPPORTED_CHAINS
+        if not has_dune and not has_blockchair:
+            logger.debug("OnChainCollector: skip per %s (non supportato e Dune non configurato)", symbol)
+            return None
+
         # 1. Tenta Dune Analytics (se abbiamo la query ID e la key)
-        # Esempio: Query ID per BTC exchange flows
         dune_data = await self._fetch_dune_data(base_symbol)
-        
+
         # 2. Raccogli da Blockchair (active addresses, transactions)
         blockchair_data = await self._fetch_blockchair_stats(base_symbol)
-        
+
         if not dune_data and not blockchair_data:
             return None
 

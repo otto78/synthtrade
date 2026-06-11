@@ -9,6 +9,8 @@ import { Subject, BehaviorSubject, timer, defer } from 'rxjs';
 import { retryWhen, delayWhen, tap } from 'rxjs/operators';
 import { ScalpingSession } from '../models/session.model';
 
+export type WsConnectionStatus = 'connected' | 'connecting' | 'disconnected';
+
 // Event types matching backend
 export type ScalpingEventType =
   | 'candle'
@@ -182,7 +184,15 @@ export class ScalpingWsService implements OnDestroy {
   /** Session updates (balance, status changes) */
   sessionRestored$ = new Subject<ScalpingSession>();
 
+  /** Stato connessione WS — usato per mostrare banner 'Reconnecting...' in UI */
+  connectionStatus$ = new BehaviorSubject<WsConnectionStatus>('disconnected');
+
   private connected = false;
+
+  /** Ritorna true se il WS è attualmente connesso */
+  isConnected(): boolean {
+    return this.connectionStatus$.getValue() === 'connected';
+  }
 
   connect(): void {
     if (this.connected) return;
@@ -203,24 +213,32 @@ export class ScalpingWsService implements OnDestroy {
           errors.pipe(
             tap(() => {
               this._reconnectAttempt++;
+              this.connectionStatus$.next('connecting');
               console.log(`Scalping WS reconnecting (attempt ${this._reconnectAttempt})...`);
             }),
             delayWhen((_) => timer(this._reconnectAttempt > 5 ? 10000 : 3000))
-            // Retry indefinitely with backoff after 5 attempts
           )
         )
       )
       .subscribe({
-        next: (event) => this._dispatch(event),
-        error: (err) => console.error('Scalping WS error:', err),
+        next: (event) => {
+          if (this.connectionStatus$.getValue() !== 'connected') {
+            this.connectionStatus$.next('connected');
+          }
+          this._dispatch(event);
+        },
+        error: (err) => {
+          this.connectionStatus$.next('disconnected');
+          console.error('Scalping WS error:', err);
+        },
         complete: () => {
           this.connected = false;
+          this.connectionStatus$.next('disconnected');
           console.log('Scalping WS completed');
         },
       });
 
-    // connected flag set ON SUBSCRIBE, not before — defer creates a fresh
-    // WebSocketSubject on each retry, and the subscribe triggers the connection.
+    this.connectionStatus$.next('connecting');
     this.connected = true;
   }
 
@@ -229,6 +247,7 @@ export class ScalpingWsService implements OnDestroy {
       this.ws$.complete();
       this.ws$ = null;
       this.connected = false;
+      this.connectionStatus$.next('disconnected');
     }
     // Don't reset BehaviorSubjects - keep last values for replay
   }

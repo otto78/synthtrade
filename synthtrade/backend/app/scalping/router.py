@@ -418,6 +418,10 @@ async def _close_position_and_record(pm, close_price: float, pos, reason: str = 
 
     # Refresh live balance after trade close
     await _refresh_session_balance()
+    
+    if mode == "paper":
+        _execution_state["session"]["paper_balance"] += (entry_val + pnl)
+        await broadcast_scalping_event("session_restored", _execution_state["session"].copy())
 
     # Update DB: change status from 'open' to 'closed' with exit data
     await _update_closed_position_in_db(pos, close_price, pnl, pnl_pct, reason)
@@ -974,6 +978,9 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     # Persist open position to DB immediately
                                     await _save_open_position_to_db(pos_obj, session.get("db_session_id"))
                                     
+                                    # Refresh live balance immediately so UI shows "Free" balance deducting trade value
+                                    await _refresh_session_balance()
+                                    
                                     # 4. Calculate Risk SL/TP with proper price precision
                                     risk_cfg = _execution_state.get("risk_config", {})
                                     sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3)) / 100
@@ -1035,6 +1042,10 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                 )
                                 # Persist open position to DB immediately
                                 await _save_open_position_to_db(pos_obj, session.get("db_session_id"))
+                                
+                                # Update paper balance to reflect Free Balance
+                                session["paper_balance"] -= float(_trade_val)
+                                await broadcast_scalping_event("session_restored", session.copy())
                                 await broadcast_scalping_event("position", {
                                     "symbol": pos_obj.symbol,
                                     "side": pos_obj.side,
@@ -1168,6 +1179,9 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                 except Exception as hist_e:
                                     logger.warning(f"Could not fetch filled orders history: {hist_e}")
                                 
+                                # Determine actual reason based on gross_pnl
+                                actual_reason = "take_profit" if gross_pnl > 0 else "stop_loss"
+                                
                                 # Record the trade as closed
                                 now_ts = datetime.now(timezone.utc)
                                 trade_record = {
@@ -1179,13 +1193,15 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     "pnl": round(gross_pnl - fees, 2),
                                     "pnl_pct": round(pnl_pct, 2),
                                     "timestamp": now_ts.isoformat(),
+                                    "signal_reason": actual_reason,
                                 }
                                 _execution_state["trade_history"].append(trade_record)
                                 pm.close_position(Decimal(str(close_price_to_use)))
-                                await broadcast_scalping_event("trade_closed", {
-                                    **trade_record,
-                                    "reason": "oco_filled",
-                                })
+                                
+                                # Update DB to mark as closed
+                                await _update_closed_position_in_db(pos, close_price_to_use, round(gross_pnl - fees, 2), round(pnl_pct, 2), actual_reason)
+                                
+                                await broadcast_scalping_event("trade_closed", trade_record)
                                 logger.info(f"Position closed by OCO fill @ {close_price_to_use}: PnL={trade_record['pnl']:.2f}")
                                 
                                 # Refresh live balance
@@ -1413,9 +1429,8 @@ async def get_candles(symbol: str, limit: int = 100) -> List[Dict]:
                         "volume": float(c.volume),
                         "timestamp": c.timestamp.isoformat(),
                     })
-                    if len(result) >= limit:
-                        break
                 if result:
+                    result = result[-limit:]
                     logger.info(f"Returning {len(result)} candles from buffer for {symbol}")
                     return result
         except Exception as e:

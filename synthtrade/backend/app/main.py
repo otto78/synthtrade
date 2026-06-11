@@ -208,15 +208,26 @@ async def _restore_scalping_session(db) -> None:
                                     close_side = "sell" if side.lower() == "buy" else "buy"
                                     valid_trades = [t for t in my_trades if t.get("side", "").lower() == close_side]
                                     
+                                    exit_time_str = datetime.now(timezone.utc).isoformat()
                                     if valid_trades:
-                                        total_cost = sum(float(t.get("cost", t.get("price", 0) * t.get("amount", 0))) for t in valid_trades)
-                                        total_amt = sum(float(t.get("amount", 0)) for t in valid_trades)
+                                        # Sort by timestamp to get the earliest closing trades
+                                        valid_trades.sort(key=lambda x: x.get("timestamp", 0))
+                                        first_trade = valid_trades[0]
+                                        first_order_id = first_trade.get("order")
+                                        
+                                        matching_trades = [t for t in valid_trades if t.get("order") == first_order_id]
+                                        
+                                        total_cost = sum(float(t.get("cost", t.get("price", 0) * t.get("amount", 0))) for t in matching_trades)
+                                        total_amt = sum(float(t.get("amount", 0)) for t in matching_trades)
                                         if total_amt > 0:
                                             real_exit_price = total_cost / total_amt
                                         else:
-                                            real_exit_price = float(valid_trades[-1].get("price", entry_price))
+                                            real_exit_price = float(first_trade.get("price", entry_price))
+                                            
+                                        trade_ts = first_trade.get("timestamp")
+                                        if trade_ts:
+                                            exit_time_str = datetime.fromtimestamp(trade_ts / 1000, tz=timezone.utc).isoformat()
 
-                                    
                                     if real_exit_price > 0 and entry_price > 0:
                                         if side.lower() == "buy":
                                             pnl_pct = ((real_exit_price - entry_price) / entry_price) * 100
@@ -229,6 +240,7 @@ async def _restore_scalping_session(db) -> None:
                                         
                                 except Exception as my_trade_e:
                                     logger.warning(f"Could not fetch my_trades to get real exit price: {my_trade_e}")
+                                    exit_time_str = datetime.now(timezone.utc).isoformat()
 
                                 def _db_op5():
                                     db.table("scalping_trades").update({
@@ -236,8 +248,8 @@ async def _restore_scalping_session(db) -> None:
                                         "exit_price": real_exit_price,
                                         "pnl": pnl,
                                         "pnl_pct": pnl_pct,
-                                        "exit_time": datetime.now(timezone.utc).isoformat(),
-                                        "signal_reason": "closed_externally_or_sl_tp",
+                                        "exit_time": exit_time_str,
+                                        "signal_reason": "take_profit" if pnl > 0 else "stop_loss",
                                     }).eq("id", trade_id).execute()
                                 await asyncio.to_thread(_db_op5)
                             verified = False

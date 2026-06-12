@@ -1,5 +1,4 @@
 # SynthTrade -- Dev Start Script
-# Avvia backend e frontend in finestre separate
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $backend = Join-Path $root "synthtrade\backend"
@@ -10,18 +9,14 @@ $BACKEND_PORT = 8888
 $FRONTEND_PORT = 4208
 
 Write-Host ""
-Write-Host "╔══════════════════════════════════════╗" -ForegroundColor Yellow
-Write-Host "║     SynthTrade -- Dev Start          ║" -ForegroundColor Yellow
-Write-Host "╚══════════════════════════════════════╝" -ForegroundColor Yellow
+Write-Host "SynthTrade -- Dev Start" -ForegroundColor Yellow
 Write-Host ""
 
 chcp 65001 | Out-Null
 
-# ── FUNZIONE: Kill tutti i processi Python sulla porta specificata ──────────
 function Stop-PortProcesses {
     param([int]$Port)
 
-    # Metodo 1: via netstat — trova il PID che ascolta sulla porta
     $netstatLines = netstat -ano | Select-String ":$Port\s"
     $pidsFromPort = @()
     foreach ($line in $netstatLines) {
@@ -47,7 +42,6 @@ function Stop-PortProcesses {
         Start-Sleep -Seconds 1
     }
 
-    # Metodo 2: cerca tutti i python.exe con uvicorn o synthtrade nella cmdline
     $pythonProcs = Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object {
         $_.CommandLine -like "*uvicorn*" -or
         $_.CommandLine -like "*app.main*" -or
@@ -60,17 +54,14 @@ function Stop-PortProcesses {
 
     Start-Sleep -Seconds 2
 
-    # Verifica finale
     $stillOccupied = netstat -ano | Select-String ":$Port\s" | Select-String "LISTEN"
     if ($stillOccupied) {
-        Write-Host "  ⚠️  Porta $Port ancora occupata dopo cleanup!" -ForegroundColor Red
-        Write-Host "  Prova a riavviare il terminale o riesegui lo script." -ForegroundColor Red
+        Write-Host "  Porta $Port ancora occupata dopo cleanup!" -ForegroundColor Red
         return $false
     }
     return $true
 }
 
-# ── CLEANUP BACKEND PORT ────────────────────────────────────────────────────
 $backendOccupied = netstat -ano | Select-String ":$BACKEND_PORT\s" | Select-String "LISTEN"
 if ($backendOccupied) {
     Write-Host "Cleanup porta $BACKEND_PORT..." -ForegroundColor Yellow
@@ -79,64 +70,55 @@ if ($backendOccupied) {
         Write-Host "Impossibile liberare la porta. Uscita." -ForegroundColor Red
         exit 1
     }
-    Write-Host "  ✓ Porta $BACKEND_PORT libera" -ForegroundColor Green
+    Write-Host "  Porta $BACKEND_PORT libera" -ForegroundColor Green
 } else {
-    Write-Host "  ✓ Porta $BACKEND_PORT libera" -ForegroundColor Green
+    Write-Host "  Porta $BACKEND_PORT libera" -ForegroundColor Green
 }
 
-# ── CLEANUP FRONTEND PORT ───────────────────────────────────────────────────
 $frontendOccupied = netstat -ano | Select-String ":$FRONTEND_PORT\s" | Select-String "LISTEN"
 if ($frontendOccupied) {
     Write-Host "Cleanup porta $FRONTEND_PORT..." -ForegroundColor Yellow
     Stop-PortProcesses -Port $FRONTEND_PORT | Out-Null
-    Write-Host "  ✓ Porta $FRONTEND_PORT libera" -ForegroundColor Green
+    Write-Host "  Porta $FRONTEND_PORT libera" -ForegroundColor Green
 } else {
-    Write-Host "  ✓ Porta $FRONTEND_PORT libera" -ForegroundColor Green
+    Write-Host "  Porta $FRONTEND_PORT libera" -ForegroundColor Green
 }
 
-# ── VERIFICA VENV ───────────────────────────────────────────────────────────
 if (-not (Test-Path $venv)) {
-    Write-Host "  ✗ venv non trovato: $venv" -ForegroundColor Red
-    Write-Host "  Crea il venv con: python -m venv .venv" -ForegroundColor Yellow
+    Write-Host "  venv non trovato: $venv" -ForegroundColor Red
     exit 1
 }
-Write-Host "  ✓ venv trovato" -ForegroundColor Green
+Write-Host "  venv trovato" -ForegroundColor Green
 
-# ── VERIFICA BACKEND DIR ────────────────────────────────────────────────────
 if (-not (Test-Path "$backend\app\main.py")) {
-    Write-Host "  ✗ Backend non trovato in: $backend" -ForegroundColor Red
+    Write-Host "  Backend non trovato in: $backend" -ForegroundColor Red
     exit 1
 }
-Write-Host "  ✓ Backend trovato" -ForegroundColor Green
+Write-Host "  Backend trovato" -ForegroundColor Green
 
-# ── AVVIO BACKEND ───────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "Avvio backend su porta $BACKEND_PORT..." -ForegroundColor Green
 Start-Process pwsh -ArgumentList "-NoExit", "-Command", `
-  "chcp 65001 | Out-Null; `
-   Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned -Force; `
-   & '$venv'; `
-   cd '$backend'; `
-   Write-Host 'Backend SynthTrade avviato' -ForegroundColor Green; `
-    uvicorn app.main:app --port $BACKEND_PORT --ws-ping-interval 60 --ws-ping-timeout 30" `
+  "chcp 65001 | Out-Null; ``
+   Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned -Force; ``
+   & '$venv'; ``
+   cd '$backend'; ``
+   Write-Host 'Backend SynthTrade avviato' -ForegroundColor Green; ``
+   uvicorn app.main:app --port $BACKEND_PORT --ws-ping-interval 60 --ws-ping-timeout 30" `
   -WindowStyle Normal
 
-# ── AVVIO FRONTEND ──────────────────────────────────────────────────────────
 Write-Host "Avvio frontend su porta $FRONTEND_PORT..." -ForegroundColor Green
 Start-Process pwsh -ArgumentList "-NoExit", "-Command", `
-  "chcp 65001 | Out-Null; `
-   cd '$frontend'; `
-   Write-Host 'Frontend SynthTrade avviato' -ForegroundColor Green; `
+  "chcp 65001 | Out-Null; ``
+   cd '$frontend'; ``
+   Write-Host 'Frontend SynthTrade avviato' -ForegroundColor Green; ``
    npx ng serve --port $FRONTEND_PORT --proxy-config proxy.conf.json" `
   -WindowStyle Normal
 
-# ── RIEPILOGO ───────────────────────────────────────────────────────────────
 Write-Host ""
-Write-Host "╔══════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║  Backend  -> http://localhost:$BACKEND_PORT   ║" -ForegroundColor Cyan
-Write-Host "║  Frontend -> http://localhost:$FRONTEND_PORT   ║" -ForegroundColor Cyan
-Write-Host "║  Password -> admin123                ║" -ForegroundColor Green
-Write-Host "╚══════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host "Backend  -> http://localhost:$BACKEND_PORT" -ForegroundColor Cyan
+Write-Host "Frontend -> http://localhost:$FRONTEND_PORT" -ForegroundColor Cyan
+Write-Host "Password -> admin123" -ForegroundColor Green
 Write-Host ""
 
 Start-Sleep -Seconds 5

@@ -270,7 +270,6 @@ class BinanceExchangeAdapter:
             return {"type": "oco", "status": "no_balance"}
         
         qty_rounded = await self._round_qty(symbol, actual_qty)
-        logger.info(f"Actual available {symbol} balance after fee: {actual_qty} -> rounded: {qty_rounded}")
         
         # Strategy 1: Try native OCO (single atomic order, best for double-lock)
         try:
@@ -279,7 +278,6 @@ class BinanceExchangeAdapter:
                 price=price, stop_price=stop_price,
                 take_profit_price=take_profit_price,
             )
-            logger.info(f"Native OCO placed successfully for {symbol} with qty={qty_rounded}")
             return result
         except Exception as oco_e:
             logger.warning(f"Native OCO failed for {symbol}, falling back to synthetic: {oco_e}")
@@ -314,10 +312,10 @@ class BinanceExchangeAdapter:
         try:
             # Get raw Binance symbol ID (no slash, e.g. BNBUSDC)
             filters = await self.get_symbol_filters(symbol)
-            # Use symbol directly — CCXT resolves it via the internal adapter
+        # Use symbol directly — CCXT resolves it via the internal adapter
             get_id = filters.get("baseAsset", "") + filters.get("quoteAsset", "")
             raw_symbol = get_id if get_id else symbol
-            
+
             params: Dict[str, Any] = {
                 "symbol": raw_symbol,
                 "side": side.upper(),
@@ -332,24 +330,25 @@ class BinanceExchangeAdapter:
                 # e quando il mercato scende sotto stopPrice, lo SL non sarà riempito perché il prezzo limite è sopra.
                 # Usando stop_price, lo SL vende a market non appena il trigger scatta.
                 params["stopLimitPrice"] = stop_price
-            
+
             # Use the private OCO endpoint directly
             response = await self.client.private_post_order_oco(params)
-            logger.info(f"Native OCO response: {response}")
-            
+            order_list_id = response.get("orderListId", "unknown")
+            logger.info(f"Native OCO placed: orderListId={order_list_id}")
+
             # Parse response
             order_list_id = response.get("orderListId", "unknown")
             orders = response.get("orderReports", [])
             sl_id = None
             tp_id = None
             main_id = response.get("listClientOrderId", order_list_id)
-            
+
             for o in orders:
                 if o.get("type") == "STOP_LOSS_LIMIT" or o.get("type") == "STOP_LOSS":
                     sl_id = o.get("orderId", "unknown")
                 elif o.get("type") == "LIMIT" or o.get("type") == "LIMIT_MAKER":
                     tp_id = o.get("orderId", "unknown")
-            
+
             return {
                 "type": "oco",
                 "order_id": main_id,
@@ -380,16 +379,15 @@ class BinanceExchangeAdapter:
             await self.client.fetch_balance()
         except Exception:
             pass
-        
+
         # Get actual available base asset balance (after fee deduction)
         actual_qty = await self._get_available_base_balance(symbol)
         if actual_qty <= 0:
             logger.warning(f"No {symbol} base asset balance available after trade")
             return {"type": "oco_synthetic_inverted", "status": "no_balance"}
-        
+
         qty_rounded = await self._round_qty(symbol, actual_qty)
-        logger.info(f"Actual available {symbol} balance after fee: {actual_qty} -> rounded: {qty_rounded}")
-        
+
         # STEP 1: Place STOP_LOSS first with reduceOnly flag.
         # reduceOnly=true tells Binance not to reserve balance separately,
         # avoiding the "insufficient balance" error on small quantities.
@@ -464,16 +462,15 @@ class BinanceExchangeAdapter:
             await self.client.fetch_balance()
         except Exception:
             pass
-        
+
         # Get actual available base asset balance (after fee deduction)
         actual_qty = await self._get_available_base_balance(symbol)
         if actual_qty <= 0:
             logger.warning(f"No {symbol} base asset balance available after trade")
             return {"type": "oco_synthetic", "status": "no_balance"}
-        
+
         qty_rounded = await self._round_qty(symbol, actual_qty)
-        logger.info(f"Actual available {symbol} balance after fee: {actual_qty} -> rounded: {qty_rounded}")
-        
+
         sl_result = None
         try:
             sl_result = await self.place_stop_loss_order(

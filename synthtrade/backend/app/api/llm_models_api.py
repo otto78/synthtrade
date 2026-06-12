@@ -20,7 +20,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/llm-models", tags=["llm-models"])
 
-PING_TIMEOUT = 10.0
+# FIX-2026-06-12: Ridotto da 10s a 5s per evitare timeout lato frontend.
+# Un timeout di 10s fa scattare l'errore nel chiamante (topbar) che
+# interpreta il fallimento come "all_down" e reindirizza a /llm-models.
+PING_TIMEOUT = 5.0
 
 
 def get_repo(supabase = Depends(get_supabase)) -> LLMModelRepository:

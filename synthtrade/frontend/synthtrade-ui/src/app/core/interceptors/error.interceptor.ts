@@ -4,11 +4,17 @@ import { catchError, throwError } from 'rxjs';
 import { AuthService } from '../services/auth.service';
 import { LLMModelsService } from '../services/llm-models.service';
 
-/** Endpoints that use LLM models — errors here may indicate model failure. */
+/** Endpoints that use LLM models — errors here may indicate model failure.
+ * 
+ * FIX-2026-06-12: Exclude /llm-models/check from triggering a re-check.
+ * The check endpoint is already called periodically by the topbar; triggering
+ * another check on error creates a loop: check fails → re-check → fails → ...
+ * The topbar already handles the error case by setting status to 'all_down'.
+ */
 const MODEL_RELATED_PATTERNS = [
   /\/api\/strategies\/.*\/eval/,
   /\/api\/pipeline/,
-  /\/api\/llm-models/,
+  /\/api\/llm-models\/(?!check)/,  // exclude /check, match other /llm-models/*
 ];
 
 export const errorInterceptor: HttpInterceptorFn = (req, next) => {

@@ -555,6 +555,10 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     # paper_mode controls whether intelligence gating is bypassed for low-score markets.
     # Must be False in live mode so the full intelligence + technical filter applies.
     execution_loop.paper_mode = (_session_mode != "live")
+    # ── FIX-2026-06-12: Force execute per test UDS ──
+    # Force True during development/testing to bypass intelligence and technical
+    # filters so trades execute immediately on generated BUY signals.
+    execution_loop.force_execute = True
     _execution_state["loop"] = execution_loop
     logger.info(f"ExecutionLoop paper_mode={execution_loop.paper_mode} for {symbol} (mode={_session_mode})")
 
@@ -1070,12 +1074,20 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                         )
                                     except Exception as oco_e:
                                         logger.warning(f"OCO placement failed (non-fatal, position already tracked): {oco_e}")
-                                    
+
                                     if oco_res:
                                         pos_obj.oco_id = oco_res.get("order_id")
                                         pos_obj.sl_id = oco_res.get("stop_loss_id")
                                         pos_obj.tp_id = oco_res.get("take_profit_id")
-                                    
+                                        # FIX-2026-06-12: Salva ID OCO per User Data Stream
+                                        if oco_res.get("native"):
+                                            pos_obj.oco_order_list_id = str(oco_res.get("order_list_id", ""))
+                                            pos_obj.sl_order_id = str(oco_res.get("stop_loss_id", ""))
+                                            pos_obj.tp_order_id = str(oco_res.get("take_profit_id", ""))
+                                            logger.info(
+                                                f"\033[92m🎯 OCO ATTIVO: BUY {event.symbol.upper()} @ {exec_price} | TP={tp_price:.2f} | SL={sl_price:.2f}\033[0m"
+                                            )
+
                                     await broadcast_scalping_event("position", {
                                         "symbol": pos_obj.symbol,
                                         "side": pos_obj.side,
@@ -1084,8 +1096,11 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                         "quantity": float(pos_obj.quantity),
                                         "pnl": 0.0,
                                         "pnl_pct": 0.0,
+                                        "stop_loss_price": round(sl_price, 2),
+                                        "take_profit_price": round(tp_price, 2),
+                                        "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
+                                        "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
                                     })
-                                    logger.info(f"LIVE trade opened: {side} {event.symbol.upper()} @ {exec_price}")
                                     
                                     # Signal to session stop that we need a close on Binance
                                     _execution_state["pending_live_close"] = True
@@ -1833,6 +1848,21 @@ async def control_session(control: Dict) -> Dict:
             _execution_state["signal_engine"] = SignalScoreEngine(symbol=active_symbol)
         except Exception as e:
             logger.warning(f"Could not initialize SignalScoreEngine: {e}")
+
+        # ── FIX-2026-06-12: Avvia User Data Stream per sessioni live ──
+        # Questo WebSocket Binance notifica in tempo reale l'esecuzione degli ordini OCO,
+        # risolvendo il disallineamento trade log vs Binance.
+        if session["mode"] == "live":
+            try:
+                from app.execution.user_data_stream import UserDataStreamManager
+                live_api_key = settings.BINANCE_API_KEY_LIVE or settings.BINANCE_API_KEY
+                live_api_secret = settings.BINANCE_SECRET_KEY_LIVE or settings.BINANCE_SECRET_KEY
+                uds = UserDataStreamManager(live_api_key, live_api_secret, testnet=False)
+                await uds.start(on_order_update=_on_order_update)
+                _execution_state["user_data_stream"] = uds
+                logger.info("\033[96m📡 UDS SOCKET ATTIVO: User Data Stream connesso per monitoraggio OCO in tempo reale\033[0m")
+            except Exception as uds_e:
+                logger.warning(f"User Data Stream non avviato: {uds_e}")
 
         # Start BinanceWSClient + ExecutionLoop pipeline
         async def _start_with_error_logging():

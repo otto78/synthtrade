@@ -2,15 +2,47 @@
 
 ## Problemi Critici Identificati
 
-### 1. Trade Non Partono (Signal Aggregator)
+### 1. SignalAggregator — Bypass Intelligence Errato (FIXATO 2026-06-11)
+**File:** `synthtrade/backend/app/scalping/engine/signal_aggregator.py`
+
+**Problema:** La condizione `abs(score) < 5.0 OR collectors ≤ 3` mischiava due casi distinti — score basso con dati sufficienti veniva bypassato come se mancassero dati.
+
+**Soluzione Applicata (2026-06-11):**
+- ✅ Separato in 3 casi distinti:
+  1. **≤ 3 collector** → BYPASS intelligence (mancanza dati, usa solo segnale tecnico) — log `📋`
+  2. **4+ collector + `abs(score) < 5.0`** → BLOCCO (dati sufficienti, mercato neutrale) — log `🔴 BLOCK ... intelligence neutrale (5 collectors, score=1.3)`
+  3. **Score ≥ 5.0** → filtro intelligence completo (tradeable check, bias alignment, combined confidence)
+- ✅ Colore `BLOCK` corretto da `🟡 YELLOW` a `🔴 RED` per coerenza
+- ✅ Aggiunto campo `signal_type` (BUY/SELL/CLOSE/NONE) a `ExecutionDecision` per preservare il tipo originale
+
+### 2. Segnali SELL Convertiti in BUY (FIXATO 2026-06-11)
+**File:** `synthtrade/backend/app/scalping/router.py` (riga ~956)
+
+**Problema:** Il router usava `"BUY" if decision.confidence > 0 else "SELL"` per determinare il tipo di segnale. Qualsiasi confidence positiva diventava BUY, anche se il segnale tecnico era SELL.
+
+**Soluzione Applicata:**
+- ✅ `signal_type` in `ExecutionDecision` usato direttamente per broadcast e trade execution
+- ✅ Segnali SELL esplicitamente ignorati con log `>>> SKIP SELL: short non implementato, solo long permesso`
+
+### 3. OCO Sync — Falso Stop-Loss a PnL=0 (FIXATO 2026-06-11)
+**File:** `synthtrade/backend/app/scalping/router.py` (righe ~1214-1296)
+
+**Problema:** L'OCO sync controllava `get_open_orders()` per rilevare se l'OCO era stato eseguito. Ma l'OCO è best-effort e spesso fallisce. Nessun ordine aperto non significa "OCO eseguito" ma "OCO mai piazzato". L'app registrava una chiusura fittizia a entry price (PnL=0) mentre la posizione reale su Binance era ancora aperta.
+
+**Soluzione Applicata:**
+- ✅ Ora controlla `getattr(pos, 'oco_id', None)` prima dello sync
+- ✅ Se l'OCO non è mai stato piazzato (oco_id = None), lo sync viene saltato
+- ✅ Previene il mismatch tra trade history e trades reali su Binance
+- ✅ Dati falsi già cancellati da Supabase (2 record)
+
+### 4. Trade Non Partono (Signal Aggregator)
 **File:** `synthtrade/backend/app/scalping/engine/signal_aggregator.py`
 
 **Problema:** Bias intelligence quasi sempre "neutral" blocca tutti i trade anche quando il segnale tecnico è valido.
 
-**Soluzione Applicata:**
+**Soluzione Applicata (precedente):**
 - ✅ Aggiunto parametro `paper_mode` al metodo `should_execute()`
 - ✅ In paper mode, se `|score| < 5.0`, usa solo segnale tecnico con confidence check
-- ✅ Log PAPER MODE per debug
 
 **File:** `synthtrade/backend/app/scalping/engine/execution_loop.py`
 
@@ -19,164 +51,19 @@
 - ✅ Aggiunto attributo `self.session_id: Optional[str] = None`
 - ✅ Passa `paper_mode` al signal aggregator in `process_candle()`
 
-### 2. Bug Strutturale `_trade_processor` in `router.py`
-**File:** `synthtrade/backend/app/scalping/router.py` (riga ~370)
-
-**Problema:** La closure `_trade_processor` ha solo la docstring `"""Consume trade_queue and broadcast + update PnL."""` ma manca `async def _trade_processor():` quindi il codice è flottante fuori dalla funzione.
-
-**Soluzione da Applicare:**
-```python
-    async def _trade_processor():
-        """Consume trade_queue and broadcast + update PnL."""
-        while _execution_state["session"]["status"] != "idle" and not client._stop_event.is_set():
-            # ... resto del codice esistente
-```
-
-### 3. Paper Mode Non Impostato su ExecutionLoop
-**File:** `synthtrade/backend/app/scalping/router.py` (funzione `_start_ws_broadcast`)
-
-**Soluzione da Applicare:**
-Dopo creazione `execution_loop`, aggiungere:
-```python
-    # Set paper_mode on execution loop so signal aggregator can use fallback
-    is_paper = _execution_state["session"]["mode"] == "paper"
-    execution_loop.paper_mode = is_paper
-    if is_paper:
-        logger.info(f"{CYAN}PAPER MODE: Signal aggregator will use technical-only fallback when intelligence fails{RESET}")
-```
-
-### 4. `_stop_ws_broadcast` Non Awaita la Cancellazione dei Task
+### 5. Altri Bug in `router.py` (Da Verificare)
 **File:** `synthtrade/backend/app/scalping/router.py`
 
-**Problema:** I task vengono cancellati con `.cancel()` ma non viene fatto await, possono rimanere in esecuzione zombie.
-
-**Soluzione da Applicare:**
-```python
-async def _stop_ws_broadcast():
-    """Stop BinanceWSClient and clean up pipeline components."""
-    client = _execution_state.get("ws_client")
-    if client:
-        await client.stop()
-        _execution_state["ws_client"] = None
-    
-    loop = _execution_state.get("loop")
-    if loop:
-        await loop.stop()
-        _execution_state["loop"] = None
-    
-    _execution_state["signal_engine"] = None
-
-    # Cancel all WS tasks and await their completion
-    tasks = _execution_state.get("ws_tasks", [])
-    for task in tasks:
-        if not task.done():
-            task.cancel()
-    
-    # Await all cancelled tasks to cleanup properly
-    if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
-    
-    _execution_state["ws_tasks"] = []
-```
-
-### 5. GET `/session` Non Recupera Sessione da DB al Restart
-**File:** `synthtrade/backend/app/scalping/router.py`
-
-**Problema:** Al restart del backend, la sessione in-memory è `idle` anche se c'è una sessione `running` su Supabase.
-
-**Soluzione da Applicare:**
-```python
-@router.get("/session")
-async def get_session() -> Dict:
-    """Get current session status — with fallback to DB if backend restarted."""
-    session = _execution_state["session"]
-    
-    # If session is idle but there might be a running session in DB, check
-    if session["status"] == "idle":
-        try:
-            supabase = get_supabase()
-            response = supabase.table("scalping_sessions") \
-                .select("*") \
-                .eq("status", "running") \
-                .order("started_at", desc=True) \
-                .limit(1) \
-                .execute()
-            
-            if response.data:
-                db_session = response.data[0]
-                # Restore session from DB (but do NOT restart WS — that's manual)
-                session["db_session_id"] = db_session["id"]
-                session["symbol"] = db_session["symbol"]
-                session["mode"] = db_session["mode"].lower()
-                session["status"] = db_session["status"]
-                session["started_at"] = db_session["started_at"]
-                logger.info(f"Session restored from DB: {db_session['id']} (status={db_session['status']})")
-        except Exception as e:
-            logger.warning(f"Failed to restore session from DB: {e}")
-    
-    return session.copy()
-```
-
-## Problemi Frontend (Minori ma Importanti)
-
-### 6. SignalScorecard Mostra Dati Hardcoded
-**File:** `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/signal-scorecard.component.ts`
-
-**Status:** ✅ GIÀ CORRETTO — il componente si sottoscrive a `ws.intelligence$`
-
-### 7. StrategyPanel Non Reattivo a WS Supervisor
-**File:** `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/strategy-panel.component.ts`
-
-**Status:** ✅ GIÀ CORRETTO — il componente si sottoscrive a `ws.supervisorDecision$`
-
-### 8. Soglia Intelligence Troppo Alta per Paper Mode
-**File:** `synthtrade/backend/app/config.py`
-
-**Problema:** `SCALPING_SIGNAL_STRENGTH_THRESHOLD: float = 30.0` è troppo alta quando i collector esterni falliscono.
-
-**Soluzione:** Già gestito con paper_mode fallback nel signal aggregator.
+**Problemi Segnalati:**
+- `_trade_processor` — struttura closure (da verificare se ancora rotto)
+- `paper_mode` non impostato su ExecutionLoop — già presente in `_start_ws_broadcast`?
+- `_stop_ws_broadcast` non awaita cancellazione task
+- `GET /session` senza fallback DB
 
 ## Prossimi Passi
 
-1. ✅ **COMPLETATO:** Fix signal_aggregator.py con paper_mode
-2. ✅ **COMPLETATO:** Fix execution_loop.py con paper_mode attribute
-3. ⚠️ **DA FARE:** Fix `_trade_processor` in router.py (riga ~370)
-4. ⚠️ **DA FARE:** Impostare `execution_loop.paper_mode` in `_start_ws_broadcast`
-5. ⚠️ **DA FARE:** Fix `_stop_ws_broadcast` con await dei task
-6. ⚠️ **DA FARE:** Fix `GET /session` con fallback da DB
-7. **OPZIONALE:** Implementare `session_manager.py` per persistenza completa
-
-## Test da Fare
-
-```bash
-# 1. Avvia backend
-cd synthtrade/backend
-uvicorn app.main:app --reload --port 8008
-
-# 2. Avvia frontend
-cd synthtrade/frontend/synthtrade-ui
-npm start
-
-# 3. Testa flusso completo
-# - Vai su http://localhost:4208/scalping
-# - Start session con simbolo BTCUSDT
-# - Verifica che il buffer si riempia (100 candele storiche)
-# - Verifica che i segnali tecnici vengano generati anche con intelligence bassa
-# - Verifica che i trade vengano aperti e chiusi
-
-# 4. Controlla log backend
-# Deve mostrare:
-# - "PAPER MODE: Signal aggregator will use technical-only fallback..."
-# - "📋 PAPER MODE: BUY BTCUSDT @ 0.75 (intelligence bypassed: score=2.3)"
-# - "Paper trade opened: BUY BTCUSDT @ 95432.50"
-```
-
-## Note Finali
-
-Le modifiche principali sono state applicate. Rimangono da sistemare i bug strutturali in `router.py` che impediscono l'avvio corretto del modulo WS.
-
-**Priorità:**
-1. Fix `_trade_processor` — **CRITICO** (sintassi rotta)
-2. Impostare `paper_mode` su loop — **ALTA** (trade bloccati)
-3. Fix `_stop_ws_broadcast` — MEDIA (memory leak)
-4. Fix `GET /session` con DB — BASSA (UX al restart)
+1. ✅ **FIXATO (2026-06-11):** SignalAggregator: separata logica bypass/block intelligence
+2. ✅ **FIXATO (2026-06-11):** Router: segnali SELL ignorati (solo LONG)
+3. ✅ **FIXATO (2026-06-11):** OCO sync: guard su oco_id previene finti stop-loss
+4. ✅ **FIXATO (2026-06-11):** DB pulito: cancellati 2 record falsi da scalping_trades
+5. ⚠️ **DA VERIFICARE:** Bug strutturali `_trade_processor`, `_stop_ws_broadcast`, `GET /session`

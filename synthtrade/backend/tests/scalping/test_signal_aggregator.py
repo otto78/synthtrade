@@ -8,6 +8,7 @@ Verifica la logica ibrida:
 """
 
 import pytest
+from typing import Dict, Optional
 
 from app.scalping.engine.signal_aggregator import (
     ExecutionDecision,
@@ -17,17 +18,28 @@ from app.scalping.engine.signal_aggregator import (
 from app.scalping.models.intelligence import SignalScore
 
 
+_5_COLLECTORS: Dict[str, float] = {
+    "fear_greed": 1.0,
+    "funding_rate": 1.0,
+    "cvd": 1.0,
+    "long_short_ratio": 1.0,
+    "sentiment": 1.0,
+}
+
+
 def _make_score(
     total: float = 65.0,
     bias: str = "bullish",
     tradeable: bool = True,
     strength: float = 65.0,
+    breakdown: Optional[Dict[str, float]] = None,
 ) -> SignalScore:
     return SignalScore(
         total=total,
         bias=bias,
         tradeable=tradeable,
         signal_strength=strength,
+        breakdown=breakdown or _5_COLLECTORS,
         symbol="BTCUSDT",
     )
 
@@ -35,6 +47,34 @@ def _make_score(
 class TestSignalAggregator:
     def setup_method(self):
         self.aggregator = SignalAggregator(min_confidence=0.6)
+
+    def test_bypass_when_few_collectors(self):
+        """Bypass intelligence se <= 3 collector hanno risposto (mancanza dati)."""
+        score = _make_score(
+            total=1.0, bias="neutral", tradeable=False, strength=5.0,
+            breakdown={"fear_greed": 1.0, "sentiment": 0.5},  # solo 2 collector
+        )
+        technical = TechnicalSignal(type="BUY", confidence=0.8)
+
+        result = self.aggregator.should_execute(technical, score)
+
+        # bypass attivato, execute=True se confidence sufficiente
+        assert result.execute is True
+        assert result.reason is not None
+        assert "fallback" in result.reason
+
+    def test_blocks_when_4plus_collectors_neutral(self):
+        """Con 4+ collector e score < 5.0, blocca per intelligenza neutrale."""
+        score = _make_score(
+            total=1.2, bias="neutral", tradeable=False, strength=5.0,
+        )
+        technical = TechnicalSignal(type="BUY", confidence=0.8)
+
+        result = self.aggregator.should_execute(technical, score)
+
+        assert result.execute is False
+        assert result.reason is not None
+        assert "neutrale" in result.reason.lower()
 
     def test_blocks_buy_when_overleveraged(self):
         """Segnale BUY bloccato se score intelligence bearish."""

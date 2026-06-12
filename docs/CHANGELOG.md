@@ -7,6 +7,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.0.0-alpha.6] — 2026-06-11
+
+### Fixed
+- **SignalAggregator Bypass Intelligence**: Separata la condizione `OR` che mischiava "pochi collector" con "score neutrale" in 3 casi distinti:
+  1. ≤ 3 collector → BYPASS (mancanza dati, usa solo segnale tecnico)
+  2. 4+ collector + score < 5.0 → BLOCCO (dati sufficienti, mercato neutrale)
+  3. Score ≥ 5.0 → filtro intelligence completo
+- **misura del BLOCK neutrale**: Colore corretto da `🟡 YELLOW` a `🔴 RED` per coerenza con gli altri blocchi.
+- **signal_type in ExecutionDecision**: Aggiunto campo `signal_type` (BUY/SELL/CLOSE/NONE) per preservare il tipo di segnale tecnico originale attraverso il processo decisionale — evita conversioni errate basate su `confidence > 0`.
+- **OCO Sync Falso Stop-Loss**: Risolto bug critico in live mode per cui l'OCO sync registrava una chiusura fittizia a entry price (PnL=0) quando l'ordine OCO non era mai stato piazzato (best-effort fallito). Ora controlla `getattr(pos, 'oco_id', None)` prima di eseguire lo sync: se l'OCO non è stato piazzato, lo sync viene saltato. Questo previene il mismatch tra trade history dell'app e trades reali su Binance.
+- **Solo LONG Mode**: Il router ora ignora esplicitamente i segnali SELL con log `>>> SKIP SELL: short trading non implementato, solo long permesso`, evitando che vengano convertiti erroneamente in BUY.
+- **DB Trade History Pulita**: Cancellati 2 record falsi (`entry_price = exit_price`, PnL=0/null) dalla tabella `scalping_trades` su Supabase — residui del bug OCO sync.
+
+### Changed
+- **SignalAggregator Tests**: Aggiunti 2 nuovi test (`test_bypass_when_few_collectors`, `test_blocks_when_4plus_collectors_neutral`). Default `_make_score` ora usa 5 collector per testare correttamente il flusso intelligence completo. Totale: 12 test, tutti verdi.
+
+---
+
 ## [2.0.0-alpha.5] — 2026-06-10
 
 ### Fixed

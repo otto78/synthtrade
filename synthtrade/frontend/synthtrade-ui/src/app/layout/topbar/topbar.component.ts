@@ -482,10 +482,14 @@ export class TopbarComponent implements OnInit, OnDestroy {
       this.llmModelsService.checkModels().subscribe({
         next: (res) => {
           this.llmStatus.set(res.summary);
-          // Redirect only once per session and only if NOT already on /llm-models
+          // Redirect only once per session and only if NOT already on /llm-models.
+          // FIX-2026-06-12: Do NOT redirect if checks is empty (no models configured).
+          // An empty list means "no data" (first time, DB error), not "all models down".
+          // Redirecting on empty checks causes false redirects on startup/temporary DB issues.
           if (
             !this._redirectedToModels &&
             res.summary === 'all_down' &&
+            res.checks && res.checks.length > 0 &&
             !this.router.url.includes('/llm-models')
           ) {
             this._redirectedToModels = true;

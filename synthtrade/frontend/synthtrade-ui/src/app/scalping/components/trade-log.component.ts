@@ -3,6 +3,9 @@
  * Displays trade history — updated in real-time via WS events.
  * On init, fetches historical trades from REST API to populate the log
  * when returning to the page with an active session.
+ *
+ * FIX-2026-06-12: Deduplicate trades by entry_price+exit_price+symbol to
+ * prevent duplicates when WS trade_closed arrives after REST history load.
  */
 
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
@@ -73,6 +76,8 @@ export class TradeLogComponent implements OnInit, OnDestroy {
   trades: TradeClosedEvent[] = [];
   private sub?: Subscription;
   private readonly API_URL = '/api/scalping/trade-history';
+  /** Track seen trade keys (entry_price + exit_price + symbol) to avoid duplicates. */
+  private seenKeys = new Set<string>();
 
   constructor(
     private ws: ScalpingWsService,
@@ -82,31 +87,37 @@ export class TradeLogComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    // Step 1: Clear trades when a new session starts (stop + restart)
+    // Step 1: Listen for session status changes
     this.sub = this.sessionApi.session$.subscribe((session) => {
       if (!session || session.status === 'idle') {
         this.trades = [];
+        this.seenKeys.clear();
         this.cdr.markForCheck();
         this.cdr.detectChanges();
       } else if (session.status === 'running') {
-        // New session started — reload history (will be empty for fresh session)
-        this.trades = [];
-        this.cdr.markForCheck();
-        this.cdr.detectChanges();
+        // On fresh session (trades empty or seenKeys empty), clear and reload.
+        // On session restore (reconnect/refresh), merge with dedup.
+        if (this.trades.length === 0 || this.seenKeys.size === 0) {
+          this.trades = [];
+          this.seenKeys.clear();
+        }
         this.loadHistory();
       }
     });
 
-    // Step 2: Subscribe to live WS trade_closed events for real-time updates
+    // Step 2: Subscribe to live WS trade_closed events — deduplicate
     this.sub.add(
       this.ws.tradeClosed$.subscribe((trade) => {
+        const key = `${trade.entry_price}|${trade.exit_price}|${trade.symbol}`;
+        if (this.seenKeys.has(key)) {
+          return; // already in the list
+        }
+        this.seenKeys.add(key);
         this.trades = [trade, ...this.trades];
         this.cdr.markForCheck();
         this.cdr.detectChanges();
       })
     );
-
-    // Step 3: No initial load — wait for active session via session$ subscription
   }
 
   ngOnDestroy(): void {
@@ -121,17 +132,36 @@ export class TradeLogComponent implements OnInit, OnDestroy {
     return '';
   }
 
+  /** Deduplicate by unique trade key (entry_price+exit_price+symbol). */
+  private deduplicate(history: TradeClosedEvent[]): TradeClosedEvent[] {
+    const localSeen = new Set(this.seenKeys);
+    const result: TradeClosedEvent[] = [];
+    for (const trade of history) {
+      const key = `${trade.entry_price}|${trade.exit_price}|${trade.symbol}`;
+      if (!localSeen.has(key)) {
+        localSeen.add(key);
+        result.push(trade);
+        this.seenKeys.add(key);
+      }
+    }
+    return result;
+  }
+
   private loadHistory(): void {
     this.http.get<TradeClosedEvent[]>(this.API_URL).subscribe({
       next: (history: TradeClosedEvent[]) => {
         if (history.length > 0) {
-          // Backend already returns sorted by timestamp DESC (most recent first).
-          // Do NOT reverse — that would put oldest first, and then new WS trades
-          // prepended would make the order wrong (oldest + new on top).
-          this.trades = history;
-          this.cdr.markForCheck();
-          this.cdr.detectChanges();
-          console.log(`[TradeLog] Loaded ${history.length} historical trades`);
+          // Merge with existing trades, deduplicating
+          const newTrades = this.deduplicate(history);
+          if (newTrades.length > 0) {
+            // Sort by timestamp DESC
+            const merged = [...this.trades, ...newTrades];
+            merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            this.trades = merged;
+            this.cdr.markForCheck();
+            this.cdr.detectChanges();
+          }
+          console.log(`[TradeLog] Loaded ${newTrades.length} new historical trades (${this.trades.length} total)`);
         }
       },
       error: (err: Error) => {

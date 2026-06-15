@@ -278,6 +278,273 @@ Fix issues identified from live session logs:
 
 ---
 
+---
+
+## Epica 800 — Supervisor Intelligence + Fix Critici (Piano v3.1)
+
+### TASK-833 — FASE A1: Rimuovere force_execute hardcoded (2026-06-15)
+
+**Status:** Done ✅  
+**Completato:** 2026-06-15
+**Priorità:** CRITICA — bypassa SignalAggregator, RiskManager e tutti i filtri  
+**Fase:** A (prerequisito per tutto il resto)  
+**Stima:** 0.5h  
+**File coinvolti:** `router.py`, `signal_aggregator.py`
+
+**Scope:**
+- [ ] Rimuovere `execution_loop.force_execute = True` da `router.py`
+- [ ] Rimuovere attributo `self.force_execute` dalla classe `ExecutionLoop`
+- [ ] Rimuovere il "Caso 0: FORCE_EXECUTE" da `signal_aggregator.py`
+- [ ] Verifica: avviare sessione paper e controllare che non appaia `LIVE MODE: ... (intelligence bypassed)`
+
+---
+
+### TASK-834 — FASE A2: Supervisor interval da .env (2026-06-15)
+
+**Status:** Todo  
+**Priorità:** CRITICA — supervisor gira ogni 45s invece di 10min, spreca API  
+**Fase:** A (prerequisito per tutto il resto)  
+**Stima:** 0.5h  
+**File coinvolti:** `router.py`, `supervisor_scheduler.py`, `.env`, `config.py`
+
+**Scope:**
+- [ ] Aggiungere `SCALPING_SUPERVISOR_INTERVAL_SEC=600` a `.env`
+- [ ] Aggiungere `SCALPING_SUPERVISOR_INTERVAL_SEC`, `SCALPING_STRATEGY_COOLDOWN_SEC`, `SCALPING_PARAM_UPDATE_COOLDOWN_SEC` a `config.py`
+- [ ] Sostituire `interval_seconds=45` con `settings.SCALPING_SUPERVISOR_INTERVAL_SEC` nei 2 punti di istanziazione `SupervisorScheduler` in `router.py`
+- [ ] Sostituire costanti hardcoded `STRATEGY_CHANGE_COOLDOWN = 1200` e `PARAM_UPDATE_COOLDOWN = 600` in `supervisor_scheduler.py` con valori da `settings`
+- [ ] Verifica: log supervisor ogni ~600 secondi, missed jobs APScheduler spariti
+
+---
+
+### TASK-835 — FASE B1-B2: .env completo e config.py aggiornato (2026-06-15)
+
+**Status:** Todo  
+**Priorità:** Alta — prerequisito per B3-B5  
+**Fase:** B (dopo Fase A)  
+**Stima:** 1h  
+**File coinvolti:** `.env`, `config.py`
+
+**Scope:**
+- [ ] Sostituire sezione scalping in `.env` con versione completa e commentata (da piano §B1)
+- [ ] Aggiungere/sostituire sezione scalping in `config.py` con tutti i campi tipizzati (da piano §B2)
+- [ ] Verificare compatibilità con pattern `settings.scalping.*` se usato nel codice esistente
+
+---
+
+### TASK-836 — FASE B3: Migration DB tabella `scalping_runtime_config` (2026-06-15)
+
+**Status:** Todo  
+**Priorità:** Alta  
+**Fase:** B  
+**Stima:** 0.5h  
+**File coinvolti:** nuova migration Supabase
+
+**Scope:**
+- [ ] Creare migration SQL con `CREATE TABLE scalping_runtime_config (key, value, value_type, description, updated_at)`
+- [ ] Inserire valori di default (specchio del .env) per tutti i 15 parametri `[RUNTIME]`
+- [ ] Applicare migration su Supabase
+
+---
+
+### TASK-837 — FASE B4: Nuovo `ScalpingConfigLoader` (2026-06-15)
+
+**Status:** Todo  
+**Priorità:** Alta  
+**Fase:** B  
+**Stima:** 1h  
+**File coinvolti:** nuovo `app/scalping/config_loader.py`
+
+**Scope:**
+- [ ] Creare `app/scalping/config_loader.py` con classe `ScalpingConfigLoader`
+- [ ] Implementare `_load()`: step 1 da settings, step 2 override da DB con type-casting
+- [ ] Implementare `reload()` per aggiornamento runtime senza restart
+- [ ] Implementare proprietà typed per tutti i parametri configurabili
+- [ ] Esporre singleton `get_scalping_config()`
+
+---
+
+### TASK-838 — FASE B5: Endpoint API config scalping (2026-06-15)
+
+**Status:** Todo  
+**Priorità:** Media  
+**Fase:** B  
+**Stima:** 0.5h  
+**File coinvolti:** `router.py` o nuovo `config_scalping_api.py`
+
+**Scope:**
+- [ ] `GET /api/scalping/config` — ritorna config corrente merge .env+DB
+- [ ] `POST /api/scalping/config/{key}` — aggiorna valore nel DB e ricarica
+- [ ] `POST /api/scalping/config/reload` — ricarica senza restart
+- [ ] Test: modificare un valore via POST e verificare che il reload abbia effetto
+
+---
+
+### TASK-839 — FASE C1: Sostituire Fear & Greed con alternative.me (2026-06-15)
+
+**Status:** Todo  
+**Priorità:** Alta — F&G congelato a 8, dato falso guida tutte le decisioni AI  
+**Fase:** C (dopo Fase B)  
+**Stima:** 1h  
+**File coinvolti:** `app/scalping/intelligence/collectors/fear_greed.py`
+
+**Scope:**
+- [ ] Riscrivere `FearGreedCollector` per usare `https://api.alternative.me/fng/?limit=1` (gratuita, no API key)
+- [ ] Implementare cache intraday con TTL 4h
+- [ ] Implementare `value_to_score(value)` con logica contrarian (-100..+100)
+- [ ] Impostare `SCALPING_FEAR_GREED_SOURCE=alternative_me` in `.env`
+- [ ] Verifica log: `FearGreed aggiornato: XX (Fear/Greed)` con valore reale, non 8
+
+---
+
+### TASK-840 — FASE C2: Fix copertura whale collector disabilitato (2026-06-15)
+
+**Status:** Todo  
+**Priorità:** Alta — peso 0.10 fantasma riduce coverage artificialmente  
+**Fase:** C  
+**Stima:** 0.5h  
+**File coinvolti:** `signal_score_engine.py`
+
+**Scope:**
+- [ ] Escludere whale da `active_collectors` se `settings.SCALPING_WHALE_ENABLED=False`
+- [ ] Correggere formula coverage: `total_weight_configured` calcolato solo sui collector attivi con peso > 0
+- [ ] Aggiungere `SCALPING_WHALE_ENABLED=false` a `.env`
+- [ ] Verifica: coverage non più penalizzata dal whale assente
+
+---
+
+### TASK-841 — FASE D1: Log diagnostica score engine (2026-06-15)
+
+**Status:** Todo  
+**Priorità:** Alta — senza diagnosi non si sa se i score sono in [-1,+1] o [-100,+100]  
+**Fase:** D (dopo Fase C)  
+**Stima:** 0.5h  
+**File coinvolti:** `signal_score_engine.py`
+
+**Scope:**
+- [ ] Aggiungere log DEBUG in `compute()` con breakdown raw score per collector
+- [ ] Log deve mostrare: `breakdown raw`, `weighted_avg`, `total_weight`, `coverage`
+- [ ] Avviare sessione paper e analizzare 2-3 cicli di output
+- [ ] Determinare Scenario A (scala già -100..+100) o Scenario B (scala -1..+1)
+
+---
+
+### TASK-842 — FASE D2-D3: Fix normalizzazione score e soglie (2026-06-15)
+
+**Status:** Todo  
+**Priorità:** Alta — score mai supera 1.0 con soglia a 15, nessun trade passa il gate  
+**Fase:** D (dopo TASK-841)  
+**Stima:** 2h  
+**File coinvolti:** `signal_score_engine.py`, `.env`
+
+**Scope:**
+- [ ] In base alla diagnosi D1: se Scenario B, scalare ogni `*_to_score()` da [-1,+1] a [-100,+100]
+- [ ] Verificare che `weighted_avg` non venga diviso per 100 prima di confronto soglia
+- [ ] Aggiornare `SCALPING_SIGNAL_STRENGTH_THRESHOLD=15.0` in `.env` con commenti di interpretazione
+- [ ] Verifica log: score appare in range [-100,+100]
+
+---
+
+### TASK-843 — FASE D4: SignalAggregator min_collectors da config (2026-06-15)
+
+**Status:** Todo  
+**Priorità:** Media  
+**Fase:** D  
+**Stima:** 0.25h  
+**File coinvolti:** `signal_aggregator.py`
+
+**Scope:**
+- [ ] Sostituire `num_collectors_responded <= 3` hardcoded con `get_scalping_config().min_collectors`
+- [ ] Importare `get_scalping_config` da `app.scalping.config_loader`
+
+---
+
+### TASK-844 — FASE E1-E2: Supervisor — contesto arricchito con performance sessione (2026-06-15)
+
+**Status:** Todo  
+**Priorità:** Media — supervisor decide senza vedere storico trade né PnL  
+**Fase:** E (dopo Fasi A, B, C)  
+**Stima:** 2h  
+**File coinvolti:** `supervisor_scheduler.py`
+
+**Scope:**
+- [ ] Aggiungere parametro `session_id` a `build_scalping_context()`
+- [ ] Query DB `scalping_trades` per ultimi 20 trade chiusi della sessione
+- [ ] Calcolare `session_performance`: trade count, wins, losses, pnl, win_rate, ultimi 5
+- [ ] Leggere strategia attiva da `_execution_state`
+- [ ] Aggiornare `_format_context()` con sezione `=== PERFORMANCE SESSIONE ===`
+- [ ] Includere `supervisor_history` nel formato (preparazione per F3)
+
+---
+
+### TASK-845 — FASE E3: Aggiornare system prompt supervisor (2026-06-15)
+
+**Status:** Todo  
+**Priorità:** Media — prompt attuale non guida correttamente quando NO agire  
+**Fase:** E  
+**Stima:** 0.5h  
+**File coinvolti:** `supervisor_client.py`
+
+**Scope:**
+- [ ] Sostituire `SUPERVISOR_SYSTEM_PROMPT` con versione completa dal piano §E3
+- [ ] Sezione `QUANDO NON AGIRE`: < 5 trade, stessa azione 3+ volte, < 4 collector, score neutrale
+- [ ] Sezione `QUANDO AGIRE`: regole per change_strategy, update_params, pause/resume
+- [ ] Mapping REGIME → STRATEGIA nel prompt
+- [ ] Gerarchia segnali (1-8) nel prompt
+- [ ] Verifica: supervisor risponde `no_action` se < 5 trade in sessione
+
+---
+
+### TASK-846 — FASE F1: Migration DB tabella `supervisor_memory` (2026-06-15)
+
+**Status:** Todo  
+**Priorità:** Media — senza memoria il supervisor propone la stessa azione in loop  
+**Fase:** F (dopo Fase E)  
+**Stima:** 0.5h  
+**File coinvolti:** nuova migration Supabase
+
+**Scope:**
+- [ ] Creare migration SQL `supervisor_memory` con colonne: id, session_id, symbol, decided_at, action, reason, confidence, market_bias, primary_signal, new_strategy, new_params, was_applied, blocked_reason, market_context, session_perf, outcome_*
+- [ ] Creare indici su (symbol, decided_at DESC), session_id, (action, was_applied)
+- [ ] Applicare migration su Supabase
+
+---
+
+### TASK-847 — FASE F2-F3: Persistenza e caricamento memoria supervisor (2026-06-15)
+
+**Status:** Todo  
+**Priorità:** Media  
+**Fase:** F  
+**Stima:** 1.5h  
+**File coinvolti:** `supervisor_scheduler.py`
+
+**Scope:**
+- [ ] Implementare `_save_decision_to_memory()`: INSERT su `supervisor_memory` per ogni decisione (anche bloccate)
+- [ ] Chiamare `_save_decision_to_memory()` dopo ogni esecuzione del supervisor con flag `was_applied` e `blocked_reason`
+- [ ] Aggiungere a `build_scalping_context()`: query ultime 10 decisioni da `supervisor_memory` per symbol
+- [ ] Popolare chiave `supervisor_history` nel context dict
+- [ ] Verifica: tabella `supervisor_memory` si popola a ogni ciclo supervisor
+
+---
+
+### TASK-848 — FASE F4: Job APScheduler verifica outcome decisioni (2026-06-15)
+
+**Status:** Todo  
+**Priorità:** Bassa  
+**Fase:** F  
+**Stima:** 1h  
+**File coinvolti:** `scheduler/jobs.py` (o equivalente)
+
+**Scope:**
+- [ ] Implementare `verify_supervisor_outcomes_job()`
+- [ ] Query decisioni applicate 25-35 minuti fa senza outcome
+- [ ] Calcolare `pnl_delta` vs snapshot PnL al momento della decisione
+- [ ] Classificare outcome: positive/negative/neutral (soglia ±0.01)
+- [ ] UPDATE `supervisor_memory` con `outcome_verified_at`, `outcome_pnl_delta`, `outcome_label`
+- [ ] Registrare job in `setup_scheduler()` con interval 5 minuti
+- [ ] Verifica: dopo 30 min da una decisione applicata, `outcome_label` è valorizzato
+
+---
+
 ### TASK-822 — Config panel: rimuovere sub-tab "Strategy" e aggiungere titolo "Session" con ID (2026-06-09)
 
 **Status:** Complete ✅

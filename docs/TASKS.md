@@ -301,7 +301,8 @@ Fix issues identified from live session logs:
 
 ### TASK-834 — FASE A2: Supervisor interval da .env (2026-06-15)
 
-**Status:** Todo  
+**Status:** Done ✅  
+**Completato:** 2026-06-15
 **Priorità:** CRITICA — supervisor gira ogni 45s invece di 10min, spreca API  
 **Fase:** A (prerequisito per tutto il resto)  
 **Stima:** 0.5h  

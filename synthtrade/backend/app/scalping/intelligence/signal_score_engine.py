@@ -84,6 +84,8 @@ class SignalScoreEngine:
             threshold = settings.scalping.SCALPING_SIGNAL_STRENGTH_THRESHOLD
         self.symbol = symbol
         self.weights = weights or DEFAULT_WEIGHTS.copy()
+        if not settings.scalping.SCALPING_WHALE_ENABLED:
+            self.weights["whale"] = 0.0
         self.threshold = threshold
 
         # Istanzia collector
@@ -248,10 +250,8 @@ class SignalScoreEngine:
         total = max(-100.0, min(100.0, round(total, 1)))
 
         # Determina bias con soglia scalata alla coverage dei collector
-        # coverage = somma pesi collector che hanno risposto (0..1)
-        # Con coverage=1.0 (tutti): soglia=threshold
-        # Con coverage=0.30 (3 collector): soglia=threshold * 0.30 = ~4.5
-        coverage = total_weight  # total_weight è la somma dei pesi dei collector che hanno risposto
+        total_weight_configured = sum(w for w in self.weights.values() if w > 0)
+        coverage = total_weight / total_weight_configured if total_weight_configured > 0 else 0.0
         effective_threshold = self.threshold * coverage
 
         if total >= effective_threshold:

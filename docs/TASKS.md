@@ -386,7 +386,8 @@ Fix issues identified from live session logs:
 
 ### TASK-839 — FASE C1: Sostituire Fear & Greed con alternative.me (2026-06-15)
 
-**Status:** Todo  
+**Status:** Done ✅  
+**Completato:** 2026-06-15
 **Priorità:** Alta — F&G congelato a 8, dato falso guida tutte le decisioni AI  
 **Fase:** C (dopo Fase B)  
 **Stima:** 1h  

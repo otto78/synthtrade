@@ -421,7 +421,8 @@ Fix issues identified from live session logs:
 
 ### TASK-841 — FASE D1: Log diagnostica score engine (2026-06-15)
 
-**Status:** Todo  
+**Status:** Done ✅  
+**Completato:** 2026-06-15
 **Priorità:** Alta — senza diagnosi non si sa se i score sono in [-1,+1] o [-100,+100]  
 **Fase:** D (dopo Fase C)  
 **Stima:** 0.5h  

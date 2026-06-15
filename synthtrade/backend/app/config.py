@@ -19,26 +19,46 @@ class ScalpingSettings(BaseSettings):
         extra='ignore'
     )
 
-    # Limiti di trading
-    SCALPING_MAX_DAILY_LOSS_PCT: float = 3.0
+    # ── Scalping — Execution ─────────────────────────────────────
+    SCALPING_TRADE_VALUE: float = 10.0
+    SCALPING_MAX_DAILY_LOSS: float = 50.0
+    SCALPING_MAX_DRAWDOWN_PCT: float = 10.0
+    SCALPING_STOP_LOSS_PCT: float = 0.3
+    SCALPING_TAKE_PROFIT_PCT: float = 0.5
+    SCALPING_FORCE_PAPER: bool = True
+    SCALPING_FORCE_EXECUTE: bool = False
+
+    # Old execution settings kept for compatibility
+    SCALPING_EXECUTION_INTERVAL_MS: int = 500
+    SCALPING_CANDLE_BUFFER_SIZE: int = 100
+    SCALPING_TIMEFRAME: str = '1m'
     SCALPING_MAX_CONSECUTIVE_LOSSES: int = 5
     SCALPING_MAX_POSITION_SIZE: float = 0.01
 
-    # Timeframe e segnali
-    SCALPING_TIMEFRAME: str = '1m'
+    # ── Scalping — Signal Intelligence ──────────────────────────
     SCALPING_SIGNAL_STRENGTH_THRESHOLD: float = 15.0
     SCALPING_MIN_CONFIDENCE: float = 0.3
-    SCALPING_EXECUTION_INTERVAL_MS: int = 500
-    SCALPING_CANDLE_BUFFER_SIZE: int = 100
-
-    # Intelligence
+    SCALPING_MIN_COLLECTORS: int = 4
     SCALPING_INTEL_UPDATE_INTERVAL_SEC: int = 60
 
-    # Supervisor AI
-    SCALPING_SUPERVISOR_INTERVAL_SEC: int = 600    # default 10 min
-    SCALPING_STRATEGY_COOLDOWN_SEC: int = 1200     # default 20 min
-    SCALPING_PARAM_UPDATE_COOLDOWN_SEC: int = 600  # default 10 min
+    # ── Scalping — Supervisor AI ─────────────────────────────────
+    SCALPING_SUPERVISOR_INTERVAL_SEC: int = 600
+    SCALPING_STRATEGY_COOLDOWN_SEC: int = 1200
+    SCALPING_PARAM_UPDATE_COOLDOWN_SEC: int = 600
+    SCALPING_SUPERVISOR_MIN_TRADES_BEFORE_CHANGE: int = 5
+    SCALPING_SUPERVISOR_MAX_REPEAT_DECISIONS: int = 3
+    
+    # Old Supervisor settings kept for compatibility
     SCALPING_SUPERVISOR_MIN_TRADES_BEFORE_DECISION: int = 3
+
+    # ── Scalping — Collector specifici ──────────────────────────
+    SCALPING_FEAR_GREED_SOURCE: str = "alternative_me"
+    SCALPING_WHALE_ENABLED: bool = False
+    WHALE_ALERT_API_KEY: str = ""
+
+    # ── Scalping — Regime Detector ───────────────────────────────
+    SCALPING_REGIME_TREND_THRESHOLD_PCT: float = 3.0
+    SCALPING_REGIME_VOLATILE_THRESHOLD: float = 0.02
 
     # Opportunity Monitor
     SCALPING_OPPORTUNITY_POLL_INTERVAL_MIN: int = 5

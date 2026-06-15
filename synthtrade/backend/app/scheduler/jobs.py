@@ -219,7 +219,7 @@ def setup_scheduler(engine=None) -> AsyncIOScheduler:
                           minutes=60,
                           id="scalping_funding_rate")
         scheduler.add_job(supervisor_check_job, "interval",
-                          minutes=settings.scalping.SCALPING_SUPERVISOR_INTERVAL_MIN,
+                          seconds=settings.scalping.SCALPING_SUPERVISOR_INTERVAL_SEC,
                           id="scalping_supervisor_check")
         scheduler.add_job(session_health_job, "interval",
                           seconds=30,

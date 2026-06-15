@@ -47,6 +47,7 @@ from app.execution.exchange import BinanceExchangeAdapter
 from app.core.binance_balance import LD_MAP
 from app.config import settings
 from app.scalping.session_load_guard import SessionLoadGuard
+from app.scalping.config_loader import get_scalping_config
 
 logger = logging.getLogger(__name__)
 
@@ -2346,6 +2347,30 @@ async def list_positions() -> List[Dict]:
         for p in positions
     ]
 
+
+# ---------------------------------------------------------------------------
+# Runtime Config endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/config")
+async def get_scalping_config_endpoint():
+    cfg = get_scalping_config()
+    return {"config": cfg._config, "source": "env+db_override"}
+
+@router.post("/config/reload")
+async def reload_scalping_config():
+    get_scalping_config().reload()
+    return {"status": "reloaded"}
+
+@router.post("/config/{key}")
+async def update_scalping_config(key: str, value: str):
+    db = get_supabase()
+    db.table("scalping_runtime_config").update({
+        "value": value,
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }).eq("key", key).execute()
+    get_scalping_config().reload()
+    return {"key": key, "value": value, "status": "updated"}
 
 # ---------------------------------------------------------------------------
 # Risk Config endpoints

@@ -29,8 +29,8 @@ REGIME_ALLOWED_STRATEGIES: Dict[str, List[str]] = {
 # Cambiare strategia ogni 1-2 minuti produce instabilità — nessuna strategia ha
 # tempo di generare segnali validi. I log mostrano loop rsi_bollinger→ema_cross→rsi_bollinger.
 from app.config import settings
-STRATEGY_CHANGE_COOLDOWN = settings.SCALPING_STRATEGY_COOLDOWN_SEC
-PARAM_UPDATE_COOLDOWN = settings.SCALPING_PARAM_UPDATE_COOLDOWN_SEC
+STRATEGY_CHANGE_COOLDOWN = settings.scalping.SCALPING_STRATEGY_COOLDOWN_SEC
+PARAM_UPDATE_COOLDOWN = settings.scalping.SCALPING_PARAM_UPDATE_COOLDOWN_SEC
 
 
 class SupervisorScheduler:

@@ -1631,7 +1631,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
         try:
             from app.scalping.supervisor.supervisor_scheduler import SupervisorScheduler
             from app.config import settings
-            supervisor = SupervisorScheduler(symbol=symbol, interval_seconds=settings.SCALPING_SUPERVISOR_INTERVAL_SEC)
+            supervisor = SupervisorScheduler(symbol=symbol, interval_seconds=settings.scalping.SCALPING_SUPERVISOR_INTERVAL_SEC)
             _execution_state["loop"].session_id = _execution_state["session"].get("db_session_id")
             supervisor.set_execution_loop(_execution_state["loop"])
             supervisor.start()
@@ -2138,7 +2138,7 @@ async def control_session(control: Dict) -> Dict:
                 # Start SupervisorScheduler
                 from app.scalping.supervisor.supervisor_scheduler import SupervisorScheduler
                 from app.config import settings
-                supervisor = SupervisorScheduler(symbol=active_symbol, interval_seconds=settings.SCALPING_SUPERVISOR_INTERVAL_SEC)
+                supervisor = SupervisorScheduler(symbol=active_symbol, interval_seconds=settings.scalping.SCALPING_SUPERVISOR_INTERVAL_SEC)
                 # Attach db_session_id (UUID) so the supervisor can log it to DB
                 _execution_state["loop"].session_id = session.get("db_session_id")
                 supervisor.set_execution_loop(_execution_state["loop"])

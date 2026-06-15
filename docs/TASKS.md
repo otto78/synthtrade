@@ -404,7 +404,8 @@ Fix issues identified from live session logs:
 
 ### TASK-840 — FASE C2: Fix copertura whale collector disabilitato (2026-06-15)
 
-**Status:** Todo  
+**Status:** Done ✅  
+**Completato:** 2026-06-15
 **Priorità:** Alta — peso 0.10 fantasma riduce coverage artificialmente  
 **Fase:** C  
 **Stima:** 0.5h  

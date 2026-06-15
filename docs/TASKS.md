@@ -455,7 +455,8 @@ Fix issues identified from live session logs:
 
 ### TASK-843 — FASE D4: SignalAggregator min_collectors da config (2026-06-15)
 
-**Status:** Todo  
+**Status:** Done ✅  
+**Completato:** 2026-06-15
 **Priorità:** Media  
 **Fase:** D  
 **Stima:** 0.25h  

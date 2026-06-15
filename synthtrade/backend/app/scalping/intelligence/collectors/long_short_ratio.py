@@ -70,13 +70,13 @@ class LongShortRatioCollector:
 
     @staticmethod
     def ratio_to_score(long_pct: Decimal) -> float:
-        """Converte il long % in contributo score (-15 a +15).
+        """Converte il long % in contributo score (-100 a +100).
 
         > 70% long  -> mercato esposto -> bias short (score negativo)
         > 70% short -> mercato esposto -> bias long (score positivo)
         """
         long_val = float(long_pct)
-        # Centro a 50%: (50 - long%) * 0.5
-        # 80% long -> -15, 20% long -> +15
-        score = (50.0 - long_val) * 0.5
-        return max(-15.0, min(15.0, score))
+        # Centro a 50%: (50 - long%) * 3.333
+        # 80% long -> -100, 20% long -> +100
+        score = (50.0 - long_val) * (100.0 / 30.0)
+        return max(-100.0, min(100.0, score))

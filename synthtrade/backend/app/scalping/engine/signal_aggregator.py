@@ -107,11 +107,14 @@ class SignalAggregator:
         num_collectors_responded = len(market_score.breakdown) if market_score.breakdown else 0
         mode_label = "PAPER" if paper_mode else "LIVE"
 
+        from app.scalping.config_loader import get_scalping_config
+        min_collectors = get_scalping_config().min_collectors
+
         # ── Caso 1: POCHI COLLECTOR → bypass intelligence (mancanza dati) ──────────
         # In live mode, molti collector falliscono (funding_rate, open_interest, whale, etc.
-        # richiedono API keys). Se ≤ 3 collector hanno risposto, trattiamo lo score come
+        # richiedono API keys). Se < min_collectors hanno risposto, trattiamo lo score come
         # "no data" e usiamo solo il segnale tecnico.
-        if num_collectors_responded <= 3:
+        if num_collectors_responded < min_collectors:
             bypass_reason = f"score={market_score.total:.1f} ({num_collectors_responded} collectors)"
             if technical.confidence >= self._min_confidence:
                 logger.info(

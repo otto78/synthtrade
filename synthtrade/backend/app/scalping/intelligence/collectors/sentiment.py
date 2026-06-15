@@ -133,6 +133,6 @@ class SentimentCollector:
 
     @staticmethod
     def sentiment_to_score(sentiment: float) -> float:
-        """Converte il sentiment score in un contributo per SignalScore (-15 a +15)."""
-        # Mappa -1 -> -15, 0 -> 0, 1 -> +15
-        return max(-15.0, min(15.0, sentiment * 15.0))
+        """Converte il sentiment score in un contributo per SignalScore (-100 a +100)."""
+        # Mappa -1 -> -100, 0 -> 0, 1 -> +100
+        return max(-100.0, min(100.0, sentiment * 100.0))

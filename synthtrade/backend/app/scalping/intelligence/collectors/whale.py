@@ -204,19 +204,19 @@ class WhaleCollector:
 
     @staticmethod
     def whale_to_score(data: WhaleData) -> float:
-        """Converte l'attività whale in un contributo score (0 a +10).
+        """Converte l'attività whale in un contributo score (0 a +100).
 
         Usa whale_transaction_count come indicatore primario.
         """
         if data.whale_transaction_count > 0:
-            score = min(10.0, data.whale_transaction_count * 2.5)
+            score = min(100.0, data.whale_transaction_count * 25.0)
             return score
 
         # Fallback: usa large_transfer_volume se significativo (> 10 BNB/ETH/BTC)
         vol = float(data.large_transfer_volume)
         if vol > 10.0:
             import math
-            score = min(10.0, math.log10(max(vol, 1.0)) * 2.0)
+            score = min(100.0, math.log10(max(vol, 1.0)) * 20.0)
             return round(score, 1)
 
         return 0.0

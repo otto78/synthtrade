@@ -100,7 +100,7 @@ class CVDCalculator:
 
     @staticmethod
     def cvd_to_score(cvd_value: Decimal, baseline: Decimal = Decimal("1000")) -> float:
-        """Converte CVD in contributo score (-25 a +25).
+        """Converte CVD in contributo score (-100 a +100).
 
         CVD positivo (pressione buy) -> score positivo (bullish)
         CVD negativo (pressione sell) -> score negativo (bearish)
@@ -108,5 +108,5 @@ class CVDCalculator:
         if baseline == 0:
             return 0.0
         ratio = float(cvd_value) / float(baseline)
-        score = ratio * 25  # CVD = baseline -> 25 punti
-        return max(-25.0, min(25.0, score))
+        score = ratio * 100  # CVD = baseline -> 100 punti
+        return max(-100.0, min(100.0, score))

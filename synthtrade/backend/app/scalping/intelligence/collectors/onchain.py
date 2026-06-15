@@ -126,7 +126,7 @@ class OnChainCollector:
 
     @staticmethod
     def onchain_to_score(data: OnChainData) -> float:
-        """Converte i dati on-chain in un contributo score (-10 a +10).
+        """Converte i dati on-chain in un contributo score (-100 a +100).
 
         Exchange Net Flow:
         Negativo (outflow) -> Bullish (meno offerta su exchange)
@@ -136,12 +136,12 @@ class OnChainCollector:
         
         # Flussi exchange (priorità alta)
         if data.exchange_net_flow is not None:
-            # Esempio: -1000 BTC -> +5 score, +1000 BTC -> -5 score
+            # Esempio: -1000 BTC -> +50 score, +1000 BTC -> -50 score
             flow = float(data.exchange_net_flow)
-            score -= flow / 200.0 
+            score -= flow / 20.0 
             
         # Aumento indirizzi attivi -> Bullish (adozione)
         if data.active_addresses and data.active_addresses > 500000:
-            score += 2.0
+            score += 20.0
             
-        return max(-10.0, min(10.0, score))
+        return max(-100.0, min(100.0, score))

@@ -91,7 +91,7 @@ class OpenInterestCollector:
 
     @staticmethod
     def oi_to_score(oi_value_usd: Decimal, baseline_usd: Decimal) -> float:
-        """Converte OI in contributo score (-15 a +15).
+        """Converte OI in contributo score (-100 a +100).
 
         OI alto rispetto alla baseline = mercato esposto = bias contrarian.
         Con baseline dinamica questo score varia realmente invece di essere costante.
@@ -99,7 +99,7 @@ class OpenInterestCollector:
         if baseline_usd == 0:
             return 0.0
         ratio = float(oi_value_usd) / float(baseline_usd)
-        # ratio > 1.5 = OI molto alto -> bias short (-15)
-        # ratio < 0.5 = OI basso -> bias long (+15)
-        score = (1.0 - ratio) * 30
-        return max(-15.0, min(15.0, score))
+        # ratio > 1.5 = OI molto alto -> bias short (-100)
+        # ratio < 0.5 = OI basso -> bias long (+100)
+        score = (1.0 - ratio) * 200
+        return max(-100.0, min(100.0, score))

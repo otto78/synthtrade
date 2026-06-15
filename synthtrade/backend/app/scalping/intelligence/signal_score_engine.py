@@ -245,9 +245,8 @@ class SignalScoreEngine:
         else:
             normalized_score = 0.0
 
-        # Scala da [-25..+25] a [-100..+100]
-        total = normalized_score * 4.0
-        total = max(-100.0, min(100.0, round(total, 1)))
+        # I collector restituiscono già un valore scalato [-100..+100]
+        total = max(-100.0, min(100.0, round(normalized_score, 1)))
 
         # Determina bias con soglia scalata alla coverage dei collector
         total_weight_configured = sum(w for w in self.weights.values() if w > 0)

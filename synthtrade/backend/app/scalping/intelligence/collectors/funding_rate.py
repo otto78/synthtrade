@@ -90,12 +90,12 @@ class FundingRateCollector:
 
     @staticmethod
     def rate_to_score(rate: Decimal) -> float:
-        """Converte il funding rate in un contributo score (-25 a +25).
+        """Converte il funding rate in un contributo score (-100 a +100).
 
         Funding rate positivo (long pagano) -> score negativo (bearish)
         Funding rate negativo (short pagano) -> score positivo (bullish)
         """
         rate_pct = float(rate) * 100
-        # Mappa: +0.20% -> -25, +0.10% -> -20, 0% -> 0, -0.10% -> +20, -0.20% -> +25
-        score = -rate_pct * 250  # 0.10% * 250 = 25
-        return max(-25.0, min(25.0, score))
+        # Mappa: +0.20% -> -100, +0.10% -> -50, 0% -> 0, -0.10% -> +50, -0.20% -> +100
+        score = -rate_pct * 500  # 0.10% * 500 = 50
+        return max(-100.0, min(100.0, score))

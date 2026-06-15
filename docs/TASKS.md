@@ -369,7 +369,8 @@ Fix issues identified from live session logs:
 
 ### TASK-838 — FASE B5: Endpoint API config scalping (2026-06-15)
 
-**Status:** Todo  
+**Status:** Done ✅  
+**Completato:** 2026-06-15
 **Priorità:** Media  
 **Fase:** B  
 **Stima:** 0.5h  

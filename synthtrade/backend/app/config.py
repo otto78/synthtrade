@@ -35,7 +35,9 @@ class ScalpingSettings(BaseSettings):
     SCALPING_INTEL_UPDATE_INTERVAL_SEC: int = 60
 
     # Supervisor AI
-    SCALPING_SUPERVISOR_INTERVAL_MIN: int = 10
+    SCALPING_SUPERVISOR_INTERVAL_SEC: int = 600    # default 10 min
+    SCALPING_STRATEGY_COOLDOWN_SEC: int = 1200     # default 20 min
+    SCALPING_PARAM_UPDATE_COOLDOWN_SEC: int = 600  # default 10 min
     SCALPING_SUPERVISOR_MIN_TRADES_BEFORE_DECISION: int = 3
 
     # Opportunity Monitor

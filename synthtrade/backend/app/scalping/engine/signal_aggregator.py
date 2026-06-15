@@ -68,7 +68,6 @@ class SignalAggregator:
         market_score: SignalScore,
         symbol: str = "",
         paper_mode: bool = False,
-        force_execute: bool = False,
     ) -> ExecutionDecision:
         """Decide se eseguire un ordine basandosi su intelligence + tecnico.
 
@@ -77,24 +76,10 @@ class SignalAggregator:
             market_score: Score intelligence dal SignalScoreEngine.
             symbol: Simbolo (per log).
             paper_mode: Se True, usa solo segnale tecnico (per debug/test).
-            force_execute: Se True, bypassa intelligence e soglia tecnica (solo per test).
 
         Returns:
             ExecutionDecision con execute=True/False e motivazione.
         """
-        # ── FORCE EXECUTE: bypassa intelligence e tecnico (solo test) ──
-        if force_execute:
-            logger.info(
-                f"{GREEN}⚡ FORCE EXECUTE: {technical.type} {symbol} @ {technical.confidence:.2f} "
-                f"(bypass intelligence + tecnico per test){RESET}"
-            )
-            return ExecutionDecision(
-                execute=True,
-                confidence=max(technical.confidence, 0.5),
-                reason=f"force_execute: {technical.type}@{technical.confidence:.2f} (test mode)",
-                signal_type=technical.type,
-            )
-
         # Se il technical e' NONE, non fare nulla
         if technical.type == "NONE":
             return ExecutionDecision(

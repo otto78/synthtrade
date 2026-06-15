@@ -28,8 +28,9 @@ REGIME_ALLOWED_STRATEGIES: Dict[str, List[str]] = {
 # Cooldown tra decisioni drastiche per stabilizzare il sistema (TASK-815)
 # Cambiare strategia ogni 1-2 minuti produce instabilità — nessuna strategia ha
 # tempo di generare segnali validi. I log mostrano loop rsi_bollinger→ema_cross→rsi_bollinger.
-STRATEGY_CHANGE_COOLDOWN = 20 * 60  # 20 minuti in secondi
-PARAM_UPDATE_COOLDOWN = 10 * 60     # 10 minuti in secondi
+from app.config import settings
+STRATEGY_CHANGE_COOLDOWN = settings.SCALPING_STRATEGY_COOLDOWN_SEC
+PARAM_UPDATE_COOLDOWN = settings.SCALPING_PARAM_UPDATE_COOLDOWN_SEC
 
 
 class SupervisorScheduler:

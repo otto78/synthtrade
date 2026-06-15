@@ -78,10 +78,6 @@ _execution_state: Dict[str, Any] = {
         "stopped_at": None,
         "paper_balance": 10000.0,
         "trade_value": 100.0,   # USD value per trade — set by user in UI
-        "load_guard": {
-            "blocked_attempts": 0,
-            "last_blocked_at": None,
-        },
     },
     "trade_history": [],        # List[dict] — trade history for performance calc
     "risk_config": {
@@ -119,13 +115,6 @@ async def scalping_websocket(ws: WebSocket):
     - opportunity:   new opportunity detected
     """
     await ws.accept()
-    guard = _execution_state.get("session_load_guard")
-    if guard and not guard.is_ready():
-        await ws.send_json({
-            "type": "session_loading",
-            "payload": guard.monitor_data,
-            "timestamp": _now(),
-        })
     _scalping_ws_connections.append(ws)
     logger.info("Scalping WS client connected (%d total)", len(_scalping_ws_connections))
 
@@ -789,7 +778,6 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                       that are only valid for a fresh session start (e.g. DB insert).
     """
     session = _execution_state["session"]
-    guard = _execution_state.get("session_load_guard")
     logger.info(
         f">>> _start_ws_broadcast() ENTERED for {symbol} | "
         f"session_status={session['status']} mode={session['mode']} "
@@ -797,6 +785,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     )
 
     is_testnet = session.get("mode") != "live"
+    guard = _execution_state.get("session_load_guard")
 
     # Create pipeline components FIRST (before WS client)
     candle_buffer = CandleBuffer()
@@ -826,9 +815,6 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     # paper_mode controls whether intelligence gating is bypassed for low-score markets.
     # Must be False in live mode so the full intelligence + technical filter applies.
     execution_loop.paper_mode = (_session_mode != "live")
-    # force_execute = True: bypass intelligence + filtri tecnici per test flusso OCO in live.
-    # Rimettere a False quando SignalAggregator è calibrato e si va in produzione reale.
-    execution_loop.force_execute = True
     _execution_state["loop"] = execution_loop
     logger.info(f"ExecutionLoop paper_mode={execution_loop.paper_mode} for {symbol} (mode={_session_mode})")
 
@@ -857,8 +843,6 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     "timestamp": c.timestamp.isoformat() if hasattr(c.timestamp, 'isoformat') else str(c.timestamp),
                 })
             logger.info(f"Successfully loaded and broadcast {loaded_count} historical candles for {symbol}. Buffer size: {len(candle_buffer)}, ready: {candle_buffer.is_ready(50)}")
-            if guard:
-                guard.complete_phase("buffer_phase")
             
             # ── SAFETY: Fix buffer mismatch ───────────────────────────────────
             # Nonostante candle_buffer venga passato all'ExecutionLoop,
@@ -880,6 +864,9 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     f"Buffer now: {len(execution_loop._candle_buffer)}, "
                     f"ready: {execution_loop._candle_buffer.is_ready(50)}"
                 )
+
+            if guard:
+                guard.complete_phase("buffer_phase")
 
             # ── FORCE FIRST PIPELINE PROCESS ──────────────────────────────────
             # Dopo il warmup, il buffer ha 100 candele ma process_candle() non viene
@@ -915,17 +902,14 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
             
         else:
             logger.warning(f"No historical candles returned for {symbol}, buffer will warm up live.")
-            if guard:
-                guard.fail(f"buffer_warmup_failed: no historical candles returned for {symbol}")
     except Exception as warmup_err:
         logger.error(f"Could not warm up candle buffer with historical data: {warmup_err}", exc_info=True)
-        if guard:
-            guard.fail(f"buffer_warmup_failed: {type(warmup_err).__name__}: {warmup_err}")
 
     # Now start the BinanceWS client (after warmup so handshake is not blocked)
     client = BinanceWSClient(symbols=[symbol], testnet=is_testnet)
     _execution_state["ws_client"] = client
     await client.start()
+
     if guard:
         guard.complete_phase("pipeline_phase")
 
@@ -1646,7 +1630,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     if restore_mode:
         try:
             from app.scalping.supervisor.supervisor_scheduler import SupervisorScheduler
-            supervisor = SupervisorScheduler(symbol=symbol, interval_seconds=45)
+            from app.config import settings
+            supervisor = SupervisorScheduler(symbol=symbol, interval_seconds=settings.SCALPING_SUPERVISOR_INTERVAL_SEC)
             _execution_state["loop"].session_id = _execution_state["session"].get("db_session_id")
             supervisor.set_execution_loop(_execution_state["loop"])
             supervisor.start()
@@ -2150,9 +2135,10 @@ async def control_session(control: Dict) -> Dict:
                     if guard:
                         guard.fail(f"db_insert_failed: {type(db_e).__name__}: {db_e}")
                     
-                # Start SupervisorScheduler (every 45s for live debugging/monitoring)
+                # Start SupervisorScheduler
                 from app.scalping.supervisor.supervisor_scheduler import SupervisorScheduler
-                supervisor = SupervisorScheduler(symbol=active_symbol, interval_seconds=45)
+                from app.config import settings
+                supervisor = SupervisorScheduler(symbol=active_symbol, interval_seconds=settings.SCALPING_SUPERVISOR_INTERVAL_SEC)
                 # Attach db_session_id (UUID) so the supervisor can log it to DB
                 _execution_state["loop"].session_id = session.get("db_session_id")
                 supervisor.set_execution_loop(_execution_state["loop"])

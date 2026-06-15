@@ -65,8 +65,6 @@ class ExecutionLoop:
         self._indicators: dict = {}
         self.session_id: Optional[str] = None
         self.paper_mode: bool = True  # Default paper — impostato da router al session start
-        # ── FIX-2026-06-12: Flag per bypassare intelligence + tecnico nei test ──
-        self.force_execute: bool = False
         # Callback per eventi
         self._on_signal: Optional[Callable] = None
         self._on_trade: Optional[Callable] = None
@@ -192,7 +190,6 @@ class ExecutionLoop:
         decision = self._signal_aggregator.should_execute(
             technical_signal, market_score, symbol=self._symbol,
             paper_mode=self.paper_mode,
-            force_execute=self.force_execute,
         )
 
         # 7. Risk check via RiskManager core (opzionale, se fornito)

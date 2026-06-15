@@ -335,7 +335,8 @@ Fix issues identified from live session logs:
 
 ### TASK-836 — FASE B3: Migration DB tabella `scalping_runtime_config` (2026-06-15)
 
-**Status:** Todo  
+**Status:** Done ✅  
+**Completato:** 2026-06-15
 **Priorità:** Alta  
 **Fase:** B  
 **Stima:** 0.5h  

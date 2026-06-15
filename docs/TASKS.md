@@ -319,7 +319,8 @@ Fix issues identified from live session logs:
 
 ### TASK-835 — FASE B1-B2: .env completo e config.py aggiornato (2026-06-15)
 
-**Status:** Todo  
+**Status:** Done ✅  
+**Completato:** 2026-06-15
 **Priorità:** Alta — prerequisito per B3-B5  
 **Fase:** B (dopo Fase A)  
 **Stima:** 1h  

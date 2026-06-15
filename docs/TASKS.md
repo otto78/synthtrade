@@ -351,7 +351,8 @@ Fix issues identified from live session logs:
 
 ### TASK-837 — FASE B4: Nuovo `ScalpingConfigLoader` (2026-06-15)
 
-**Status:** Todo  
+**Status:** Done ✅  
+**Completato:** 2026-06-15
 **Priorità:** Alta  
 **Fase:** B  
 **Stima:** 1h  

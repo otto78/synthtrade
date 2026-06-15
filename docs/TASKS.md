@@ -438,7 +438,8 @@ Fix issues identified from live session logs:
 
 ### TASK-842 — FASE D2-D3: Fix normalizzazione score e soglie (2026-06-15)
 
-**Status:** Todo  
+**Status:** Done ✅  
+**Completato:** 2026-06-15
 **Priorità:** Alta — score mai supera 1.0 con soglia a 15, nessun trade passa il gate  
 **Fase:** D (dopo TASK-841)  
 **Stima:** 2h  

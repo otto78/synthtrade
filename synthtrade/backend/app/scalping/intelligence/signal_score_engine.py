@@ -211,7 +211,7 @@ class SignalScoreEngine:
 
         # Fear & Greed
         if fg is not None:
-            fg_score = FearGreedCollector.fng_to_score(fg.value)
+            fg_score = FearGreedCollector.value_to_score(fg.value)
             breakdown["fear_greed"] = round(fg_score, 2)
             weighted_score += fg_score * self.weights.get("fear_greed", 0.15)
             total_weight += self.weights.get("fear_greed", 0.15)

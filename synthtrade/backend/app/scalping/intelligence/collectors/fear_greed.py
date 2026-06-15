@@ -1,139 +1,106 @@
-"""FearGreedCollector — recupera Fear & Greed Index da Alternative.me API.
+"""FearGreedCollector — usa alternative.me (gratuita, no API key).
 
-Documentazione API:
-  https://api.alternative.me/fng/
-  https://alternative.me/crypto/fear-and-greed-index/
+Endpoint: GET https://api.alternative.me/fng/?limit=1
+Risposta:
+{
+  "data": [{
+    "value": "34",
+    "value_classification": "Fear",
+    "timestamp": "1718000000"
+  }]
+}
 
-Valori:
-  0-24  = Extreme Fear
-  25-44 = Fear
-  45-54 = Neutral
-  55-74 = Greed
-  75-100 = Extreme Greed
-
-NOTA: Il valore viene cachato per 5 minuti (l'indice si aggiorna ogni ora).
-      In caso di errore, viene usato il valore in cache se disponibile.
-      Sono previsti fino a 2 retry con 2s di backoff.
+Aggiornamento: 1 volta ogni 24h (cacheare il valore intraday).
 """
 
-import asyncio
+import aiohttp
 import logging
-import time
-from datetime import datetime, timezone
-from typing import Optional
-
-import httpx
-
+from datetime import datetime, timedelta, timezone
 from app.scalping.models.intelligence import FearGreedData
 
 logger = logging.getLogger(__name__)
 
-ALTERNATIVE_ME_URL = "https://api.alternative.me/fng/"
-_CACHE_TTL_SECONDS = 300  # 5 minuti
+ALTERNATIVE_ME_URL = "https://api.alternative.me/fng/?limit=1"
+
+# Cache intraday: il valore cambia al massimo 1 volta al giorno
+_cached_value: int | None = None
+_cached_at: datetime | None = None
+_CACHE_TTL = timedelta(hours=4)  # rileggi ogni 4h per sicurezza
 
 
 class FearGreedCollector:
-    """Collettore Fear & Greed Index da Alternative.me (API pubblica gratuita).
-
-    Implementa caching (5 min) e retry (2×, 2s backoff) per gestire
-    l'instabilità dell'endpoint pubblico.
-    """
 
     def __init__(self, timeout_seconds: float = 10.0):
         self._timeout = timeout_seconds
-        self._cached_value: Optional[FearGreedData] = None
-        self._cached_at: float = 0.0
 
-    async def collect(self, limit: int = 1) -> Optional[FearGreedData]:
-        """Recupera il Fear & Greed Index corrente.
+    async def collect(self, limit: int = 1) -> FearGreedData | None:
+        global _cached_value, _cached_at
 
-        Usa la cache se il dato ha meno di 5 minuti.
-        Fa fino a 2 retry in caso di errore.
-        Se fallisce ma ha un valore cachato (anche scaduto), lo ritorna comunque.
+        # Usa cache se valida
+        if _cached_value is not None and _cached_at is not None:
+            if datetime.now(timezone.utc) - _cached_at < _CACHE_TTL:
+                return FearGreedData(
+                    value=_cached_value,
+                    label=self._classify(_cached_value),
+                    timestamp=_cached_at,
+                )
 
-        Returns:
-            FearGreedData se disponibile, None solo se mai ricevuto un dato.
-        """
-        # Controlla cache valida
-        now = time.monotonic()
-        if self._cached_value is not None and (now - self._cached_at) < _CACHE_TTL_SECONDS:
-            logger.debug("FearGreed: cache hit (age=%.0fs)", now - self._cached_at)
-            return self._cached_value
-
-        # Fetch con retry
-        last_error = None
-        for attempt in range(3):  # 1 tentativo + 2 retry
-            try:
-                async with httpx.AsyncClient(timeout=self._timeout) as client:
-                    params = {"limit": limit, "format": "json"}
-                    response = await client.get(ALTERNATIVE_ME_URL, params=params)
-                    response.raise_for_status()
-
-                    data = response.json()
-                    entries = data.get("data", [])
-                    if not entries:
-                        break
-
-                    entry = entries[0]
-                    value = int(entry.get("value", 50))
-                    label = entry.get("value_classification", self.classify(value))
-
-                    result = FearGreedData(
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=self._timeout)
+            ) as session:
+                async with session.get(ALTERNATIVE_ME_URL) as resp:
+                    if resp.status != 200:
+                        logger.warning("FearGreed alternative.me: HTTP %d", resp.status)
+                        return self._use_cache_or_none()
+                    data = await resp.json()
+                    value = int(data["data"][0]["value"])
+                    _cached_value = value
+                    _cached_at = datetime.now(timezone.utc)
+                    logger.info("FearGreed aggiornato: %d (%s)", value, self._classify(value))
+                    return FearGreedData(
                         value=value,
-                        label=label,
-                        timestamp=datetime.now(timezone.utc),
+                        label=self._classify(value),
+                        timestamp=_cached_at,
                     )
-                    # Aggiorna cache
-                    self._cached_value = result
-                    self._cached_at = now
-                    logger.debug("FearGreed: fetched value=%d label=%s", value, label)
-                    return result
+        except Exception as e:
+            logger.warning("FearGreed alternative.me error: %s", e, exc_info=True)
+            return self._use_cache_or_none()
 
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                last_error = e
-                if attempt < 2:
-                    logger.debug("FearGreed attempt %d failed: %s — retrying in 2s", attempt + 1, e)
-                    await asyncio.sleep(2)
-
-        # Tutti i tentativi falliti
-        if self._cached_value is not None:
-            logger.warning(
-                "FearGreedCollector: fetch failed (%s) — usando valore cachato (age=%.0fs, value=%d)",
-                last_error, now - self._cached_at, self._cached_value.value
+    def _use_cache_or_none(self) -> FearGreedData | None:
+        if _cached_value is not None:
+            logger.info("FearGreed: uso cache (valore=%d)", _cached_value)
+            return FearGreedData(
+                value=_cached_value,
+                label=self._classify(_cached_value),
+                timestamp=_cached_at or datetime.now(timezone.utc),
             )
-            return self._cached_value
-
-        logger.warning("FearGreedCollector: fetch failed e nessuna cache disponibile: %s", last_error)
+        logger.warning("FearGreed: nessun dato disponibile (né live né cache)")
         return None
 
     @staticmethod
-    def classify(value: int) -> str:
-        """Classifica un valore numerico in label Fear & Greed."""
-        if value <= 24:
-            return "Extreme Fear"
-        elif value <= 44:
-            return "Fear"
-        elif value <= 54:
-            return "Neutral"
-        elif value <= 74:
-            return "Greed"
+    def _classify(value: int) -> str:
+        if value <= 20:   return "Extreme Fear"
+        if value <= 40:   return "Fear"
+        if value <= 60:   return "Neutral"
+        if value <= 80:   return "Greed"
         return "Extreme Greed"
 
     @staticmethod
-    def fng_to_score(value: int) -> float:
-        """Converte Fear & Greed in contributo score (-10 a +10).
-
-        Estremi (Fear < 20 o Greed > 80) = potenziale inversione -> bias contrarian.
+    def value_to_score(value: int) -> float:
+        """Converte Fear & Greed (0-100) in score (-100 a +100).
+        
+        Logica contrarian:
+          < 20 (Extreme Fear)  → score positivo (opportunità long)
+          > 80 (Extreme Greed) → score negativo (cautela)
+          40-60 (Neutral)      → score vicino a 0
         """
-        if value >= 80:  # Extreme Greed -> mercato euforico -> short bias
-            return -10.0
-        elif value >= 65:  # Greed -> leggero short bias
-            return -3.0
-        elif value >= 45:  # Neutral
-            return 0.0
-        elif value >= 25:  # Fear -> leggero long bias
-            return 3.0
-        else:  # Extreme Fear -> long bias
-            return 10.0
+        if value < 20:
+            return (20 - value) * 5.0          # max +100 a value=0
+        elif value > 80:
+            return -(value - 80) * 5.0         # max -100 a value=100
+        elif value < 40:
+            return (40 - value) * 1.5          # +30 max a value=20
+        elif value > 60:
+            return -(value - 60) * 1.5         # -30 max a value=80
+        return 0.0

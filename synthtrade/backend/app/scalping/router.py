@@ -46,6 +46,7 @@ from app.scalping.models.market import Candle
 from app.execution.exchange import BinanceExchangeAdapter
 from app.core.binance_balance import LD_MAP
 from app.config import settings
+from app.scalping.session_load_guard import SessionLoadGuard
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,10 @@ _execution_state: Dict[str, Any] = {
         "stopped_at": None,
         "paper_balance": 10000.0,
         "trade_value": 100.0,   # USD value per trade — set by user in UI
+        "load_guard": {
+            "blocked_attempts": 0,
+            "last_blocked_at": None,
+        },
     },
     "trade_history": [],        # List[dict] — trade history for performance calc
     "risk_config": {
@@ -87,6 +92,7 @@ _execution_state: Dict[str, Any] = {
         "take_profit_pct": 0.5,
     },
     "pending_live_close": False,  # set to True when a live BUY is executed
+    "session_load_guard": SessionLoadGuard(),
 }
 
 # WebSocket connections
@@ -113,6 +119,13 @@ async def scalping_websocket(ws: WebSocket):
     - opportunity:   new opportunity detected
     """
     await ws.accept()
+    guard = _execution_state.get("session_load_guard")
+    if guard and not guard.is_ready():
+        await ws.send_json({
+            "type": "session_loading",
+            "payload": guard.monitor_data,
+            "timestamp": _now(),
+        })
     _scalping_ws_connections.append(ws)
     logger.info("Scalping WS client connected (%d total)", len(_scalping_ws_connections))
 
@@ -201,6 +214,12 @@ async def broadcast_scalping_event(event_type: str, payload: Any):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _sync_session_load_guard() -> None:
+    guard = _execution_state.get("session_load_guard")
+    if guard:
+        _execution_state["session"]["load_guard"] = guard.monitor_data
 
 
 def _normalize_binance_total_balance(balance_total: Dict[str, Any]) -> Dict[str, float]:
@@ -372,10 +391,12 @@ async def _live_close_position(exchange, pos, qty: float) -> float:
     return close_price
 
 
-async def _save_open_position_to_db(pos, db_session_id: str):
+async def _save_open_position_to_db(pos, db_session_id: str,
+                                    tp_price: float = 0.0, sl_price: float = 0.0):
     """Save opened position to Supabase with status='open' and no exit/pnl yet.
     Called immediately after pm.open_position() to persist the current trade
     so session restore can pick it up after restart.
+    Includes tp_price, sl_price, oco_order_list_id, sl_order_id, tp_order_id (TASK-825).
     """
     try:
         def _db_op():
@@ -394,6 +415,11 @@ async def _save_open_position_to_db(pos, db_session_id: str):
                 "status": "open",
                 "entry_time": datetime.now(timezone.utc).isoformat(),
                 "exit_time": None,
+                "tp_price": tp_price if tp_price else None,
+                "sl_price": sl_price if sl_price else None,
+                "oco_order_list_id": pos.oco_order_list_id,
+                "sl_order_id": pos.sl_order_id,
+                "tp_order_id": pos.tp_order_id,
             }).execute()
         await asyncio.to_thread(_db_op)
     except Exception as db_e:
@@ -449,6 +475,250 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
         await asyncio.to_thread(_db_op)
     except Exception as db_e:
         logger.warning(f"Failed to update closed position in DB: {db_e}")
+
+
+async def _on_order_update(event: dict):
+    """Handler UDS — chiamato su ogni executionReport FILLED/EXPIRED.
+
+    TASK-826: Implementa la logica di chiusura posizione via User Data Stream.
+    Sostituisce il polling OCO su ogni candela (rimosso in TASK-824).
+
+    Gestione ordine eventi Binance:
+    - Se arriva FILLED → chiudiamo la posizione (TP o SL)
+    - Se arriva EXPIRED → log informativo. L'altro leg (FILLED) arriverà dopo.
+      Se la posizione è già chiusa (pos=None), usciamo silenziosamente.
+    """
+    symbol = event.get("symbol")
+    order_id = event.get("order_id")
+    order_list_id = event.get("order_list_id")
+    status = event.get("status")   # "filled" / "expired"
+    fill_price = event.get("fill_price", 0.0)
+
+    pos = _execution_state["position_manager"].get_open()
+    # ⚠️ Se la posizione è già chiusa o non è la nostra OCO → exit silenzioso
+    if not pos:
+        return
+    if pos.oco_order_list_id and order_list_id != pos.oco_order_list_id:
+        logger.debug(f"[UDS] event orderListId={order_list_id} != pos.oco_order_list_id={pos.oco_order_list_id} — skip")
+        return
+
+    if status == "filled":
+        # Determina se è TP o SL in base all'orderId
+        if order_id and pos.tp_order_id and order_id == pos.tp_order_id:
+            reason = "take_profit"
+        elif order_id and pos.sl_order_id and order_id == pos.sl_order_id:
+            reason = "stop_loss"
+        else:
+            reason = "oco_filled"
+
+        if fill_price <= 0:
+            logger.warning(f"[UDS] FILLED event with fill_price=0 for {symbol} orderId={order_id} — skip close")
+            return
+
+        # Calcola PnL
+        entry_f = float(pos.entry_price)
+        qty_f = float(pos.quantity)
+        gross_pnl = (fill_price - entry_f) * qty_f if pos.side == "BUY" else (entry_f - fill_price) * qty_f
+        fees = (entry_f * qty_f * 0.001) + (fill_price * qty_f * 0.001)
+        pnl = gross_pnl - fees
+        pnl_pct = (pnl / (entry_f * qty_f)) * 100 if entry_f > 0 else 0.0
+
+        # Chiudi posizione in memoria
+        _execution_state["position_manager"].close_position(Decimal(str(fill_price)))
+
+        # Aggiorna trade history
+        trade_record = {
+            "symbol": pos.symbol,
+            "side": pos.side,
+            "entry_price": entry_f,
+            "exit_price": fill_price,
+            "quantity": qty_f,
+            "pnl": round(pnl, 2),
+            "pnl_pct": round(pnl_pct, 2),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "signal_reason": reason,
+        }
+        _execution_state["trade_history"].append(trade_record)
+
+        # Aggiorna DB
+        await _update_closed_position_in_db(pos, fill_price, pnl, pnl_pct, reason)
+
+        # Refresh live balance
+        await _refresh_session_balance()
+
+        # Broadcast UI
+        await broadcast_scalping_event("trade_closed", {
+            "symbol": pos.symbol,
+            "side": pos.side,
+            "entry_price": entry_f,
+            "exit_price": fill_price,
+            "quantity": qty_f,
+            "pnl": round(pnl, 2),
+            "pnl_pct": round(pnl_pct, 2),
+            "reason": reason,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+
+        logger.info(f"\033[92m✅ Trade chiuso da {reason}: {pos.symbol} @ {fill_price} | PnL={pnl:.2f} ({pnl_pct:.2f}%)\033[0m")
+
+    elif status == "expired":
+        # ⚠️ Binance NON garantisce l'ordine FILLED/EXPIRED.
+        # Se arriva prima EXPIRED, la posizione è ancora aperta — il FILLED arriverà dopo.
+        # Se la posizione è già chiusa (pos=None sopra), usciamo silenziosamente.
+        logger.info(f"ℹ️ OCO leg EXPIRED (attesa FILLED dell'altro leg): {symbol} orderId={order_id}")
+
+
+async def _on_uds_reconnect_sync():
+    """Chiamato dopo ogni riconnessione UDS (TASK-830).
+
+    Verifica se l'OCO è stato eseguito durante la finestra di disconnessione.
+    Se sì, chiude la posizione in memoria, aggiorna DB e broadcast UI.
+    """
+    pos = _execution_state["position_manager"].get_open()
+    if not pos:
+        return  # Nessuna posizione aperta, nulla da sincronizzare
+
+    exchange = _execution_state.get("exchange")
+    if not exchange:
+        return
+
+    try:
+        open_orders = await exchange.get_open_orders(pos.symbol)
+        if not open_orders:
+            # OCO eseguito durante la disconnessione!
+            logger.info(f"🔄 UDS riconnesso: OCO già eseguito per {pos.symbol} durante la disconnessione — recupero fill price")
+
+            fill_price: Optional[float] = None
+
+            # Prova prima con orderId specifici se disponibili (più affidabile)
+            for order_id in [pos.tp_order_id, pos.sl_order_id]:
+                if order_id:
+                    fp = await exchange._fetch_fill_price_by_order_id(pos.symbol, order_id)
+                    if fp and fp > 0:
+                        fill_price = fp
+                        break
+
+            # Fallback: cerca negli ordini chiusi recenti
+            if not fill_price:
+                try:
+                    closed = await exchange.client.fetch_closed_orders(
+                        await exchange._get_ccxt_symbol(pos.symbol),
+                        limit=10
+                    )
+                    for order in sorted(closed, key=lambda x: x.get("timestamp", 0), reverse=True):
+                        if order.get("status") == "closed" and order.get("side", "").upper() == "SELL":
+                            fp = float(order.get("price") or order.get("average") or 0)
+                            if fp > 0:
+                                fill_price = fp
+                                break
+                except Exception as e:
+                    logger.warning(f"UDS reconnect sync: fetch_closed_orders failed: {e}")
+
+            if not fill_price or fill_price <= 0:
+                logger.warning(f"UDS reconnect sync: nessun fill price trovato per {pos.symbol} — skip")
+                return
+
+            entry_f = float(pos.entry_price)
+            qty_f = float(pos.quantity)
+            gross_pnl = (fill_price - entry_f) * qty_f if pos.side == "BUY" else (entry_f - fill_price) * qty_f
+            fees = (entry_f * qty_f * 0.001) + (fill_price * qty_f * 0.001)
+            pnl = gross_pnl - fees
+            pnl_pct = (pnl / (entry_f * qty_f)) * 100 if entry_f > 0 else 0.0
+            reason = "take_profit" if pnl > 0 else "stop_loss"
+
+            _execution_state["position_manager"].close_position(Decimal(str(fill_price)))
+            trade_record = {
+                "symbol": pos.symbol, "side": pos.side,
+                "entry_price": entry_f, "exit_price": fill_price,
+                "quantity": qty_f, "pnl": round(pnl, 2),
+                "pnl_pct": round(pnl_pct, 2),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "signal_reason": reason,
+            }
+            _execution_state["trade_history"].append(trade_record)
+            await _update_closed_position_in_db(pos, fill_price, pnl, pnl_pct, reason)
+            await _refresh_session_balance()
+            await broadcast_scalping_event("trade_closed", {
+                **trade_record,
+                "reason": reason,
+            })
+            logger.info(f"✅ UDS reconnect sync: trade chiuso @ {fill_price} | PnL={pnl:.2f}")
+
+    except Exception as e:
+        logger.warning(f"UDS reconnect sync error (non-fatal): {e}")
+
+
+async def _start_uds_if_needed():
+    """Avvia UDS singleton se non già attivo (TASK-827).
+
+    Deve essere chiamato dopo OCO confermato (Caso A).
+    Passa sia on_order_update che on_reconnect_sync al manager.
+    """
+    if _execution_state.get("user_data_stream"):
+        return  # Già attivo — singleton check
+
+    session = _execution_state["session"]
+    if session.get("mode") != "live":
+        return  # UDS solo in live
+
+    try:
+        from app.execution.user_data_stream import UserDataStreamManager
+        live_api_key = settings.BINANCE_API_KEY_LIVE or settings.BINANCE_API_KEY
+        live_api_secret = settings.BINANCE_SECRET_KEY_LIVE or settings.BINANCE_SECRET_KEY
+        uds = UserDataStreamManager(live_api_key, live_api_secret, testnet=False)
+        await uds.start(
+            on_order_update=_on_order_update,
+            on_reconnect_sync=_on_uds_reconnect_sync,
+        )
+        _execution_state["user_data_stream"] = uds
+        logger.info("\033[96m📡 UDS SOCKET ATTIVO: avviato post-OCO confermato\033[0m")
+    except Exception as uds_e:
+        logger.warning(f"[UDS] Avvio fallito (non-fatal): {uds_e}")
+
+
+async def _handle_oco_failed(exchange, symbol: str):
+    """Gestione Caso B — OCO fallito (TASK-828).
+
+    1. Cancella ordini orfani aperti su Binance.
+    2. Market sell con qty reale post-fee da _get_available_base_balance().
+    3. Broadcast error a UI.
+    4. Nessun salvataggio DB (posizione non è mai stata valida).
+    """
+    # 1. Cancella ordini orfani
+    try:
+        open_orders = await exchange.get_open_orders(symbol)
+        if open_orders:
+            ccxt_symbol = await exchange._get_ccxt_symbol(symbol)
+            for order in open_orders:
+                try:
+                    await exchange.client.cancel_order(order["id"], ccxt_symbol)
+                except Exception as ce:
+                    logger.warning(f"[OCO_FAILED] cancel_order failed: {ce}")
+            logger.info(f"[OCO_FAILED] Cancellati {len(open_orders)} ordini orfani per {symbol}")
+    except Exception as e:
+        logger.warning(f"[OCO_FAILED] get_open_orders failed (non-blocking): {e}")
+
+    # 2. Market sell con qty reale post-fee
+    try:
+        actual_qty = await exchange._get_available_base_balance(symbol)
+        if actual_qty > 0:
+            filters = await exchange.get_symbol_filters(symbol)
+            min_qty = float(filters.get("minQty", 0.0))
+            if actual_qty >= min_qty:
+                await exchange.place_market_order(symbol, "sell", actual_qty)
+                logger.info(f"[OCO_FAILED] Market sell emergenza eseguito: {actual_qty} {symbol}")
+            else:
+                logger.warning(f"[OCO_FAILED] qty={actual_qty} < minQty={min_qty} per {symbol} — impossibile vendere")
+        else:
+            logger.error(f"[OCO_FAILED] Balance={actual_qty} per {symbol} — nessun asset da vendere")
+    except Exception as e:
+        logger.error(f"[OCO_FAILED] Market sell emergenza fallito per {symbol}: {e}")
+
+    # 3. Broadcast error a UI
+    await broadcast_scalping_event("error", {
+        "code": "OCO_FAILED",
+        "message": f"OCO fallito per {symbol}. Trade chiuso con market sell, nessun asset bloccato.",
+    })
 
 
 async def _close_position_and_record(pm, close_price: float, pos, reason: str = "signal"):
@@ -519,6 +789,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                       that are only valid for a fresh session start (e.g. DB insert).
     """
     session = _execution_state["session"]
+    guard = _execution_state.get("session_load_guard")
     logger.info(
         f">>> _start_ws_broadcast() ENTERED for {symbol} | "
         f"session_status={session['status']} mode={session['mode']} "
@@ -555,9 +826,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     # paper_mode controls whether intelligence gating is bypassed for low-score markets.
     # Must be False in live mode so the full intelligence + technical filter applies.
     execution_loop.paper_mode = (_session_mode != "live")
-    # ── FIX-2026-06-12: Force execute per test UDS ──
-    # Force True during development/testing to bypass intelligence and technical
-    # filters so trades execute immediately on generated BUY signals.
+    # force_execute = True: bypass intelligence + filtri tecnici per test flusso OCO in live.
+    # Rimettere a False quando SignalAggregator è calibrato e si va in produzione reale.
     execution_loop.force_execute = True
     _execution_state["loop"] = execution_loop
     logger.info(f"ExecutionLoop paper_mode={execution_loop.paper_mode} for {symbol} (mode={_session_mode})")
@@ -587,6 +857,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     "timestamp": c.timestamp.isoformat() if hasattr(c.timestamp, 'isoformat') else str(c.timestamp),
                 })
             logger.info(f"Successfully loaded and broadcast {loaded_count} historical candles for {symbol}. Buffer size: {len(candle_buffer)}, ready: {candle_buffer.is_ready(50)}")
+            if guard:
+                guard.complete_phase("buffer_phase")
             
             # ── SAFETY: Fix buffer mismatch ───────────────────────────────────
             # Nonostante candle_buffer venga passato all'ExecutionLoop,
@@ -643,13 +915,19 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
             
         else:
             logger.warning(f"No historical candles returned for {symbol}, buffer will warm up live.")
+            if guard:
+                guard.fail(f"buffer_warmup_failed: no historical candles returned for {symbol}")
     except Exception as warmup_err:
         logger.error(f"Could not warm up candle buffer with historical data: {warmup_err}", exc_info=True)
+        if guard:
+            guard.fail(f"buffer_warmup_failed: {type(warmup_err).__name__}: {warmup_err}")
 
     # Now start the BinanceWS client (after warmup so handshake is not blocked)
     client = BinanceWSClient(symbols=[symbol], testnet=is_testnet)
     _execution_state["ws_client"] = client
     await client.start()
+    if guard:
+        guard.complete_phase("pipeline_phase")
 
     # Mock data generator that creates synthetic candles when no real WS data arrives
     _mock_candle_counter = 0
@@ -935,6 +1213,11 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
 
             # Feed into execution loop for signal generation (only closed candles)
             if event.is_closed:
+                guard = _execution_state.get("session_load_guard")
+                if guard and not guard.is_ready():
+                    guard.record_trade_attempt(event.symbol, "candle_processor")
+                    _sync_session_load_guard()
+                    continue
                 if _execution_state["session"]["status"] != "running":
                     logger.info(f">>> SKIP: session not running (status={_execution_state['session']['status']})")
                     continue
@@ -968,6 +1251,16 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         side = "BUY" if decision.confidence > 0 else "SELL"
                         logger.info(f">>> TRADE: side={side} has_open={pm.has_open()} daily_loss={_check_daily_loss()}")
                         
+                        guard = _execution_state.get("session_load_guard")
+                        if guard and not guard.is_ready():
+                            guard.record_trade_attempt(event.symbol.upper(), "live_trade_gate")
+                            _sync_session_load_guard()
+                            await broadcast_scalping_event("warn", {
+                                "code": "SESSION_NOT_READY",
+                                "reason": guard.monitor_data.get("error", "loading"),
+                            })
+                            continue
+
                         if not pm.has_open():
                             if _check_daily_loss():
                                 logger.warning("Max daily loss exceeded. Blocking new real trade.")
@@ -1032,37 +1325,23 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                         })
                                         continue
                                         
-                                    # 3. Execute Market Order
+                                     # 3. Execute Market Buy
                                     market_res = await exchange.place_market_order(event.symbol.upper(), side, _qty_precise)
                                     exec_price = float(market_res.get("price") or event.close)
                                     exec_qty = float(market_res.get("quantity") or _qty_precise)
-                                    
-                                    # 3b. Register position IMMEDIATELY after market fill, BEFORE OCO.
-                                    # This ensures the position is tracked even if OCO/stop-loss fails,
-                                    # so session stop can close it on Binance.
-                                    pos_obj = pm.open_position(
-                                        symbol=event.symbol.upper(),
-                                        side=side,
-                                        entry_price=Decimal(str(exec_price)),
-                                        quantity=Decimal(str(exec_qty))
-                                    )
-                                    # Persist open position to DB immediately
-                                    await _save_open_position_to_db(pos_obj, session.get("db_session_id"))
-                                    
-                                    # Refresh live balance immediately so UI shows "Free" balance deducting trade value
-                                    await _refresh_session_balance()
-                                    
+
                                     # 4. Calculate Risk SL/TP with proper price precision
                                     risk_cfg = _execution_state.get("risk_config", {})
                                     sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3)) / 100
                                     tp_pct = float(risk_cfg.get("take_profit_pct", 0.5)) / 100
                                     price_prec = int(filters.get("pricePrecision", 2))
-                                    
+
                                     sl_price = round(exec_price * (1 - sl_pct), price_prec) if side == "BUY" else round(exec_price * (1 + sl_pct), price_prec)
                                     tp_price = round(exec_price * (1 + tp_pct), price_prec) if side == "BUY" else round(exec_price * (1 - tp_pct), price_prec)
-                                    
-                                    # 5. Place OCO Risk Parachute (best-effort — failure is non-fatal)
+
+                                    # 5. Place native OCO
                                     oco_res = None
+                                    oco_failed = False
                                     try:
                                         oco_res = await exchange.place_oco_order(
                                             symbol=event.symbol.upper(),
@@ -1073,20 +1352,48 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                             take_profit_price=tp_price
                                         )
                                     except Exception as oco_e:
-                                        logger.warning(f"OCO placement failed (non-fatal, position already tracked): {oco_e}")
+                                        logger.error(f"OCO placement FAILED for {event.symbol}: {oco_e}")
+                                        oco_failed = True
 
-                                    if oco_res:
-                                        pos_obj.oco_id = oco_res.get("order_id")
-                                        pos_obj.sl_id = oco_res.get("stop_loss_id")
-                                        pos_obj.tp_id = oco_res.get("take_profit_id")
-                                        # FIX-2026-06-12: Salva ID OCO per User Data Stream
-                                        if oco_res.get("native"):
-                                            pos_obj.oco_order_list_id = str(oco_res.get("order_list_id", ""))
-                                            pos_obj.sl_order_id = str(oco_res.get("stop_loss_id", ""))
-                                            pos_obj.tp_order_id = str(oco_res.get("take_profit_id", ""))
-                                            logger.info(
-                                                f"\033[92m🎯 OCO ATTIVO: BUY {event.symbol.upper()} @ {exec_price} | TP={tp_price:.2f} | SL={sl_price:.2f}\033[0m"
-                                            )
+                                    if oco_failed or not oco_res:
+                                        # ── CASO B: OCO FALLITO ──
+                                        # Market sell di emergenza con qty reale post-fee
+                                        logger.error(f"OCO_FLOW CASO B: OCO fallito per {event.symbol} — eseguo market sell emergenza")
+                                        await _handle_oco_failed(exchange, event.symbol.upper())
+                                        continue  # Nessun salvataggio DB, nessuna apertura posizione
+
+                                    # ── CASO A: OCO RIUSCITO ──
+                                    # 3b. Register position AFTER OCO confermato (TASK-827)
+                                    pos_obj = pm.open_position(
+                                        symbol=event.symbol.upper(),
+                                        side=side,
+                                        entry_price=Decimal(str(exec_price)),
+                                        quantity=Decimal(str(exec_qty))
+                                    )
+
+                                    # Salva OCO IDs sul position object
+                                    pos_obj.oco_id = oco_res.get("order_id")
+                                    pos_obj.sl_id = oco_res.get("stop_loss_id")
+                                    pos_obj.tp_id = oco_res.get("take_profit_id")
+                                    pos_obj.oco_order_list_id = str(oco_res.get("order_list_id", ""))
+                                    pos_obj.sl_order_id = str(oco_res.get("stop_loss_id", ""))
+                                    pos_obj.tp_order_id = str(oco_res.get("take_profit_id", ""))
+
+                                    # Persist open position to DB con tp/sl price e OCO IDs (TASK-825)
+                                    await _save_open_position_to_db(
+                                        pos_obj, session.get("db_session_id"),
+                                        tp_price=tp_price, sl_price=sl_price
+                                    )
+
+                                    # Avvia UDS singleton post-OCO (TASK-827)
+                                    await _start_uds_if_needed()
+
+                                    # Refresh live balance
+                                    await _refresh_session_balance()
+
+                                    logger.info(
+                                        f"\033[92m🎯 OCO ATTIVO: {side} {event.symbol.upper()} @ {exec_price} | TP={tp_price:.2f} | SL={sl_price:.2f}\033[0m"
+                                    )
 
                                     await broadcast_scalping_event("position", {
                                         "symbol": pos_obj.symbol,
@@ -1101,9 +1408,10 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                         "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
                                         "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
                                     })
-                                    
+
                                     # Signal to session stop that we need a close on Binance
                                     _execution_state["pending_live_close"] = True
+
                                     
                                 except Exception as live_e:
                                     logger.error(f"Live trade failed: {live_e}")
@@ -1219,79 +1527,6 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         "tp_distance_pct": round(min(100, (current_price_f - entry_f) / (tp_price - entry_f) * 100) if pos.side == "BUY" and (tp_price - entry_f) > 0 else 0, 1),
                     })
                     logger.debug(f"Position update broadcast @ {current_price_f}: PnL={pnl:.2f} ({pnl_pct:.2f}%) progress={progress_pct:.1f}%")
-                    
-                    # ── FIX-2026-06-05: Sync OCO order status with Binance ──
-                    # On every closed candle, fetch open orders from Binance to detect
-                    # if the TP or SL orders have been filled (OCO executed).
-                    # This prevents the "stale position" bug where Binance closes the trade
-                    # but the app still thinks it's open.
-                    #
-                    # FIX-2026-06-10: Skip OCO sync during restore_mode (first few candles).
-                    # After a restart, the open position is restored from DB but OCO orders
-                    # are not re-placed. The first OCO sync would see "no open orders" and
-                    # force-close the in-memory position, while the real asset is still on Binance.
-                    _mode = _execution_state["session"].get("mode", "paper")
-                    exchange = _execution_state.get("exchange")
-                    if _mode == "live" and exchange and not restore_mode:
-                        try:
-                            open_orders = await exchange.get_open_orders(event.symbol.upper())
-                            if not open_orders:
-                                # No open orders on Binance → OCO was fully executed (TP or SL hit)
-                                logger.info(f"No open orders on Binance for {event.symbol} — position was closed by exchange OCO")
-                                # The position in memory is still open, but the exchange already closed it.
-                                # Instead of force-closing (which would create another market order),
-                                # just record the position as closed at the current price.
-                                # Use the actual OCO fill price from the latest candle as exit price
-                                close_price_to_use = current_price_f
-                                
-                                # Try to get actual fill price from fetched orders history
-                                try:
-                                    filled_orders = await exchange.client.fetch_closed_orders(
-                                        await exchange._get_ccxt_symbol(event.symbol.upper()),
-                                        limit=5
-                                    )
-                                    if filled_orders:
-                                        for fo in filled_orders:
-                                            if fo.get("status") == "closed" and fo.get("side") != "BUY":
-                                                fill_price = float(fo.get("price", 0) or fo.get("average", 0))
-                                                if fill_price > 0:
-                                                    close_price_to_use = fill_price
-                                                    logger.info(f"Found actual OCO fill price: {fill_price}")
-                                                    break
-                                except Exception as hist_e:
-                                    logger.warning(f"Could not fetch filled orders history: {hist_e}")
-                                
-                                # Determine actual reason based on gross_pnl
-                                actual_reason = "take_profit" if gross_pnl > 0 else "stop_loss"
-                                
-                                # Record the trade as closed
-                                now_ts = datetime.now(timezone.utc)
-                                trade_record = {
-                                    "symbol": pos.symbol,
-                                    "side": pos.side,
-                                    "entry_price": entry_f,
-                                    "exit_price": close_price_to_use,
-                                    "quantity": qty_f,
-                                    "pnl": round(gross_pnl - fees, 2),
-                                    "pnl_pct": round(pnl_pct, 2),
-                                    "timestamp": now_ts.isoformat(),
-                                    "signal_reason": actual_reason,
-                                }
-                                _execution_state["trade_history"].append(trade_record)
-                                pm.close_position(Decimal(str(close_price_to_use)))
-                                
-                                # Update DB to mark as closed
-                                await _update_closed_position_in_db(pos, close_price_to_use, round(gross_pnl - fees, 2), round(pnl_pct, 2), actual_reason)
-                                
-                                await broadcast_scalping_event("trade_closed", trade_record)
-                                logger.info(f"Position closed by OCO fill @ {close_price_to_use}: PnL={trade_record['pnl']:.2f}")
-                                
-                                # Refresh live balance
-                                await _refresh_session_balance()
-                            else:
-                                logger.debug(f"Open orders still active on Binance for {event.symbol}: {len(open_orders)} orders")
-                        except Exception as sync_e:
-                            logger.debug(f"Order sync check failed (non-fatal): {sync_e}")
             else:
                 logger.debug(f">>> LIVE candle update (not closed yet): {event.symbol} close={event.close}")
 
@@ -1304,6 +1539,12 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
             except asyncio.TimeoutError:
                 if _execution_state["session"]["status"] == "idle":
                     break
+                continue
+
+            guard = _execution_state.get("session_load_guard")
+            if guard and not guard.is_ready():
+                guard.record_trade_attempt(event.symbol, "trade_processor")
+                _sync_session_load_guard()
                 continue
 
             # Feed CVD calculator with real-time trade pressure
@@ -1767,7 +2008,11 @@ async def get_session() -> Dict:
     # Refresh live balance if mode is live and exchange is initialized
     if session.get("status") == "running" and session.get("mode") == "live":
         await _refresh_session_balance()
-    return session.copy()
+    result = session.copy()
+    guard = _execution_state.get("session_load_guard")
+    if guard:
+        result["load_guard"] = guard.monitor_data
+    return result
 
 
 @router.post("/session")
@@ -1777,6 +2022,16 @@ async def control_session(control: Dict) -> Dict:
     action = control.get("action")
 
     if action == "start":
+        guard = _execution_state.get("session_load_guard")
+        if guard:
+            guard.reset()
+        if guard:
+            guard.start_loading()
+        session["load_guard"] = {
+            "blocked_attempts": 0,
+            "last_blocked_at": None,
+        }
+        _sync_session_load_guard()
         active_symbol = control.get("symbol", session.get("symbol", "BTCUSDT"))
         session["status"] = "running"
         session["session_id"] = f"sess_{uuid.uuid4().hex[:8]}"
@@ -1801,6 +2056,8 @@ async def control_session(control: Dict) -> Dict:
             api_key = settings.BINANCE_API_KEY_LIVE or settings.BINANCE_API_KEY
             api_secret = settings.BINANCE_SECRET_KEY_LIVE or settings.BINANCE_SECRET_KEY
             if not api_key or not api_secret:
+                if guard:
+                    guard.fail("live_start_failed: missing Binance API keys")
                 raise HTTPException(status_code=400, detail="Mancano le API Key nel file .env per la modalità Live.")
             # Scalping live → always real Binance, never testnet
             adapter = BinanceExchangeAdapter(api_key, api_secret, testnet=False)
@@ -1836,6 +2093,10 @@ async def control_session(control: Dict) -> Dict:
                 session["live_balance"] = session.get("paper_balance", 10000.0)
                 logger.warning(f"  Using fallback balance: {session['live_balance']}")
         
+        if guard:
+            guard.complete_phase("exchange_phase")
+            guard.complete_phase("position_phase")
+
         # Store trade_value from UI (USD amount per trade)
         if "trade_value" in control:
             try:
@@ -1849,20 +2110,9 @@ async def control_session(control: Dict) -> Dict:
         except Exception as e:
             logger.warning(f"Could not initialize SignalScoreEngine: {e}")
 
-        # ── FIX-2026-06-12: Avvia User Data Stream per sessioni live ──
-        # Questo WebSocket Binance notifica in tempo reale l'esecuzione degli ordini OCO,
-        # risolvendo il disallineamento trade log vs Binance.
-        if session["mode"] == "live":
-            try:
-                from app.execution.user_data_stream import UserDataStreamManager
-                live_api_key = settings.BINANCE_API_KEY_LIVE or settings.BINANCE_API_KEY
-                live_api_secret = settings.BINANCE_SECRET_KEY_LIVE or settings.BINANCE_SECRET_KEY
-                uds = UserDataStreamManager(live_api_key, live_api_secret, testnet=False)
-                await uds.start(on_order_update=_on_order_update)
-                _execution_state["user_data_stream"] = uds
-                logger.info("\033[96m📡 UDS SOCKET ATTIVO: User Data Stream connesso per monitoraggio OCO in tempo reale\033[0m")
-            except Exception as uds_e:
-                logger.warning(f"User Data Stream non avviato: {uds_e}")
+        # NOTE (TASK-827): UDS non viene avviato qui.
+        # Viene avviato da _start_uds_if_needed() DOPO che l'OCO è confermato.
+        # Questo evita che UDS sia attivo senza ordini e rispetta il pattern singleton.
 
         # Start BinanceWSClient + ExecutionLoop pipeline
         async def _start_with_error_logging():
@@ -1891,8 +2141,14 @@ async def control_session(control: Dict) -> Dict:
                     if db_resp.data:
                         session["db_session_id"] = db_resp.data[0]["id"]
                         logger.info(f"Session saved to DB with id={session['db_session_id']} mode={session['mode']} trade_value={session.get('trade_value')}")
+                        if guard:
+                            guard.complete_phase("db_phase")
+                    elif guard:
+                        guard.fail("db_insert_failed: empty response")
                 except Exception as db_e:
                     logger.warning(f"Failed to insert session in DB: {db_e}")
+                    if guard:
+                        guard.fail(f"db_insert_failed: {type(db_e).__name__}: {db_e}")
                     
                 # Start SupervisorScheduler (every 45s for live debugging/monitoring)
                 from app.scalping.supervisor.supervisor_scheduler import SupervisorScheduler
@@ -1904,6 +2160,8 @@ async def control_session(control: Dict) -> Dict:
                 _execution_state["supervisor_scheduler"] = supervisor
                     
             except Exception as e:
+                if guard:
+                    guard.fail(f"broadcast_start_failed: {type(e).__name__}: {e}")
                 logger.error(f"Scalping broadcast start FAILED for {active_symbol}: {e}", exc_info=True)
                 # Reset session if broadcast failed to start
                 session["status"] = "idle"
@@ -1935,15 +2193,42 @@ async def control_session(control: Dict) -> Dict:
                 latest = loop._candle_buffer.latest
                 if latest:
                     close_price = float(latest.close)
-            # Close position at market — _close_position_and_record now raises on live failure
+
+            _mode_stop = _execution_state["session"].get("mode", "paper")
+            exchange_stop = _execution_state.get("exchange")
+
+            if _mode_stop == "live" and exchange_stop:
+                # TASK-829: cancella OCO e attendi conferma prima di market sell
+                try:
+                    open_orders_before = await exchange_stop.get_open_orders(pos.symbol)
+                    if open_orders_before:
+                        ccxt_sym = await exchange_stop._get_ccxt_symbol(pos.symbol)
+                        for o in open_orders_before:
+                            try:
+                                await exchange_stop.client.cancel_order(o["id"], ccxt_sym)
+                            except Exception:
+                                pass
+                        logger.info(f"Cancellati {len(open_orders_before)} ordini OCO per stop sessione")
+
+                        # Attendi conferma cancellazione (race condition protection)
+                        await asyncio.sleep(0.5)
+                        for _retry in range(3):
+                            remaining = await exchange_stop.get_open_orders(pos.symbol)
+                            if not remaining:
+                                break
+                            await asyncio.sleep(0.3)
+                        else:
+                            logger.warning(f"OCO orders still active after 3 retries for {pos.symbol}")
+                except Exception as cancel_e:
+                    logger.warning(f"OCO cancel on stop failed (non-blocking): {cancel_e}")
+
+            # Close position at market
             try:
                 await _close_position_and_record(pm, close_price, pos, reason="session_stop")
                 logger.info(f"Position force-closed at market @ {close_price} due to session stop")
             except Exception as e:
                 logger.error(f"Error force closing position during session stop: {e}", exc_info=True)
-                # If live close fails, do NOT mark position as closed — asset remains on exchange.
-                # The finally block below would mark it closed even on error, so we guard.
-                if pos.status == "open" and _execution_state["session"].get("mode") != "live":
+                if pos.status == "open" and _mode_stop != "live":
                     pm.close_position(Decimal(str(close_price)))
         
         # Stop BinanceWSClient and pipeline
@@ -1951,6 +2236,11 @@ async def control_session(control: Dict) -> Dict:
             _stop_ws_broadcast(),
             name="scalping-ws-stop",
         )
+
+        # Stop User Data Stream if active (TASK-827)
+        uds = _execution_state.pop("user_data_stream", None)
+        if uds:
+            asyncio.create_task(uds.stop(), name="uds-stop")
         
         # Stop SupervisorScheduler if running
         if "supervisor_scheduler" in _execution_state and _execution_state["supervisor_scheduler"]:
@@ -2225,6 +2515,14 @@ async def get_performance() -> Dict:
 # ---------------------------------------------------------------------------
 # Diagnostic endpoint for pipeline debugging
 # ---------------------------------------------------------------------------
+
+@router.get("/debug/session-load")
+async def debug_session_load():
+    guard = _execution_state.get("session_load_guard")
+    if not guard:
+        return {"state": "no_guard"}
+    return guard.monitor_data
+
 
 @router.get("/debug/pipeline")
 async def debug_pipeline():

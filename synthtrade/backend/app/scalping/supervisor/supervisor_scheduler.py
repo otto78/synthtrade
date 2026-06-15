@@ -112,7 +112,7 @@ class SupervisorScheduler:
             logger.debug("Supervisor tick aborted after AI call: scheduler stopped")
             return None
 
-        logger.info(
+        logger.debug(
             f"Supervisor decision: action={decision.action} | "
             f"reason={decision.reason} | "
             f"confidence={decision.confidence} | "

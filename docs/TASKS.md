@@ -147,6 +147,137 @@ Fix issues identified from live session logs:
 
 ---
 
+---
+
+## Epica 800 — OCO Flow + UDS Definitivo
+
+### TASK-824 — Pulizia codice legacy OCO sintetico e polling (2026-06-12)
+
+**Status:** Complete ✅
+
+**Scope completato:**
+- [x] Rimosso `_place_oco_synthetic_inverted()` da `exchange.py`
+- [x] Rimosso `_place_oco_synthetic()` da `exchange.py`
+- [x] Rimosso polling OCO su ogni candela in `router.py` (sezione `FIX-2026-06-05: Sync OCO`)
+- [x] Rimossi `place_stop_loss_order()`, `place_limit_order()` da `exchange.py`
+- [x] Rimossi dal `ExchangeProtocol` i metodi non più necessari
+- [x] `place_oco_order()` ora lancia `ExchangeOrderError` se OCO fallisce (no silent fallback)
+
+---
+
+### TASK-825 — Schema DB: aggiungere tp_price, sl_price a scalping_positions (2026-06-12)
+
+**Status:** Complete ✅
+
+**Scope completato:**
+- [x] Migration SQL: `supabase/migrations/20260612_oco_flow_v2.sql`
+  - Colonne aggiunte: `tp_price`, `sl_price`, `oco_order_list_id`, `sl_order_id`, `tp_order_id`
+- [x] `_save_open_position_to_db()` aggiornata con nuovi parametri `tp_price`, `sl_price` e OCO IDs
+
+---
+
+### TASK-826 — Implementare `_on_order_update` in router.py (2026-06-12)
+
+**Status:** Complete ✅
+
+**Scope completato:**
+- [x] Definito `_on_order_update(event)` in `router.py`
+- [x] Gestione `status == "filled"`: determina TP/SL da orderId, calcola PnL, aggiorna DB, chiude posizione, broadcast UI
+- [x] Gestione `status == "expired"`: log informativo, nessuna azione
+- [x] Guard: se `pos` è None o `oco_order_list_id` non corrisponde → return silenzioso
+
+---
+
+### TASK-827 — UDS singleton check + avvio post OCO riuscito (2026-06-12)
+
+**Status:** Complete ✅
+
+**Scope completato:**
+- [x] Rimosso avvio UDS immediato da `action == "start"` in `control_session()`
+- [x] Aggiunta funzione `_start_uds_if_needed()` con singleton check
+- [x] UDS avviato SOLO dopo OCO confermato (Caso A) nel `_candle_processor()`
+- [x] UDS avviato in restore sessione se posizione aperta trovata
+- [x] `on_reconnect_sync=_on_uds_reconnect_sync` passato a `uds.start()`
+- [x] UDS stoppato correttamente in `action == "stop"`
+
+---
+
+### TASK-828 — Market sell emergenza con `_get_available_base_balance()` (2026-06-12)
+
+**Status:** Complete ✅
+
+**Scope completato:**
+- [x] Funzione `_handle_oco_failed(exchange, symbol)` implementata in `router.py`
+- [x] Cancella ordini orfani via `get_open_orders` + `cancel_order`
+- [x] Market sell con `_get_available_base_balance()` (qty reale post-fee)
+- [x] Broadcast UI `error` con `code: "OCO_FAILED"`
+- [x] Nessun salvataggio DB — `continue` nel flusso live
+
+---
+
+### TASK-829 — Stop sessione: wait conferma cancellazione OCO prima di market sell (2026-06-12)
+
+**Status:** Complete ✅
+
+**Scope completato:**
+- [x] Dopo `cancel_open_orders()` in stop sessione: `asyncio.sleep(0.5)`
+- [x] Loop di verifica max 3 retry × 0.3s che `get_open_orders()` sia vuoto
+- [x] Solo dopo conferma → prosegue con `_close_position_and_record()`
+
+---
+
+### TASK-830 — UDS reconnect sync: parametro `on_reconnect_sync` (2026-06-12)
+
+**Status:** Complete ✅
+
+**Scope completato:**
+- [x] `self._on_reconnect_sync: Optional[Callable] = None` in `UserDataStreamManager.__init__`
+- [x] Parametro `on_reconnect_sync` aggiunto a `uds.start()`
+- [x] Dopo `_reconnect()` in `_listen_loop()`: chiamata `await self._on_reconnect_sync()` se impostato
+- [x] Implementata `_on_uds_reconnect_sync()` in `router.py`:
+  - Query specifica per `tp_order_id` / `sl_order_id` via `_fetch_fill_price_by_order_id()`
+  - Fallback a `fetch_closed_orders` se IDs non disponibili
+  - Chiude posizione, aggiorna DB, broadcast UI
+
+---
+
+### TASK-831 — Restore sessione: query specifica per sl_order_id/tp_order_id (2026-06-12)
+
+**Status:** Complete ✅
+
+**Scope completato:**
+- [x] In `_restore_scalping_session()`: ripristina `oco_order_list_id`, `sl_order_id`, `tp_order_id` dal DB sul position object
+- [x] `exchange._fetch_fill_price_by_order_id()` implementato in `exchange.py`
+- [x] Restore usa `_fetch_fill_price_by_order_id()` invece di `fetch_my_trades` generico
+- [x] Fallback a `fetch_closed_orders` filtrato per side se IDs non trovano match
+- [x] UDS riavviato post-restore se posizione aperta trovata
+
+---
+
+### TASK-832 — Session Load Guard: bloccare trade durante avvio/restore sessione (2026-06-15)
+
+**Status:** Complete ✅
+
+**Scope completato:**
+- [x] Aggiunta `SessionLoadGuard` in `_execution_state["session_load_guard"]`
+- [x] Fasi richieste: `db_phase`, `exchange_phase`, `position_phase`, `buffer_phase`, `pipeline_phase`
+- [x] Timeout 30s con log periodici ogni 5s e stato `failed` se una fase non completa
+- [x] `_restore_scalping_session()` marca `loading` all'avvio e completa DB/exchange/position
+- [x] `control_session(action="start")` resetta il guard, completa exchange/position e DB dopo insert
+- [x] `_start_ws_broadcast()` completa `buffer_phase` dopo warmup e `pipeline_phase` dopo `BinanceWSClient.start()`
+- [x] Gate in `_candle_processor`, `_trade_processor` e trade live inline: nessun trade finché `guard.is_ready()` è false
+- [x] WebSocket `session_loading` e endpoint `GET /scalping/debug/session-load` per osservabilità
+- [x] Tentativi trade bloccati salvati in `deque(maxlen=100)` per evitare crescita illimitata
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/session_load_guard.py`
+- `synthtrade/backend/app/scalping/router.py`
+- `synthtrade/backend/app/main.py`
+- `docs/TASKS.md`
+- `docs/OCO_FLOW.md`
+
+---
+
 ### TASK-822 — Config panel: rimuovere sub-tab "Strategy" e aggiungere titolo "Session" con ID (2026-06-09)
 
 **Status:** Complete ✅

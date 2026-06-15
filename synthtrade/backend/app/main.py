@@ -35,6 +35,19 @@ async def _restore_scalping_session(db) -> None:
     Ogni step ha il proprio try/except con exc_info=True per rendere visibile
     esattamente dove fallisce, senza inghiottire silenziosamente gli errori.
     """
+    try:
+        from app.scalping.router import _execution_state
+        guard = _execution_state["session_load_guard"]
+        guard.reset()
+        guard.start_loading()
+        _execution_state["session"]["load_guard"] = {
+            "blocked_attempts": 0,
+            "last_blocked_at": None,
+        }
+    except Exception as e:
+        logger.error("Failed to initialize session load guard during restore: %s", e, exc_info=True)
+        return
+
     # Step 1 — query DB
     try:
         def _db_op1():
@@ -42,10 +55,12 @@ async def _restore_scalping_session(db) -> None:
         result = await asyncio.to_thread(_db_op1)
     except Exception as e:
         logger.error("Failed to query scalping_sessions from DB: %s", e, exc_info=True)
+        guard.fail(f"restore_db_query_failed: {type(e).__name__}: {e}")
         return
 
     if not result.data:
         logger.info("No active scalping session found in DB")
+        guard.reset()
         return
 
     sess = result.data[0]
@@ -73,6 +88,7 @@ async def _restore_scalping_session(db) -> None:
                 }).eq("id", session_id).execute()
             await asyncio.to_thread(_db_op2)
             logger.info("Stale session %s marked as stopped", session_id)
+            guard.fail("restore_skipped: session mode does not match global mode")
         except Exception as e:
             logger.error("Failed to mark stale session as stopped: %s", e, exc_info=True)
         return
@@ -108,10 +124,12 @@ async def _restore_scalping_session(db) -> None:
             session_mode,
             _execution_state["session"].get("trade_value"),
         )
+        guard.complete_phase("db_phase")
     except Exception as e:
         logger.error(
             "Failed to populate _execution_state from DB session: %s", e, exc_info=True
         )
+        guard.fail(f"restore_state_failed: {type(e).__name__}: {e}")
 
     # Step 6 — Inizializza balance live se la modalità è live
     if session_mode == "live":
@@ -144,8 +162,16 @@ async def _restore_scalping_session(db) -> None:
                     logger.warning("No live balance found — keeping previous value")
             else:
                 logger.warning("No API keys for live mode — balance not refreshed during restore")
+                guard.fail("restore_exchange_failed: missing Binance API keys")
         except Exception as e:
             logger.error("Failed to initialize exchange adapter during restore: %s", e, exc_info=True)
+            guard.fail(f"restore_exchange_failed: {type(e).__name__}: {e}")
+
+    else:
+        guard.complete_phase("exchange_phase")
+
+    if session_mode == "live":
+        guard.complete_phase("exchange_phase")
 
     # Step 7 — Restore open position from DB (if any trade with status='open' exists)
     try:
@@ -175,7 +201,9 @@ async def _restore_scalping_session(db) -> None:
                         ccxt_bal = await adapter.client.fetch_balance()
                         free_bal = float(ccxt_bal.get("free", {}).get(base_asset, 0))
                         min_qty = float(filters.get("minQty", 0.001))
+
                         if free_bal < min_qty:
+                            # Balance sotto minQty → OCO già eseguito (asset venduto)
                             logger.warning(
                                 "Open position %s %s found in DB but exchange has %.8f %s "
                                 "(below minQty=%.4f). Marking DB trade as closed (position closed externally).",
@@ -187,60 +215,45 @@ async def _restore_scalping_session(db) -> None:
                                 real_exit_price = float(entry_price)
                                 pnl = 0.0
                                 pnl_pct = 0.0
-                                try:
-                                    entry_time_str = ot.get("entry_time")
-                                    since_ms = None
-                                    if entry_time_str:
-                                        try:
-                                            clean_time_str = entry_time_str.replace("Z", "+00:00")
-                                            entry_dt = datetime.fromisoformat(clean_time_str)
-                                            since_ms = int(entry_dt.timestamp() * 1000)
-                                        except Exception as dt_e:
-                                            logger.warning(f"Could not parse entry_time {entry_time_str}: {dt_e}")
+                                exit_time_str = datetime.now(timezone.utc).isoformat()
 
-                                    # Fetch recent trades to find the real exit price
-                                    ccxt_symbol = await adapter._get_ccxt_symbol(symbol)
-                                    if since_ms:
-                                        my_trades = await adapter.client.fetch_my_trades(ccxt_symbol, since=since_ms)
+                                # TASK-831: usa sl_order_id / tp_order_id specifici salvati in DB
+                                # per trovare il fill price preciso (evita di leggere ordini di altre sessioni)
+                                sl_order_id_db = ot.get("sl_order_id")
+                                tp_order_id_db = ot.get("tp_order_id")
+                                try:
+                                    fill_price_found = None
+                                    for oid in [tp_order_id_db, sl_order_id_db]:
+                                        if oid:
+                                            fp = await adapter._fetch_fill_price_by_order_id(symbol, oid)
+                                            if fp and fp > 0:
+                                                fill_price_found = fp
+                                                break
+
+                                    if fill_price_found and fill_price_found > 0:
+                                        real_exit_price = fill_price_found
                                     else:
-                                        my_trades = await adapter.client.fetch_my_trades(ccxt_symbol, limit=20)
-                                        
-                                    close_side = "sell" if side.lower() == "buy" else "buy"
-                                    valid_trades = [t for t in my_trades if t.get("side", "").lower() == close_side]
-                                    
-                                    exit_time_str = datetime.now(timezone.utc).isoformat()
-                                    if valid_trades:
-                                        # Sort by timestamp to get the earliest closing trades
-                                        valid_trades.sort(key=lambda x: x.get("timestamp", 0))
-                                        first_trade = valid_trades[0]
-                                        first_order_id = first_trade.get("order")
-                                        
-                                        matching_trades = [t for t in valid_trades if t.get("order") == first_order_id]
-                                        
-                                        total_cost = sum(float(t.get("cost", t.get("price", 0) * t.get("amount", 0))) for t in matching_trades)
-                                        total_amt = sum(float(t.get("amount", 0)) for t in matching_trades)
-                                        if total_amt > 0:
-                                            real_exit_price = total_cost / total_amt
-                                        else:
-                                            real_exit_price = float(first_trade.get("price", entry_price))
-                                            
-                                        trade_ts = first_trade.get("timestamp")
-                                        if trade_ts:
-                                            exit_time_str = datetime.fromtimestamp(trade_ts / 1000, tz=timezone.utc).isoformat()
+                                        # Fallback: cerca negli ordini chiusi recenti
+                                        ccxt_symbol = await adapter._get_ccxt_symbol(symbol)
+                                        closed_orders = await adapter.client.fetch_closed_orders(ccxt_symbol, limit=20)
+                                        close_side = "sell" if side.lower() == "buy" else "buy"
+                                        for o in sorted(closed_orders, key=lambda x: x.get("timestamp", 0), reverse=True):
+                                            if o.get("status") == "closed" and o.get("side", "").lower() == close_side:
+                                                fp = float(o.get("price") or o.get("average") or 0)
+                                                if fp > 0:
+                                                    real_exit_price = fp
+                                                    break
 
                                     if real_exit_price > 0 and entry_price > 0:
                                         if side.lower() == "buy":
                                             pnl_pct = ((real_exit_price - entry_price) / entry_price) * 100
                                         else:
                                             pnl_pct = ((entry_price - real_exit_price) / entry_price) * 100
-                                        # Parse trade_value safely
-                                        trade_val_str = _execution_state["session"].get("trade_value", 10.0)
-                                        trade_val = float(trade_val_str) if trade_val_str else 10.0
+                                        trade_val = float(_execution_state["session"].get("trade_value", 10.0) or 10.0)
                                         pnl = (pnl_pct / 100.0) * trade_val
-                                        
+
                                 except Exception as my_trade_e:
-                                    logger.warning(f"Could not fetch my_trades to get real exit price: {my_trade_e}")
-                                    exit_time_str = datetime.now(timezone.utc).isoformat()
+                                    logger.warning(f"Could not fetch fill price during restore: {my_trade_e}")
 
                                 def _db_op5():
                                     db.table("scalping_trades").update({
@@ -253,6 +266,61 @@ async def _restore_scalping_session(db) -> None:
                                     }).eq("id", trade_id).execute()
                                 await asyncio.to_thread(_db_op5)
                             verified = False
+                        else:
+                            # Balance OK → asset ancora in mano.
+                            # Verifica ulteriore: se non ci sono open orders su Binance,
+                            # l'OCO potrebbe essere eseguito DURANTE il restart
+                            # (race: balance non ancora aggiornato ma ordini già eseguiti).
+                            try:
+                                open_orders = await adapter.get_open_orders(symbol)
+                                oco_list_id = ot.get("oco_order_list_id")
+                                if not open_orders and oco_list_id:
+                                    # Nessun ordine aperto ma balance presente →
+                                    # OCO eseguito durante la finestra di restart.
+                                    # NON ripristinare la posizione: risolviamo via fill price.
+                                    logger.warning(
+                                        "Balance OK (%.6f %s) but NO open orders on Binance "
+                                        "for OCO %s — OCO eseguito durante restart. "
+                                        "Marking as closed.",
+                                        free_bal, base_asset, oco_list_id,
+                                    )
+                                    trade_id = ot.get("id")
+                                    if trade_id:
+                                        real_exit_price = float(entry_price)
+                                        pnl = 0.0
+                                        pnl_pct = 0.0
+                                        exit_time_str = datetime.now(timezone.utc).isoformat()
+                                        # Recupera fill price via orderId specifici
+                                        for oid in [ot.get("tp_order_id"), ot.get("sl_order_id")]:
+                                            if oid:
+                                                fp = await adapter._fetch_fill_price_by_order_id(symbol, oid)
+                                                if fp and fp > 0:
+                                                    real_exit_price = fp
+                                                    break
+                                        if real_exit_price > 0 and float(entry_price) > 0:
+                                            ep = float(entry_price)
+                                            pnl_pct = ((real_exit_price - ep) / ep * 100) if side.lower() == "buy" else ((ep - real_exit_price) / ep * 100)
+                                            trade_val = float(_execution_state["session"].get("trade_value", 10.0) or 10.0)
+                                            pnl = (pnl_pct / 100.0) * trade_val
+                                        def _db_op6():
+                                            db.table("scalping_trades").update({
+                                                "status": "closed",
+                                                "exit_price": real_exit_price,
+                                                "pnl": pnl,
+                                                "pnl_pct": pnl_pct,
+                                                "exit_time": exit_time_str,
+                                                "signal_reason": "take_profit" if pnl > 0 else "stop_loss",
+                                            }).eq("id", trade_id).execute()
+                                        await asyncio.to_thread(_db_op6)
+                                    verified = False
+                                else:
+                                    logger.info(
+                                        "Open position verified on exchange: balance=%.6f %s, "
+                                        "open_orders=%d",
+                                        free_bal, base_asset, len(open_orders),
+                                    )
+                            except Exception as ord_e:
+                                logger.warning("Could not verify open orders during restore (non-blocking): %s", ord_e)
                     except Exception as bal_e:
                         logger.warning(f"Could not verify position on exchange: {bal_e}")
 
@@ -265,12 +333,26 @@ async def _restore_scalping_session(db) -> None:
                         entry_price=Decimal(str(entry_price)),
                         quantity=Decimal(str(quantity)),
                     )
+                    # Ripristina OCO IDs dal DB sul position object (TASK-831)
+                    pos_obj.oco_order_list_id = ot.get("oco_order_list_id")
+                    pos_obj.sl_order_id = ot.get("sl_order_id")
+                    pos_obj.tp_order_id = ot.get("tp_order_id")
                     logger.info(
-                        "Open position restored from DB: %s %s @ %s qty=%s",
-                        side, symbol, entry_price, quantity,
+                        "Open position restored from DB: %s %s @ %s qty=%s oco_list=%s",
+                        side, symbol, entry_price, quantity, pos_obj.oco_order_list_id,
                     )
+                    # TASK-827: riavvia UDS singleton post-restore se la sessione è live
+                    if session_mode == "live":
+                        try:
+                            from app.scalping.router import _start_uds_if_needed
+                            await _start_uds_if_needed()
+                        except Exception as uds_e:
+                            logger.warning("Could not start UDS after session restore: %s", uds_e)
     except Exception as e:
         logger.error("Failed to restore open position from DB: %s", e, exc_info=True)
+        guard.fail(f"restore_position_failed: {type(e).__name__}: {e}")
+
+    guard.complete_phase("position_phase")
 
     # Step 7.5 — Carica trade history dal DB per popolare la lista trade e performance (DOPO aver chiuso i trade esterni)
     try:
@@ -309,10 +391,11 @@ async def _restore_scalping_session(db) -> None:
         _execution_state["session"]["status"] = "running"  # ensure before async task reads it
 
         from app.scalping.router import _start_ws_broadcast
-        asyncio.create_task(
+        task = asyncio.create_task(
             _start_ws_broadcast(restored_symbol, restore_mode=True),
             name=f"scalping-restore-{restored_symbol}",
         )
+        task.add_done_callback(lambda t: guard.fail(f"restore_broadcast_failed: {type(t.exception()).__name__}: {t.exception()}") if t.exception() else None)
         logger.info(
             "Scalping pipeline ASYNC START scheduled for %s (restore_mode=True)",
             restored_symbol,
@@ -321,6 +404,7 @@ async def _restore_scalping_session(db) -> None:
         logger.error(
             "Failed to schedule _start_ws_broadcast for restored session: %s", e, exc_info=True
         )
+        guard.fail(f"restore_pipeline_schedule_failed: {type(e).__name__}: {e}")
 
 
 @asynccontextmanager

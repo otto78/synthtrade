@@ -1,25 +1,28 @@
-"""UserDataStreamManager — Binance User Data Stream WebSocket.
+"""UserDataStreamManager — Binance User Data Stream WebSocket (API v2).
 
-Gestisce il ciclo di vita del WebSocket User Data Stream di Binance:
-1. POST /api/v3/userDataStream → ottieni listenKey
-2. Apri WSS wss://stream.binance.com:9443/ws/<listenKey>
-3. Ogni 30 min → PUT /api/v3/userDataStream (keepalive, scade dopo 60 min)
-4. Su disconnessione → riconnetti con nuovo listenKey
+Binance ha deprecato l'endpoint REST /api/v3/userDataStream (listenKey).
+Il nuovo metodo usa il WebSocket API con autenticazione HMAC-SHA256:
+
+1. Connetti a wss://ws-api.binance.com:443/ws-api/v3
+2. Invia userDataStream.subscribe.signature con apiKey + timestamp + signature
+3. Ricevi eventi executionReport via WS
+4. Su disconnessione → riconnetti e reinvia la subscribe request
 5. Su ogni executionReport con orderStatus FILLED/EXPIRED → dispatch all'handler
 
+Riferimento: https://developers.binance.com/docs/binance-spot-api-docs/websocket-api/user-data-stream-requests
+
 TASK-824: Implementato per risolvere il disallineamento trade log vs Binance.
-Prima di questo fix, l'app scopriva l'esecuzione OCO solo al prossimo polling
-sulla candela (~60 secondi). Con User Data Stream, la chiusura viene rilevata
-in tempo reale (< 1 secondo).
+FIX-2026-06-12: Migrato da listenKey REST (410 Gone) a WS API con firma HMAC.
 """
 
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
 import time
+import uuid
 from typing import Callable, Optional, Dict, Any
-
-import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +33,7 @@ class UserDataStreamError(Exception):
 
 
 class UserDataStreamManager:
-    """Manages Binance User Data Stream lifecycle.
+    """Manages Binance User Data Stream lifecycle via WebSocket API.
 
     Usage:
         uds = UserDataStreamManager(api_key="xxx", api_secret="yyy")
@@ -39,13 +42,10 @@ class UserDataStreamManager:
         await uds.stop()
     """
 
-    # Binance API endpoints
-    TESTNET_BASE = "https://testnet.binance.vision"
-    LIVE_BASE = "https://api.binance.com"
-    TESTNET_WS = "wss://testnet.binance.vision/ws"
-    LIVE_WS = "wss://stream.binance.com:9443/ws"
+    # Binance WebSocket API endpoints
+    LIVE_WS_API = "wss://ws-api.binance.com:443/ws-api/v3"
+    TESTNET_WS_API = "wss://testnet.binance.vision/ws-api/v3"
 
-    KEEPALIVE_INTERVAL = 1800  # 30 minuti (Binance richiede ogni 60 min)
     RECONNECT_DELAY = 5  # secondi prima di riconnettere
 
     def __init__(self, api_key: str, api_secret: str, testnet: bool = False):
@@ -53,70 +53,66 @@ class UserDataStreamManager:
         self._api_secret = api_secret
         self._testnet = testnet
 
-        self._listen_key: Optional[str] = None
-        self._ws_url: Optional[str] = None
+        self._ws_url = self.TESTNET_WS_API if testnet else self.LIVE_WS_API
         self._running = False
-        self._ws_connection = None  # websocket connection
+        self._ws_connection = None
         self._on_order_update: Optional[Callable] = None
-        self._keepalive_task: Optional[asyncio.Task] = None
+        self._on_reconnect_sync: Optional[Callable] = None  # TASK-830
         self._listen_task: Optional[asyncio.Task] = None
+        self._subscription_id: Optional[int] = None
 
-        self._base_url = self.TESTNET_BASE if testnet else self.LIVE_BASE
-        self._ws_base = self.TESTNET_WS if testnet else self.LIVE_WS
+    def _sign(self, params: Dict[str, Any]) -> str:
+        """Genera la firma HMAC-SHA256 per i parametri della request."""
+        query = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
+        return hmac.new(
+            self._api_secret.encode("utf-8"),
+            query.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
 
-    async def start(self, on_order_update: Callable):
+    def _build_subscribe_request(self) -> Dict[str, Any]:
+        """Costruisce la request userDataStream.subscribe.signature."""
+        req_id = str(uuid.uuid4())
+        timestamp = int(time.time() * 1000)
+        params: Dict[str, Any] = {
+            "apiKey": self._api_key,
+            "timestamp": timestamp,
+        }
+        params["signature"] = self._sign(params)
+        return {
+            "id": req_id,
+            "method": "userDataStream.subscribe.signature",
+            "params": params,
+        }
+
+    async def start(self, on_order_update: Callable, on_reconnect_sync: Optional[Callable] = None):
         """Avvia il User Data Stream.
 
         Args:
             on_order_update: Callable async che riceve il dict dell'executionReport.
                 Verrà chiamata ogni volta che un ordine viene FILLED o EXPIRED.
+            on_reconnect_sync: Callable async opzionale (TASK-830).
+                Verrà chiamata dopo ogni riconnessione per verificare se
+                l'OCO è stato eseguito durante la finestra di disconnessione.
         """
         if self._running:
             logger.warning("UserDataStream already running")
             return
 
         self._on_order_update = on_order_update
+        self._on_reconnect_sync = on_reconnect_sync
         self._running = True
 
-        try:
-            await self._create_listen_key()
-            # _listen_key è garantito non-None dopo _create_listen_key (altrimenti solleva eccezione)
-            listen_key = self._listen_key or ""
-            self._ws_url = f"{self._ws_base}/{listen_key}"
-            logger.info(f"UserDataStream listenKey ottenuto: {listen_key[:8]}...")
-
-            # Avvia keepalive ogni 30 minuti
-            self._keepalive_task = asyncio.create_task(
-                self._keepalive_loop(),
-                name="uds-keepalive"
-            )
-
-            # Avvia il listener WebSocket
-            self._listen_task = asyncio.create_task(
-                self._listen_loop(),
-                name="uds-listen"
-            )
-
-            logger.info("UserDataStream avviato con successo")
-        except Exception as e:
-            self._running = False
-            logger.error(f"Failed to start UserDataStream: {e}")
-            raise UserDataStreamError(f"Failed to start UserDataStream: {e}")
+        self._listen_task = asyncio.create_task(
+            self._listen_loop(),
+            name="uds-listen"
+        )
+        logger.info("UserDataStream avviato (WS API mode)")
 
     async def stop(self):
-        """Ferma il User Data Stream e cancella la listenKey su Binance."""
+        """Ferma il User Data Stream."""
         self._running = False
 
-        # Cancella keepalive task
-        if self._keepalive_task and not self._keepalive_task.done():
-            self._keepalive_task.cancel()
-            try:
-                await self._keepalive_task
-            except asyncio.CancelledError:
-                pass
-        self._keepalive_task = None
-
-        # Cancella listen task
         if self._listen_task and not self._listen_task.done():
             self._listen_task.cancel()
             try:
@@ -125,7 +121,6 @@ class UserDataStreamManager:
                 pass
         self._listen_task = None
 
-        # Chiudi WebSocket
         if self._ws_connection:
             try:
                 await self._ws_connection.close()
@@ -133,156 +128,117 @@ class UserDataStreamManager:
                 pass
             self._ws_connection = None
 
-        # DELETE listenKey su Binance
-        if self._listen_key:
-            try:
-                async with httpx.AsyncClient() as client:
-                    await client.delete(
-                        f"{self._base_url}/api/v3/userDataStream",
-                        params={"listenKey": self._listen_key},
-                        headers={"X-MBX-APIKEY": self._api_key},
-                    )
-                logger.info("ListenKey cancellata da Binance")
-            except Exception as e:
-                logger.warning(f"Failed to delete listenKey: {e}")
-
-        self._listen_key = None
-        self._ws_url = None
         logger.info("UserDataStream fermato")
 
-    async def _create_listen_key(self):
-        """Crea una nuova listenKey via POST /api/v3/userDataStream."""
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{self._base_url}/api/v3/userDataStream",
-                headers={"X-MBX-APIKEY": self._api_key},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            self._listen_key = data.get("listenKey")
-            if not self._listen_key:
-                raise UserDataStreamError("No listenKey in response")
-
-    async def _keepalive_listen_key(self):
-        """Rinnova la listenKey via PUT /api/v3/userDataStream."""
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.put(
-                    f"{self._base_url}/api/v3/userDataStream",
-                    params={"listenKey": self._listen_key},
-                    headers={"X-MBX-APIKEY": self._api_key},
-                )
-                resp.raise_for_status()
-                listen_key = self._listen_key or ""
-                logger.debug(f"ListenKey keepalive: {listen_key[:8]}...")
-        except Exception as e:
-            logger.warning(f"Keepalive failed (will reconnect): {e}")
-            # Se keepalive fallisce, la listenKey potrebbe essere scaduta
-            # Ricreiamo tutto
-            await self._reconnect()
-
-    async def _keepalive_loop(self):
-        """Loop che rinnova la listenKey ogni 30 minuti."""
-        try:
-            while self._running:
-                await asyncio.sleep(self.KEEPALIVE_INTERVAL)
-                if not self._running:
-                    break
-                await self._keepalive_listen_key()
-        except asyncio.CancelledError:
-            pass
-
     async def _listen_loop(self):
-        """Loop che mantiene attiva la connessione WebSocket."""
+        """Loop principale: connette, sottoscrive, riceve eventi, riconnette."""
         import websockets
 
         while self._running:
             try:
-                if not self._ws_url:
-                    await self._reconnect()
-                    continue
-
-                logger.info(f"Connecting to User Data Stream: {self._ws_url[:40]}...")
-                async with websockets.connect(self._ws_url) as ws:
+                logger.info(f"UDS: Connecting to {self._ws_url}...")
+                async with websockets.connect(
+                    self._ws_url,
+                    ping_interval=20,
+                    ping_timeout=30,
+                ) as ws:
                     self._ws_connection = ws
-                    logger.info(f"\033[96m📡 UDS SOCKET ATTIVO: User Data Stream connesso per monitoraggio OCO in tempo reale\033[0m")
 
+                    # Invia la subscribe request con firma
+                    sub_req = self._build_subscribe_request()
+                    await ws.send(json.dumps(sub_req))
+                    logger.info(f"UDS: subscribe.signature inviata (id={sub_req['id'][:8]}...)")
+
+                    # Attendi la risposta di conferma
+                    try:
+                        resp_raw = await asyncio.wait_for(ws.recv(), timeout=10)
+                        resp = json.loads(resp_raw)
+                        if resp.get("status") == 200:
+                            result = resp.get("result", {})
+                            self._subscription_id = result.get("subscriptionId")
+                            logger.info(
+                                f"\033[96m📡 UDS SOCKET ATTIVO: subscriptionId={self._subscription_id}\033[0m"
+                            )
+                        else:
+                            logger.error(f"UDS subscribe failed: {resp}")
+                            raise UserDataStreamError(f"Subscribe failed: {resp}")
+                    except asyncio.TimeoutError:
+                        raise UserDataStreamError("UDS subscribe response timeout")
+
+                    # Loop ricezione eventi
                     while self._running:
                         try:
-                            message = await asyncio.wait_for(
-                                ws.recv(), timeout=60
-                            )
-                            await self._dispatch_message(json.loads(message))
+                            message = await asyncio.wait_for(ws.recv(), timeout=60)
+                            data = json.loads(message)
+                            await self._dispatch_message(data)
                         except asyncio.TimeoutError:
                             # Timeout normale — ping/pong gestito da websockets
                             continue
                         except websockets.exceptions.ConnectionClosed:
-                            logger.warning("User Data Stream WebSocket disconnected")
+                            logger.warning("UDS WebSocket disconnesso")
                             break
 
+            except UserDataStreamError:
+                raise  # Non riconnettere su errori di autenticazione
             except Exception as e:
-                logger.error(f"User Data Stream error: {e}")
+                logger.error(f"UDS error: {e}")
                 if self._running:
-                    logger.info(f"Reconnecting in {self.RECONNECT_DELAY}s...")
+                    logger.info(f"UDS: riconnessione in {self.RECONNECT_DELAY}s...")
                     await asyncio.sleep(self.RECONNECT_DELAY)
-                    await self._reconnect()
+
+                    # TASK-830: dopo la riconnessione, verifica OCO eseguito durante disconnessione
+                    if self._on_reconnect_sync:
+                        try:
+                            await self._on_reconnect_sync()
+                        except Exception as sync_e:
+                            logger.warning(f"UDS reconnect sync failed (non-fatal): {sync_e}")
             finally:
                 self._ws_connection = None
 
-    async def _reconnect(self):
-        """Riconnessione completa: nuova listenKey + nuovo WS."""
-        try:
-            # Cancella la vecchia listenKey
-            if self._listen_key:
-                try:
-                    async with httpx.AsyncClient() as client:
-                        await client.delete(
-                            f"{self._base_url}/api/v3/userDataStream",
-                            params={"listenKey": self._listen_key},
-                            headers={"X-MBX-APIKEY": self._api_key},
-                        )
-                except Exception:
-                    pass
-
-            # Crea nuova listenKey
-            await self._create_listen_key()
-            new_key = self._listen_key or ""
-            self._ws_url = f"{self._ws_base}/{new_key}"
-            logger.info(f"Reconnected with new listenKey: {new_key[:8]}...")
-        except Exception as e:
-            logger.error(f"Reconnect failed: {e}")
-            raise
-
     async def _dispatch_message(self, data: Dict[str, Any]):
-        """Analizza e dispatches i messaggi ricevuti dal WebSocket.
+        """Analizza i messaggi del WebSocket API Binance.
 
-        I messaggi che ci interessano sono solo executionReport con:
-        - e: "executionReport"
-        - X: "FILLED" o "EXPIRED" (order status)
+        Il WebSocket API wrappa gli eventi in un oggetto con campo "event":
+        {
+            "subscriptionId": 0,
+            "event": { "e": "executionReport", ... }
+        }
 
-        Altri tipi di messaggi (outboundAccountPosition, balanceUpdate, etc.)
-        vengono ignorati perché non rilevanti per la chiusura trade.
+        Gestisce anche i messaggi diretti (no wrapper) per compatibilità.
         """
-        event_type = data.get("e")
+        # Il WS API wrappa gli eventi in { "subscriptionId": N, "event": {...} }
+        if "event" in data:
+            event = data["event"]
+        else:
+            event = data  # fallback per messaggi non wrappati
+
+        event_type = event.get("e")
 
         if event_type == "executionReport":
-            order_status = data.get("X")  # "FILLED", "EXPIRED", "NEW", etc.
-            order_side = data.get("S")     # "BUY" o "SELL"
-            order_id = str(data.get("i"))
-            order_list_id = str(data.get("g", "-1"))
-            symbol = data.get("s")
-            fill_price = float(data.get("L", 0) or data.get("Z", 0) or 0)
+            order_status = event.get("X")  # "FILLED", "EXPIRED", "NEW", etc.
+            order_side = event.get("S")    # "BUY" o "SELL"
+            order_id = str(event.get("i"))
+            order_list_id = str(event.get("g", "-1"))
+            symbol = event.get("s")
+            # L: last executed price; Z: cumulative quote qty (fallback)
+            fill_price = float(event.get("L", 0) or event.get("Z", 0) or 0)
 
-            # Ci interessano solo ordini FILLED o EXPIRED (OCO cancellato)
+            # Ci interessano solo FILLED o EXPIRED
             if order_status not in ("FILLED", "EXPIRED"):
                 return
 
-            # Log OCO fill with visibility
             if order_list_id != "-1":
-                color = "92" if order_status == "FILLED" else "93"
-                logger.info(f"\033[{color}m⚡ OCO {order_status}: {symbol} orderId={order_id} orderListId={order_list_id} @ {fill_price}\033[0m")
+                if order_status == "FILLED":
+                    logger.info(
+                        f"\033[92m🟢 OCO FILLED: {symbol} "
+                        f"orderId={order_id} orderListId={order_list_id} @ {fill_price}\033[0m"
+                    )
+                elif order_status == "EXPIRED":
+                    logger.info(
+                        f"\033[93m🟡 OCO EXPIRED: {symbol} "
+                        f"orderId={order_id} orderListId={order_list_id}\033[0m"
+                    )
 
-            # Dispatch all'handler se registrato
             if self._on_order_update:
                 try:
                     await self._on_order_update({
@@ -292,12 +248,31 @@ class UserDataStreamManager:
                         "order_list_id": order_list_id,
                         "status": order_status.lower(),
                         "fill_price": fill_price,
+                        "leg": "take_profit" if order_id and order_list_id != "-1" and self._is_tp_order(order_id, order_list_id) else "stop_loss" if order_id and order_list_id != "-1" and self._is_sl_order(order_id, order_list_id) else "oco",
                     })
                 except Exception as e:
                     logger.error(f"[UDS] Handler error: {e}")
 
         elif event_type == "outboundAccountPosition":
-            # Aggiornamento balance — non ci serve per la chiusura trade
-            pass
+            pass  # Balance update — non necessario
+        elif event_type == "eventStreamTerminated":
+            logger.warning("[UDS] eventStreamTerminated ricevuto — riconnessione necessaria")
+            raise ConnectionError("UDS stream terminated by Binance")
         else:
-            logger.debug(f"[UDS] Ignored event type: {event_type}")
+            logger.debug(f"[UDS] Ignored event: {event_type}")
+
+    def _is_tp_order(self, order_id: str, order_list_id: str) -> bool:
+        """Controlla se l'orderId ricevuto corrisponde al TP salvato."""
+        from app.scalping.router import _execution_state
+        pos = _execution_state.get("position_manager", type("PM", (), {"get_open": lambda self: None})()).get_open()
+        if not pos or pos.oco_order_list_id != order_list_id:
+            return False
+        return bool(pos.tp_order_id and str(pos.tp_order_id) == str(order_id))
+
+    def _is_sl_order(self, order_id: str, order_list_id: str) -> bool:
+        """Controlla se l'orderId ricevuto corrisponde allo SL salvato."""
+        from app.scalping.router import _execution_state
+        pos = _execution_state.get("position_manager", type("PM", (), {"get_open": lambda self: None})()).get_open()
+        if not pos or pos.oco_order_list_id != order_list_id:
+            return False
+        return bool(pos.sl_order_id and str(pos.sl_order_id) == str(order_id))

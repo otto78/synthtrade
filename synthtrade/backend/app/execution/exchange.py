@@ -1,6 +1,6 @@
 import asyncio
 import ccxt.async_support as ccxt
-from typing import Protocol, Dict, Any, List, Literal, cast
+from typing import Protocol, Dict, Any, List, Literal, Optional, cast
 import logging
 
 logger = logging.getLogger(__name__)
@@ -23,10 +23,6 @@ class ExchangeProtocol(Protocol):
     async def place_oco_order(self, symbol: str, side: OrderSide, quantity: float,
                               price: float, stop_price: float,
                               take_profit_price: float | None = None) -> Dict[str, Any]: ...
-    async def place_stop_loss_order(self, symbol: str, side: OrderSide,
-                                    quantity: float, stop_price: float) -> Dict[str, Any]: ...
-    async def place_limit_order(self, symbol: str, side: OrderSide,
-                                quantity: float, limit_price: float) -> Dict[str, Any]: ...
 
 class BinanceExchangeAdapter:
     """
@@ -234,56 +230,39 @@ class BinanceExchangeAdapter:
         self._filters_cache[symbol] = filters
         return filters
 
-    # ── TASK-801 + FIX-2026-06-05: Stop Loss, Take Profit, OCO ──────────────────
+    # ── TASK-801 + OCO_FLOW v2: Solo OCO nativo Binance ──────────────────────
 
     async def place_oco_order(self, symbol: str, side: OrderSide, quantity: float,
                               price: float, stop_price: float,
                               take_profit_price: float | None = None) -> Dict[str, Any]:
         """
-        Place OCO (One-Cancels-Other) order.
-        
-        Strategy:
-        1. Wait for balance settlement after the market fill (0.5s + fetch_balance).
-        2. Read the ACTUAL available base asset balance (post-fee deduction).
-        3. Try native Binance OCO first (single atomic order, no double-lock).
-        4. Fallback to synthetic OCO (TP LIMIT first, then SL STOP_LOSS).
-        
-        IMPORTANT: After a market buy, Binance deducts ~0.1% fee in the base asset.
-        The quantity passed by the caller (e.g. 0.016 BNB) may be higher than
-        the actual balance (e.g. 0.015984 BNB). We always read the real balance here.
-        
-        Both orders persist on Binance even if the bot disconnects.
+        Place OCO (One-Cancels-Other) order — solo nativo Binance, nessun fallback sintetico.
+
+        1. Attende settlement del balance post-market fill (0.5s + fetch_balance).
+        2. Legge il balance REALE del base asset (post-fee deduction).
+        3. Piazza OCO nativo Binance (unico metodo consentito).
+
+        Se OCO nativo fallisce, solleva ExchangeOrderError: il chiamante (router.py)
+        gestisce il caso B (market sell di emergenza + broadcast error).
         """
-        logger.info(f"Placing risk parachute for {symbol}: TP={price}, SL={stop_price}")
-        
+        logger.info(f"Placing OCO for {symbol}: TP={price}, SL={stop_price}")
+
         # Wait for balance settlement after the market fill
         await asyncio.sleep(0.5)
         try:
             await self.client.fetch_balance()
         except Exception:
             pass
-        
+
         # Get actual available base asset balance (after fee deduction)
         actual_qty = await self._get_available_base_balance(symbol)
         if actual_qty <= 0:
             logger.warning(f"No {symbol} base asset balance available after trade")
-            return {"type": "oco", "status": "no_balance"}
-        
+            raise ExchangeOrderError(f"No base asset balance available for {symbol} OCO")
+
         qty_rounded = await self._round_qty(symbol, actual_qty)
-        
-        # Strategy 1: Try native OCO (single atomic order, best for double-lock)
-        try:
-            result = await self._place_oco_native(
-                symbol=symbol, side=side, quantity=qty_rounded,
-                price=price, stop_price=stop_price,
-                take_profit_price=take_profit_price,
-            )
-            return result
-        except Exception as oco_e:
-            logger.warning(f"Native OCO failed for {symbol}, falling back to synthetic: {oco_e}")
-        
-        # Strategy 2: Fallback to synthetic OCO (TP LIMIT first, SL STOP_LOSS second)
-        return await self._place_oco_synthetic(
+
+        return await self._place_oco_native(
             symbol=symbol, side=side, quantity=qty_rounded,
             price=price, stop_price=stop_price,
             take_profit_price=take_profit_price,
@@ -361,70 +340,6 @@ class BinanceExchangeAdapter:
         except Exception as e:
             raise ExchangeOrderError(f"Native OCO failed for {symbol}: {e}")
 
-    async def _place_oco_synthetic_inverted(self, symbol: str, side: OrderSide, quantity: float,
-                                            price: float, stop_price: float,
-                                            take_profit_price: float | None = None) -> Dict[str, Any]:
-        """
-        Synthetic OCO with inverted order: SL STOP_LOSS first (with reduceOnly), TP LIMIT second.
-        
-        For small quantities (< 0.1 BNB equivalent), placing TP LIMIT first reserves the balance,
-        then STOP_LOSS fails with "insufficient balance" because the same qty is locked.
-        
-        Solution: Place SL first with reduceOnly flag (no balance reservation), then TP LIMIT.
-        If only one succeeds, the position monitor on WS will handle the other direction.
-        """
-        # Wait for balance settlement after the market fill
-        await asyncio.sleep(0.5)
-        try:
-            await self.client.fetch_balance()
-        except Exception:
-            pass
-
-        # Get actual available base asset balance (after fee deduction)
-        actual_qty = await self._get_available_base_balance(symbol)
-        if actual_qty <= 0:
-            logger.warning(f"No {symbol} base asset balance available after trade")
-            return {"type": "oco_synthetic_inverted", "status": "no_balance"}
-
-        qty_rounded = await self._round_qty(symbol, actual_qty)
-
-        # STEP 1: Place STOP_LOSS first with reduceOnly flag.
-        # reduceOnly=true tells Binance not to reserve balance separately,
-        # avoiding the "insufficient balance" error on small quantities.
-        sl_result = None
-        try:
-            sl_result = await self.place_stop_loss_order(
-                symbol=symbol,
-                side=side,
-                quantity=qty_rounded,
-                stop_price=stop_price,
-            )
-            logger.info(f"Stop loss placed: {sl_result.get('order_id')} @ {stop_price}")
-        except Exception as sl_e:
-            logger.warning(f"Stop loss placement failed (non-fatal, position tracked): {sl_e}")
-        
-        # STEP 2: Place TP LIMIT second.
-        tp_result = None
-        if take_profit_price:
-            try:
-                tp_result = await self.place_limit_order(
-                    symbol=symbol,
-                    side=side,
-                    quantity=qty_rounded,
-                    limit_price=take_profit_price,
-                )
-                logger.info(f"Take profit limit placed: {tp_result.get('order_id')} @ {take_profit_price}")
-            except Exception as tp_e:
-                logger.warning(f"Take profit limit failed (non-fatal, position tracked): {tp_e}")
-        
-        return {
-            "type": "oco_synthetic_inverted",
-            "order_id": sl_result.get("order_id") if sl_result else tp_result.get("order_id") if tp_result else None,
-            "stop_loss_id": sl_result.get("order_id") if sl_result else None,
-            "take_profit_id": tp_result.get("order_id") if tp_result else None,
-            "status": "placed",
-        }
-
     async def _get_available_base_balance(self, symbol: str) -> float:
         """Get the free (available) balance of the base asset for a symbol.
         
@@ -442,111 +357,20 @@ class BinanceExchangeAdapter:
             logger.warning(f"Could not fetch base balance for {symbol}: {e}")
             return 0.0
 
-    async def _place_oco_synthetic(self, symbol: str, side: OrderSide, quantity: float,
-                                    price: float, stop_price: float,
-                                    take_profit_price: float | None = None) -> Dict[str, Any]:
-        """
-        Synthetic OCO: stop loss (STOP_LOSS market) + take profit (LIMIT) as separate orders.
-        
-        Wait for balance settlement after market order before placing stop loss,
-        otherwise Binance returns "insufficient balance" because the asset
-        hasn't settled yet.
-        
-        IMPORTANT: After a market buy, Binance deducts ~0.1% fee in the base asset.
-        So if you bought 0.016 BNB, you may only have 0.015984 BNB to sell.
-        This function reads the ACTUAL balance from the exchange after settlement.
-        """
-        # Wait for balance settlement after the market fill
-        await asyncio.sleep(0.5)
-        try:
-            await self.client.fetch_balance()
-        except Exception:
-            pass
+    async def _fetch_fill_price_by_order_id(self, symbol: str, order_id: str) -> Optional[float]:
+        """Recupera il fill price di un ordine specifico tramite orderId.
 
-        # Get actual available base asset balance (after fee deduction)
-        actual_qty = await self._get_available_base_balance(symbol)
-        if actual_qty <= 0:
-            logger.warning(f"No {symbol} base asset balance available after trade")
-            return {"type": "oco_synthetic", "status": "no_balance"}
-
-        qty_rounded = await self._round_qty(symbol, actual_qty)
-
-        sl_result = None
-        try:
-            sl_result = await self.place_stop_loss_order(
-                symbol=symbol,
-                side=side,
-                quantity=qty_rounded,
-                stop_price=stop_price,
-            )
-        except Exception as sl_e:
-            logger.warning(f"Stop loss placement failed (non-fatal, position tracked): {sl_e}")
-        
-        tp_result = None
-        if take_profit_price:
-            try:
-                tp_result = await self.place_limit_order(
-                    symbol=symbol,
-                    side=side,
-                    quantity=qty_rounded,
-                    limit_price=take_profit_price,
-                )
-            except Exception as tp_e:
-                logger.warning(f"Take profit limit failed (non-fatal): {tp_e}")
-        
-        return {
-            "type": "oco_synthetic",
-            "order_id": sl_result.get("order_id") if sl_result else None,
-            "stop_loss_id": sl_result.get("order_id") if sl_result else None,
-            "take_profit_id": tp_result.get("order_id") if tp_result else None,
-            "status": "placed",
-        }
-
-    async def place_stop_loss_order(self, symbol: str, side: OrderSide, quantity: float, stop_price: float) -> Dict[str, Any]:
-        """
-        Place a STOP_LOSS (market) order — executes as market sell when stop_price is hit.
-        More reliable on Binance mainnet than STOP_LOSS_LIMIT which requires extra params.
+        Usato da restore sessione per trovare il prezzo di chiusura dell'OCO
+        tramite sl_order_id o tp_order_id salvati in DB.
         """
         try:
             ccxt_symbol = await self._get_ccxt_symbol(symbol)
-            order_type_cast = cast(Any, "STOP_LOSS")
-            order = await self.client.create_order(
-                ccxt_symbol,
-                order_type_cast,
-                side,
-                quantity,
-                params={"stopPrice": stop_price}
-            )
-            return {
-                "order_id": order.get("id", "unknown"),
-                "type": "stop_loss",
-                "status": order.get("status", "unknown"),
-                "stop_price": stop_price,
-                "quantity": order.get("amount", quantity),
-            }
+            orders = await self.client.fetch_closed_orders(ccxt_symbol, limit=50)
+            for o in orders:
+                if str(o.get("id")) == str(order_id):
+                    fill = float(o.get("price") or o.get("average") or 0)
+                    if fill > 0:
+                        return fill
         except Exception as e:
-            raise ExchangeOrderError(f"Stop loss failed for {symbol}: {e}")
-
-    async def place_limit_order(self, symbol: str, side: OrderSide,
-                                quantity: float, limit_price: float) -> Dict[str, Any]:
-        """
-        TASK-801: Place a standard LIMIT order.
-        """
-        try:
-            ccxt_symbol = await self._get_ccxt_symbol(symbol)
-            order = await self.client.create_order(
-                ccxt_symbol,
-                "limit",
-                side,
-                quantity,
-                limit_price
-            )
-            return {
-                "order_id": order.get("id", "unknown"),
-                "type": "limit",
-                "status": order.get("status", "unknown"),
-                "price": order.get("price", limit_price),
-                "quantity": order.get("amount", quantity),
-            }
-        except Exception as e:
-            raise ExchangeOrderError(f"Limit order failed for {symbol}: {e}")
+            logger.warning(f"_fetch_fill_price_by_order_id failed for {symbol} orderId={order_id}: {e}")
+        return None

@@ -21,6 +21,10 @@ def build_scalping_context(
         "regime_confidence": regime.confidence if regime else 0.0,
     }
 
+    # Threshold corrente (può essere modificato dal Supervisor stesso)
+    from app.scalping.config_loader import get_scalping_config
+    context["current_threshold"] = get_scalping_config().signal_strength_threshold
+
     if snapshot:
         # Funding Rate
         if snapshot.funding_rate:
@@ -62,6 +66,20 @@ def build_scalping_context(
             "tradeable": score.tradeable,
             "breakdown": score.breakdown,
         }
+
+        # Calcola gap per passare il gate
+        abs_score = abs(score.total)
+        threshold = context["current_threshold"]
+        gap = threshold - abs_score
+        context["threshold_gap"] = round(gap, 1)
+
+    # Collector attivi e assenti — letti dal breakdown dello score (quali collector hanno risposto)
+    if score and score.breakdown:
+        active_collectors = list(score.breakdown.keys())
+        all_possible = ["funding_rate", "cvd", "open_interest", "long_short_ratio", "fear_greed", "sentiment", "whale"]
+        missing = [c for c in all_possible if c not in active_collectors]
+        context["active_collectors"] = active_collectors
+        context["missing_collectors"] = missing
 
     return context
 

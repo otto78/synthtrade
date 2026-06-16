@@ -553,3 +553,16 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - ✅ **TASK-806 - AI Supervisor**: Integrazione moduli core esistenti. Esteso supervisor context, parameter updater, supervisor scheduler con 20+ test.
 - ✅ **TASK-807 - Scheduler Centralizzato**: 4 job scalping registrati, SupervisorScheduler con run_once(), 15 test passanti.
 - ✅ **TASK-808 - Backtest Engine**: HistoricalLoader, BacktestEngine, PerformanceCalculator, 10+ test su dati storici mock.
+
+---
+
+## v0.1.6 — 2026-06-16
+
+**Milestone:** Supervisor Threshold Control + Context Enrichment
+
+**Completato:**
+- ✅ **TASK-849** — Fix log soglia in SignalAggregator (mostra threshold reale 15.0, non |score|)
+- ✅ **TASK-850** — Threshold dinamico da ConfigLoader in SignalScoreEngine (aggiornabile a runtime)
+- ✅ **TASK-851** — Azione `update_threshold` nel Supervisor AI (nuova action, model, parameter_updater, prompt)
+- ✅ **TASK-852** — Context arricchito threshold per Supervisor (score, gap, collector attivi/assenti, coverage)
+- ✅ **TASK-853** — Limiti sicurezza [5.0, 30.0] e cooldown 30 min per update_threshold

@@ -13,7 +13,7 @@ class SupervisorDecision(BaseModel):
     """Decisione del supervisor AI."""
     model_config = ConfigDict(frozen=True)
 
-    action: str = Field(..., pattern=r"^(update_params|change_strategy|pause_trading|resume_trading|no_action)$")
+    action: str = Field(..., pattern=r"^(update_params|change_strategy|update_threshold|pause_trading|resume_trading|no_action)$")
     reason: str
     confidence: float = Field(..., ge=0.0, le=1.0)
     market_bias: Optional[str] = Field(default=None, pattern=r"^(bullish|bearish|neutral)$")

@@ -154,7 +154,12 @@ class SignalAggregator:
 
         # Se lo score non e' tradeable, blocca (solo in modalità normale)
         if not market_score.tradeable:
-            reason = f"score intelligence {market_score.total:.1f} < soglia {market_score.signal_strength:.1f}"
+            from app.config import settings
+            reason = (
+                f"score intelligence {market_score.total:.1f} < threshold "
+                f"{settings.scalping.SCALPING_SIGNAL_STRENGTH_THRESHOLD} "
+                f"(|score|={market_score.signal_strength:.1f})"
+            )
             logger.warning(f"{RED}🔴 BLOCK: {symbol} {reason} (bias={market_score.bias}){RESET}")
             return ExecutionDecision(
                 execute=False,

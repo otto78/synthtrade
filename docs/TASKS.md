@@ -555,6 +555,102 @@ Fix issues identified from live session logs:
 
 ---
 
+### TASK-849 — Fix log soglia in SignalAggregator (2026-06-16)
+
+**Status:** Complete ✅
+
+**Problema:** Il log mostrava `🔴 BLOCK: score -9.5 < soglia 9.5` usando `signal_strength` (valore assoluto dello score) come soglia, facendo sembrare che la soglia fosse ancora scalata dynamicamente. In realtà la soglia era già fissa a 15.0.
+
+**Fix:** Sostituito `market_score.signal_strength` con `settings.scalping.SCALPING_SIGNAL_STRENGTH_THRESHOLD` nel messaggio di log.
+
+**Log dopo il fix:** `🔴 BLOCK: score -9.4 < threshold 15.0 (|score|=9.4) (bias=neutral)` ✅
+
+---
+
+### TASK-850 — Threshold dinamico da ConfigLoader in SignalScoreEngine (2026-06-16)
+
+**Status:** Complete ✅
+
+**Problema:** `SignalScoreEngine` leggeva la soglia da `settings.__init__()` e non si aggiornava a runtime. Il Supervisor non poteva modificarla.
+
+**Fix:** `get_snapshot()` ora legge la soglia da `ScalpingConfigLoader` a ogni ciclo:
+```python
+config_loader = get_scalping_config()
+runtime_threshold = config_loader.signal_strength_threshold
+```
+Un cambio su DB (via `POST /api/scalping/config/signal_strength_threshold`) ha effetto immediato, senza restart.
+
+---
+
+### TASK-851 — Azione update_threshold nel Supervisor AI (2026-06-16)
+
+**Status:** Complete ✅
+
+**Nuova azione** `update_threshold` nel repertorio del Supervisor.
+
+**File modificati:**
+- `app/scalping/models/supervisor.py` — regex action include `update_threshold`
+- `app/scalping/supervisor/parameter_updater.py` — nuovo metodo `_update_threshold()`: upsert su `scalping_runtime_config` + reload config loader
+- `app/scalping/supervisor/supervisor_scheduler.py` — broadcast mapping per nuova azione
+- `app/ai/supervisor_context.py` — `current_threshold` aggiunto al contesto del Supervisor
+- `app/scalping/supervisor/supervisor_client.py` — prompt aggiornato con regole per update_threshold, threshold mostrato nel context formattato
+- `app/ai/eval_parser.py` — `update_threshold` aggiunto a `_VALID_ACTIONS`
+
+**Regole nel prompt:**
+- Se score sempre sotto soglia ma segnale tecnico forte → abbassa (10.0 consigliato)
+- Se molti falsi segnali → alza (18.0 consigliato)
+- Se coverage < 60% → non abbassare (dati inaffidabili)
+- Usa update_threshold prima di change_strategy come alternativa conservativa
+
+---
+
+### TASK-852 — Fase 0: Context arricchito threshold per Supervisor (2026-06-16)
+
+**Status:** Complete ✅
+
+**Problema:** Il Supervisor non conosceva il valore corrente della soglia quando prendeva decisioni. Senza vedere score, gap, collector attivi/assenti, non poteva ragionare in modo informato.
+
+**Cosa aggiunto al prompt utente:**
+```
+=== CONFIGURAZIONE INTELLIGENCE ===
+Soglia score minima (threshold): 15.0
+Score attuale: -9.5 (|score|=9.5)
+Gap per passare il gate: -5.5 punti
+Bias: neutral
+Collector attivi: 5/7 (funding_rate, cvd, open_interest, fear_greed, sentiment)
+Collector assenti: whale
+Coverage: 71%
+✅ Coverage buono — modifiche soglia consentite
+```
+
+**File modificati:**
+- `app/ai/supervisor_context.py` — `threshold_gap`, `active_collectors`, `missing_collectors` nel context
+- `app/scalping/supervisor/supervisor_client.py` — `_format_context()` sezione `=== CONFIGURAZIONE INTELLIGENCE ===`
+
+---
+
+### TASK-853 — Limiti sicurezza e cooldown per update_threshold (2026-06-16)
+
+**Status:** Complete ✅
+
+**Problema:** Il Supervisor poteva azzerare la soglia (trade senza filtro) o impostarla a valori irraggiungibili (nessun trade). Poteva anche cambiarla a ogni tick, causando instabilità.
+
+**Aggiunte:**
+1. **Limiti di sicurezza** in `parameter_updater._update_threshold()`: soglia clampata tra [5.0, 30.0]
+2. **Cooldown 30 minuti** in `supervisor_scheduler.py`: `THRESHOLD_CHANGE_COOLDOWN = 1800` + tracking `_last_threshold_change`
+3. **Prompt aggiornato** con regole aggiuntive:
+   - Score stabile tra -5 e +5 per 10+ candele in ranging → abbassa a 8-10
+   - Trade in perdita consecutiva → alza di 2-3 punti
+   - Non modificare più di una volta ogni 30 minuti
+   - Limiti: min 5.0, max 30.0
+
+**File modificati:**
+- `app/scalping/supervisor/parameter_updater.py` — clamp [5.0, 30.0]
+- `app/scalping/supervisor/supervisor_scheduler.py` — cooldown 30min
+- `app/scalping/supervisor/supervisor_client.py` — prompt esteso
+
+---
+
 ### TASK-822 — Config panel: rimuovere sub-tab "Strategy" e aggiungere titolo "Session" con ID (2026-06-09)
 
 **Status:** Complete ✅

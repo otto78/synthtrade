@@ -31,6 +31,7 @@ REGIME_ALLOWED_STRATEGIES: Dict[str, List[str]] = {
 from app.config import settings
 STRATEGY_CHANGE_COOLDOWN = settings.scalping.SCALPING_STRATEGY_COOLDOWN_SEC
 PARAM_UPDATE_COOLDOWN = settings.scalping.SCALPING_PARAM_UPDATE_COOLDOWN_SEC
+THRESHOLD_CHANGE_COOLDOWN = 1800  # 30 minuti — modifiche soglia meno frequenti di strategia
 
 
 class SupervisorScheduler:
@@ -55,6 +56,7 @@ class SupervisorScheduler:
         # Cooldown timestamps
         self._last_strategy_change: float = 0.0
         self._last_param_update: float = 0.0
+        self._last_threshold_change: float = 0.0
 
     def set_execution_loop(self, loop: ExecutionLoop) -> None:
         self._loop = loop
@@ -150,6 +152,17 @@ class SupervisorScheduler:
                 return decision
             self._last_param_update = now
 
+        if decision.action == "update_threshold":
+            elapsed = now - self._last_threshold_change
+            if elapsed < THRESHOLD_CHANGE_COOLDOWN:
+                remaining_min = int((THRESHOLD_CHANGE_COOLDOWN - elapsed) / 60)
+                logger.info(
+                    f"⏳ Threshold change cooldown attivo — {remaining_min} min rimanenti. "
+                    f"Modifica soglia ignorata"
+                )
+                return decision
+            self._last_threshold_change = now
+
         # ── Regime validation: impedisce strategie sbagliate per il regime ──
         # Il supervisor AI può alucinare e scegliere ema_cross in ranging.
         # Questa validazione agisce come barriera di sicurezza: se la strategia
@@ -178,6 +191,7 @@ class SupervisorScheduler:
             action_map = {
                 "update_params": "update_params",
                 "change_strategy": "change_strategy",
+                "update_threshold": "update_threshold",
                 "pause_trading": "pause_trading",
                 "resume_trading": "resume_trading",
                 "no_action": "no_action"

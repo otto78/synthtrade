@@ -161,6 +161,7 @@ class SignalScoreEngine:
             MarketIntelSnapshot, FundingRate, OpenInterest, LongShortRatio, 
             FearGreedData, SentimentData, WhaleData, OnChainData
         )
+        from app.scalping.config_loader import get_scalping_config
 
         # Normalizza simbolo per collector futures: USDC → USDT
         # Binance Futures (funding rate, OI, long/short) usa solo USDT perpetual.
@@ -274,7 +275,13 @@ class SignalScoreEngine:
         # I collector restituiscono già un valore scalato [-100..+100]
         total = max(-100.0, min(100.0, round(normalized_score, 1)))
 
-        # Determina bias e tradeable con soglia FISSA (non scalata a coverage)
+        # Determina bias e tradeable — soglia letta da config loader runtime (aggiornabile da Supervisor)
+        # NOTA: la soglia viene riletta a ogni get_snapshot() dal config loader, che fa merge
+        # settings.env + override DB. Questo permette al Supervisor di modificare la soglia
+        # a caldo tramite update_threshold senza restart del backend.
+        config_loader = get_scalping_config()
+        runtime_threshold = config_loader.signal_strength_threshold  # default settings 15.0, override DB
+        
         total_weight_configured = sum(w for w in self.weights.values() if w > 0)
         coverage = total_weight / total_weight_configured if total_weight_configured > 0 else 0.0
         
@@ -282,11 +289,11 @@ class SignalScoreEngine:
         if coverage < 0.5:
             bias = "neutral"
             tradeable = False
-            effective_threshold = self.threshold  # per debug log
+            effective_threshold = runtime_threshold  # per debug log
         else:
-            # Gate 2: Soglia FISSA (indipendente da coverage)
+            # Gate 2: Soglia da config loader (modificabile dal Supervisor a runtime)
             # Lo score deve davvero superare la soglia per essere valido
-            effective_threshold = self.threshold  # 15.0 fisso
+            effective_threshold = runtime_threshold  
             
             if total >= effective_threshold:
                 bias = "bullish"

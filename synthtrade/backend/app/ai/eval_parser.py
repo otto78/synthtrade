@@ -7,7 +7,7 @@ from app.scalping.models.supervisor import SupervisorDecision
 logger = logging.getLogger(__name__)
 
 _VALID_VERDICTS = {"PROMOTE", "HOLD", "DEMOTE"}
-_VALID_ACTIONS = {"update_params", "change_strategy", "pause_trading", "resume_trading", "no_action"}
+_VALID_ACTIONS = {"update_params", "change_strategy", "update_threshold", "pause_trading", "resume_trading", "no_action"}
 _MD_JSON_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
 
 

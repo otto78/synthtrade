@@ -36,7 +36,7 @@ import { Position } from '../models/position.model';
         </div>
         
         <div class="row pnl" [ngClass]="position.pnl >= 0 ? 'profit' : 'loss'">
-          <span class="pnl-value">PnL: {{ position.pnl | number:'1.2-2' }} USDT</span>
+          <span class="pnl-value">PnL: {{ position.pnl | number:'1.2-2' }} {{ quoteAsset }}</span>
           <span class="pnl-pct">{{ position.pnl_pct | number:'1.2-2' }}%</span>
         </div>
         
@@ -170,9 +170,16 @@ import { Position } from '../models/position.model';
 })
 export class PositionTickerComponent implements OnInit, OnDestroy {
   position: Position | null = null;
+  quoteAsset: string = 'USDT';
   private posSub?: Subscription;
   private posUpdateSub?: Subscription;
   private readonly POSITION_API = '/api/scalping/position';
+
+  private _updateQuoteAsset(symbol: string): void {
+    if (symbol.endsWith('USDC')) this.quoteAsset = 'USDC';
+    else if (symbol.endsWith('EUR')) this.quoteAsset = 'EUR';
+    else this.quoteAsset = 'USDT';
+  }
 
   constructor(
     private ws: ScalpingWsService,
@@ -188,6 +195,7 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
     this.posSub = this.ws.position$.pipe(
       filter(event => event !== null)
     ).subscribe((event: PositionEvent) => {
+      this._updateQuoteAsset(event.symbol);
       this.position = {
         symbol: event.symbol,
         side: event.side,
@@ -231,6 +239,7 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
       next: (pos) => {
         if (pos) {
           const side = pos.side === 'BUY' ? 'BUY' as const : 'SELL' as const;
+          this._updateQuoteAsset(pos.symbol);
           this.position = {
             symbol: pos.symbol,
             side: side,

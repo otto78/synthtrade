@@ -119,6 +119,16 @@ import { ConfigService } from '../../core/services/config.service';
             <span class="meta-label">Avviata</span>
             <span class="meta-value">{{ session.started_at | date:'HH:mm:ss' }}</span>
           </div>
+          <div class="meta-item" *ngIf="session.first_trade_entry">
+            <span class="meta-label">Entry Ref</span>
+            <span class="meta-value">{{ session.first_trade_entry | number:'1.2-2' }} {{ getQuoteAsset() }}</span>
+          </div>
+          <div class="meta-item" *ngIf="session.hold_pnl_pct !== undefined && session.hold_pnl_pct !== null">
+            <span class="meta-label">Hold</span>
+            <span class="meta-value" [ngClass]="session.hold_pnl_pct >= 0 ? 'hold-pos' : 'hold-neg'">
+              {{ session.hold_pnl_pct >= 0 ? '+' : '' }}{{ session.hold_pnl_pct | number:'1.2-2' }}%
+            </span>
+          </div>
         </div>
 
         <!-- Trade Value edit while session is running -->
@@ -457,6 +467,8 @@ import { ConfigService } from '../../core/services/config.service';
       color: var(--text-primary);
     }
     .meta-value.live-val { color: var(--accent-success, #26a69a); }
+    .meta-value.hold-pos { color: var(--accent-success, #26a69a); font-weight: 700; }
+    .meta-value.hold-neg { color: var(--accent-danger, #ef5350); font-weight: 700; }
 
     /* Action buttons */
     .action-row {

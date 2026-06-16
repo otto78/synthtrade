@@ -13,6 +13,8 @@ export interface ScalpingSession {
   paper_balance: number;
   live_balance?: number;
   trade_value?: number;
+  first_trade_entry?: number;
+  hold_pnl_pct?: number;
 }
 
 export interface SessionControl {

@@ -2005,6 +2005,31 @@ def _snapshot_to_dict(symbol: str, snapshot: Any) -> Dict[str, Any]:
 # Session endpoints
 # ---------------------------------------------------------------------------
 
+def _calc_session_entry_and_hold(trade_history: List[Dict], current_price: Optional[float] = None):
+    """Calcola prezzo primo trade della sessione e hold PnL vs current price.
+    
+    Args:
+        trade_history: Lista dei trade della sessione
+        current_price: Prezzo corrente (ultima candela) per calcolare hold PnL
+    
+    Returns:
+        tuple: (first_trade_entry, hold_pnl_pct) — None se non ci sono trade chiusi
+    """
+    closed = [t for t in trade_history if t.get("exit_price") is not None]
+    if not closed:
+        return None, None
+    # Primo trade storico (più vecchio)
+    oldest = sorted(closed, key=lambda t: t.get("timestamp", ""))[0]
+    entry = oldest.get("entry_price")
+    if entry is None or entry <= 0:
+        return None, None
+    if current_price is not None and current_price > 0:
+        hold_pnl = ((current_price - entry) / entry) * 100
+    else:
+        hold_pnl = None
+    return float(entry), round(hold_pnl, 2) if hold_pnl is not None else None
+
+
 @router.get("/session")
 async def get_session() -> Dict:
     """Get current session status.
@@ -2020,6 +2045,19 @@ async def get_session() -> Dict:
     guard = _execution_state.get("session_load_guard")
     if guard:
         result["load_guard"] = guard.monitor_data
+    
+    # Aggiungi entry price e hold PnL (calcolati dai trade history)
+    loop = _execution_state.get("loop")
+    current_price = None
+    if loop and hasattr(loop, "_candle_buffer") and loop._candle_buffer and loop._candle_buffer.latest:
+        current_price = float(loop._candle_buffer.latest.close)
+    first_entry, hold_pnl = _calc_session_entry_and_hold(
+        _execution_state.get("trade_history", []),
+        current_price,
+    )
+    result["first_trade_entry"] = first_entry
+    result["hold_pnl_pct"] = hold_pnl
+    
     return result
 
 

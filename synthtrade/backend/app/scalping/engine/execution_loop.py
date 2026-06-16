@@ -51,7 +51,8 @@ class ExecutionLoop:
     ):
         self._symbol = symbol
         self._candle_buffer = candle_buffer or CandleBuffer()
-        self._signal_engine = signal_engine or SignalScoreEngine(symbol=self._symbol)
+        # Usa singleton per evitare multiple istanze dello stesso engine
+        self._signal_engine = signal_engine or SignalScoreEngine.get_or_create(symbol=self._symbol)
         self._signal_aggregator = signal_aggregator or SignalAggregator()
         self._regime_detector = regime_detector or RegimeDetector()
         self._strategy_selector = strategy_selector or StrategySelector()

@@ -52,7 +52,8 @@ async def intelligence_snapshot_job() -> None:
             logger.debug("Intel snapshot job: no active session — skipping")
             return
 
-        engine = SignalScoreEngine(symbol=active_symbol)
+        # Usa singleton per garantire che snapshot_job e execution_loop usino la STESSA istanza
+        engine = SignalScoreEngine.get_or_create(symbol=active_symbol)
         snapshot = await engine.get_snapshot()
         if snapshot is None:
             logger.warning("Intel snapshot job: snapshot is None")

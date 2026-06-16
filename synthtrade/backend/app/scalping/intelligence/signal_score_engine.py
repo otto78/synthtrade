@@ -73,6 +73,9 @@ class SignalScoreEngine:
         score = await engine.compute()
     """
 
+    # Global registry per evitare istanze duplicate dello stesso simbolo
+    _instances: Dict[str, "SignalScoreEngine"] = {}
+
     def __init__(
         self,
         symbol: str = "BTCUSDT",
@@ -99,6 +102,29 @@ class SignalScoreEngine:
         
         # CVDCalculator e' diverso: non fa chiamate HTTP, accumula trades
         self._cvd_calculator: Optional[CVDCalculator] = None
+
+    @classmethod
+    def get_or_create(
+        cls,
+        symbol: str = "BTCUSDT",
+        weights: Optional[Dict[str, float]] = None,
+        threshold: Optional[float] = None,
+        timeout: float = 10.0,
+    ) -> "SignalScoreEngine":
+        """Factory method: ritorna istanza singleton per simbolo.
+        
+        Se una istanza per questo simbolo esiste già, la ritorna.
+        Altrimenti crea una nuova e la registra nel global registry.
+        """
+        if symbol not in cls._instances:
+            cls._instances[symbol] = cls(
+                symbol=symbol,
+                weights=weights,
+                threshold=threshold,
+                timeout=timeout
+            )
+            logger.debug(f"[SignalScoreEngine] Created singleton instance for {symbol}")
+        return cls._instances[symbol]
 
     def _set_cvd_calculator(self, calculator: CVDCalculator) -> None:
         """Collega un CVDCalculator esterno (alimentato dal WS client)."""
@@ -248,20 +274,45 @@ class SignalScoreEngine:
         # I collector restituiscono già un valore scalato [-100..+100]
         total = max(-100.0, min(100.0, round(normalized_score, 1)))
 
-        # Determina bias con soglia scalata alla coverage dei collector
+        # Determina bias e tradeable con soglia FISSA (non scalata a coverage)
         total_weight_configured = sum(w for w in self.weights.values() if w > 0)
         coverage = total_weight / total_weight_configured if total_weight_configured > 0 else 0.0
-        effective_threshold = self.threshold * coverage
-
-        if total >= effective_threshold:
-            bias = "bullish"
-        elif total <= -effective_threshold:
-            bias = "bearish"
-        else:
+        
+        # Gate 1: Skip se coverage insufficiente (meno del 50% dei dati disponibili)
+        if coverage < 0.5:
             bias = "neutral"
+            tradeable = False
+            effective_threshold = self.threshold  # per debug log
+        else:
+            # Gate 2: Soglia FISSA (indipendente da coverage)
+            # Lo score deve davvero superare la soglia per essere valido
+            effective_threshold = self.threshold  # 15.0 fisso
+            
+            if total >= effective_threshold:
+                bias = "bullish"
+            elif total <= -effective_threshold:
+                bias = "bearish"
+            else:
+                bias = "neutral"
+            
+            tradeable = abs(total) >= effective_threshold and bias != "neutral"
 
-        # Tradeable con la stessa soglia scalata
-        tradeable = abs(total) >= effective_threshold and bias != "neutral"
+        # DEBUG: log dettagliato per diagnosticare scala reale dei collector
+        logger.debug(
+            "[ScoreEngine DEBUG] raw_scores=%s | weighted_sum=%.4f | total_weight=%.4f | "
+            "weighted_avg=%.4f | coverage=%.4f (%.0f%%) | threshold_configured=%.4f | "
+            "final_total=%.1f | bias=%s | tradeable=%s",
+            {k: round(v, 4) for k, v in breakdown.items()},
+            weighted_score,
+            total_weight,
+            normalized_score,
+            coverage,
+            coverage * 100,
+            self.threshold,
+            total,
+            bias,
+            tradeable
+        )
 
         logger.debug(
             f"[ScoreEngine] {self.symbol} total={total:.1f} "

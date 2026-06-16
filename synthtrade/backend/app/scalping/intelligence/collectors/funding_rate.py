@@ -18,6 +18,15 @@ from app.scalping.models.intelligence import FundingRate
 
 BINANCE_FUNDING_RATE_URL = "https://fapi.binance.com/fapi/v1/fundingRate"
 
+# Mappa simboli spot → futures perpetual per collector
+# I dati di funding rate esistono SOLO su USDT perpetual futures.
+# USDC spot è equivalente come sottostante (BNB), quindi usiamo USDT come proxy.
+FUTURES_SYMBOL_MAP = {
+    "BNBUSDC": "BNBUSDT",
+    "BTCUSDC": "BTCUSDT",
+    "ETHUSDC": "ETHUSDT",
+}
+
 
 class FundingRateCollector:
     """Collettore funding rate da Binance Futures.
@@ -43,8 +52,11 @@ class FundingRateCollector:
             FundingRate se la chiamata ha successo, None altrimenti.
         """
         try:
+            # Mappa USDC → USDT per i futures perpetual
+            futures_symbol = FUTURES_SYMBOL_MAP.get(symbol.upper(), symbol.upper())
+
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                params = {"symbol": symbol.upper(), "limit": 1}
+                params = {"symbol": futures_symbol, "limit": 1}
                 response = await client.get(BINANCE_FUNDING_RATE_URL, params=params)
                 response.raise_for_status()
 

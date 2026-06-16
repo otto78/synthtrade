@@ -1,6 +1,7 @@
 """Supervisor Scheduler - orchestrazione periodica ogni 10 minuti."""
 
 import asyncio
+import json
 import logging
 import time
 from typing import Optional, Dict, List
@@ -57,6 +58,8 @@ class SupervisorScheduler:
         self._last_strategy_change: float = 0.0
         self._last_param_update: float = 0.0
         self._last_threshold_change: float = 0.0
+        # Strategia corrente (rilevata dal loop)
+        self._current_strategy: Optional[str] = None
 
     def set_execution_loop(self, loop: ExecutionLoop) -> None:
         self._loop = loop
@@ -86,31 +89,100 @@ class SupervisorScheduler:
     async def run_once(self) -> Optional[SupervisorDecision]:
         return await self._tick()
 
+    async def _save_decision_to_memory(
+        self,
+        decision: SupervisorDecision,
+        was_applied: bool = False,
+        blocked_reason: Optional[str] = None,
+    ):
+        """Salva la decisione del supervisor nella tabella supervisor_memory.
+
+        TASK-847: Persistenza memoria supervisor. Chiamata dopo ogni tick
+        con flag was_applied=True/False e blocked_reason se non applicata.
+        """
+        try:
+            from app.db.supabase_client import get_supabase
+
+            session_id = getattr(self._loop, "session_id", None) if self._loop else None
+            if not session_id:
+                logger.debug("_save_decision_to_memory: no session_id, skipping")
+                return
+
+            # Market context snapshot
+            regime_name = self._loop.regime.regime if self._loop and self._loop.regime else "unknown"
+            market_context = {"regime": regime_name}
+
+            # Session performance snapshot
+            session_perf = {}
+            try:
+                trades = getattr(self._loop, "_execution_state", {}).get("trade_history", []) if hasattr(self._loop, "_execution_state") else []
+                if trades:
+                    closed = [t for t in trades if t.get("exit_price")]
+                    total = len(closed)
+                    wins = len([t for t in closed if (t.get("pnl") or 0) > 0])
+                    total_pnl = sum((t.get("pnl") or 0) for t in closed)
+                    session_perf = {
+                        "total_trades": total,
+                        "winning_trades": wins,
+                        "total_pnl": round(total_pnl, 2),
+                    }
+            except Exception:
+                pass
+
+            def _db_op():
+                supabase = get_supabase()
+                supabase.table("supervisor_memory").insert({
+                    "session_id": session_id,
+                    "symbol": self._symbol,
+                    "decided_at": decision.decided_at.isoformat() if decision.decided_at else None,
+                    "action": decision.action,
+                    "reason": decision.reason,
+                    "confidence": decision.confidence,
+                    "market_bias": decision.market_bias,
+                    "primary_signal": decision.primary_signal,
+                    "new_strategy": decision.new_strategy,
+                    "new_params": json.dumps(decision.new_params) if decision.new_params else None,
+                    "was_applied": was_applied,
+                    "blocked_reason": blocked_reason,
+                    "market_context": json.dumps(market_context),
+                    "session_perf": json.dumps(session_perf) if session_perf else None,
+                }).execute()
+
+            await asyncio.to_thread(_db_op)
+        except Exception as e:
+            logger.warning(f"Failed to save supervisor memory: {e}")
+
     async def _tick(self) -> Optional[SupervisorDecision]:
         # SAFETY: Check if stopped before starting expensive AI call
-        # (prevents race condition where old tick completes after new session starts)
         if not self._running:
             logger.debug("Supervisor tick skipped: scheduler not running")
             return None
-            
+
         snapshot = await self._score_engine.get_snapshot()
         score = await self._score_engine.compute()
-        
+
         # Check again after data collection
         if not self._running:
             logger.debug("Supervisor tick aborted after data collection: scheduler stopped")
             return None
-            
+
         regime = self._loop.regime if self._loop else None
+
+        # Leggi strategia corrente dal loop
+        self._current_strategy = self._loop.strategy.name if self._loop and self._loop.strategy else None
+
+        # Recupera session_id dal loop
+        session_id = getattr(self._loop, "session_id", None) if self._loop else None
 
         decision = await self._client.decide(
             symbol=self._symbol,
             snapshot=snapshot,
             regime=regime,
             score=score,
+            session_id=session_id,
         )
-        
-        # Final safety check — may have been stopped during the AI call
+
+        # Final safety check
         if not self._running:
             logger.debug("Supervisor tick aborted after AI call: scheduler stopped")
             return None
@@ -125,11 +197,11 @@ class SupervisorScheduler:
             f"new_params={decision.new_params}"
         )
 
-        # ── Cooldown check: evita cambi strategia/parametri troppo frequenti ──
-        # Il supervisor tende a rimbalzare tra strategie (rsi_bollinger↔ema_cross)
-        # se ticka ogni minuto su dati che cambiano poco (Fear&Greed fisso a 8).
-        # Con cooldown 20min: massimo 3 cambi/ora invece di 20-30.
+        # ── Cooldown check ──
         now = time.time()
+        blocked_reason = None
+        was_applied = True
+
         if decision.action == "change_strategy":
             elapsed = now - self._last_strategy_change
             if elapsed < STRATEGY_CHANGE_COOLDOWN:
@@ -138,8 +210,8 @@ class SupervisorScheduler:
                     f"⏳ Strategy change cooldown attivo — {remaining_min} min rimanenti. "
                     f"Decisione ignorata (action={decision.action}, new_strategy={decision.new_strategy})"
                 )
-                return decision  # Ritorna la decisione ma non applica il cambio
-            self._last_strategy_change = now
+                blocked_reason = f"cooldown: {remaining_min} min rimanenti"
+                was_applied = False
 
         if decision.action == "update_params":
             elapsed = now - self._last_param_update
@@ -149,8 +221,8 @@ class SupervisorScheduler:
                     f"⏳ Param update cooldown attivo — {remaining_min} min rimanenti. "
                     f"Aggiornamento ignorato"
                 )
-                return decision
-            self._last_param_update = now
+                blocked_reason = f"cooldown: {remaining_min} min rimanenti"
+                was_applied = False
 
         if decision.action == "update_threshold":
             elapsed = now - self._last_threshold_change
@@ -160,13 +232,10 @@ class SupervisorScheduler:
                     f"⏳ Threshold change cooldown attivo — {remaining_min} min rimanenti. "
                     f"Modifica soglia ignorata"
                 )
-                return decision
-            self._last_threshold_change = now
+                blocked_reason = f"cooldown: {remaining_min} min rimanenti"
+                was_applied = False
 
-        # ── Regime validation: impedisce strategie sbagliate per il regime ──
-        # Il supervisor AI può alucinare e scegliere ema_cross in ranging.
-        # Questa validazione agisce come barriera di sicurezza: se la strategia
-        # proposta non è compatibile con il regime corrente, viene ignorata.
+        # ── Regime validation ──
         if decision.action == "change_strategy" and decision.new_strategy:
             current_regime = self._loop.regime.regime if self._loop and self._loop.regime else "unknown"
             allowed = REGIME_ALLOWED_STRATEGIES.get(current_regime, ["momentum_base"])
@@ -176,18 +245,35 @@ class SupervisorScheduler:
                     f"ma regime={current_regime} (allowed={allowed}) — "
                     f"strategia invariata"
                 )
-                # Reset del cooldown così il prossimo tick valido non è bloccato
                 self._last_strategy_change = 0.0
-                return decision  # Non applica il cambio, esce presto
+                blocked_reason = f"regime mismatch: {decision.new_strategy} not in {allowed}"
+                was_applied = False
 
-        await self._updater.apply(decision)
+        # Applica la decisione se non bloccata
+        if was_applied:
+            await self._updater.apply(decision)
+        else:
+            # Salva in memoria anche se non applicata
+            await self._save_decision_to_memory(decision, was_applied=False, blocked_reason=blocked_reason)
+            return decision
+
+        # Aggiorna cooldown solo se effettivamente applicato
+        if decision.action == "change_strategy":
+            self._last_strategy_change = now
+            self._current_strategy = decision.new_strategy
+        elif decision.action == "update_params":
+            self._last_param_update = now
+        elif decision.action == "update_threshold":
+            self._last_threshold_change = now
+
+        # Salva in memoria come applicata
+        await self._save_decision_to_memory(decision, was_applied=True)
 
         # Broadcast via WebSocket to frontend
         try:
             from app.scalping.router import broadcast_scalping_event
             now_iso = decision.decided_at.isoformat() if decision.decided_at else None
-            
-            # Map internal action to standardized string for frontend CSS mapping
+
             action_map = {
                 "update_params": "update_params",
                 "change_strategy": "change_strategy",
@@ -207,29 +293,10 @@ class SupervisorScheduler:
                 "new_strategy": decision.new_strategy,
                 "new_params": decision.new_params,
                 "decided_at": now_iso,
-                "timestamp": now_iso,  # Frontend expects this field
+                "timestamp": now_iso,
             })
             logger.info(f"Supervisor decision broadcasted: action={standard_action}")
         except Exception as broadcast_err:
             logger.warning(f"Could not broadcast supervisor decision to frontend: {broadcast_err}")
-
-        # Save to DB
-        try:
-            from app.db.supabase_client import get_supabase
-            def _db_op():
-                supabase = get_supabase()
-                session_id = getattr(self._loop, "session_id", None) if self._loop else None
-                supabase.table("supervisor_decisions").insert({
-                    "session_id": session_id,
-                    "action": decision.action,
-                    "reason": decision.reason,
-                    "confidence": decision.confidence,
-                    "new_params": decision.new_params,
-                    "new_strategy": decision.new_strategy,
-                }).execute()
-            import asyncio
-            await asyncio.to_thread(_db_op)
-        except Exception as e:
-            logger.warning(f"Failed to save supervisor decision to DB: {e}")
 
         return decision

@@ -62,6 +62,27 @@ class SignalAggregator:
             min_confidence = settings.scalping.SCALPING_MIN_CONFIDENCE
         self._min_confidence = min_confidence
 
+    def _are_collectors_concordi(self, market_score: SignalScore) -> tuple[bool, set[str], float]:
+        """Verifica se i collector attivi sono tutti concordi (stesso bias).
+
+        Returns:
+            tuple: (sono_concordi, set_dei_bias, score_medio_attivo)
+        """
+        active_biases = set()
+        active_scores = []
+        for origin_key, origin_score in (market_score.breakdown or {}).items():
+            if origin_score is not None and isinstance(origin_score, (int, float)):
+                if origin_score > 0:
+                    active_biases.add("bullish")
+                    active_scores.append(origin_score)
+                elif origin_score < 0:
+                    active_biases.add("bearish")
+                    active_scores.append(origin_score)
+                # score == 0 è neutrale, non conta come bias
+
+        avg_active_score = sum(active_scores) / len(active_scores) if active_scores else 0.0
+        return len(active_biases) == 1, active_biases, avg_active_score
+
     def should_execute(
         self,
         technical: TechnicalSignal,
@@ -89,10 +110,6 @@ class SignalAggregator:
             )
 
         # ── FIX-2026-06-12: CLOSE sempre permesso ──
-        # Un segnale CLOSE significa "chiudi la posizione aperta". Non deve
-        # essere filtrato dal bias intelligence perché è un'uscita, non un'apertura.
-        # Se viene bloccato (es. bias bullish blocca CLOSE), la posizione rimane
-        # aperta all'infinito e il trade non viene mai registrato come chiuso.
         if technical.type == "CLOSE":
             logger.info(
                 f"{GREEN}🟢 CLOSE {symbol} sempre permesso (segnale di uscita, non filtrato da bias){RESET}"
@@ -110,12 +127,29 @@ class SignalAggregator:
         from app.scalping.config_loader import get_scalping_config
         min_collectors = get_scalping_config().min_collectors
 
-        # ── Caso 1: POCHI COLLECTOR → bypass intelligence (mancanza dati) ──────────
-        # In live mode, molti collector falliscono (funding_rate, open_interest, whale, etc.
-        # richiedono API keys). Se < min_collectors hanno risposto, trattiamo lo score come
-        # "no data" e usiamo solo il segnale tecnico.
+        # ── Caso 1: POCHI COLLECTOR → bypass intelligence solo se discordi ──
         if num_collectors_responded < min_collectors:
-            bypass_reason = f"score={market_score.total:.1f} ({num_collectors_responded} collectors)"
+            are_concordi, active_biases, avg_score = self._are_collectors_concordi(market_score)
+            only_one_bias = len(active_biases) == 1
+            bypass_reason = (
+                f"score={market_score.total:.1f} "
+                f"({num_collectors_responded} collectors, "
+                f"bias={active_biases if active_biases else 'none'})"
+            )
+
+            # Se i collector attivi sono tutti concordi → NON bypassare
+            if only_one_bias and abs(market_score.total) >= 5.0:
+                logger.warning(
+                    f"{RED}🔴 BLOCK: {symbol} |score|={market_score.signal_strength:.1f} < threshold "
+                    f"(collector concordi, bypass bloccato: {bypass_reason}){RESET}"
+                )
+                return ExecutionDecision(
+                    execute=False,
+                    reason=f"collector concordi ({list(active_biases)[0]}), score={market_score.total:.1f}",
+                    signal_type=technical.type,
+                )
+
+            # Collector discordi o pochi dati → bypass intelligence (usa solo tecnico)
             if technical.confidence >= self._min_confidence:
                 logger.info(
                     f"{YELLOW}📋 {mode_label} MODE: {technical.type} {symbol} @ {technical.confidence:.2f} "
@@ -134,10 +168,7 @@ class SignalAggregator:
                     signal_type=technical.type,
                 )
 
-        # ── Caso 2: COLLECTOR SUFFICIENTI MA SCORE BASSO → BLOCCO (neutrale confermato) ──
-        # Se 4+ collector hanno risposto e lo score totale è < 5.0, significa che i
-        # dati di intelligence ci sono ma indicano neutralità. Non ha senso bypassare:
-        # blocchiamo il trade perché il mercato è oggettivamente neutrale.
+        # ── Caso 2: COLLECTOR SUFFICIENTI MA SCORE NEUTRALE → BLOCCO ──
         if abs(market_score.total) < 5.0:
             reason = (
                 f"intelligence neutrale "
@@ -150,37 +181,31 @@ class SignalAggregator:
                 signal_type=technical.type,
             )
 
-        # ── Caso 3: SCORE ≥ 5.0 → filtro intelligence completo ─────────────────────
-
-        # Se lo score non e' tradeable, blocca (solo in modalità normale)
+        # ── Caso 3: SCORE ≥ 5.0 → filtro soglia ────────────────────────
         if not market_score.tradeable:
-            from app.config import settings
+            from app.scalping.config_loader import get_scalping_config
+            soglia = get_scalping_config().signal_strength_threshold
+            # Log pulito: mostra |score| < threshold (confronto reale, nessuna ambiguità)
             reason = (
-                f"score intelligence {market_score.total:.1f} < threshold "
-                f"{settings.scalping.SCALPING_SIGNAL_STRENGTH_THRESHOLD} "
-                f"(|score|={market_score.signal_strength:.1f})"
+                f"|score|={market_score.signal_strength:.1f} < threshold {soglia}"
             )
-            logger.warning(f"{RED}🔴 BLOCK: {symbol} {reason} (bias={market_score.bias}){RESET}")
+            logger.warning(
+                f"{RED}🔴 BLOCK: {symbol} {reason} (bias={market_score.bias}){RESET}"
+            )
             return ExecutionDecision(
                 execute=False,
                 reason=reason,
                 signal_type=technical.type,
             )
 
-        # ── Mean-reversion bypass per strategie ranging ──────────────────────
-        # In regime ranging, strategie come rsi_bollinger generano SELL quando il
-        # prezzo tocca la banda superiore di Bollinger (mean-reversion). Questo
-        # non è uno short direzionale ma una chiusura del range. Bloccare questi
-        # SELL perché il bias intelligence è bullish impedisce qualsiasi trade
-        # in ranging — BNB sale, tocca BB superiore, genera SELL, ma viene bloccato.
-        # Lo stesso vale per BUY su BB inferiore con bias bearish.
+        # ── Mean-reversion bypass per strategie ranging ─────────────────
         MEAN_REVERSION_STRATEGIES = ("rsi_bollinger", "stoch_rsi_bb_squeeze")
-
-        # Verifica allineamento bias intelligence vs segnale tecnico
         bias = market_score.bias
+
         if bias == "bullish" and technical.type not in ("BUY",):
-            # Permetti SELL da mean-reversion in ranging (chiusura range, non short)
-            if technical.type == "SELL" and technical.source and any(technical.source.startswith(s) for s in MEAN_REVERSION_STRATEGIES):
+            if technical.type == "SELL" and technical.source and any(
+                technical.source.startswith(s) for s in MEAN_REVERSION_STRATEGIES
+            ):
                 logger.info(
                     f"⚡ MEAN-REVERSION SELL permesso (source={technical.source}) "
                     f"nonostante bias={bias} — chiusura range, non short direzionale"
@@ -193,9 +218,11 @@ class SignalAggregator:
                     reason=reason,
                     signal_type=technical.type,
                 )
+
         if bias == "bearish" and technical.type not in ("SELL", "CLOSE"):
-            # Permetti BUY da mean-reversion in ranging (chiusura range, non long)
-            if technical.type == "BUY" and technical.source and any(technical.source.startswith(s) for s in MEAN_REVERSION_STRATEGIES):
+            if technical.type == "BUY" and technical.source and any(
+                technical.source.startswith(s) for s in MEAN_REVERSION_STRATEGIES
+            ):
                 logger.info(
                     f"⚡ MEAN-REVERSION BUY permesso (source={technical.source}) "
                     f"nonostante bias={bias} — chiusura range, non long direzionale"
@@ -208,6 +235,7 @@ class SignalAggregator:
                     reason=reason,
                     signal_type=technical.type,
                 )
+
         if bias == "neutral":
             reason = "bias intelligence neutrale, no trade"
             logger.warning(f"{YELLOW}🟡 SKIP: {symbol} {reason} (score={market_score.total:.1f}){RESET}")
@@ -217,9 +245,12 @@ class SignalAggregator:
                 signal_type=technical.type,
             )
 
-        # Calcola confidenza combinata (media di signal_strength normalizzato + technical confidence)
+        # ── Calcolo confidenza combinata (pesata 70% tecnico, 30% intelligence) ──
+        # Motivazione: la confidence tecnica è più reattiva al prezzo (rsi_bollinger
+        # vede subito il tocco della banda), mentre l'intelligence è un filtro più
+        # lento e generico. Dare 50/50 penalizza troppo il tecnico.
         signal_norm = (market_score.signal_strength or 0.0) / 100.0  # 0..1
-        combined = (signal_norm + technical.confidence) / 2.0
+        combined = signal_norm * 0.3 + technical.confidence * 0.7
 
         if combined < self._min_confidence:
             reason = f"confidenza combinata {combined:.2f} < soglia {self._min_confidence}"
@@ -230,8 +261,11 @@ class SignalAggregator:
                 signal_type=technical.type,
             )
 
-        # TRADE ESEGUITO
-        reason_str = f"intelligence={market_score.total:.1f} ({market_score.bias}) + tecnico={technical.type}@{technical.confidence:.2f}"
+        # ── TRADE ESEGUITO ───────────────────────────────────────────────
+        reason_str = (
+            f"intelligence={market_score.total:.1f} ({market_score.bias}) + "
+            f"tecnico={technical.type}@{technical.confidence:.2f}"
+        )
         logger.info(
             f"{GREEN}🟢 SIGNAL: {technical.type} {symbol} conf={combined:.3f} | {reason_str}{RESET}"
         )

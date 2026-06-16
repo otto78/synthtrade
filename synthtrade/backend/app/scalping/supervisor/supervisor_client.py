@@ -88,9 +88,10 @@ class SupervisorClient:
         snapshot: Optional[MarketIntelSnapshot] = None,
         regime: Optional[MarketRegime] = None,
         score: Optional[SignalScore] = None,
+        session_id: Optional[str] = None,
     ) -> SupervisorDecision:
         """Ottieni decisione dal supervisor AI."""
-        context = build_scalping_context(symbol, snapshot, regime, score)
+        context = await build_scalping_context(symbol, snapshot, regime, score, session_id=session_id)
 
         user_prompt = f"""Current market intelligence for {symbol}:
 {self._format_context(context)}

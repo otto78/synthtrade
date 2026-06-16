@@ -1,19 +1,31 @@
 """Supervisor Context Builder - estende context per scalping intelligence."""
 
+import asyncio
 from typing import Optional
 from app.scalping.models.intelligence import MarketIntelSnapshot, SignalScore
 from app.scalping.models.market import MarketRegime
 
 
-def build_scalping_context(
+async def build_scalping_context(
     symbol: str,
     snapshot: Optional[MarketIntelSnapshot],
     regime: Optional[MarketRegime],
     score: Optional[SignalScore],
+    session_id: Optional[str] = None,
 ) -> dict:
     """Costruisce il context per il supervisor AI.
 
-    Include la gerarchia segnali v2.0 per la decisione.
+    Include la gerarchia segnali v2.0 per la decisione,
+    la configurazione intelligence corrente,
+    la performance della sessione attuale,
+    e la storia delle ultime decisioni del supervisor.
+
+    Args:
+        symbol: Simbolo trading (es: BNBUSDC)
+        snapshot: Snapshot intelligence corrente
+        regime: Regime di mercato corrente
+        score: Score intelligence calcolato
+        session_id: ID sessione DB per query performance e memoria
     """
     context = {
         "symbol": symbol,
@@ -73,13 +85,85 @@ def build_scalping_context(
         gap = threshold - abs_score
         context["threshold_gap"] = round(gap, 1)
 
-    # Collector attivi e assenti — letti dal breakdown dello score (quali collector hanno risposto)
+    # Collector attivi e assenti — letti dal breakdown dello score
     if score and score.breakdown:
         active_collectors = list(score.breakdown.keys())
         all_possible = ["funding_rate", "cvd", "open_interest", "long_short_ratio", "fear_greed", "sentiment", "whale"]
         missing = [c for c in all_possible if c not in active_collectors]
         context["active_collectors"] = active_collectors
         context["missing_collectors"] = missing
+
+    # ── Performance sessione (TASK-844) ─────────────────────────────────
+    if session_id:
+        try:
+            from app.db.supabase_client import get_supabase
+
+            def _fetch_session_perf():
+                supabase = get_supabase()
+                resp = supabase.table("scalping_trades") \
+                    .select("*") \
+                    .eq("session_id", session_id) \
+                    .eq("status", "closed") \
+                    .order("exit_time", desc=True) \
+                    .limit(20) \
+                    .execute()
+                return resp.data if resp.data else []
+
+            trades = await asyncio.to_thread(_fetch_session_perf)
+        except Exception:
+            trades = []
+
+        if trades:
+            total = len(trades)
+            wins = [t for t in trades if (t.get("pnl") or 0) > 0]
+            losses = [t for t in trades if (t.get("pnl") or 0) < 0]
+            total_pnl = sum((t.get("pnl") or 0) for t in trades)
+            win_count = len(wins)
+            lose_count = len(losses)
+            win_rate = win_count / total * 100 if total > 0 else 0
+            last_5 = trades[:5]
+            last_5_pnl = [t.get("pnl") or 0 for t in last_5]
+            last_5_reasons = [t.get("signal_reason") or "unknown" for t in last_5]
+
+            context["session_performance"] = {
+                "total_trades": total,
+                "winning_trades": win_count,
+                "losing_trades": lose_count,
+                "win_rate_pct": round(win_rate, 1),
+                "total_pnl": round(total_pnl, 2),
+                "avg_pnl_per_trade": round(total_pnl / total, 2) if total > 0 else 0,
+                "last_5_pnl": last_5_pnl,
+                "last_5_reasons": last_5_reasons,
+            }
+
+    # ── Supervisor history (TASK-847) ────────────────────────────────────
+    if session_id:
+        try:
+            from app.db.supabase_client import get_supabase
+
+            def _fetch_supervisor_history():
+                supabase = get_supabase()
+                resp = supabase.table("supervisor_memory") \
+                    .select("action, reason, decided_at, was_applied, market_bias") \
+                    .eq("symbol", symbol) \
+                    .order("decided_at", desc=True) \
+                    .limit(10) \
+                    .execute()
+                return resp.data if resp.data else []
+
+            history = await asyncio.to_thread(_fetch_supervisor_history)
+        except Exception:
+            history = []
+
+        if history:
+            history_lines = []
+            for h in history:
+                applied = "✅" if h.get("was_applied") else "❌"
+                action = h.get("action", "?")
+                reason = (h.get("reason") or "")[:60]
+                decided = (h.get("decided_at") or "")[:16] if h.get("decided_at") else "?"
+                history_lines.append(f"  {applied} [{decided}] {action}: {reason}")
+            context["supervisor_history"] = "\n".join(history_lines)
 
     return context
 

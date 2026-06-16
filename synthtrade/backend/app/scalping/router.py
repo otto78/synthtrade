@@ -568,7 +568,7 @@ async def _on_order_update(event: dict):
             "quantity": qty_f,
             "pnl": round(pnl, 2),
             "pnl_pct": round(pnl_pct, 2),
-            "reason": reason,
+            "signal_reason": reason,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
@@ -653,7 +653,6 @@ async def _on_uds_reconnect_sync():
             await _refresh_session_balance()
             await broadcast_scalping_event("trade_closed", {
                 **trade_record,
-                "reason": reason,
             })
             logger.info(f"✅ UDS reconnect sync: trade chiuso @ {fill_price} | PnL={pnl:.2f}")
 
@@ -2083,7 +2082,7 @@ async def control_session(control: Dict) -> Dict:
                 spot_balances = _get_spot_balances_from_info(ccxt_balance)
 
                 normalized_balances = _normalize_binance_total_balance(spot_balances)
-
+                
                 selected_balance = _select_preferred_quote_balance(normalized_balances, quote_asset)
                 if selected_balance is not None and selected_balance > 0:
                     live_bal = selected_balance

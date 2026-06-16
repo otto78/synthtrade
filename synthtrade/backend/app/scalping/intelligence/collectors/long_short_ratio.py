@@ -20,6 +20,15 @@ from app.scalping.models.intelligence import LongShortRatio
 BINANCE_LS_URL = "https://fapi.binance.com/futures/data/globalLongShortAccountRatio"
 logger = logging.getLogger(__name__)
 
+# Mappa simboli spot → futures perpetual per collector
+# I dati L/S ratio esistono SOLO su USDT perpetual futures.
+# USDC spot è equivalente come sottostante, quindi usiamo USDT come proxy.
+FUTURES_SYMBOL_MAP = {
+    "BNBUSDC": "BNBUSDT",
+    "BTCUSDC": "BTCUSDT",
+    "ETHUSDC": "ETHUSDT",
+}
+
 
 class LongShortRatioCollector:
     """Collettore Long/Short Ratio da Binance Futures."""
@@ -38,9 +47,12 @@ class LongShortRatioCollector:
             LongShortRatio se la chiamata ha successo, None altrimenti.
         """
         try:
+            # Mappa USDC → USDT per i futures perpetual
+            futures_symbol = FUTURES_SYMBOL_MAP.get(symbol.upper(), symbol.upper())
+
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 params = {
-                    "symbol": symbol.upper(),
+                    "symbol": futures_symbol,
                     "period": period,
                     "limit": 1,
                 }

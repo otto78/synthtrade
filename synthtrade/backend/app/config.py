@@ -37,7 +37,7 @@ class ScalpingSettings(BaseSettings):
 
     # ── Scalping — Signal Intelligence ──────────────────────────
     SCALPING_SIGNAL_STRENGTH_THRESHOLD: float = 15.0
-    SCALPING_MIN_CONFIDENCE: float = 0.3
+    SCALPING_MIN_CONFIDENCE: float = 0.25
     SCALPING_MIN_COLLECTORS: int = 4
     SCALPING_INTEL_UPDATE_INTERVAL_SEC: int = 60
 

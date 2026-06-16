@@ -28,6 +28,15 @@ BINANCE_OI_URL = "https://fapi.binance.com/fapi/v1/openInterest"
 # Quanti campioni tenere per la baseline rolling
 _ROLLING_WINDOW = 5
 
+# Mappa simboli spot → futures perpetual per collector
+# I dati OI esistono SOLO su USDT perpetual futures.
+# USDC spot è equivalente come sottostante, quindi usiamo USDT come proxy.
+FUTURES_SYMBOL_MAP = {
+    "BNBUSDC": "BNBUSDT",
+    "BTCUSDC": "BTCUSDT",
+    "ETHUSDC": "ETHUSDT",
+}
+
 
 class OpenInterestCollector:
     """Collettore Open Interest da Binance Futures con baseline dinamica."""
@@ -47,8 +56,11 @@ class OpenInterestCollector:
             OpenInterest se la chiamata ha successo, None altrimenti.
         """
         try:
+            # Mappa USDC → USDT per i futures perpetual
+            futures_symbol = FUTURES_SYMBOL_MAP.get(symbol.upper(), symbol.upper())
+
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                params = {"symbol": symbol.upper()}
+                params = {"symbol": futures_symbol}
                 response = await client.get(BINANCE_OI_URL, params=params)
                 response.raise_for_status()
 

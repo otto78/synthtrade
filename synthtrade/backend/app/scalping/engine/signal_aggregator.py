@@ -57,10 +57,24 @@ class SignalAggregator:
     """
 
     def __init__(self, min_confidence: Optional[float] = None):
-        if min_confidence is None:
+        # min_confidence può essere passato per override (es. in test),
+        # altrimenti viene letto runtime dal ConfigLoader (modificabile via DB)
+        self._override_min_confidence = min_confidence
+
+    def _get_min_confidence(self) -> float:
+        """Legge la soglia di confidenza minima dal runtime config loader.
+
+        Se è stato passato un override (costruttore o test), usa quello.
+        Altrimenti legge dal ConfigLoader che merge .env + DB override.
+        """
+        if self._override_min_confidence is not None:
+            return self._override_min_confidence
+        try:
+            from app.scalping.config_loader import get_scalping_config
+            return get_scalping_config().min_confidence
+        except Exception:
             from app.config import settings
-            min_confidence = settings.scalping.SCALPING_MIN_CONFIDENCE
-        self._min_confidence = min_confidence
+            return settings.scalping.SCALPING_MIN_CONFIDENCE
 
     def _are_collectors_concordi(self, market_score: SignalScore) -> tuple[bool, set[str], float]:
         """Verifica se i collector attivi sono tutti concordi (stesso bias).
@@ -101,6 +115,8 @@ class SignalAggregator:
         Returns:
             ExecutionDecision con execute=True/False e motivazione.
         """
+        min_confidence = self._get_min_confidence()
+
         # Se il technical e' NONE, non fare nulla
         if technical.type == "NONE":
             return ExecutionDecision(
@@ -150,7 +166,7 @@ class SignalAggregator:
                 )
 
             # Collector discordi o pochi dati → bypass intelligence (usa solo tecnico)
-            if technical.confidence >= self._min_confidence:
+            if technical.confidence >= min_confidence:
                 logger.info(
                     f"{YELLOW}📋 {mode_label} MODE: {technical.type} {symbol} @ {technical.confidence:.2f} "
                     f"(intelligence bypassed: {bypass_reason}){RESET}"
@@ -164,7 +180,7 @@ class SignalAggregator:
             else:
                 return ExecutionDecision(
                     execute=False,
-                    reason=f"{mode_label.lower()}_mode: technical confidence {technical.confidence:.2f} < {self._min_confidence}",
+                    reason=f"{mode_label.lower()}_mode: technical confidence {technical.confidence:.2f} < {min_confidence}",
                     signal_type=technical.type,
                 )
 
@@ -252,8 +268,8 @@ class SignalAggregator:
         signal_norm = (market_score.signal_strength or 0.0) / 100.0  # 0..1
         combined = signal_norm * 0.3 + technical.confidence * 0.7
 
-        if combined < self._min_confidence:
-            reason = f"confidenza combinata {combined:.2f} < soglia {self._min_confidence}"
+        if combined < min_confidence:
+            reason = f"confidenza combinata {combined:.2f} < soglia {min_confidence}"
             logger.warning(f"{YELLOW}🟡 SKIP: {symbol} {reason}{RESET}")
             return ExecutionDecision(
                 execute=False,

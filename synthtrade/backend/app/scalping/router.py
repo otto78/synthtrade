@@ -237,8 +237,31 @@ def _select_preferred_quote_balance(balances: Dict[str, float], quote_asset: str
 # Helper: wire BinanceWSClient events → broadcast to scalping WS clients
 # ---------------------------------------------------------------------------
 
+def _get_spot_balances_from_info(ccxt_balance: Dict[str, Any]) -> Dict[str, float]:
+    """Extract only Spot wallet balances from Binance fetch_balance() raw info.
+    
+    CCXT aggregates Spot + Earn/Simple Earn in both 'total' and 'free'.
+    The raw Binance response has 'info.balances' which contains ONLY the Spot wallet.
+    """
+    spot: Dict[str, float] = {}
+    try:
+        raw_info = ccxt_balance.get("info", {})
+        raw_balances = raw_info.get("balances", [])
+        for entry in raw_balances:
+            asset = entry.get("asset", "")
+            # Escludi token LD* (Simple Earn Flexible) — non sono Spot reale
+            if asset.startswith("LD"):
+                continue
+            free = float(entry.get("free", 0))
+            if free > 0:
+                spot[asset] = free
+    except Exception as e:
+        logger.warning("_get_spot_balances_from_info error: %s", e)
+    return spot
+
+
 async def _refresh_session_balance():
-    """Refresh session live_balance from exchange."""
+    """Refresh session live_balance from exchange (Spot wallet only)."""
     session = _execution_state["session"]
     if session["mode"] == "live" and _execution_state.get("exchange"):
         try:
@@ -248,8 +271,8 @@ async def _refresh_session_balance():
             quote = filters.get("quoteAsset", "USDT")
 
             ccxt_balance = await adapter.client.fetch_balance()
-            total_balances = ccxt_balance.get("total", {})
-            normalized_balances = _normalize_binance_total_balance(total_balances)
+            spot_balances = _get_spot_balances_from_info(ccxt_balance)
+            normalized_balances = _normalize_binance_total_balance(spot_balances)
             bal = _select_preferred_quote_balance(normalized_balances, quote)
 
             if bal is None or bal <= 0:
@@ -2050,16 +2073,16 @@ async def control_session(control: Dict) -> Dict:
             _execution_state["exchange"] = adapter
             logger.info("BinanceExchangeAdapter initialized for LIVE execution (testnet=False).")
 
-            # Get real balance from exchange — use same method as dashboard
+            # Get real balance from exchange — Spot wallet only (via info.balances)
             live_bal = None
             try:
                 filters = await adapter.get_symbol_filters(active_symbol)
                 quote_asset = filters.get("quoteAsset", "USDT")
 
                 ccxt_balance = await adapter.client.fetch_balance()
-                all_balances = ccxt_balance.get("total", {})
+                spot_balances = _get_spot_balances_from_info(ccxt_balance)
 
-                normalized_balances = _normalize_binance_total_balance(all_balances)
+                normalized_balances = _normalize_binance_total_balance(spot_balances)
 
                 selected_balance = _select_preferred_quote_balance(normalized_balances, quote_asset)
                 if selected_balance is not None and selected_balance > 0:

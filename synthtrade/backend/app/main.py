@@ -144,11 +144,11 @@ async def _restore_scalping_session(db) -> None:
                 _execution_state["exchange"] = adapter
 
                 symbol = _execution_state["session"]["symbol"]
-                from app.scalping.router import _normalize_binance_total_balance, _select_preferred_quote_balance
+                from app.scalping.router import _normalize_binance_total_balance, _select_preferred_quote_balance, _get_spot_balances_from_info
 
                 ccxt_balance = await adapter.client.fetch_balance()
-                all_balances = ccxt_balance.get("total", {})
-                normalized = _normalize_binance_total_balance(all_balances)
+                spot_balances = _get_spot_balances_from_info(ccxt_balance)
+                normalized = _normalize_binance_total_balance(spot_balances)
 
                 filters = await adapter.get_symbol_filters(symbol)
                 quote = filters.get("quoteAsset", "USDT")
@@ -200,14 +200,15 @@ async def _restore_scalping_session(db) -> None:
                         base_asset = filters.get("baseAsset", "")
                         ccxt_bal = await adapter.client.fetch_balance()
                         free_bal = float(ccxt_bal.get("free", {}).get(base_asset, 0))
+                        total_bal = float(ccxt_bal.get("total", {}).get(base_asset, 0))
                         min_qty = float(filters.get("minQty", 0.001))
 
-                        if free_bal < min_qty:
-                            # Balance sotto minQty → OCO già eseguito (asset venduto)
+                        if total_bal < min_qty:
+                            # Balance totale (free + locked) sotto minQty → OCO già eseguito (asset venduto)
                             logger.warning(
-                                "Open position %s %s found in DB but exchange has %.8f %s "
+                                "Open position %s %s found in DB but exchange has total %.8f %s "
                                 "(below minQty=%.4f). Marking DB trade as closed (position closed externally).",
-                                side, symbol, free_bal, base_asset, min_qty,
+                                side, symbol, total_bal, base_asset, min_qty,
                             )
                             # Mark the DB trade as closed since the position was closed externally
                             trade_id = ot.get("id")
@@ -279,10 +280,10 @@ async def _restore_scalping_session(db) -> None:
                                     # OCO eseguito durante la finestra di restart.
                                     # NON ripristinare la posizione: risolviamo via fill price.
                                     logger.warning(
-                                        "Balance OK (%.6f %s) but NO open orders on Binance "
+                                        "Balance OK (total=%.6f, free=%.6f %s) but NO open orders on Binance "
                                         "for OCO %s — OCO eseguito durante restart. "
                                         "Marking as closed.",
-                                        free_bal, base_asset, oco_list_id,
+                                        total_bal, free_bal, base_asset, oco_list_id,
                                     )
                                     trade_id = ot.get("id")
                                     if trade_id:
@@ -315,9 +316,9 @@ async def _restore_scalping_session(db) -> None:
                                     verified = False
                                 else:
                                     logger.info(
-                                        "Open position verified on exchange: balance=%.6f %s, "
+                                        "Open position verified on exchange: total_balance=%.6f, free=%.6f %s, "
                                         "open_orders=%d",
-                                        free_bal, base_asset, len(open_orders),
+                                        total_bal, free_bal, base_asset, len(open_orders),
                                     )
                             except Exception as ord_e:
                                 logger.warning("Could not verify open orders during restore (non-blocking): %s", ord_e)

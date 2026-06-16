@@ -24,9 +24,9 @@ import { ConfigService } from '../../core/services/config.service';
           <span class="panel-title">Session</span>
         </div>
         <div class="title-hr"></div>
-        <div class="session-id-row" *ngIf="sessionId">
+        <!-- <div class="session-id-row" *ngIf="sessionId">
           <span class="session-id">{{ sessionId }}</span>
-        </div>
+        </div> -->
 
         <div class="config-grid">
           <div class="field">

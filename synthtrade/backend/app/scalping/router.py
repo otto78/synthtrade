@@ -1178,6 +1178,34 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                 logger.info(">>> CANDLE_PROC WATCHDOG: WS client restarted")
                     except Exception as ws_e:
                         logger.error(f">>> CANDLE_PROC WATCHDOG: WS restart failed: {ws_e}")
+
+                    # ── WAKEUP BALANCE CHECK ────────────────────────────────────
+                    # When the PC resumes from standby, the WS watchdog fires after
+                    # 3 minutes of stale data. This is the ideal moment to refresh
+                    # the live balance and detect if Spot funds moved to Earn during
+                    # the inactive period. If spot balance is zero, auto-pause session.
+                    if _execution_state["session"].get("mode") == "live":
+                        try:
+                            logger.info(">>> WAKEUP: Refreshing balance after standby...")
+                            await _refresh_session_balance()
+                            bal = _execution_state["session"].get("live_balance", 0)
+                            trade_val = float(_execution_state["session"].get("trade_value", 10.0))
+                            if bal is None or bal <= 0 or bal < trade_val:
+                                logger.warning(
+                                    f"\033[91m⚠️ WAKEUP: Spot balance={bal} < trade_value={trade_val}. "
+                                    f"All funds may be in Earn. Pausing session.\033[0m"
+                                )
+                                _execution_state["session"]["status"] = "paused"
+                                await broadcast_scalping_event("session_restored", {
+                                    **_execution_state["session"].copy(),
+                                    "status": "paused",
+                                    "pause_reason": "SPOT_BALANCE_ZERO",
+                                    "pause_message": "I tuoi fondi sono in Simple Earn. Spostali su Spot e fai Resume.",
+                                })
+                            else:
+                                logger.info(f">>> WAKEUP: Spot balance OK: {bal}")
+                        except Exception as bal_e:
+                            logger.warning(f">>> WAKEUP: Balance refresh failed (non-fatal): {bal_e}")
                 
                 continue
 
@@ -2071,14 +2099,52 @@ async def control_session(control: Dict) -> Dict:
         guard = _execution_state.get("session_load_guard")
         if guard:
             guard.reset()
-        if guard:
             guard.start_loading()
-        session["load_guard"] = {
-            "blocked_attempts": 0,
-            "last_blocked_at": None,
-        }
-        _sync_session_load_guard()
+
         active_symbol = control.get("symbol", session.get("symbol", "BTCUSDT"))
+
+        # ── LIVE MODE: verify balance BEFORE setting session state ────────────
+        # Prevent stale state when balance check fails (HTTPException would leave
+        # a dirty session in memory, confusing the frontend on reconnect).
+        if control.get("mode", session.get("mode", "paper")) == "live":
+            api_key = settings.BINANCE_API_KEY_LIVE or settings.BINANCE_API_KEY
+            api_secret = settings.BINANCE_SECRET_KEY_LIVE or settings.BINANCE_SECRET_KEY
+            if not api_key or not api_secret:
+                raise HTTPException(status_code=400, detail="Mancano le API Key nel file .env per la modalità Live.")
+            adapter = BinanceExchangeAdapter(api_key, api_secret, testnet=False)
+
+            try:
+                filters = await adapter.get_symbol_filters(active_symbol)
+                quote_asset = filters.get("quoteAsset", "USDT")
+                ccxt_balance = await adapter.client.fetch_balance()
+                spot_balances = _get_spot_balances_from_info(ccxt_balance)
+                normalized_balances = _normalize_binance_total_balance(spot_balances)
+                selected_balance = _select_preferred_quote_balance(normalized_balances, quote_asset)
+                trade_val = float(control.get("trade_value", session.get("trade_value", 10.0)))
+
+                if selected_balance is not None and selected_balance > 0 and selected_balance >= trade_val:
+                    _execution_state["exchange"] = adapter
+                    session["live_balance"] = selected_balance
+                    session["paper_balance"] = selected_balance
+                    logger.info(f"✓ \033[96m\033[1mStarting balance: {selected_balance} {quote_asset}\033[0m")
+                else:
+                    error_msg = (
+                        f"Nessun saldo Spot disponibile per {quote_asset} (trovato: {selected_balance}). "
+                        f"I fondi potrebbero essere in Simple Earn. Spostali su Spot e riprova."
+                    )
+                    logger.error(f"\033[91m✗ LIVE START BLOCKED: {error_msg}\033[0m")
+                    await broadcast_scalping_event("error", {"code": "LIVE_START_BLOCKED", "message": error_msg})
+                    raise HTTPException(status_code=400, detail=error_msg)
+            except HTTPException:
+                raise
+            except Exception as e:
+                error_msg = f"Impossibile verificare il saldo Spot: {type(e).__name__}. Riprova."
+                logger.error(f"✗ Balance fetch failed: {e}", exc_info=True)
+                await broadcast_scalping_event("error", {"code": "LIVE_START_BALANCE_FETCH_FAILED", "message": error_msg})
+                raise HTTPException(status_code=400, detail=error_msg)
+
+        # ── Set session state (balance is verified) ───────────────────────────
+        _sync_session_load_guard()
         session["status"] = "running"
         session["session_id"] = f"sess_{uuid.uuid4().hex[:8]}"
         session["mode"] = control.get("mode", session.get("mode", "paper"))
@@ -2087,57 +2153,13 @@ async def control_session(control: Dict) -> Dict:
         session["trade_value"] = float(control.get("trade_value", session.get("trade_value", 10.0)))
         session["started_at"] = _now()
         session["stopped_at"] = None
-        
-        # Reset trade history and position manager for the new session
         _execution_state["trade_history"] = []
         _execution_state["position_manager"] = PositionManager()
-        _execution_state["exchange"] = None
         
         # Reset strategy override if there's an existing execution loop
         existing_loop = _execution_state.get("loop")
         if existing_loop:
             existing_loop.reset_strategy_override()
-        
-        if session["mode"] == "live":
-            api_key = settings.BINANCE_API_KEY_LIVE or settings.BINANCE_API_KEY
-            api_secret = settings.BINANCE_SECRET_KEY_LIVE or settings.BINANCE_SECRET_KEY
-            if not api_key or not api_secret:
-                if guard:
-                    guard.fail("live_start_failed: missing Binance API keys")
-                raise HTTPException(status_code=400, detail="Mancano le API Key nel file .env per la modalità Live.")
-            # Scalping live → always real Binance, never testnet
-            adapter = BinanceExchangeAdapter(api_key, api_secret, testnet=False)
-            _execution_state["exchange"] = adapter
-            logger.info("BinanceExchangeAdapter initialized for LIVE execution (testnet=False).")
-
-            # Get real balance from exchange — Spot wallet only (via info.balances)
-            live_bal = None
-            try:
-                filters = await adapter.get_symbol_filters(active_symbol)
-                quote_asset = filters.get("quoteAsset", "USDT")
-
-                ccxt_balance = await adapter.client.fetch_balance()
-                spot_balances = _get_spot_balances_from_info(ccxt_balance)
-
-                normalized_balances = _normalize_binance_total_balance(spot_balances)
-                
-                selected_balance = _select_preferred_quote_balance(normalized_balances, quote_asset)
-                if selected_balance is not None and selected_balance > 0:
-                    live_bal = selected_balance
-                else:
-                    logger.error(
-                        f"✗ No balance found in any preferred asset. Available assets: {list(normalized_balances.keys())}"
-                    )
-                    live_bal = session.get("paper_balance", 10000.0)
-
-                session["live_balance"] = live_bal
-                session["paper_balance"] = live_bal
-                logger.info(f"✓ \033[96m\033[1mStarting balance: {live_bal} {quote_asset}\033[0m")
-
-            except Exception as e:
-                logger.error(f"✗ Balance fetch failed with exception: {type(e).__name__}: {e}", exc_info=True)
-                session["live_balance"] = session.get("paper_balance", 10000.0)
-                logger.warning(f"  Using fallback balance: {session['live_balance']}")
         
         if guard:
             guard.complete_phase("exchange_phase")
@@ -2333,6 +2355,24 @@ async def control_session(control: Dict) -> Dict:
 
     elif action == "resume":
         if session["status"] == "paused":
+            # Se live mode, verifica prima che lo spot balance sia sufficiente
+            if session.get("mode") == "live":
+                try:
+                    await _refresh_session_balance()
+                    bal = session.get("live_balance", 0)
+                    trade_val = float(session.get("trade_value", 10.0))
+                    if bal is None or bal <= 0 or bal < trade_val:
+                        logger.warning(
+                            f"\033[91m⚠️ RESUME BLOCKED: Spot balance={bal} < trade_value={trade_val}. "
+                            f"Still in Earn. Remain paused.\033[0m"
+                        )
+                        session["status"] = "paused"
+                        return {"status": "paused", "reason": "spot_empty",
+                                "message": "Ancora nessun fondo in Spot. Sposta fondi da Earn a Spot e riprova."}
+                    logger.info(f"Resume: Spot balance OK ({bal}), resuming session.")
+                except Exception as e:
+                    logger.warning(f"Resume balance refresh failed (non-fatal): {e}")
+                    # Se fallisce, resuma comunque — meglio di restare bloccati
             session["status"] = "running"
             try:
                 db_sid = session.get("db_session_id")

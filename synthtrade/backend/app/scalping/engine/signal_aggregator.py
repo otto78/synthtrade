@@ -137,6 +137,8 @@ class SignalAggregator:
                 signal_type=technical.type,
             )
 
+        # Conta tutti i collector che hanno risposto (non None)
+        # Un collector con score 0.0 è comunque un dato valido (neutro)
         num_collectors_responded = len(market_score.breakdown) if market_score.breakdown else 0
         mode_label = "PAPER" if paper_mode else "LIVE"
 
@@ -149,7 +151,7 @@ class SignalAggregator:
             only_one_bias = len(active_biases) == 1
             bypass_reason = (
                 f"score={market_score.total:.1f} "
-                f"({num_collectors_responded} collectors, "
+                f"({num_collectors_responded} significant collectors, "
                 f"bias={active_biases if active_biases else 'none'})"
             )
 

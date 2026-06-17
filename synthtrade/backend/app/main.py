@@ -154,12 +154,20 @@ async def _restore_scalping_session(db) -> None:
                 quote = filters.get("quoteAsset", "USDT")
                 live_bal = _select_preferred_quote_balance(normalized, quote)
 
-                if live_bal is not None and live_bal > 0:
+                trade_val = float(_execution_state["session"].get("trade_value", 10.0))
+                if live_bal is not None and live_bal > 0 and live_bal >= trade_val:
                     _execution_state["session"]["live_balance"] = live_bal
                     _execution_state["session"]["paper_balance"] = live_bal
                     logger.info("Live balance restored: %s %s", live_bal, quote)
                 else:
-                    logger.warning("No live balance found — keeping previous value")
+                    logger.warning(
+                        f"\033[91m⚠️ RESTORE: Spot balance={live_bal} < trade_value={trade_val}. "
+                        f"All funds may be in Earn. Pausing session.\033[0m"
+                    )
+                    _execution_state["session"]["status"] = "paused"
+                    # Keep the previous balance value for display (user can see it's stale)
+                    if live_bal is not None and live_bal > 0:
+                        _execution_state["session"]["live_balance"] = live_bal
             else:
                 logger.warning("No API keys for live mode — balance not refreshed during restore")
                 guard.fail("restore_exchange_failed: missing Binance API keys")
@@ -385,27 +393,29 @@ async def _restore_scalping_session(db) -> None:
         logger.error("Failed to restore trade history from DB: %s", e, exc_info=True)
 
     # Step 8 — avvia il pipeline (WS, ExecutionLoop, candle processing)
-    # Questo è il passo che mancava: senza, la sessione appare "running" ma non
-    # ha alcun flusso dati attivo, nessun trade parte, nessun log del pipeline.
-    try:
-        restored_symbol = _execution_state["session"]["symbol"].lower()
-        _execution_state["session"]["status"] = "running"  # ensure before async task reads it
+    # Solo se la sessione non è in pausa (es: spot balance insufficiente).
+    if _execution_state["session"]["status"] != "paused":
+        try:
+            restored_symbol = _execution_state["session"]["symbol"].lower()
+            _execution_state["session"]["status"] = "running"  # ensure before async task reads it
 
-        from app.scalping.router import _start_ws_broadcast
-        task = asyncio.create_task(
-            _start_ws_broadcast(restored_symbol, restore_mode=True),
-            name=f"scalping-restore-{restored_symbol}",
-        )
-        task.add_done_callback(lambda t: guard.fail(f"restore_broadcast_failed: {type(t.exception()).__name__}: {t.exception()}") if t.exception() else None)
-        logger.info(
-            "Scalping pipeline ASYNC START scheduled for %s (restore_mode=True)",
-            restored_symbol,
-        )
-    except Exception as e:
-        logger.error(
-            "Failed to schedule _start_ws_broadcast for restored session: %s", e, exc_info=True
-        )
-        guard.fail(f"restore_pipeline_schedule_failed: {type(e).__name__}: {e}")
+            from app.scalping.router import _start_ws_broadcast
+            task = asyncio.create_task(
+                _start_ws_broadcast(restored_symbol, restore_mode=True),
+                name=f"scalping-restore-{restored_symbol}",
+            )
+            task.add_done_callback(lambda t: guard.fail(f"restore_broadcast_failed: {type(t.exception()).__name__}: {t.exception()}") if t.exception() else None)
+            logger.info(
+                "Scalping pipeline ASYNC START scheduled for %s (restore_mode=True)",
+                restored_symbol,
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to schedule _start_ws_broadcast for restored session: %s", e, exc_info=True
+            )
+            guard.fail(f"restore_pipeline_schedule_failed: {type(e).__name__}: {e}")
+    else:
+        logger.info("Session restore skipped pipeline start: status=paused (spot balance insufficient)")
 
 
 @asynccontextmanager

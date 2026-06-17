@@ -13,6 +13,7 @@ Risposta:
 Aggiornamento: 1 volta ogni 24h (cacheare il valore intraday).
 """
 
+import asyncio
 import aiohttp
 import logging
 from datetime import datetime, timedelta, timezone
@@ -30,8 +31,9 @@ _CACHE_TTL = timedelta(hours=4)  # rileggi ogni 4h per sicurezza
 
 class FearGreedCollector:
 
-    def __init__(self, timeout_seconds: float = 10.0):
+    def __init__(self, timeout_seconds: float = 10.0, max_retries: int = 3):
         self._timeout = timeout_seconds
+        self._max_retries = max_retries
 
     async def collect(self, limit: int = 1) -> FearGreedData | None:
         global _cached_value, _cached_at
@@ -45,27 +47,31 @@ class FearGreedCollector:
                     timestamp=_cached_at,
                 )
 
-        try:
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=self._timeout)
-            ) as session:
-                async with session.get(ALTERNATIVE_ME_URL) as resp:
-                    if resp.status != 200:
-                        logger.warning("FearGreed alternative.me: HTTP %d", resp.status)
-                        return self._use_cache_or_none()
-                    data = await resp.json()
-                    value = int(data["data"][0]["value"])
-                    _cached_value = value
-                    _cached_at = datetime.now(timezone.utc)
-                    logger.info("FearGreed aggiornato: %d (%s)", value, self._classify(value))
-                    return FearGreedData(
-                        value=value,
-                        label=self._classify(value),
-                        timestamp=_cached_at,
-                    )
-        except Exception as e:
-            logger.warning("FearGreed alternative.me error: %s", e, exc_info=True)
-            return self._use_cache_or_none()
+        for attempt in range(self._max_retries):
+            try:
+                async with aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=self._timeout)
+                ) as session:
+                    async with session.get(ALTERNATIVE_ME_URL) as resp:
+                        if resp.status != 200:
+                            logger.warning("FearGreed alternative.me: HTTP %d", resp.status)
+                            return self._use_cache_or_none()
+                        data = await resp.json()
+                        value = int(data["data"][0]["value"])
+                        _cached_value = value
+                        _cached_at = datetime.now(timezone.utc)
+                        logger.info("FearGreed aggiornato: %d (%s)", value, self._classify(value))
+                        return FearGreedData(
+                            value=value,
+                            label=self._classify(value),
+                            timestamp=_cached_at,
+                        )
+            except Exception as e:
+                if attempt < self._max_retries - 1:
+                    await asyncio.sleep(0.5 * (attempt + 1))  # Backoff
+                    continue
+                logger.warning("FearGreed alternative.me error: %s", e, exc_info=True)
+                return self._use_cache_or_none()
 
     def _use_cache_or_none(self) -> FearGreedData | None:
         if _cached_value is not None:

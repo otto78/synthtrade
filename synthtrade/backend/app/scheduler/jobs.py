@@ -15,6 +15,7 @@ from app.scheduler.scalping_jobs import (
     funding_rate_update_job,
     supervisor_check_job,
     session_health_job,
+    spot_reconciliation_job,
     opportunity_monitor_job,
     set_engine as set_scalping_engine,
 )
@@ -224,6 +225,9 @@ def setup_scheduler(engine=None) -> AsyncIOScheduler:
         scheduler.add_job(session_health_job, "interval",
                           seconds=30,
                           id="scalping_session_health")
+        scheduler.add_job(spot_reconciliation_job, "interval",
+                          hours=2,
+                          id="scalping_spot_reconciliation")
         scheduler.add_job(opportunity_monitor_job, "interval",
                           minutes=settings.scalping.SCALPING_OPPORTUNITY_POLL_INTERVAL_MIN,
                           id="scalping_opportunity_monitor")

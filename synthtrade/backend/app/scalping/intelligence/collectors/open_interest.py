@@ -11,6 +11,7 @@ NOTA: La baseline è calcolata dinamicamente come media mobile degli ultimi N fe
 così lo score è sensibile ai cambiamenti REALI di OI invece di un valore fisso arbitrario.
 """
 
+import asyncio
 import logging
 from collections import deque
 from datetime import datetime, timezone
@@ -41,8 +42,9 @@ FUTURES_SYMBOL_MAP = {
 class OpenInterestCollector:
     """Collettore Open Interest da Binance Futures con baseline dinamica."""
 
-    def __init__(self, timeout_seconds: float = 10.0):
+    def __init__(self, timeout_seconds: float = 10.0, max_retries: int = 3):
         self._timeout = timeout_seconds
+        self._max_retries = max_retries
         # Rolling buffer per baseline dinamica: separato per simbolo
         self._history: dict[str, deque] = {}
 
@@ -55,43 +57,45 @@ class OpenInterestCollector:
         Returns:
             OpenInterest se la chiamata ha successo, None altrimenti.
         """
-        try:
-            # Mappa USDC → USDT per i futures perpetual
-            futures_symbol = FUTURES_SYMBOL_MAP.get(symbol.upper(), symbol.upper())
+        # Mappa USDC → USDT per i futures perpetual
+        futures_symbol = FUTURES_SYMBOL_MAP.get(symbol.upper(), symbol.upper())
+        
+        for attempt in range(self._max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=self._timeout) as client:
+                    params = {"symbol": futures_symbol}
+                    response = await client.get(BINANCE_OI_URL, params=params)
+                    response.raise_for_status()
 
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                params = {"symbol": futures_symbol}
-                response = await client.get(BINANCE_OI_URL, params=params)
-                response.raise_for_status()
+                    data = response.json()
+                    oi_value = Decimal(str(data.get("openInterest", "0")))
 
-                data = response.json()
-                oi_value = Decimal(str(data.get("openInterest", "0")))
+                    # Aggiorna history per baseline rolling
+                    sym_key = symbol.upper()
+                    if sym_key not in self._history:
+                        self._history[sym_key] = deque(maxlen=_ROLLING_WINDOW)
+                    self._history[sym_key].append(float(oi_value))
 
-                # Aggiorna history per baseline rolling
-                sym_key = symbol.upper()
-                if sym_key not in self._history:
-                    self._history[sym_key] = deque(maxlen=_ROLLING_WINDOW)
-                self._history[sym_key].append(float(oi_value))
+                    baseline = Decimal(str(sum(self._history[sym_key]) / len(self._history[sym_key])))
 
-                baseline = Decimal(str(sum(self._history[sym_key]) / len(self._history[sym_key])))
+                    logger.debug(
+                        "OpenInterest for %s: value=%.0f baseline=%.0f (samples=%d)",
+                        symbol, float(oi_value), float(baseline), len(self._history[sym_key])
+                    )
 
-                logger.debug(
-                    "OpenInterest for %s: value=%.0f baseline=%.0f (samples=%d)",
-                    symbol, float(oi_value), float(baseline), len(self._history[sym_key])
-                )
+                    return OpenInterest(
+                        symbol=symbol.upper(),
+                        value_usd=oi_value,
+                        asset=symbol.replace("USDT", "").replace("USDC", ""),
+                        timestamp=datetime.now(timezone.utc),
+                    )
 
-                return OpenInterest(
-                    symbol=symbol.upper(),
-                    value_usd=oi_value,
-                    # Usiamo il campo asset per trasportare anche la baseline rolling
-                    asset=symbol.replace("USDT", "").replace("USDC", ""),
-                    timestamp=datetime.now(timezone.utc),
-                    # Passiamo la baseline come attributo extra se il modello lo supporta
-                )
-
-        except Exception as e:
-            logger.warning("OpenInterestCollector error for %s: %s", symbol, e)
-            return None
+            except Exception as e:
+                if attempt < self._max_retries - 1:
+                    await asyncio.sleep(0.5 * (attempt + 1))  # Backoff
+                    continue
+                logger.warning("OpenInterestCollector error for %s: %s", symbol, e)
+                return None
 
     def get_baseline(self, symbol: str) -> Decimal:
         """Restituisce la baseline rolling per un simbolo."""

@@ -8,6 +8,8 @@ Funding Rate positivo  -> i long pagano gli short (overleveraged long) -> bias S
 Funding Rate negativo  -> gli short pagano i long (overleveraged short) -> bias LONG
 """
 
+import asyncio
+import logging
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
@@ -15,6 +17,8 @@ from typing import Optional
 import httpx
 
 from app.scalping.models.intelligence import FundingRate
+
+logger = logging.getLogger(__name__)
 
 BINANCE_FUNDING_RATE_URL = "https://fapi.binance.com/fapi/v1/fundingRate"
 
@@ -39,8 +43,9 @@ class FundingRateCollector:
       < -0.10% = fortemente overleveraged short (contrarian long)
     """
 
-    def __init__(self, timeout_seconds: float = 10.0):
+    def __init__(self, timeout_seconds: float = 10.0, max_retries: int = 3):
         self._timeout = timeout_seconds
+        self._max_retries = max_retries
 
     async def collect(self, symbol: str = "BTCUSDT") -> Optional[FundingRate]:
         """Recupera il funding rate corrente per un simbolo.
@@ -51,36 +56,38 @@ class FundingRateCollector:
         Returns:
             FundingRate se la chiamata ha successo, None altrimenti.
         """
-        try:
-            # Mappa USDC → USDT per i futures perpetual
-            futures_symbol = FUTURES_SYMBOL_MAP.get(symbol.upper(), symbol.upper())
+        # Mappa USDC → USDT per i futures perpetual
+        futures_symbol = FUTURES_SYMBOL_MAP.get(symbol.upper(), symbol.upper())
+        
+        for attempt in range(self._max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=self._timeout) as client:
+                    params = {"symbol": futures_symbol, "limit": 1}
+                    response = await client.get(BINANCE_FUNDING_RATE_URL, params=params)
+                    response.raise_for_status()
 
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                params = {"symbol": futures_symbol, "limit": 1}
-                response = await client.get(BINANCE_FUNDING_RATE_URL, params=params)
-                response.raise_for_status()
+                    data = response.json()
+                    if not data:
+                        return None
 
-                data = response.json()
-                if not data:
-                    return None
+                    entry = data[0]
+                    return FundingRate(
+                        symbol=symbol.upper(),
+                        rate=Decimal(str(entry.get("fundingRate", "0"))),
+                        timestamp=datetime.fromtimestamp(entry.get("fundingTime", 0) / 1000),
+                        next_funding_time=(
+                            datetime.fromtimestamp(entry["nextFundingTime"] / 1000)
+                            if "nextFundingTime" in entry
+                            else None
+                        ),
+                    )
 
-                entry = data[0]
-                return FundingRate(
-                    symbol=symbol.upper(),
-                    rate=Decimal(str(entry.get("fundingRate", "0"))),
-                    timestamp=datetime.fromtimestamp(entry.get("fundingTime", 0) / 1000),
-                    next_funding_time=(
-                        datetime.fromtimestamp(entry["nextFundingTime"] / 1000)
-                        if "nextFundingTime" in entry
-                        else None
-                    ),
-                )
-
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning("FundingRateCollector error for %s: %s", symbol, e)
-            return None
+            except Exception as e:
+                if attempt < self._max_retries - 1:
+                    await asyncio.sleep(0.5 * (attempt + 1))  # Backoff
+                    continue
+                logger.warning("FundingRateCollector error for %s: %s", symbol, e)
+                return None
 
     @staticmethod
     def interpret_rate(rate: Decimal) -> str:

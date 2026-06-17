@@ -205,6 +205,54 @@ async def session_health_job() -> None:
         logger.error(f"Session health job error: {e}")
 
 
+async def spot_reconciliation_job() -> None:
+    """Job: verifica periodica del saldo Spot (ogni 2 ore).
+
+    Solo in live mode: chiama _refresh_session_balance() per aggiornare
+    il balance Spot reale da Binance. Se lo Spot è vuoto (fondi finiti
+    in Simple Earn durante l'inattività), mette la sessione in pausa.
+    """
+    if not settings.scalping.SCALPING_SCHEDULER_HEALTH_ENABLED:
+        return
+    try:
+        from app.scalping.router import _execution_state
+        session = _execution_state.get("session", {})
+        if session.get("status") not in ("running", "paused") or session.get("mode") != "live":
+            logger.debug("Spot reconciliation: no active live session — skipping")
+            return
+
+        from app.scalping.router import _refresh_session_balance
+        from app.scalping.router import broadcast_scalping_event
+
+        logger.info("🔄 PERIODIC SPOT RECONCILIATION: refreshing balance...")
+        await _refresh_session_balance()
+
+        bal = session.get("live_balance", 0)
+        trade_val = float(session.get("trade_value", 10.0))
+        if bal is None or bal <= 0 or bal < trade_val:
+            logger.warning(
+                f"\033[91m⚠️ PERIODIC CHECK: Spot balance={bal} < trade_value={trade_val}. "
+                f"All funds may be in Earn. Pausing session.\033[0m"
+            )
+            if session.get("status") != "paused":
+                session["status"] = "paused"
+                await broadcast_scalping_event("session_restored", {
+                    **session.copy(),
+                    "status": "paused",
+                    "pause_reason": "SPOT_BALANCE_ZERO",
+                    "pause_message": "I tuoi fondi sono in Simple Earn. Spostali su Spot e fai Resume.",
+                })
+        else:
+            logger.info(f"🔄 PERIODIC SPOT RECONCILIATION: Spot balance OK: {bal}")
+            # Se era in pausa e ora spot è tornato, resuma automaticamente
+            if session.get("status") == "paused":
+                logger.info("🔄 Spot balance restored — auto-resuming session.")
+                session["status"] = "running"
+                await broadcast_scalping_event("session_restored", session.copy())
+    except Exception as e:
+        logger.warning(f"Spot reconciliation job error (non-fatal): {e}")
+
+
 async def opportunity_monitor_job() -> None:
     """Job: opportunity monitor periodico.
 

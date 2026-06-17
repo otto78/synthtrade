@@ -499,6 +499,7 @@ import { ConfigService } from '../../core/services/config.service';
     .btn-action.pause { background: rgba(255,183,77,0.15); color: #ffb74d; border: 1px solid rgba(255,183,77,0.3); }
     .btn-action.resume { background: rgba(38,166,154,0.15); color: #26a69a; border: 1px solid rgba(38,166,154,0.3); }
     .btn-action.stop { background: rgba(239,83,80,0.12); color: #ef5350; border: 1px solid rgba(239,83,80,0.25); }
+
   `],
 })
 export class SessionControlsComponent implements OnInit {
@@ -604,9 +605,10 @@ export class SessionControlsComponent implements OnInit {
         this.loading = false;
         this.cdr.detectChanges();
       },
-      error: (err: Error) => {
-        console.error('[SessionControls] FAILED:', err);
+      error: () => {
         this.loading = false;
+        // Error is already shown as popup toast via WS broadcast (LIVE_START_BLOCKED)
+        // handled by scalping-dashboard.component.ts via wsService.error$
         this.cdr.detectChanges();
       }
     });

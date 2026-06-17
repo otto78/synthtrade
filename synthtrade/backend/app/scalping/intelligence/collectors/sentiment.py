@@ -1,4 +1,4 @@
-"""SentimentCollector — recupera sentiment da NewsAPI e CryptoCompare.
+"""SentimentCollector — recupera sentiment da NewsAPI, CryptoCompare e RSS feeds.
 
 Analizza titoli e frequenza news per determinare un bias di mercato.
 """
@@ -6,6 +6,7 @@ Analizza titoli e frequenza news per determinare un bias di mercato.
 import logging
 from datetime import datetime, timezone
 from typing import List, Optional
+import xml.etree.ElementTree as ET
 
 import httpx
 from app.config import settings
@@ -15,6 +16,11 @@ logger = logging.getLogger(__name__)
 
 NEWSAPI_URL = "https://newsapi.org/v2/everything"
 CRYPTOCOMPARE_NEWS_URL = "https://min-api.cryptocompare.com/data/v2/news/"
+RSS_FEEDS = [
+    "https://www.coindesk.com/arc/outboundfeeds/rss",
+    "https://cointelegraph.com/rss",
+    "https://cryptonews.com/feed/",
+]
 
 
 class SentimentCollector:
@@ -40,32 +46,47 @@ class SentimentCollector:
         headlines = []
         news_count = 0
         
-        # 1. Raccogli da CryptoCompare (più specifico per crypto)
-        cc_news = await self._fetch_cryptocompare(base_symbol)
-        for item in cc_news:
-            headlines.append(item.get("title", ""))
-            news_count += 1
-            
-        # 2. Raccogli da NewsAPI (se disponibile key e non abbiamo abbastanza news)
+        # 1. Raccogli da CryptoCompare (solo se API key configurata)
+        if self._cryptocompare_key:
+            cc_news = await self._fetch_cryptocompare(base_symbol)
+            for item in cc_news:
+                headlines.append(item.get("title", ""))
+                news_count += 1
+        
+        # 2. Raccogli da NewsAPI (se disponibile key)
         if self._newsapi_key and news_count < 10:
             api_news = await self._fetch_newsapi(base_symbol)
             for item in api_news:
+                headlines.append(item.get("title", ""))
+                news_count += 1
+        
+        # 3. Fallback gratuito: RSS feeds (sempre disponibili)
+        if news_count < 5:
+            rss_news = await self._fetch_rss_feeds()
+            for item in rss_news:
                 headlines.append(item.get("title", ""))
                 news_count += 1
 
         if not headlines:
             return None
 
-        # 3. Analisi semplificata del sentiment basata su keywords
-        # In una versione futura potremmo usare un modello NLP (es: VADER o BERT)
+        # 4. Analisi semplificata del sentiment basata su keyword
         sentiment_score = self._analyze_sentiment(headlines)
 
+        # Determina fonte
+        sources = []
+        if self._cryptocompare_key:
+            sources.append("cryptocompare")
+        if self._newsapi_key:
+            sources.append("newsapi")
+        sources.append("rss")
+        
         return SentimentData(
             symbol=symbol,
             score=sentiment_score,
             news_count=news_count,
-            top_headlines=headlines[:5],  # Solo i primi 5 per brevità
-            source="cryptocompare+newsapi" if self._newsapi_key else "cryptocompare"
+            top_headlines=headlines[:5],
+            source="+".join(sources)
         )
 
     async def _fetch_cryptocompare(self, symbol: str) -> List[dict]:
@@ -91,7 +112,6 @@ class SentimentCollector:
     async def _fetch_newsapi(self, symbol: str) -> List[dict]:
         """Fetch news da NewsAPI."""
         try:
-            # Cerca news nell'ultimo giorno
             params = {
                 "q": symbol,
                 "language": "en",
@@ -107,6 +127,24 @@ class SentimentCollector:
         except Exception as e:
             logger.warning("NewsAPI fetch error: %s", e)
         return []
+
+    async def _fetch_rss_feeds(self) -> List[dict]:
+        """Fetch news da RSS feeds gratuiti (sempre disponibili)."""
+        all_headlines = []
+        for feed_url in RSS_FEEDS:
+            try:
+                async with httpx.AsyncClient(timeout=self._timeout) as client:
+                    response = await client.get(feed_url)
+                    if response.status_code == 200:
+                        root = ET.fromstring(response.text)
+                        items = root.findall(".//item")
+                        for item in items[:5]:
+                            title_elem = item.find("title")
+                            if title_elem is not None and title_elem.text:
+                                all_headlines.append({"title": title_elem.text})
+            except Exception as e:
+                logger.warning("RSS fetch error for %s: %s", feed_url, e)
+        return all_headlines[:10]
 
     def _analyze_sentiment(self, headlines: List[str]) -> float:
         """Analisi euristica del sentiment basata su keyword."""

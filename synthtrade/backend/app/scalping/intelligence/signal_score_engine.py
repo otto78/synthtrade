@@ -170,17 +170,26 @@ class SignalScoreEngine:
         futures_symbol = self.symbol.upper().replace("USDC", "USDT")
 
         # Raccogli dati da tutti i collector in parallelo
+        # Skip whale collector se disabilitato (peso 0.0)
+        collector_tasks = [
+            self._funding_rate.collect(futures_symbol),
+            self._open_interest.collect(futures_symbol),
+            self._long_short.collect(futures_symbol),
+            self._fear_greed.collect(),
+            self._sentiment.collect(self.symbol),
+        ]
+        if self.weights.get("whale", 0.0) > 0:
+            collector_tasks.append(self._whale.collect(self.symbol))
+        else:
+            # Whale disabilitato: usa coroutine che ritorna None
+            async def _disabled_whale():
+                return None
+            collector_tasks.append(_disabled_whale())
+        
+        collector_tasks.append(self._onchain.collect(self.symbol))
+        
         try:
-            results = await asyncio.gather(
-                self._funding_rate.collect(futures_symbol),
-                self._open_interest.collect(futures_symbol),
-                self._long_short.collect(futures_symbol),
-                self._fear_greed.collect(),
-                self._sentiment.collect(self.symbol),
-                self._whale.collect(self.symbol),
-                self._onchain.collect(self.symbol),
-                return_exceptions=True
-            )
+            results = await asyncio.gather(*collector_tasks, return_exceptions=True)
         except asyncio.CancelledError:
             logger.debug("get_snapshot cancelled (shutdown)")
             return MarketIntelSnapshot(symbol=self.symbol)
@@ -195,6 +204,27 @@ class SignalScoreEngine:
         sent = results[4] if isinstance(results[4], SentimentData) else None
         whale = results[5] if isinstance(results[5], WhaleData) else None
         onchain = results[6] if isinstance(results[6], OnChainData) else None
+        
+        # Whale disabilitato: forza None
+        if self.weights.get("whale", 0.0) == 0.0:
+            whale = None
+
+        # Log dettagliato per debugging collector failures
+        collector_status = {
+            "funding_rate": "OK" if fr else ("ERROR" if isinstance(results[0], Exception) else "NONE"),
+            "open_interest": "OK" if oi else ("ERROR" if isinstance(results[1], Exception) else "NONE"),
+            "long_short_ratio": "OK" if ls_result else ("ERROR" if isinstance(results[2], Exception) else "NONE"),
+            "fear_greed": "OK" if fg else ("ERROR" if isinstance(results[3], Exception) else "NONE"),
+            "sentiment": "OK" if sent else ("ERROR" if isinstance(results[4], Exception) else "NONE"),
+            "whale": "OK" if whale else ("ERROR" if isinstance(results[5], Exception) else "NONE"),
+            "onchain": "OK" if onchain else ("ERROR" if isinstance(results[6], Exception) else "NONE"),
+        }
+        logger.debug(f"Collector status for {self.symbol}: {collector_status}")
+        
+        # Log errori specifici
+        for i, (name, result) in enumerate(zip(["funding_rate", "open_interest", "long_short_ratio", "fear_greed", "sentiment", "whale", "onchain"], results)):
+            if isinstance(result, Exception):
+                logger.warning(f"{name} collector failed: {result}")
 
         # CVD dall'accumulatore interno (se collegato)
         cvd_data = self._cvd_calculator.snapshot(self.symbol) if self._cvd_calculator else None
@@ -252,9 +282,9 @@ class SignalScoreEngine:
             weighted_score += sent_score * self.weights.get("sentiment", 0.05)
             total_weight += self.weights.get("sentiment", 0.05)
 
-        # Whale Movements — includi nel peso SOLO se abbiamo dati reali (not None)
-        # Se whale è None (nessuna sorgente ha risposto), non distorcere la normalizzazione
-        if whale is not None and whale.recent_whale_activity is not None:
+        # Whale Movements — includi nel peso SOLO se abbiamo attività reale
+        # Se whale è None o recent_whale_activity=False, non distorcere la normalizzazione
+        if whale is not None and whale.recent_whale_activity is True:
             whale_score = WhaleCollector.whale_to_score(whale)
             breakdown["whale"] = round(whale_score, 2)
             weighted_score += whale_score * self.weights.get("whale", 0.10)

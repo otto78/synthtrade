@@ -45,17 +45,19 @@ export interface IntelligenceEvent {
   funding_rate?: number;
   open_interest?: number;
   fear_greed_value?: number;
-  fear_greed_label?: string;
-  cvd_trend?: string;
-  long_pct?: number;
-  short_pct?: number;
-  recorded_at: string;
-}
+fear_greed_label?: string;
+   cvd_trend?: string;
+   long_pct?: number;
+   short_pct?: number;
+   recorded_at: string;
+ }
 
-export interface ErrorEventPayload {
-  code: string;
-  message: string;
-}
+ export interface ErrorEventPayload {
+   code: string;
+   message: string;
+ }
+
+ // Specific payload types
 
 export interface ScalpingEvent {
   type: ScalpingEventType;

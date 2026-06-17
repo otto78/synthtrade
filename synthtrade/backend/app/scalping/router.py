@@ -200,6 +200,10 @@ async def broadcast_scalping_event(event_type: str, payload: Any):
             dead.append(ws)
     for ws in dead:
         _scalping_ws_connections.remove(ws)
+    # Always store last error in session state for HTTP response fallback
+    if event_type == "error":
+        session = _execution_state["session"]
+        session["last_error"] = {"code": payload.get("code"), "message": payload.get("message"), "timestamp": message["timestamp"]}
 
 
 def _now() -> str:
@@ -1271,18 +1275,30 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 try:
                     decision = await execution_loop.process_candle(candle)
                     if decision and decision.execute:
-                        logger.info(f">>> DECISION APPROVED -> {decision.reason} | confidence={decision.confidence}")
-                        # A signal was generated — broadcast it
-                        await broadcast_scalping_event("signal", {
-                            "symbol": event.symbol.upper(),
-                            "type": "BUY" if decision.confidence > 0 else "SELL",
-                            "price": float(candle.close),
-                            "confidence": abs(decision.confidence),
-                            "reason": decision.reason,
-                        })
+                        pm = _execution_state["position_manager"]
+                        
+                        # ── FIX: If already in position, only allow CLOSE signals ──
+                        # This prevents BUY/SELL spam while still allowing supervisor
+                        # to update parameters and strategies in background.
+                        # Non trade signals are kept for supervisor analysis.
+                        if pm.has_open() and decision.signal_type != "CLOSE":
+                            logger.debug(
+                                f">>> SKIP broadcasting signal for {event.symbol}: "
+                                f"has_open=True, signal_type={decision.signal_type} "
+                                f"(keeping for supervisor background analysis)"
+                            )
+                        else:
+                            logger.info(f">>> DECISION APPROVED -> {decision.reason} | confidence={decision.confidence}")
+                            # A signal was generated — broadcast it
+                            await broadcast_scalping_event("signal", {
+                                "symbol": event.symbol.upper(),
+                                "type": "BUY" if decision.confidence > 0 else "SELL",
+                                "price": float(candle.close),
+                                "confidence": abs(decision.confidence),
+                                "reason": decision.reason,
+                            })
 
                         # Simulate trade execution
-                        pm = _execution_state["position_manager"]
                         side = "BUY" if decision.confidence > 0 else "SELL"
                         logger.info(f">>> TRADE: side={side} has_open={pm.has_open()} daily_loss={_check_daily_loss()}")
                         
@@ -2133,8 +2149,21 @@ async def control_session(control: Dict) -> Dict:
                         f"I fondi potrebbero essere in Simple Earn. Spostali su Spot e riprova."
                     )
                     logger.error(f"\033[91m✗ LIVE START BLOCKED: {error_msg}\033[0m")
-                    await broadcast_scalping_event("error", {"code": "LIVE_START_BLOCKED", "message": error_msg})
-                    raise HTTPException(status_code=400, detail=error_msg)
+                    session["live_balance"] = None
+                    session["paper_balance"] = None
+                    session["status"] = "idle"
+                    session["error_message"] = error_msg
+                    session["error_code"] = "LIVE_START_BLOCKED"
+                    if guard:
+                        guard.fail("live_start_blocked: insufficient_spot_balance")
+                        _sync_session_load_guard()
+                    # Close the exchange adapter to prevent resource leak
+                    try:
+                        await adapter.close()
+                    except Exception:
+                        pass
+                    # Return idle session with error details (frontend will show error toast via sessionRestored$)
+                    return session.copy()
             except HTTPException:
                 raise
             except Exception as e:
@@ -2153,6 +2182,9 @@ async def control_session(control: Dict) -> Dict:
         session["trade_value"] = float(control.get("trade_value", session.get("trade_value", 10.0)))
         session["started_at"] = _now()
         session["stopped_at"] = None
+        # Clear any previous error state from failed start attempts
+        session["error_code"] = None
+        session["error_message"] = None
         _execution_state["trade_history"] = []
         _execution_state["position_manager"] = PositionManager()
         

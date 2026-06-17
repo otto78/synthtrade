@@ -105,7 +105,7 @@ import { ConfigService } from '../../core/services/config.service';
           <div class="meta-item">
             <span class="meta-label">Stato</span>
             <span class="meta-value" [ngClass]="session.status">
-              {{ session.status === 'running' ? 'LIVE' : 'PAUSED' }}
+              {{ session.status === 'running' ? 'LIVE' : (session.status === 'stopped' ? 'STOPPED' : 'PAUSED') }}
             </span>
           </div>
           <div class="meta-item">
@@ -594,7 +594,7 @@ export class SessionControlsComponent implements OnInit {
     } catch {}
   }
 
-  startSession(): void {
+startSession(): void {
     this.loading = true;
     this.saveTradeValue();
     const executionMode = this.globalMode === 'live' ? 'live' : 'paper';
@@ -603,15 +603,21 @@ export class SessionControlsComponent implements OnInit {
         this.session = data;
         this.sessionId = data.session_id || null;
         this.loading = false;
+        // Show error toast if session returned with error (Live start blocked due to insufficient balance)
+        if (data.error_code === 'LIVE_START_BLOCKED' && data.error_message) {
+          this.showErrorToast(data.error_message, data.error_code);
+        }
         this.cdr.detectChanges();
       },
       error: () => {
         this.loading = false;
-        // Error is already shown as popup toast via WS broadcast (LIVE_START_BLOCKED)
-        // handled by scalping-dashboard.component.ts via wsService.error$
         this.cdr.detectChanges();
       }
     });
+  }
+
+  private showErrorToast(message: string, code: string): void {
+    window.dispatchEvent(new CustomEvent('scalping-error', { detail: { message, code } }));
   }
 
   applyTradeValue(): void {

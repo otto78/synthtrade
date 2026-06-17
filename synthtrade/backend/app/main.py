@@ -131,7 +131,9 @@ async def _restore_scalping_session(db) -> None:
         )
         guard.fail(f"restore_state_failed: {type(e).__name__}: {e}")
 
-    # Step 6 — Inizializza balance live se la modalità è live
+    # Step 6 — Check for open positions FIRST (before balance check)
+    # Balance check can fail if we already hold the base asset from a previous BUY
+    has_open_position = False
     if session_mode == "live":
         try:
             from app.execution.exchange import BinanceExchangeAdapter
@@ -144,16 +146,83 @@ async def _restore_scalping_session(db) -> None:
                 _execution_state["exchange"] = adapter
 
                 symbol = _execution_state["session"]["symbol"]
-                from app.scalping.router import _normalize_binance_total_balance, _select_preferred_quote_balance, _get_spot_balances_from_info
+                from app.scalping.router import _get_spot_balances_from_info
 
                 ccxt_balance = await adapter.client.fetch_balance()
                 spot_balances = _get_spot_balances_from_info(ccxt_balance)
-                normalized = _normalize_binance_total_balance(spot_balances)
 
                 filters = await adapter.get_symbol_filters(symbol)
-                quote = filters.get("quoteAsset", "USDT")
-                live_bal = _select_preferred_quote_balance(normalized, quote)
+                base_asset = filters.get("baseAsset", "")
+                min_qty = float(filters.get("minQty", 0.001))
 
+                total_bal = float(ccxt_balance.get("total", {}).get(base_asset, 0))
+
+                # Check if we have an open trade in DB for this symbol
+                def _db_op_open():
+                    return db.table("scalping_trades") \
+                        .select("*") \
+                        .eq("session_id", session_id) \
+                        .eq("status", "open") \
+                        .limit(1) \
+                        .execute()
+                open_trades = await asyncio.to_thread(_db_op_open)
+                if open_trades.data:
+                    ot = open_trades.data[0]
+                    symbol_ot = ot.get("symbol", symbol)
+                    side = ot.get("side", "BUY")
+                    entry_price = ot.get("entry_price", 0)
+                    quantity = ot.get("quantity", 0)
+                    if entry_price and quantity and entry_price > 0 and quantity > 0:
+                        from decimal import Decimal
+                        pm = _execution_state["position_manager"]
+                        pos_obj = pm.open_position(
+                            symbol=symbol_ot,
+                            side=side,
+                            entry_price=Decimal(str(entry_price)),
+                            quantity=Decimal(str(quantity)),
+                        )
+                        pos_obj.oco_order_list_id = ot.get("oco_order_list_id")
+                        pos_obj.sl_order_id = ot.get("sl_order_id")
+                        pos_obj.tp_order_id = ot.get("tp_order_id")
+                        has_open_position = True
+                        logger.info(
+                            "Open position restored from DB during startup: %s %s @ %s qty=%s",
+                            side, symbol_ot, entry_price, quantity,
+                        )
+        except Exception as e:
+            logger.warning(f"Could not check open positions during restore: {e}")
+
+    # Step 6b — Inizializza balance live se la modalità è live
+    if session_mode == "live":
+        try:
+            adapter = _execution_state.get("exchange") or BinanceExchangeAdapter(
+                app_settings.BINANCE_API_KEY_LIVE or app_settings.BINANCE_API_KEY,
+                app_settings.BINANCE_SECRET_KEY_LIVE or app_settings.BINANCE_SECRET_KEY,
+                testnet=False,
+            )
+            if not _execution_state.get("exchange"):
+                _execution_state["exchange"] = adapter
+
+            symbol = _execution_state["session"]["symbol"]
+            from app.scalping.router import _normalize_binance_total_balance, _select_preferred_quote_balance
+
+            ccxt_balance = await adapter.client.fetch_balance()
+            spot_balances = _get_spot_balances_from_info(ccxt_balance)
+            normalized = _normalize_binance_total_balance(spot_balances)
+
+            filters = await adapter.get_symbol_filters(symbol)
+            quote = filters.get("quoteAsset", "USDT")
+            live_bal = _select_preferred_quote_balance(normalized, quote)
+
+            if has_open_position:
+                # Skip balance check - we have an open position
+                _execution_state["session"]["status"] = "running"
+                _execution_state["session"]["live_balance"] = live_bal or 0
+                _execution_state["session"]["paper_balance"] = live_bal or 0
+                logger.info("Live balance noted (position already open): %s %s", live_bal, quote)
+                guard.complete_phase("exchange_phase")
+            else:
+                # No open position - balance check applies
                 trade_val = float(_execution_state["session"].get("trade_value", 10.0))
                 if live_bal is not None and live_bal > 0 and live_bal >= trade_val:
                     _execution_state["session"]["live_balance"] = live_bal
@@ -162,18 +231,27 @@ async def _restore_scalping_session(db) -> None:
                 else:
                     logger.warning(
                         f"\033[91m⚠️ RESTORE: Spot balance={live_bal} < trade_value={trade_val}. "
-                        f"All funds may be in Earn. Pausing session.\033[0m"
+                        f"All funds may be in Earn. Stopping session.\033[0m"
                     )
-                    _execution_state["session"]["status"] = "paused"
-                    # Keep the previous balance value for display (user can see it's stale)
-                    if live_bal is not None and live_bal > 0:
-                        _execution_state["session"]["live_balance"] = live_bal
-            else:
-                logger.warning("No API keys for live mode — balance not refreshed during restore")
-                guard.fail("restore_exchange_failed: missing Binance API keys")
+                    _execution_state["session"]["status"] = "stopped"
+                    _execution_state["session"]["live_balance"] = None
+                    _execution_state["session"]["paper_balance"] = None
+                    try:
+                        def _db_stop():
+                            db.table("scalping_sessions").update({
+                                "status": "stopped",
+                                "stopped_at": datetime.now(timezone.utc).isoformat()
+                            }).eq("id", session_id).execute()
+                        await asyncio.to_thread(_db_stop)
+                        logger.info("Session %s marked as stopped in DB", session_id)
+                    except Exception:
+                        pass
+                    guard.fail("restore_skipped: insufficient spot balance")
+                    return
         except Exception as e:
             logger.error("Failed to initialize exchange adapter during restore: %s", e, exc_info=True)
             guard.fail(f"restore_exchange_failed: {type(e).__name__}: {e}")
+            return
 
     else:
         guard.complete_phase("exchange_phase")
@@ -181,189 +259,89 @@ async def _restore_scalping_session(db) -> None:
     if session_mode == "live":
         guard.complete_phase("exchange_phase")
 
-    # Step 7 — Restore open position from DB (if any trade with status='open' exists)
-    try:
-        def _db_op4():
-            return db.table("scalping_trades") \
-                .select("*") \
-                .eq("session_id", session_id) \
-                .eq("status", "open") \
-                .limit(1) \
-                .execute()
-        open_trades = await asyncio.to_thread(_db_op4)
-        if open_trades.data:
-            ot = open_trades.data[0]
-            side = ot.get("side", "BUY")
-            entry_price = ot.get("entry_price", 0)
-            quantity = ot.get("quantity", 0)
-            symbol = ot.get("symbol", _execution_state["session"]["symbol"])
-            if entry_price and quantity and entry_price > 0 and quantity > 0:
-                # Verify the position actually exists on the exchange
-                # (it may have been closed externally, e.g. by SL/TP or manually)
-                verified = True
-                if session_mode == "live" and _execution_state.get("exchange"):
-                    try:
-                        adapter = _execution_state["exchange"]
-                        filters = await adapter.get_symbol_filters(symbol)
-                        base_asset = filters.get("baseAsset", "")
-                        ccxt_bal = await adapter.client.fetch_balance()
-                        free_bal = float(ccxt_bal.get("free", {}).get(base_asset, 0))
-                        total_bal = float(ccxt_bal.get("total", {}).get(base_asset, 0))
-                        min_qty = float(filters.get("minQty", 0.001))
-
-                        if total_bal < min_qty:
-                            # Balance totale (free + locked) sotto minQty → OCO già eseguito (asset venduto)
-                            logger.warning(
-                                "Open position %s %s found in DB but exchange has total %.8f %s "
-                                "(below minQty=%.4f). Marking DB trade as closed (position closed externally).",
-                                side, symbol, total_bal, base_asset, min_qty,
-                            )
-                            # Mark the DB trade as closed since the position was closed externally
-                            trade_id = ot.get("id")
-                            if trade_id:
-                                real_exit_price = float(entry_price)
-                                pnl = 0.0
-                                pnl_pct = 0.0
-                                exit_time_str = datetime.now(timezone.utc).isoformat()
-
-                                # TASK-831: usa sl_order_id / tp_order_id specifici salvati in DB
-                                # per trovare il fill price preciso (evita di leggere ordini di altre sessioni)
-                                sl_order_id_db = ot.get("sl_order_id")
-                                tp_order_id_db = ot.get("tp_order_id")
-                                try:
-                                    fill_price_found = None
-                                    for oid in [tp_order_id_db, sl_order_id_db]:
-                                        if oid:
-                                            fp = await adapter._fetch_fill_price_by_order_id(symbol, oid)
-                                            if fp and fp > 0:
-                                                fill_price_found = fp
-                                                break
-
-                                    if fill_price_found and fill_price_found > 0:
-                                        real_exit_price = fill_price_found
-                                    else:
-                                        # Fallback: cerca negli ordini chiusi recenti
-                                        ccxt_symbol = await adapter._get_ccxt_symbol(symbol)
-                                        closed_orders = await adapter.client.fetch_closed_orders(ccxt_symbol, limit=20)
-                                        close_side = "sell" if side.lower() == "buy" else "buy"
-                                        for o in sorted(closed_orders, key=lambda x: x.get("timestamp", 0), reverse=True):
-                                            if o.get("status") == "closed" and o.get("side", "").lower() == close_side:
-                                                fp = float(o.get("price") or o.get("average") or 0)
-                                                if fp > 0:
-                                                    real_exit_price = fp
-                                                    break
-
-                                    if real_exit_price > 0 and entry_price > 0:
-                                        if side.lower() == "buy":
-                                            pnl_pct = ((real_exit_price - entry_price) / entry_price) * 100
-                                        else:
-                                            pnl_pct = ((entry_price - real_exit_price) / entry_price) * 100
-                                        trade_val = float(_execution_state["session"].get("trade_value", 10.0) or 10.0)
-                                        pnl = (pnl_pct / 100.0) * trade_val
-
-                                except Exception as my_trade_e:
-                                    logger.warning(f"Could not fetch fill price during restore: {my_trade_e}")
-
-                                def _db_op5():
-                                    db.table("scalping_trades").update({
-                                        "status": "closed",
-                                        "exit_price": real_exit_price,
-                                        "pnl": pnl,
-                                        "pnl_pct": pnl_pct,
-                                        "exit_time": exit_time_str,
-                                        "signal_reason": "take_profit" if pnl > 0 else "stop_loss",
-                                    }).eq("id", trade_id).execute()
-                                await asyncio.to_thread(_db_op5)
-                            verified = False
-                        else:
-                            # Balance OK → asset ancora in mano.
-                            # Verifica ulteriore: se non ci sono open orders su Binance,
-                            # l'OCO potrebbe essere eseguito DURANTE il restart
-                            # (race: balance non ancora aggiornato ma ordini già eseguiti).
-                            try:
-                                open_orders = await adapter.get_open_orders(symbol)
-                                oco_list_id = ot.get("oco_order_list_id")
-                                if not open_orders and oco_list_id:
-                                    # Nessun ordine aperto ma balance presente →
-                                    # OCO eseguito durante la finestra di restart.
-                                    # NON ripristinare la posizione: risolviamo via fill price.
-                                    logger.warning(
-                                        "Balance OK (total=%.6f, free=%.6f %s) but NO open orders on Binance "
-                                        "for OCO %s — OCO eseguito durante restart. "
-                                        "Marking as closed.",
-                                        total_bal, free_bal, base_asset, oco_list_id,
-                                    )
-                                    trade_id = ot.get("id")
-                                    if trade_id:
-                                        real_exit_price = float(entry_price)
-                                        pnl = 0.0
-                                        pnl_pct = 0.0
-                                        exit_time_str = datetime.now(timezone.utc).isoformat()
-                                        # Recupera fill price via orderId specifici
-                                        for oid in [ot.get("tp_order_id"), ot.get("sl_order_id")]:
-                                            if oid:
-                                                fp = await adapter._fetch_fill_price_by_order_id(symbol, oid)
-                                                if fp and fp > 0:
-                                                    real_exit_price = fp
-                                                    break
-                                        if real_exit_price > 0 and float(entry_price) > 0:
-                                            ep = float(entry_price)
-                                            pnl_pct = ((real_exit_price - ep) / ep * 100) if side.lower() == "buy" else ((ep - real_exit_price) / ep * 100)
-                                            trade_val = float(_execution_state["session"].get("trade_value", 10.0) or 10.0)
-                                            pnl = (pnl_pct / 100.0) * trade_val
-                                        def _db_op6():
-                                            db.table("scalping_trades").update({
-                                                "status": "closed",
-                                                "exit_price": real_exit_price,
-                                                "pnl": pnl,
-                                                "pnl_pct": pnl_pct,
-                                                "exit_time": exit_time_str,
-                                                "signal_reason": "take_profit" if pnl > 0 else "stop_loss",
-                                            }).eq("id", trade_id).execute()
-                                        await asyncio.to_thread(_db_op6)
-                                    verified = False
-                                else:
-                                    logger.info(
-                                        "Open position verified on exchange: total_balance=%.6f, free=%.6f %s, "
-                                        "open_orders=%d",
-                                        total_bal, free_bal, base_asset, len(open_orders),
-                                    )
-                            except Exception as ord_e:
-                                logger.warning("Could not verify open orders during restore (non-blocking): %s", ord_e)
-                    except Exception as bal_e:
-                        logger.warning(f"Could not verify position on exchange: {bal_e}")
-
-                if verified:
-                    from decimal import Decimal
-                    pm = _execution_state["position_manager"]
-                    pos_obj = pm.open_position(
-                        symbol=symbol,
-                        side=side,
-                        entry_price=Decimal(str(entry_price)),
-                        quantity=Decimal(str(quantity)),
-                    )
-                    # Ripristina OCO IDs dal DB sul position object (TASK-831)
-                    pos_obj.oco_order_list_id = ot.get("oco_order_list_id")
-                    pos_obj.sl_order_id = ot.get("sl_order_id")
-                    pos_obj.tp_order_id = ot.get("tp_order_id")
-                    logger.info(
-                        "Open position restored from DB: %s %s @ %s qty=%s oco_list=%s",
-                        side, symbol, entry_price, quantity, pos_obj.oco_order_list_id,
-                    )
-                    # TASK-827: riavvia UDS singleton post-restore se la sessione è live
-                    if session_mode == "live":
+# Step 7 — Restore open position from DB (if any trade with status='open' exists)
+    # Skip if we already restored in Step 6 (has_open_position is True)
+    if not has_open_position:
+        try:
+            def _db_op4():
+                return db.table("scalping_trades") \
+                    .select("*") \
+                    .eq("session_id", session_id) \
+                    .eq("status", "open") \
+                    .limit(1) \
+                    .execute()
+            open_trades = await asyncio.to_thread(_db_op4)
+            if open_trades.data:
+                ot = open_trades.data[0]
+                side = ot.get("side", "BUY")
+                entry_price = ot.get("entry_price", 0)
+                quantity = ot.get("quantity", 0)
+                symbol = ot.get("symbol", _execution_state["session"]["symbol"])
+                if entry_price and quantity and entry_price > 0 and quantity > 0:
+                    # Verify the position actually exists on the exchange
+                    verified = True
+                    if session_mode == "live" and _execution_state.get("exchange"):
                         try:
-                            from app.scalping.router import _start_uds_if_needed
-                            await _start_uds_if_needed()
-                        except Exception as uds_e:
-                            logger.warning("Could not start UDS after session restore: %s", uds_e)
-    except Exception as e:
-        logger.error("Failed to restore open position from DB: %s", e, exc_info=True)
-        guard.fail(f"restore_position_failed: {type(e).__name__}: {e}")
+                            adapter = _execution_state["exchange"]
+                            filters = await adapter.get_symbol_filters(symbol)
+                            base_asset = filters.get("baseAsset", "")
+                            ccxt_bal = await adapter.client.fetch_balance()
+                            free_bal = float(ccxt_bal.get("free", {}).get(base_asset, 0))
+                            total_bal = float(ccxt_bal.get("total", {}).get(base_asset, 0))
+                            min_qty = float(filters.get("minQty", 0.001))
+
+                            if total_bal < min_qty:
+                                # Position already closed externally
+                                logger.warning(
+                                    "Open position %s %s found in DB but exchange balance below minQty. "
+                                    "Marking as closed.",
+                                    side, symbol,
+                                )
+                                trade_id = ot.get("id")
+                                if trade_id:
+                                    def _db_close():
+                                        db.table("scalping_trades").update({
+                                            "status": "closed",
+                                            "exit_price": float(entry_price),
+                                            "pnl": 0.0,
+                                            "pnl_pct": 0.0,
+                                            "exit_time": datetime.now(timezone.utc).isoformat(),
+                                            "signal_reason": "stop_loss",
+                                        }).eq("id", trade_id).execute()
+                                    await asyncio.to_thread(_db_close)
+                                verified = False
+                            else:
+                                logger.info(
+                                    "Open position verified on exchange: total_balance=%.6f, free=%.6f %s",
+                                    total_bal, free_bal, base_asset,
+                                )
+                        except Exception as ord_e:
+                            logger.warning("Could not verify open orders during restore (non-blocking): %s", ord_e)
+
+                    if verified:
+                        from decimal import Decimal
+                        pm = _execution_state["position_manager"]
+                        pos_obj = pm.open_position(
+                            symbol=symbol,
+                            side=side,
+                            entry_price=Decimal(str(entry_price)),
+                            quantity=Decimal(str(quantity)),
+                        )
+                        pos_obj.oco_order_list_id = ot.get("oco_order_list_id")
+                        pos_obj.sl_order_id = ot.get("sl_order_id")
+                        pos_obj.tp_order_id = ot.get("tp_order_id")
+                        logger.info(
+                            "Open position restored from DB: %s %s @ %s qty=%s",
+                            side, symbol, entry_price, quantity,
+                        )
+        except Exception as e:
+            logger.error("Failed to restore open position from DB: %s", e, exc_info=True)
+            guard.fail(f"restore_position_failed: {type(e).__name__}: {e}")
 
     guard.complete_phase("position_phase")
 
-    # Step 7.5 — Carica trade history dal DB per popolare la lista trade e performance (DOPO aver chiuso i trade esterni)
+    # Step 7.5 — Carica trade history dal DB
+    # Always load trade history, even if session was stopped (for display)
     try:
         def _db_op3():
             return db.table("scalping_trades") \
@@ -393,8 +371,8 @@ async def _restore_scalping_session(db) -> None:
         logger.error("Failed to restore trade history from DB: %s", e, exc_info=True)
 
     # Step 8 — avvia il pipeline (WS, ExecutionLoop, candle processing)
-    # Solo se la sessione non è in pausa (es: spot balance insufficiente).
-    if _execution_state["session"]["status"] != "paused":
+    # Solo se la sessione non è fermata
+    if _execution_state["session"]["status"] != "stopped":
         try:
             restored_symbol = _execution_state["session"]["symbol"].lower()
             _execution_state["session"]["status"] = "running"  # ensure before async task reads it
@@ -415,7 +393,7 @@ async def _restore_scalping_session(db) -> None:
             )
             guard.fail(f"restore_pipeline_schedule_failed: {type(e).__name__}: {e}")
     else:
-        logger.info("Session restore skipped pipeline start: status=paused (spot balance insufficient)")
+        logger.info("Session restore skipped pipeline start: status=stopped (spot balance insufficient)")
 
 
 @asynccontextmanager

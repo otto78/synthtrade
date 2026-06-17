@@ -170,12 +170,19 @@ export class ScalpingDashboardComponent implements OnInit, OnDestroy {
   wsStatus: WsConnectionStatus = 'disconnected';
   showReconnectedFlash = false;
 
-  private _toastCounter = 0;
-  private _sub = new Subscription();
-  private _prevStatus: WsConnectionStatus = 'disconnected';
-  private _reconnectedTimer: ReturnType<typeof setTimeout> | null = null;
+private _toastCounter = 0;
+   private _sub = new Subscription();
+   private _prevStatus: WsConnectionStatus = 'disconnected';
+   private _reconnectedTimer: ReturnType<typeof setTimeout> | null = null;
+   private _httpErrorCallback = (e: Event) => {
+     const detail = (e as CustomEvent).detail;
+     if (detail?.message && !this.errorToasts.some(t => t.message === detail.message)) {
+       this._showError(detail.message, detail.code || 'HTTP_ERROR');
+       this.cdr.markForCheck();
+     }
+   };
 
-  constructor(
+   constructor(
     private wsService: ScalpingWsService,
     private sessionApi: SessionApiService,
     private cdr: ChangeDetectorRef,
@@ -211,15 +218,19 @@ export class ScalpingDashboardComponent implements OnInit, OnDestroy {
     // Sync session state from WebSocket (e.g. live balance updates)
     this._sub.add(
       this.wsService.sessionRestored$.subscribe((session) => {
-        this.sessionApi.updateSession(session);
-      })
-    );
-  }
+this.sessionApi.updateSession(session);
+     })
+     );
 
-  ngOnDestroy(): void {
+// Listen for HTTP errors via custom event (fallback when WS error races with HTTP response)
+     window.addEventListener('scalping-error', this._httpErrorCallback as EventListener);
+   }
+
+ngOnDestroy(): void {
     this.wsService.disconnect();
     this._sub.unsubscribe();
     if (this._reconnectedTimer) clearTimeout(this._reconnectedTimer);
+    window.removeEventListener('scalping-error', this._httpErrorCallback as EventListener);
   }
 
   dismissToast(id: number): void {

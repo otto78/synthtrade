@@ -4,7 +4,7 @@
 
 export interface ScalpingSession {
   session_id: string;
-  status: 'idle' | 'running' | 'paused';
+  status: 'idle' | 'running' | 'paused' | 'stopped';
   mode: 'paper' | 'live';
   strategy: string;
   symbol: string;
@@ -15,6 +15,8 @@ export interface ScalpingSession {
   trade_value?: number;
   first_trade_entry?: number;
   hold_pnl_pct?: number;
+  error_code?: string;
+  error_message?: string;
 }
 
 export interface SessionControl {

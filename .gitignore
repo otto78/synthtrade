@@ -40,3 +40,5 @@ supabase/.temp/
 Thumbs.db
 
 sinthtrade-credentials.json
+
+synthtrade/backend/app/static

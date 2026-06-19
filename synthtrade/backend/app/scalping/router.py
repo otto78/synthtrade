@@ -1294,7 +1294,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                             # A signal was generated — broadcast it
                             await broadcast_scalping_event("signal", {
                                 "symbol": event.symbol.upper(),
-                                "type": "BUY" if decision.confidence > 0 else "SELL",
+                                "type": decision.signal_type,
                                 "price": float(candle.close),
                                 "confidence": abs(decision.confidence),
                                 "reason": decision.reason,
@@ -1655,16 +1655,20 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
                 })
                 
-                # Execute SL/TP Auto Close
+                # Execute SL/TP Auto Close — TASK-855: solo in paper mode
+                # In live mode, SL/TP sono gestiti esclusivamente da OCO Binance via UDS (_on_order_update).
+                # Eseguire close software in live causerebbe doppia vendita (software + OCO).
                 hit_sl = (pos.side == "BUY" and current <= sl) or (pos.side == "SELL" and current >= sl)
                 hit_tp = (pos.side == "BUY" and current >= tp) or (pos.side == "SELL" and current <= tp)
-                try:
-                    if hit_sl:
-                        await _close_position_and_record(pm, current, pos, reason="stop_loss")
-                    elif hit_tp:
-                        await _close_position_and_record(pm, current, pos, reason="take_profit")
-                except Exception as auto_close_err:
-                    logger.error(f"Auto-close failed in _trade_processor (will retry on next tick or candle sync): {auto_close_err}")
+                _mode_trade = _execution_state["session"].get("mode", "paper")
+                if _mode_trade != "live":
+                    try:
+                        if hit_sl:
+                            await _close_position_and_record(pm, current, pos, reason="stop_loss")
+                        elif hit_tp:
+                            await _close_position_and_record(pm, current, pos, reason="take_profit")
+                    except Exception as auto_close_err:
+                        logger.error(f"Auto-close failed in _trade_processor: {auto_close_err}")
 
 
     async def _intelligence_processor():
@@ -1705,7 +1709,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
         try:
             from app.scalping.supervisor.supervisor_scheduler import SupervisorScheduler
             from app.config import settings
-            supervisor = SupervisorScheduler(symbol=symbol, interval_seconds=settings.scalping.SCALPING_SUPERVISOR_INTERVAL_SEC)
+            supervisor = SupervisorScheduler(symbol=symbol, interval_seconds=settings.scalping.SCALPING_SUPERVISOR_INTERVAL_SEC, score_engine=_execution_state.get("signal_engine"))
             _execution_state["loop"].session_id = _execution_state["session"].get("db_session_id")
             supervisor.set_execution_loop(_execution_state["loop"])
             supervisor.start()
@@ -1713,6 +1717,18 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
             logger.info(f"SupervisorScheduler started for {symbol} (restore_mode)")
         except Exception as e:
             logger.warning(f"Failed to start SupervisorScheduler in restore_mode: {e}")
+
+        # ── FIX: avvia UDS se c'è una posizione aperta (TASK-827/TASK-830)
+        # In restore_mode l'UDS non viene avviato dal candle_processor perché non
+        # passiamo per il Caso A (OCO confermato). Deve partire subito se la posizione
+        # è già aperta, altrimenti i fill TP/SL su Binance non vengono recepiti.
+        pm = _execution_state["position_manager"]
+        if pm.has_open() and _execution_state["session"].get("mode") == "live":
+            try:
+                await _start_uds_if_needed()
+                logger.info(f"UDS avviato in restore_mode per posizione aperta su {symbol}")
+            except Exception as uds_e:
+                logger.warning(f"Failed to start UDS in restore_mode: {uds_e}")
 
     # Start processor tasks
     _session_mode = _execution_state["session"].get("mode", "paper")
@@ -1767,24 +1783,98 @@ async def binance_exchange_info():
         raise HTTPException(status_code=502, detail=f"Binance API unreachable: {e}")
 
 
+@router.get("/sessions")
+async def list_scalping_sessions(limit: int = 50, offset: int = 0) -> List[Dict]:
+    """TASK-880: Lista sessioni scalping storiche, arricchite con totali reali dai trade."""
+    try:
+        supabase = get_supabase()
+        resp = supabase.table("scalping_sessions") \
+            .select("id, symbol, mode, status, started_at, stopped_at, total_pnl, trade_count, win_count, strategy, trade_value") \
+            .order("started_at", desc=True) \
+            .range(offset, offset + limit - 1) \
+            .execute()
+        rows = resp.data or []
+
+        # Per ogni sessione: calcola duration_seconds e arricchisci trade_count/pnl dai trade reali
+        session_ids = [r["id"] for r in rows]
+        trades_by_session: Dict[str, list] = {}
+        if session_ids:
+            try:
+                tr = supabase.table("scalping_trades") \
+                    .select("session_id, pnl, signal_reason, status, entry_price, exit_price, entry_time") \
+                    .in_("session_id", session_ids) \
+                    .eq("status", "closed") \
+                    .execute()
+                for t in (tr.data or []):
+                    sid = t["session_id"]
+                    trades_by_session.setdefault(sid, []).append(t)
+            except Exception as te:
+                logger.warning(f"list_sessions trades enrichment error: {te}")
+
+        from datetime import datetime as _dt
+        for row in rows:
+            # duration
+            started = row.get("started_at")
+            stopped = row.get("stopped_at")
+            if started and stopped:
+                try:
+                    s = _dt.fromisoformat(started.replace("Z", "+00:00"))
+                    e = _dt.fromisoformat(stopped.replace("Z", "+00:00"))
+                    row["duration_seconds"] = int((e - s).total_seconds())
+                except Exception:
+                    row["duration_seconds"] = None
+            else:
+                row["duration_seconds"] = None
+
+            # Arricchisci con dati reali dai trade (override se trade_count == 0)
+            session_trades = trades_by_session.get(row["id"], [])
+            if session_trades:
+                row["trade_count"] = len(session_trades)
+                row["win_count"] = len([t for t in session_trades if (t.get("pnl") or 0) > 0])
+                row["total_pnl"] = round(sum((t.get("pnl") or 0) for t in session_trades), 4)
+                # Calcola vs Hold: (exit_price ultimo trade / entry_price primo trade - 1) * 100
+                sorted_trades = sorted(session_trades, key=lambda t: t.get("entry_time") or "")
+                first_entry = float(sorted_trades[0].get("entry_price") or 0)
+                last_exit = float(sorted_trades[-1].get("exit_price") or 0)
+                if first_entry > 0 and last_exit > 0:
+                    row["hold_pnl_pct"] = round((last_exit - first_entry) / first_entry * 100, 2)
+                else:
+                    row["hold_pnl_pct"] = None
+
+        return rows
+    except Exception as e:
+        logger.warning(f"list_scalping_sessions error: {e}")
+        return []
+
+
 @router.get("/trade-history")
-async def get_trade_history(limit: int = 50) -> List[Dict]:
-    """Get trade history from the current session.
-    
-    Returns only closed trades (those with exit_price set), sorted by
-    most recent first (timestamp DESC). Filters out any open positions
-    that don't have an exit price yet.
-    """
+async def get_trade_history(session_id: Optional[str] = None, limit: int = 50) -> List[Dict]:
+    """TASK-881: Trade history. Se session_id fornito: query DB. Altrimenti: memoria corrente."""
+    if session_id:
+        try:
+            supabase = get_supabase()
+            resp = supabase.table("scalping_trades") \
+                .select("symbol, side, entry_price, exit_price, quantity, pnl, pnl_pct, entry_time, exit_time, signal_reason, status") \
+                .eq("session_id", session_id) \
+                .order("entry_time", desc=True) \
+                .limit(limit) \
+                .execute()
+            return resp.data or []
+        except Exception as e:
+            logger.warning(f"get_trade_history DB error: {e}")
+            return []
+
+    # Comportamento originale: in-memory, aggiunge entry_time/exit_time dagli alias
     trades = _execution_state["trade_history"]
-    # Filter out trades without exit_price (open positions not yet closed)
     closed_trades = [t for t in trades if t.get("exit_price") is not None]
-    # Sort by timestamp descending (most recent first)
-    sorted_trades = sorted(
-        closed_trades,
-        key=lambda t: t.get("timestamp", ""),
-        reverse=True,
-    )
-    return sorted_trades[:limit]
+    sorted_trades = sorted(closed_trades, key=lambda t: t.get("timestamp", ""), reverse=True)
+    result = []
+    for t in sorted_trades[:limit]:
+        row = dict(t)
+        row.setdefault("entry_time", t.get("timestamp"))
+        row.setdefault("exit_time", t.get("timestamp"))
+        result.append(row)
+    return result
 
 
 @router.get("/candles/{symbol}")
@@ -2081,6 +2171,44 @@ def _calc_session_entry_and_hold(trade_history: List[Dict], current_price: Optio
     return float(entry), round(hold_pnl, 2) if hold_pnl is not None else None
 
 
+@router.get("/health")
+async def scalping_health() -> Dict:
+    """Health check per tutti i componenti del modulo scalping (TASK-865)."""
+    session = _execution_state["session"]
+    ws_client = _execution_state.get("ws_client")
+    uds = _execution_state.get("user_data_stream")
+    supervisor = _execution_state.get("supervisor_scheduler")
+    loop = _execution_state.get("loop")
+    signal_engine = _execution_state.get("signal_engine")
+    guard = _execution_state.get("session_load_guard")
+
+    return {
+        "session_status": session.get("status"),
+        "ws_client": {
+            "connected": ws_client is not None and not ws_client._stop_event.is_set(),
+            "symbol": session.get("symbol"),
+        },
+        "uds": {
+            "active": uds is not None,
+            "running": uds._running if uds else False,
+        },
+        "supervisor": {
+            "active": supervisor._running if supervisor else False,
+            "interval_sec": supervisor._interval if supervisor else None,
+            "daily_calls": supervisor._daily_ai_calls if supervisor else 0,
+        },
+        "candle_buffer": {
+            "size": len(loop._candle_buffer) if loop and loop._candle_buffer else 0,
+            "ready": loop._candle_buffer.is_ready() if loop and loop._candle_buffer else False,
+        },
+        "signal_engine": {
+            "symbol": signal_engine.symbol if signal_engine else None,
+            "active": signal_engine is not None,
+        },
+        "session_guard": guard.monitor_data if guard else {},
+    }
+
+
 @router.get("/session")
 async def get_session() -> Dict:
     """Get current session status.
@@ -2265,7 +2393,7 @@ async def control_session(control: Dict) -> Dict:
                 # Start SupervisorScheduler
                 from app.scalping.supervisor.supervisor_scheduler import SupervisorScheduler
                 from app.config import settings
-                supervisor = SupervisorScheduler(symbol=active_symbol, interval_seconds=settings.scalping.SCALPING_SUPERVISOR_INTERVAL_SEC)
+                supervisor = SupervisorScheduler(symbol=active_symbol, interval_seconds=settings.scalping.SCALPING_SUPERVISOR_INTERVAL_SEC, score_engine=_execution_state.get("signal_engine"))
                 # Attach db_session_id (UUID) so the supervisor can log it to DB
                 _execution_state["loop"].session_id = session.get("db_session_id")
                 supervisor.set_execution_loop(_execution_state["loop"])
@@ -2374,11 +2502,18 @@ async def control_session(control: Dict) -> Dict:
             db_sid = session.get("db_session_id")
             if db_sid:
                 supabase = get_supabase()
+                # Calcola statistiche dalla trade history in memoria
+                closed = [t for t in _execution_state.get("trade_history", []) if t.get("exit_price") is not None]
+                total_pnl_val = round(sum((t.get("pnl") or 0) for t in closed), 4)
+                win_count_val = len([t for t in closed if (t.get("pnl") or 0) > 0])
                 supabase.table("scalping_sessions").update({
                     "status": "stopped",
-                    "stopped_at": session["stopped_at"]
+                    "stopped_at": session["stopped_at"],
+                    "trade_count": len(closed),
+                    "win_count": win_count_val,
+                    "total_pnl": total_pnl_val,
                 }).eq("id", db_sid).execute()
-                logger.info(f"Session {db_sid} set to stopped in DB")
+                logger.info(f"Session {db_sid} stopped — trades={len(closed)} wins={win_count_val} pnl={total_pnl_val}")
         except Exception as e:
             logger.warning(f"Failed to update session in DB: {e}")
         

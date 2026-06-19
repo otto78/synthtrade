@@ -664,6 +664,171 @@ Coverage: 71%
 
 ---
 
+## Epica 800 — Audit Fix Scalping Module (2026-06-19)
+
+### TASK-855 — BUG CRITICO: Rimuovere SL/TP software da _trade_processor in live mode (2026-06-19)
+
+**Status:** Complete ✅
+
+- [x] In `_trade_processor()`: aggiunto guard `if _mode_trade != "live"` attorno al blocco `hit_sl`/`hit_tp`
+- [x] In live mode SL/TP sono gestiti esclusivamente da OCO Binance via UDS (`_on_order_update`)
+- [x] Previene doppia vendita: software close + OCO close su stesso asset
+
+**File:** `synthtrade/backend/app/scalping/router.py`
+
+---
+
+### TASK-856 — BUG: Fix broadcast signal type (sempre BUY) (2026-06-19)
+
+**Status:** Complete ✅
+
+- [x] Sostituito `"BUY" if decision.confidence > 0 else "SELL"` con `decision.signal_type`
+- [x] Il frontend ora riceve il tipo segnale corretto (BUY/SELL/CLOSE)
+
+**File:** `synthtrade/backend/app/scalping/router.py`
+
+---
+
+### TASK-857 — BUG: Fix `get_holdings()` in BinanceExchangeAdapter (2026-06-19)
+
+**Status:** Complete ✅
+
+- [x] Corretto accesso a `balance["free"]` invece di `balance["total"][asset]["free"]`
+- [x] Previene `TypeError: float object is not subscriptable`
+
+**File:** `synthtrade/backend/app/execution/exchange.py`
+
+---
+
+### TASK-858 — BUG: Fix session_perf in supervisor_memory (2026-06-19)
+
+**Status:** Complete ✅
+
+- [x] `_save_decision_to_memory()` ora accetta parametro `trade_history: list`
+- [x] `_tick()` recupera `trade_history` da `_execution_state` del router e la passa esplicitamente
+- [x] `session_perf` non è più sempre vuoto nel DB
+
+**File:** `synthtrade/backend/app/scalping/supervisor/supervisor_scheduler.py`
+
+---
+
+### TASK-859 — BUG: Fix SupervisorScheduler score_engine per simbolo corretto (2026-06-19)
+
+**Status:** Complete ✅
+
+- [x] `SupervisorScheduler.__init__`: `score_engine or SignalScoreEngine(symbol=symbol)` (era default BTCUSDT)
+- [x] In `router.py`: entrambe le istanziazioni del supervisor passano `score_engine=_execution_state.get("signal_engine")`
+
+**File:** `synthtrade/backend/app/scalping/supervisor/supervisor_scheduler.py`, `router.py`
+
+---
+
+### TASK-860 — Supervisor context arricchito con performance sessione (2026-06-19)
+
+**Status:** Complete ✅
+
+- [x] `supervisor_scheduler._tick()` recupera `trade_history` e la passa a `client.decide()`
+- [x] `supervisor_client.decide()` accetta `trade_history` e la passa a `build_scalping_context()`
+- [x] `build_scalping_context()` calcola `session_performance` in-memory (total_trades, win_rate, pnl, last_5)
+- [x] `_format_context()` mostra sezione `=== PERFORMANCE SESSIONE ===`
+
+**File:** `supervisor_scheduler.py`, `supervisor_client.py`, `supervisor_context.py`
+
+---
+
+### TASK-861 — Aggiornare system prompt supervisor: regole "quando NON agire" (2026-06-19)
+
+**Status:** Complete ✅
+
+- [x] Aggiunta sezione `⚠️ REGOLA QUANDO NON AGIRE` nel `_SUPERVISOR_SYSTEM_PROMPT`
+- [x] Regole: < 5 trade → no_action, win_rate > 60% → no_action, coverage < 50% → no_action, loop decisioni → no_action
+
+**File:** `synthtrade/backend/app/scalping/supervisor/supervisor_client.py`
+
+---
+
+### TASK-862 — Caricamento storico decisioni supervisor nel context (2026-06-19)
+
+**Status:** Complete ✅
+
+- [x] `build_scalping_context()` carica ultimi 10 record da `supervisor_memory` per symbol/session
+- [x] `_format_context()` mostra sezione `=== DECISIONI PRECEDENTI (ultime 10) ===`
+- [x] Tabella `supervisor_memory` già presente (migration 20260616 applicata)
+
+**File:** `supervisor_context.py`, `supervisor_client.py`
+
+---
+
+### TASK-863 — Job APScheduler verifica outcome decisioni supervisor (2026-06-19)
+
+**Status:** Complete ✅
+
+- [x] `verify_supervisor_outcomes_job()` aggiunto in `scalping_jobs.py`
+- [x] Query decisioni applicate 25-35 min fa senza outcome, classifica positive/negative/neutral
+- [x] Registrato in `setup_scheduler()` con `interval_minutes=5`
+
+**File:** `synthtrade/backend/app/scheduler/scalping_jobs.py`, `jobs.py`
+
+---
+
+### TASK-864 — Circuit breaker per collector HTTP (2026-06-19)
+
+**Status:** Complete ✅
+
+- [x] Creato `circuit_breaker.py` con `CollectorCircuitBreaker` (closed→open→half_open, 3 failures, 5min reset)
+- [x] Integrato in tutti i 6 collector HTTP: `funding_rate`, `open_interest`, `long_short_ratio`, `fear_greed`, `sentiment`, `whale`, `onchain`
+- [x] Ogni collector controlla `is_available()` prima di fare HTTP call
+
+**File:** `collectors/circuit_breaker.py` + tutti i collector
+
+---
+
+### TASK-865 — Health check endpoint modulo scalping (2026-06-19)
+
+**Status:** Complete ✅
+
+- [x] Aggiunto `GET /scalping/health` in `router.py`
+- [x] Restituisce stato di: ws_client, UDS, supervisor, candle_buffer, signal_engine, session_guard
+
+**File:** `synthtrade/backend/app/scalping/router.py`
+
+---
+
+### TASK-866 — Rate limit budget giornaliero chiamate AI supervisor (2026-06-19)
+
+**Status:** Complete ✅
+
+- [x] Aggiunto `SCALPING_SUPERVISOR_MAX_DAILY_CALLS=100` in `.env` e `config.py`
+- [x] `SupervisorScheduler._tick()` controlla e incrementa `_daily_ai_calls`, reset a mezzanotte
+
+**File:** `supervisor_scheduler.py`, `config.py`, `.env`
+
+---
+
+### TASK-867 — PositionManager: aggiungere exit_price e closed_at (2026-06-19)
+
+**Status:** Complete ✅
+
+- [x] Aggiunti campi `exit_price: Optional[Decimal]` e `closed_at: Optional[datetime]` al dataclass `Position`
+- [x] `close_position()` popola entrambi i campi al momento della chiusura
+
+**File:** `synthtrade/backend/app/scalping/engine/position_manager.py`
+
+---
+
+### TASK-868 — Test suite per componenti core scalping (2026-06-19)
+
+**Status:** Complete ✅
+
+- [x] Creato `tests/test_scalping_core.py` con 13 test
+- [x] Coverage: `SessionLoadGuard` (4 test), `PositionManager` (2 test), `SignalAggregator` (5 test), `CircuitBreaker` (2 test)
+- [x] **Tutti i test passano: 13/13 PASSED** (verificato `pytest tests/test_scalping_core.py -v`)
+- [x] Fix collaterale: rimossi frammenti di docstring orfani in `long_short_ratio.py`, `sentiment.py`, `onchain.py`, `whale.py` (causa: patch circuit breaker aveva lasciato resti di docstring originale dopo `return None`)
+
+**File:** `synthtrade/backend/tests/test_scalping_core.py`
+
+---
+
 
 ### TASK-822 — Config panel: rimuovere sub-tab "Strategy" e aggiungere titolo "Session" con ID (2026-06-09)
 
@@ -683,3 +848,843 @@ Coverage: 71%
 - Lasciare al loro posto le impostazioni esistenti (symbol, strategy selector, trade value)
 
 **Rischio:** Basso — rimozione UI senza impatto su logica backend.
+
+
+
+
+  Bug confermati (live-rilevanti, paper escluso)
+
+  ┌────────┬────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ ID     │ Severità   │ Descrizione                                                                                                                    │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-02 │ 🔴 CRITICO │ Doppia chiusura posizione in live: _trade_processor esegue SL/TP software (_close_position_and_record) anche in live mode dove │
+  │        │            │ Binance chiude già via OCO. Se arriva un tick trade con prezzo sotto SL mentre l'OCO non è ancora eseguito, il router vende a  │
+  │        │            │ mercato E poi l'OCO si esegue = doppia vendita su asset già venduto.                                                           │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-03 │ 🟡 MEDIO   │ Broadcast signal type sempre BUY: "type": "BUY" if decision.confidence > 0 else "SELL" — confidence è sempre >0, il frontend   │
+  │        │            │ vede solo BUY nel signal panel.                                                                                                │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-04 │ 🟡 MEDIO   │ get_holdings() crash: balance["total"][asset]["free"] — balance["total"] è Dict[str, float], non un dict di oggetti. TypeError │
+  │        │            │ se chiamato.                                                                                                                   │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-05 │ 🟡 MEDIO   │ session_perf sempre vuoto in supervisor_memory: getattr(self._loop, "_execution_state", {}) ritorna sempre {} perché           │
+  │        │            │ ExecutionLoop non ha _execution_state.                                                                                         │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-06 │ 🟡 MEDIO   │ _save_decision_to_memory() non gestisce i task TASK-844/847: Il caricamento storico decisioni dal DB nel context del           │
+  │        │            │ supervisor non è ancora implementato (TASK-847), ma il salvataggio sì — il supervisor opera "senza memoria" nonostante la      │
+  │        │            │ tabella esista.                                                                                                                │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-07 │ 🟠 BASSO   │ Race condition in SessionLoadGuard: _check_timeout() dentro complete_phase() può impostare stato failed prima del check        │
+  │        │            │ issubset() se il timeout scatta nell'ultimo millisecondo.                                                                      │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-08 │ 🟠 BASSO   │ supervisor_scheduler._score_engine default BTCUSDT: Se SupervisorScheduler viene istanziato senza score_engine, usa            │
+  │        │            │ SignalScoreEngine() default che opera su BTCUSDT anche se il simbolo attivo è BNBUSDC. In pratica il supervisor riceve dati    │
+  │        │            │ intelligence per il simbolo sbagliato.                                                                                         │
+  └────────┴────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  Lista Task da aggiungere a TASKS.md
+
+  Ecco i task pronti per essere incollati nel file docs/TASKS.md, nell'epica scalping:
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  ---
+
+  ## Epica 800 — Fix Critici Post-Audit (2026-06-19)
+
+  ### TASK-855 — BUG CRITICO: Rimuovere SL/TP software da _trade_processor in live mode
+
+  **Status:** Todo
+  **Priorità:** CRITICA — può causare doppia vendita in live (software close + OCO close)
+  **Stima:** 0.5h
+  **File coinvolti:** `synthtrade/backend/app/scalping/router.py`
+
+  **Problema:**
+  In `_trade_processor()`, il codice esegue `_close_position_and_record()` quando rileva
+  `hit_sl` o `hit_tp` basandosi sul prezzo del tick. In live mode, Binance gestisce già
+  SL/TP tramite OCO nativo. Se il tick software rileva SL/TP PRIMA che l'evento UDS arrivi,
+  il router esegue un market sell → poi l'OCO esegue la vendita di un asset già venduto
+  → errore Binance "insufficient funds" o vendita doppia.
+
+  **Fix:**
+  ```python
+  # In _trade_processor(), PRIMA del blocco hit_sl/hit_tp:
+  _mode_trade = _execution_state["session"].get("mode", "paper")
+  if _mode_trade == "live":
+      pass  # In live: SL/TP gestiti da OCO Binance via UDS, non dal software
+  else:
+      if hit_sl:
+          await _close_position_and_record(pm, current, pos, reason="stop_loss")
+      elif hit_tp:
+          await _close_position_and_record(pm, current, pos, reason="take_profit")
+
+  Verifica: Avviare sessione live, aprire posizione, attendere SL/TP. Deve arrivare
+  solo l'evento UDS con trade_closed, non doppio broadcast.
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  TASK-856 — BUG: Fix broadcast signal type (sempre BUY)
+
+  Status: Todo
+  Priorità: Alta — il pannello signal del frontend mostra sempre BUY
+  Stima: 0.25h
+  File coinvolti: synthtrade/backend/app/scalping/router.py
+
+  Problema:
+
+  Nel candle processor, il broadcast del segnale usa:
+
+  "type": "BUY" if decision.confidence > 0 else "SELL",
+
+  decision.confidence è sempre positivo (range 0..1), quindi il tipo è sempre "BUY".
+  Il campo corretto è decision.signal_type che contiene "BUY", "SELL", "CLOSE", "NONE".
+
+  Fix:
+
+  "type": decision.signal_type,  # usa il tipo reale dal decisore
+
+  Verifica: In paper mode, attendere un segnale SELL nella pipeline.
+  Il broadcast deve mostrare type: "SELL", non type: "BUY".
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  TASK-857 — BUG: Fix get_holdings() in BinanceExchangeAdapter
+
+  Status: Todo
+  Priorità: Media — crash TypeError se get_holdings() viene chiamato
+  Stima: 0.25h
+  File coinvolti: synthtrade/backend/app/execution/exchange.py
+
+  Problema:
+
+  # ERRATO — balance["total"] è Dict[str, float], non Dict[str, {free: float}]
+  return {asset: float(data["free"]) for asset, data in balance["total"].items() ...}
+
+  Fix:
+
+  async def get_holdings(self) -> Dict[str, float]:
+      balance = await self.client.fetch_balance()
+      free = balance.get("free", {})
+      return {asset: float(amt) for asset, amt in free.items() if float(amt) > 0}
+
+  Verifica: Unit test o chiamata diretta a get_holdings() senza eccezione.
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  TASK-858 — BUG: Fix session_perf in supervisor_memory (ExecutionLoop non ha _execution_state)
+
+  Status: Todo
+  Priorità: Media — session_perf sempre vuoto → supervisor decide senza dati performance
+  Stima: 0.5h
+  File coinvolti: synthtrade/backend/app/scalping/supervisor/supervisor_scheduler.py
+
+  Problema:
+
+  # In _save_decision_to_memory():
+  trades = getattr(self._loop, "_execution_state", {}).get("trade_history", [])
+  # ExecutionLoop NON ha _execution_state → sempre {}
+
+  Fix:
+
+  Passare trade_history come parametro a _save_decision_to_memory() oppure
+  accedervi dal modulo router tramite import diretto:
+
+  # In supervisor_scheduler.py → _tick():
+  from app.scalping.router import _execution_state as _router_state
+  trade_history = _router_state.get("trade_history", [])
+  # Passare a _save_decision_to_memory(decision, ..., trade_history=trade_history)
+
+  Verifica: Dopo una decisione supervisor, verificare in supervisor_memory che
+  session_perf contenga {"total_trades": N, "winning_trades": K, "total_pnl": X}.
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  TASK-859 — BUG: Fix SupervisorScheduler score_engine per simbolo corretto
+
+  Status: Todo
+  Priorità: Media — supervisor usa dati BTCUSDT anche per sessioni BNBUSDC
+  Stima: 0.25h
+  File coinvolti: synthtrade/backend/app/scalping/supervisor/supervisor_scheduler.py, router.py
+
+  Problema:
+
+  # SupervisorScheduler.__init__:
+  self._score_engine = score_engine or SignalScoreEngine()  # default BTCUSDT!
+
+  Se il supervisor viene creato senza passare l'engine, usa BTCUSDT.
+
+  Fix:
+
+  self._score_engine = score_engine or SignalScoreEngine(symbol=symbol)
+
+  E in router.py, passare l'engine esistente al supervisor:
+
+  supervisor = SupervisorScheduler(
+      symbol=active_symbol,
+      interval_seconds=settings.scalping.SCALPING_SUPERVISOR_INTERVAL_SEC,
+      score_engine=_execution_state.get("signal_engine"),  # passa engine esistente
+  )
+
+  Verifica: Log supervisor deve mostrare symbol corretto nei dati collector.
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  TASK-860 — FASE E1-E2: Supervisor — context con performance sessione
+
+  Status: Todo (era TASK-844)
+  Priorità: Media
+  Stima: 2h
+  File coinvolti: app/scalping/supervisor/supervisor_scheduler.py, app/ai/supervisor_context.py
+
+  Prerequisiti: TASK-858 (trade_history accessibile nel scheduler)
+
+  Scope:
+
+  - [ ] Passare trade_history da _execution_state a build_scalping_context() via parametro
+  - [ ] In build_scalping_context(): calcolare session_performance:
+    - Ultimi 20 trade chiusi (con exit_price)
+    - Metriche: total_trades, winning_trades, total_pnl, win_rate, avg_pnl, last_5_trades
+
+  - [ ] Aggiornare _format_context() in supervisor_client.py con sezione === PERFORMANCE SESSIONE ===
+  - [ ] Verifica: log supervisor mostra dati performance reali, non vuoti
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  TASK-861 — FASE E3: Aggiornare system prompt supervisor (era TASK-845)
+
+  Status: Todo
+  Priorità: Media
+  Stima: 1h
+  File coinvolti: app/scalping/supervisor/supervisor_client.py
+
+  Scope:
+
+  - [ ] Aggiungere sezione QUANDO NON AGIRE al _SUPERVISOR_SYSTEM_PROMPT:
+    - Se < 5 trade nella sessione → no_action (troppo presto per giudicare)
+    - Se stessa action proposta 3+ volte consecutive → no_action (loop)
+    - Se < 4 collector attivi e coverage < 50% → no_action (dati insufficienti)
+    - Se score è nel range [-5, +5] → neutrale, non cambiare strategia
+
+  - [ ] Aggiungere sezione QUANDO AGIRE con esempi concreti
+  - [ ] Aggiungere regola: se session_perf mostra win_rate > 60% → no_action (strategia funziona)
+  - [ ] Verifica: con < 5 trade, il supervisor risponde no_action
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  TASK-862 — FASE F2-F3: Caricamento storico decisioni in context supervisor (era TASK-847)
+
+  Status: Todo
+  Priorità: Media — senza storico il supervisor propone stesse azioni in loop
+  Prerequisiti: Tabella supervisor_memory già creata (migration 20260616 applicata) ✅
+  Stima: 1.5h
+  File coinvolti: app/scalping/supervisor/supervisor_scheduler.py, app/ai/supervisor_context.py
+
+  Scope:
+
+  - [ ] In build_scalping_context(): query ultimi 10 record da supervisor_memory
+
+    filtrati per symbol e session_id se disponibile, ordinati per decided_at DESC
+
+  - [ ] Mappare i record in lista supervisor_history: [{action, reason, was_applied, decided_at}]
+  - [ ] Aggiungere chiave supervisor_history al context dict
+  - [ ] In _format_context(): aggiungere sezione === DECISIONI PRECEDENTI ===
+
+    (max ultimi 5, formato compatto: [T-10m] change_strategy→rsi_bollinger (applied=True))
+
+  - [ ] Verificare: dopo 2+ decisioni, il context nel log mostra la history
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  TASK-863 — FASE F4: Job verifica outcome decisioni supervisor (era TASK-848)
+
+  Status: Todo
+  Priorità: Bassa
+  Prerequisiti: TASK-862
+  Stima: 1.5h
+  File coinvolti: app/scheduler/scalping_jobs.py
+
+  Scope:
+
+  - [ ] Implementare verify_supervisor_outcomes_job() in scalping_jobs.py:
+    - Query supervisor_memory dove was_applied=True AND outcome_verified_at IS NULL AND decided_at < NOW() - 30min
+    - Per ogni record: calcola pnl_delta confrontando PnL sessione al momento della decisione vs ora
+    - Classifica: positive se pnl_delta > 0.01, negative se < -0.01, neutral altrimenti
+    - UPDATE riga con outcome_verified_at, outcome_pnl_delta, outcome_label
+
+  - [ ] Registrare il job in setup_scheduler() con interval_minutes=5
+  - [ ] Verifica: dopo 30+ min da una decisione applicata, il record ha outcome_label valorizzato
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  TASK-864 — Miglioramento: Circuit breaker collector HTTP
+
+  Status: Todo
+  Priorità: Media — senza circuit breaker, collector falliti vengono riqueri ogni 10s per sempre
+  Stima: 2h
+  File coinvolti: app/scalping/intelligence/collectors/ (tutti i collector)
+
+  Scope:
+
+  - [ ] Creare classe CollectorCircuitBreaker in nuovo file collectors/circuit_breaker.py:
+    - Soglia: 3 errori consecutivi → stato open (disabilitato per 5 min)
+    - Stato half_open dopo 5 min: tenta 1 call → se OK → closed, se KO → open
+    - Metodo call(coro) → esegue coroutine se closed/half_open, ritorna None se open
+
+  - [ ] Integrare in ogni collector: istanza CircuitBreaker per istanza collector
+  - [ ] Nei log: segnalare quando un collector entra in stato open e quando si recupera
+  - [ ] Verifica: simulare errore ripetuto su FundingRateCollector → dopo 3 fallimenti il collector
+
+    smette di essere contattato per 5 min, poi torna operativo automaticamente
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  TASK-865 — Miglioramento: Health check endpoint modulo scalping
+
+  Status: Todo
+  Priorità: Alta — senza health check non si sa lo stato dei componenti interni
+  Stima: 1h
+  File coinvolti: synthtrade/backend/app/scalping/router.py
+
+  Scope:
+
+  - [ ] Aggiungere endpoint GET /scalping/health che restituisce:
+
+  {
+    "ws_client": {"connected": true, "symbol": "bnbusdc", "last_candle_sec_ago": 12},
+    "uds": {"active": true, "connected": true},
+    "supervisor": {"active": true, "last_tick_sec_ago": 432, "interval_sec": 600},
+    "session_guard": {"state": "ready", "phases_completed": ["buffer_phase", ...]},
+    "candle_buffer": {"size": 98, "ready": true},
+    "signal_engine": {"symbol": "BNBUSDC", "last_computed_sec_ago": 8},
+    "collectors": {
+      "funding_rate": "ok",
+      "open_interest": "ok",
+      "fear_greed": "ok",
+      "cvd": "no_data",
+      "long_short_ratio": "error"
+    }
+  }
+
+  - [ ] Verifica: chiamare GET /scalping/health con sessione attiva e leggere output coerente
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  TASK-866 — Miglioramento: Rate limit budget giornaliero chiamate AI supervisor
+
+  Status: Todo
+  Priorità: Bassa — evita saturazione modelli free su OpenRouter
+  Stima: 0.5h
+  File coinvolti: app/scalping/supervisor/supervisor_scheduler.py
+
+  Scope:
+
+  - [ ] Aggiungere contatore _daily_ai_calls: int = 0 e _last_reset_day: str
+  - [ ] In _tick(): se _daily_ai_calls >= MAX_DAILY_SUPERVISOR_CALLS (default 100) → skip e log warning
+  - [ ] Reset contatore a mezzanotte (confronta data corrente con _last_reset_day)
+  - [ ] Aggiungere SCALPING_SUPERVISOR_MAX_DAILY_CALLS=100 a .env e config.py
+  - [ ] Verifica: dopo 100 chiamate simulate, il supervisor smette di chiamare l'AI
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  TASK-867 — Miglioramento: PositionManager — aggiungere exit_price e closed_at
+
+  Status: Todo
+  Priorità: Bassa
+  Stima: 0.5h
+  File coinvolti: app/scalping/engine/position_manager.py
+
+  Scope:
+
+  - [ ] Aggiungere campi exit_price: Optional[Decimal] = None e
+
+    closed_at: Optional[datetime] = None al dataclass Position
+
+  - [ ] In close_position(exit_price, ...): impostare pos.exit_price = exit_price
+
+    e pos.closed_at = datetime.now(timezone.utc)
+
+  - [ ] Nota: non richiede modifiche al router (che già calcola PnL esternamente),
+
+    ma fornisce una fonte di verità sul position object per eventuali audit futuri
+
+  - [ ] Verifica: dopo close_position(), pos.exit_price e pos.closed_at sono valorizzati
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  TASK-868 — Test: Suite di test per componenti core scalping
+
+  Status: Todo
+  Priorità: Media — nessun test copre il modulo scalping
+  Stima: 3h
+  File coinvolti: nuovo synthtrade/backend/tests/test_scalping_core.py
+
+  Scope:
+
+  - [ ] Test SessionLoadGuard: state machine idle→loading→ready, timeout→failed, complete_phase doppio
+  - [ ] Test SignalAggregator.should_execute():
+    - Caso 1: collector insufficienti → bypass se discordi, blocco se concordi
+    - Caso 2: score neutrale → blocco
+    - Caso 3: bias mismatch → blocco
+    - Caso 4: signal CLOSE → sempre permesso
+
+  - [ ] Test ExecutionLoop.process_candle():
+    - Buffer non pronto (< 50 candele) → ritorna None
+    - Buffer pronto → ritorna ExecutionDecision
+
+  - [ ] Test PositionManager: open → get_open → close → has_open=False
+  - [ ] Verifica: pytest tests/test_scalping_core.py passa verde
+
+
+  ---
+
+  Questo è il piano completo aggiornato. I punti chiave della sequenza di implementazione raccomandata:
+
+  1. **Prima**: TASK-855 (doppia chiusura live) — rischio finanziario reale
+  2. **Poi**: TASK-856 + 857 + 858 + 859 — fix veloci (< 2h totali)
+  3. **Poi**: TASK-860 + 861 + 862 — supervisor con context reale (prerequisiti per TASK-863)
+  4. **Poi**: TASK-865 (health check) — osservabilità
+  5. **Infine**: TASK-863, 864, 866, 867, 868 — miglioramenti e test
+
+---
+
+---
+
+## Epica Scalping Logs — TASK-880 ÷ TASK-883 (2026-06-19)
+
+**Descrizione:** Implementare la sezione log dello scalping nella pagina `/logs` del frontend. Mostrare la lista delle sessioni storiche in formato accordion: ogni sessione è espandibile e mostra i trade di quella sessione. Calcolare durata sessione e durata trade direttamente lato frontend.
+
+---
+
+### TASK-880 — Backend: Nuovo endpoint `GET /scalping/sessions` (lista sessioni storiche)
+
+**Status:** Complete ✅
+**Completato:** 2026-06-19
+**Priorità:** Alta — prerequisito per la UI delle sessioni
+**Stima:** 30 min
+**File coinvolti:** `synthtrade/backend/app/scalping/router.py`
+
+**Scope:**
+- [ ] Aggiungere nuovo endpoint:
+  ```python
+  @router.get("/sessions")
+  async def list_scalping_sessions(limit: int = 50, offset: int = 0) -> List[Dict]:
+  ```
+- [ ] Query `scalping_sessions` in Supabase ordinata per `started_at DESC`
+- [ ] Campi nel response JSON:
+  ```json
+  {
+    "id": "uuid",
+    "symbol": "BNBUSDC",
+    "mode": "LIVE",
+    "status": "stopped",
+    "started_at": "2026-06-19T09:30:00Z",
+    "stopped_at": "2026-06-19T12:15:00Z",
+    "duration_seconds": 9900,
+    "total_pnl": 3.45,
+    "trade_count": 12,
+    "win_count": 8,
+    "strategy": "momentum_base",
+    "trade_value": 100.0
+  }
+  ```
+- [ ] `duration_seconds` = differenza tra `stopped_at` e `started_at` se status è `stopped`, altrimenti `null`
+- [ ] Supporto paginazione via `limit` e `offset`
+- [ ] Se non ci sono sessioni, ritornare lista vuota `[]` (non errore)
+- [ ] Verifica: chiamare `GET /scalping/sessions` e leggere output
+
+---
+
+### TASK-881 — Backend: Aggiungere filtro `session_id` + campi `entry_time`/`exit_time` a `GET /scalping/trade-history`
+
+**Status:** Complete ✅
+**Completato:** 2026-06-19
+**Priorità:** Alta — prerequisito per mostrare i trade di una singola sessione
+**Stima:** 15 min
+**File coinvolti:** `synthtrade/backend/app/scalping/router.py`
+
+**Scope:**
+- [ ] Modificare firma endpoint:
+  ```python
+  @router.get("/trade-history")
+  async def get_trade_history(session_id: Optional[str] = None, limit: int = 50) -> List[Dict]:
+  ```
+- [ ] Se `session_id` è fornito:
+  - Query `scalping_trades` filtrata per `session_id`
+  - Ordinata per `entry_time DESC`
+  - Response con campi: `symbol`, `side`, `entry_price`, `exit_price`, `quantity`, `pnl`, `pnl_pct`, `entry_time`, `exit_time`, `signal_reason`, `status`
+- [ ] Se `session_id` non è fornito:
+  - Comportamento attuale: ritorna `trade_history` dalla memoria `_execution_state`
+  - **Inoltre**: aggiungere `entry_time` e `exit_time` ai trade in memoria:
+    - `entry_time` = `timestamp` del trade (già presente)
+    - `exit_time` = `timestamp` del trade (stesso valore, perché in memoria il trade è già chiuso)
+- [ ] Retrocompatibilità garantita: chi chiama senza `session_id` continua a funzionare
+- [ ] Verifica: chiamare `GET /scalping/trade-history?session_id=<uuid>` e ottenere lista trade filtrata
+
+---
+
+### TASK-882 — Frontend: Modelli + Servizio per le sessioni scalping nella pagina logs
+
+**Status:** Complete ✅
+**Completato:** 2026-06-19
+**Priorità:** Alta — strato dati per la UI
+**Stima:** 15 min
+**File coinvolti:**
+  - Nuovo `synthtrade/frontend/synthtrade-ui/src/app/pages/logs/logs.model.ts`
+  - Nuovo `synthtrade/frontend/synthtrade-ui/src/app/pages/logs/logs.service.ts`
+
+**Scope:**
+
+**File: `logs.model.ts`**
+- [ ] Interfaccia `ScalpingSessionLog`:
+  ```typescript
+  export interface ScalpingSessionLog {
+    id: string;
+    symbol: string;
+    mode: 'PAPER' | 'LIVE';
+    status: 'running' | 'paused' | 'stopped';
+    started_at: string;
+    stopped_at?: string;
+    duration_seconds?: number;
+    total_pnl: number;
+    trade_count: number;
+    win_count: number;
+    strategy?: string;
+    trade_value?: number;
+  }
+  ```
+- [ ] Interfaccia `SessionTradeLog`:
+  ```typescript
+  export interface SessionTradeLog {
+    symbol: string;
+    side: 'BUY' | 'SELL';
+    entry_price: number;
+    exit_price?: number;
+    quantity: number;
+    pnl?: number;
+    pnl_pct?: number;
+    entry_time: string;
+    exit_time?: string;
+    signal_reason?: string;
+    status?: string;
+  }
+  ```
+
+**File: `logs.service.ts`**
+- [ ] Servizio injectable `ScalpingSessionLogsService`:
+  ```typescript
+  @Injectable({ providedIn: 'root' })
+  export class ScalpingSessionLogsService {
+    private http = inject(HttpClient);
+    private base = '/api/scalping';
+
+    getSessions(limit = 50, offset = 0): Observable<ScalpingSessionLog[]>
+    getSessionTrades(sessionId: string): Observable<SessionTradeLog[]>
+  }
+  ```
+- [ ] `getSessions()`: GET `${this.base}/sessions?limit=${limit}&offset=${offset}`
+- [ ] `getSessionTrades()`: GET `${this.base}/trade-history?session_id=${sessionId}`
+- [ ] Gestione errori base (log warning, return array vuoto)
+
+---
+
+### TASK-883 — Frontend: Tab "Scalping" con accordion sessioni e trade annidati
+
+**Status:** Complete ✅
+**Completato:** 2026-06-19
+
+**Fix post-screenshot (2026-06-19):**
+- [x] Aggiunta header row con label colonne (Simbolo, Modo, Inizio, Fine, Durata, Trade, Wins, P&L €, Win%)
+- [x] Layout a grid CSS con colonne a larghezza fissa (non più flex → tutto a sinistra)
+- [x] Paginazione sessioni: 10 sessioni per pagina con Prev/Next
+- [x] Backend fix: al stop sessione ora salva `trade_count`, `win_count`, `total_pnl` su `scalping_sessions`
+**Priorità:** Alta — UI finale
+**Stima:** 2h
+**File coinvolti:** `synthtrade/frontend/synthtrade-ui/src/app/pages/logs/logs.page.ts`
+
+**Scope — Template:**
+
+**1. Aggiungere terzo tab:**
+```html
+<button class="tab-btn" [class.active]="activeTab() === 'scalping'" (click)="switchTab('scalping')">🧵 Scalping</button>
+```
+- Aggiornare il tipo `activeTab` a `'logs' | 'trades' | 'scalping'`
+
+**2. Nuova sezione `@if (activeTab() === 'scalping')`:**
+- Se `sessions().length === 0` → mostra `<div class="empty-state">Nessuna sessione di scalping trovata.</div>`
+- Altrimenti → container accordion
+
+**3. Riga header accordion** per ogni sessione (cliccabile → `toggleSession(s.id)`):
+```html
+<div class="session-row" [class.expanded]="expandedSessionId() === s.id" (click)="toggleSession(s.id)">
+  <!-- Pallino stato -->
+  <span class="status-dot" [class.running]="s.status === 'running'" [class.stopped]="s.status === 'stopped'"></span>
+  
+  <!-- Symbol + Mode badge -->
+  <span class="session-symbol">{{ s.symbol }}</span>
+  <span class="mode-badge" [class.live]="s.mode === 'LIVE'" [class.paper]="s.mode === 'PAPER'">{{ s.mode }}</span>
+  
+  <!-- Data inizio -->
+  <span class="session-start">{{ s.started_at | date:'dd/MM/yy HH:mm' }}</span>
+  
+  <!-- Data fine / "In corso" -->
+  @if (s.status === 'running') {
+    <span class="session-end">In corso</span>
+  } @else {
+    <span class="session-end">{{ s.stopped_at | date:'dd/MM/yy HH:mm' }}</span>
+  }
+  
+  <!-- Durata sessione (calcolata in frontend) -->
+  <span class="session-duration">{{ calcDuration(s.started_at, s.stopped_at) }}</span>
+  
+  <!-- Trade count -->
+  <span class="session-trades">📊 {{ s.trade_count }}</span>
+  
+  <!-- Win count / total -->
+  @if (s.trade_count > 0) {
+    <span class="session-wins">✅ {{ s.win_count }}/{{ s.trade_count }}</span>
+  }
+  
+  <!-- P&L total (colorato) -->
+  <span class="session-pnl" [ngClass]="{ positive: s.total_pnl >= 0, negative: s.total_pnl < 0 }">
+    {{ s.total_pnl >= 0 ? '+' : '' }}{{ s.total_pnl | number:'1.2-2' }} €
+  </span>
+  
+  <!-- Win rate -->
+  @if (s.trade_count > 0) {
+    <span class="session-winrate" [ngClass]="{ positive: winRate(s) >= 50, negative: winRate(s) < 50 }">
+      {{ winRate(s) | number:'1.1-1' }}%
+    </span>
+  }
+  
+  <!-- Freccia espansione -->
+  <span class="expand-arrow">{{ expandedSessionId() === s.id ? '🔼' : '🔽' }}</span>
+</div>
+```
+
+**4. Body accordion** (dopo header, visibile solo se espanso):
+```html
+@if (expandedSessionId() === s.id) {
+  <div class="session-detail">
+    @if (sessionTrades().length === 0) {
+      <div class="empty-state">Nessun trade in questa sessione.</div>
+    } @else {
+      <div class="trades-table-wrapper">
+        <table class="trades-table">
+          <thead>
+            <tr>
+              <th>Ora</th>
+              <th>Pair</th>
+              <th>Tipo</th>
+              <th>Entry</th>
+              <th>Exit</th>
+              <th>Q.tà</th>
+              <th>Durata</th>
+              <th>P&L €</th>
+              <th>P&L %</th>
+              <th>Motivo</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (t of sessionTrades(); track trackByTrade(i, t)) {
+              <tr>
+                <td class="cell-date">{{ t.entry_time | date:'HH:mm' }}</td>
+                <td class="cell-pair">{{ t.symbol }}</td>
+                <td class="cell-side" [ngClass]="{ buy: t.side === 'BUY', sell: t.side === 'SELL' }">{{ t.side }}</td>
+                <td class="cell-price">{{ t.entry_price | number:'1.2-6' }}</td>
+                <td class="cell-exit">{{ t.exit_price != null ? (t.exit_price | number:'1.2-6') : '—' }}</td>
+                <td class="cell-qty">{{ t.quantity | number:'1.4-8' }}</td>
+                <td class="cell-duration">{{ tradeDuration(t.entry_time, t.exit_time) }}</td>
+                <td class="cell-pnl-eur" [ngClass]="{ positive: (t.pnl ?? 0) >= 0, negative: (t.pnl ?? 0) < 0 }">
+                  {{ t.pnl != null ? ((t.pnl >= 0 ? '+' : '') + (t.pnl | number:'1.2-2') + ' €') : '—' }}
+                </td>
+                <td class="cell-pnl" [ngClass]="{ positive: (t.pnl_pct ?? 0) >= 0, negative: (t.pnl_pct ?? 0) < 0 }">
+                  {{ t.pnl_pct != null ? ((t.pnl_pct >= 0 ? '+' : '') + (t.pnl_pct | number:'1.2-2') + '%') : '—' }}
+                </td>
+                <td class="cell-reason">{{ t.signal_reason ?? '—' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </div>
+}
+```
+
+**5. Helper functions (metodi del component):**
+
+- **`calcDuration(startIso: string, endIso?: string): string`**
+  - Calcola `endIso ? new Date(endIso) - new Date(startIso) : Date.now() - new Date(startIso)`
+  - Formatta output:
+    - `>= 86400s` → `Xg Yh`
+    - `>= 3600s` → `Xh Ym`
+    - `>= 60s` → `Xm Ys`
+    - `< 60s` → `Xs`
+  - Se sessione ancora running, mostra durata progressiva
+
+- **`winRate(s: ScalpingSessionLog): number`**
+  - Se `s.trade_count > 0` → `(s.win_count / s.trade_count) * 100`
+  - Altrimenti → `0`
+
+- **`tradeDuration(entryIso: string, exitIso?: string): string`**
+  - Calcola `exitIso ? new Date(exitIso) - new Date(entryIso) : Date.now() - new Date(entryIso)`
+  - Se trade ancora aperto (`exitIso == null`) → mostra "aperto"
+  - Formatta:
+    - `>= 3600s` → `Xh Ym`
+    - `>= 60s` → `Ym Zs`
+    - `< 60s` → `Xs`
+  - Esempi: "12m", "1h 30m", "3s", "45m 20s"
+
+- **`trackByTrade(index: number, trade: SessionTradeLog): string`**
+  - `trade.entry_time + trade.symbol + trade.side` — per track by univoco
+
+**Scope — Class:**
+
+**6. Nuovi signal e stato:**
+```typescript
+sessions = signal<ScalpingSessionLog[]>([]);
+expandedSessionId = signal<string | null>(null);
+sessionTrades = signal<SessionTradeLog[]>([]);
+private sessionsOffset = signal(0);
+private sessionsLoaded = signal(false);
+```
+
+**7. Inject servizio:**
+```typescript
+private scalpingSessionLogsService = inject(ScalpingSessionLogsService);
+```
+
+**8. Nuovi metodi:**
+- `loadSessions()` — chiama `getSessions(50, 0)`, setta `sessions` e `sessionsLoaded`
+- `toggleSession(sessionId)` — se già espansa → collassa; altrimenti → espande e carica trade
+- `loadSessionTrades(sessionId)` — chiama `getSessionTrades(sessionId)`, setta `sessionTrades`
+
+**9. Modifica `switchTab()`:**
+```typescript
+switchTab(tab: 'logs' | 'trades' | 'scalping'): void {
+  this.activeTab.set(tab);
+  if (tab === 'scalping') {
+    if (!this.sessionsLoaded()) this.loadSessions();
+    this.expandedSessionId.set(null);
+    this.sessionTrades.set([]);
+  } else if (tab === 'trades') { ... }
+  else { ... }
+}
+```
+
+**Scope — Styles:**
+
+**10. Stili aggiuntivi:**
+```scss
+/* Accordion session row */
+.session-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s;
+  &:hover { background: rgba(255,255,255,0.03); }
+  &.expanded {
+    border-color: var(--accent-primary);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    margin-bottom: 0;
+  }
+}
+
+/* Stato pallino */
+.status-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  &.running { background: #26a69a; box-shadow: 0 0 6px rgba(38,166,154,0.5); }
+  &.stopped { background: #555; }
+}
+
+/* Symbol */
+.session-symbol {
+  font-family: monospace;
+  font-weight: 700;
+  color: var(--text-primary);
+  min-width: 80px;
+}
+
+/* Badge mode */
+.mode-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  &.live { background: rgba(239,83,80,0.2); color: #ef5350; }
+  &.paper { background: rgba(38,166,154,0.2); color: #26a69a; }
+}
+
+/* Date colonne */
+.session-start,
+.session-end,
+.session-duration {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 80px;
+}
+
+/* Durata */
+.session-duration { color: var(--text-secondary); min-width: 60px; }
+
+/* Trade count */
+.session-trades { color: var(--text-secondary); min-width: 50px; text-align: center; }
+
+/* Win count */
+.session-wins { color: var(--text-secondary); font-size: 12px; min-width: 60px; }
+
+/* P&L */
+.session-pnl { font-family: monospace; font-weight: 700; min-width: 80px; text-align: right; }
+
+/* Win rate */
+.session-winrate { font-family: monospace; font-weight: 600; font-size: 12px; min-width: 50px; text-align: right; }
+
+/* Expand arrow */
+.expand-arrow { margin-left: auto; font-size: 12px; }
+
+/* Detail panel (body accordion) */
+.session-detail {
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent-primary);
+  border-top: none;
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+  padding: 8px;
+  margin-bottom: 4px;
+}
+
+/* Durata trade nella tabella */
+.cell-duration { font-family: monospace; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+/* Reason cell */
+.cell-reason { font-size: 11px; color: var(--text-secondary); max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+```
+
+**11. Verifica finale (checklist):**
+- [ ] Tre tab funzionanti: Log, Storico Trade, Scalping
+- [ ] Click su tab "Scalping" carica lista sessioni
+- [ ] Ogni riga mostra: stato, symbol, mode, inizio, fine, durata, trade count, win/total, P&L €, win rate %, freccia
+- [ ] Click su riga espande accordion con tabella trade
+- [ ] Tabella trade mostra: ora, pair, tipo, entry, exit, q.tà, durata trade, P&L €, P&L %, motivo
+- [ ] Click su altra riga cambia espansione (collassa precedente, espande nuova)
+- [ ] Durata sessione in formato leggibile (es: "2h 15m")
+- [ ] Durata trade in formato leggibile (es: "12m", "45s")
+- [ ] Empty state se nessuna sessione
+- [ ] Empty state nella tabella se sessione senza trade
+- [ ] P&L colorato verde/rosso
+- [ ] Win rate colorato verde (≥50%) / rosso (<50%)
+- [ ] Performance decente con molte sessioni (OnPush change detection)

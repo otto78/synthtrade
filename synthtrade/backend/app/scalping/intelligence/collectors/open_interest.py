@@ -45,19 +45,13 @@ class OpenInterestCollector:
     def __init__(self, timeout_seconds: float = 10.0, max_retries: int = 3):
         self._timeout = timeout_seconds
         self._max_retries = max_retries
-        # Rolling buffer per baseline dinamica: separato per simbolo
         self._history: dict[str, deque] = {}
+        from app.scalping.intelligence.collectors.circuit_breaker import CollectorCircuitBreaker
+        self._cb = CollectorCircuitBreaker("open_interest")
 
     async def collect(self, symbol: str = "BTCUSDT") -> Optional[OpenInterest]:
-        """Recupera l'Open Interest corrente per un simbolo.
-
-        Args:
-            symbol: Simbolo in formato Binance (es: BTCUSDT).
-
-        Returns:
-            OpenInterest se la chiamata ha successo, None altrimenti.
-        """
-        # Mappa USDC → USDT per i futures perpetual
+        if not self._cb.is_available():
+            return None
         futures_symbol = FUTURES_SYMBOL_MAP.get(symbol.upper(), symbol.upper())
         
         for attempt in range(self._max_retries):

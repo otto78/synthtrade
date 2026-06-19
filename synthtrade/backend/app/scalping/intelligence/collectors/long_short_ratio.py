@@ -35,17 +35,13 @@ class LongShortRatioCollector:
     def __init__(self, timeout_seconds: float = 10.0, max_retries: int = 3):
         self._timeout = timeout_seconds
         self._max_retries = max_retries
+        from app.scalping.intelligence.collectors.circuit_breaker import CollectorCircuitBreaker
+        self._cb = CollectorCircuitBreaker("long_short_ratio")
 
     async def collect(self, symbol: str = "BTCUSDT", period: str = "5m") -> Optional[LongShortRatio]:
-        """Recupera il Long/Short Ratio corrente per un simbolo.
+        if not self._cb.is_available():
+            return None
 
-        Args:
-            symbol: Simbolo in formato Binance (es: BTCUSDT).
-            period: Periodo ('5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d').
-
-        Returns:
-            LongShortRatio se la chiamata ha successo, None altrimenti.
-        """
         # Mappa USDC → USDT per i futures perpetual
         futures_symbol = FUTURES_SYMBOL_MAP.get(symbol.upper(), symbol.upper())
         

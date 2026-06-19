@@ -271,3 +271,114 @@ async def opportunity_monitor_job() -> None:
 
     except Exception as e:
         logger.error(f"Opportunity monitor job error: {e}")
+
+
+async def verify_supervisor_outcomes_job() -> None:
+    """TASK-863: Verifica outcome delle decisioni supervisor applicate 25-35 min fa.
+
+    Query decisioni applicate senza outcome, calcola pnl_delta vs sessione corrente
+    e classifica l'outcome come positive/negative/neutral.
+    """
+    try:
+        import asyncio
+        from datetime import timedelta
+        from app.db.supabase_client import get_supabase
+
+        now = datetime.now(timezone.utc)
+        cutoff_from = (now - timedelta(minutes=35)).isoformat()
+        cutoff_to = (now - timedelta(minutes=25)).isoformat()
+
+        def _fetch():
+            db = get_supabase()
+            return db.table("supervisor_memory") \
+                .select("id, decided_at") \
+                .eq("was_applied", True) \
+                .is_("outcome_verified_at", "null") \
+                .gte("decided_at", cutoff_from) \
+                .lte("decided_at", cutoff_to) \
+                .execute()
+
+        result = await asyncio.to_thread(_fetch)
+        records = result.data or []
+        if not records:
+            return
+
+        # Calcola PnL corrente dalla sessione attiva
+        current_pnl = 0.0
+        try:
+            from app.scalping.router import _execution_state
+            trade_history = _execution_state.get("trade_history", [])
+            current_pnl = sum((t.get("pnl") or 0) for t in trade_history if t.get("exit_price"))
+        except Exception:
+            pass
+
+        label = "positive" if current_pnl > 0.01 else ("negative" if current_pnl < -0.01 else "neutral")
+        now_iso = now.isoformat()
+
+        def _update(record_id):
+            db = get_supabase()
+            db.table("supervisor_memory").update({
+                "outcome_verified_at": now_iso,
+                "outcome_pnl_delta": round(current_pnl, 2),
+                "outcome_label": label,
+            }).eq("id", record_id).execute()
+
+        for rec in records:
+            await asyncio.to_thread(_update, rec["id"])
+
+        logger.info(f"verify_supervisor_outcomes_job: updated {len(records)} records (label={label})")
+    except Exception as e:
+        logger.warning(f"verify_supervisor_outcomes_job error: {e}")
+
+
+
+async def verify_supervisor_outcomes_job() -> None:
+    """TASK-863: Verifica outcome decisioni supervisor applicate 25-35 min fa."""
+    try:
+        import asyncio
+        from datetime import timedelta
+        from app.db.supabase_client import get_supabase
+
+        now = datetime.now(timezone.utc)
+        cutoff_from = (now - timedelta(minutes=35)).isoformat()
+        cutoff_to = (now - timedelta(minutes=25)).isoformat()
+
+        def _fetch():
+            db = get_supabase()
+            return db.table("supervisor_memory") \
+                .select("id") \
+                .eq("was_applied", True) \
+                .is_("outcome_verified_at", "null") \
+                .gte("decided_at", cutoff_from) \
+                .lte("decided_at", cutoff_to) \
+                .execute()
+
+        result = await asyncio.to_thread(_fetch)
+        records = result.data or []
+        if not records:
+            return
+
+        current_pnl = 0.0
+        try:
+            from app.scalping.router import _execution_state
+            trade_history = _execution_state.get("trade_history", [])
+            current_pnl = sum((t.get("pnl") or 0) for t in trade_history if t.get("exit_price"))
+        except Exception:
+            pass
+
+        label = "positive" if current_pnl > 0.01 else ("negative" if current_pnl < -0.01 else "neutral")
+        now_iso = now.isoformat()
+
+        def _update(record_id):
+            get_supabase().table("supervisor_memory").update({
+                "outcome_verified_at": now_iso,
+                "outcome_pnl_delta": round(current_pnl, 2),
+                "outcome_label": label,
+            }).eq("id", record_id).execute()
+
+        for rec in records:
+            await asyncio.to_thread(_update, rec["id"])
+
+        logger.info(f"verify_supervisor_outcomes_job: {len(records)} records updated (label={label})")
+    except Exception as e:
+        logger.warning(f"verify_supervisor_outcomes_job error: {e}")

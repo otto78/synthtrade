@@ -34,8 +34,12 @@ class FearGreedCollector:
     def __init__(self, timeout_seconds: float = 10.0, max_retries: int = 3):
         self._timeout = timeout_seconds
         self._max_retries = max_retries
+        from app.scalping.intelligence.collectors.circuit_breaker import CollectorCircuitBreaker
+        self._cb = CollectorCircuitBreaker("fear_greed")
 
     async def collect(self, limit: int = 1) -> FearGreedData | None:
+        if not self._cb.is_available():
+            return None
         global _cached_value, _cached_at
 
         # Usa cache se valida

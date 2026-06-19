@@ -26,14 +26,14 @@ import { SessionApiService } from '../services/session-api.service';
       <div *ngIf="metrics" class="metrics-grid">
         <div class="metric-item pnl-group">
           <span class="label">Total PnL</span>
-          <span class="pnl-values">
-            <span class="value" [class.profit]="metrics.totalPnl >= 0" [class.loss]="metrics.totalPnl < 0">
-              {{ metrics.totalPnl | number:'1.2-2' }} {{ quoteAsset }}
+          <div class="pnl-values">
+            <span class="pnl-main" [class.profit]="metrics.totalPnl >= 0" [class.loss]="metrics.totalPnl < 0">
+              {{ metrics.totalPnl >= 0 ? '+' : '' }}{{ metrics.totalPnl | number:'1.2-2' }} {{ quoteAsset }}
             </span>
-            <span class="value pnl-pct" [class.profit]="metrics.totalPnl >= 0" [class.loss]="metrics.totalPnl < 0">
-              {{ metrics.totalPnlPct | number:'1.2-2' }}%
+            <span class="pnl-pct" [class.profit]="metrics.totalPnl >= 0" [class.loss]="metrics.totalPnl < 0">
+              {{ metrics.totalPnlPct >= 0 ? '+' : '' }}{{ metrics.totalPnlPct | number:'1.2-2' }}%
             </span>
-          </span>
+          </div>
         </div>
 
         <!-- Trading vs Hold comparison -->
@@ -96,6 +96,14 @@ import { SessionApiService } from '../services/session-api.service';
           <span class="label">Consecutive Losses</span>
           <span class="value" [class.warning]="metrics.consecutiveLosses >= 3">{{ metrics.consecutiveLosses }}</span>
         </div>
+        <div class="metric-item">
+          <span class="label">Wins / Losses</span>
+          <span class="value"
+            [class.profit]="metrics.winningTrades > metrics.losingTrades"
+            [class.loss]="metrics.losingTrades > metrics.winningTrades">
+            {{ metrics.winningTrades }} / {{ metrics.losingTrades }}
+          </span>
+        </div>
       </div>
     </div>
   `,
@@ -104,24 +112,21 @@ import { SessionApiService } from '../services/session-api.service';
     .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
     .title-hr { height: 1px; background: rgba(234,236,239,0.08); margin: 10px 0 12px 0; }
     .no-data { color: var(--text-secondary); font-size: 12px; padding: 8px; }
-    .metrics-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .metric-item { display: flex; justify-content: space-between; padding: 10px 12px; background: var(--bg-elevated); border-radius: 6px; font-size: 14px; }
     .label { color: var(--text-secondary); }
     .value { font-weight: 600; color: var(--text-primary); }
     .value.profit { color: var(--accent-success, #26a69a); }
     .value.loss { color: var(--accent-danger, #ef5350); }
-    .pnl-group { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: var(--bg-elevated); border-radius: 6px; font-size: 14px; }
-    .pnl-values { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-    .pnl-pct { font-size: 12px; opacity: 0.8; }
-    .warning { color: var(--accent-warning, #ffb74d); }
-
-    /* Trading vs Hold */
-    .hold-compare {
-      flex-direction: column;
-      gap: 8px;
-      background: rgba(240,185,11,0.04);
-      border: 1px solid rgba(240,185,11,0.12);
-    }
+    .pnl-group { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: var(--bg-elevated); border-radius: 6px; grid-column: span 2; }
+    .pnl-values { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+    .pnl-main { font-size: 20px; font-weight: 700; line-height: 1.1; }
+    .pnl-main.profit { color: var(--accent-success, #26a69a); }
+    .pnl-main.loss { color: var(--accent-danger, #ef5350); }
+    .pnl-pct { font-size: 12px; opacity: 0.75; font-weight: 600; }
+    .pnl-pct.profit { color: var(--accent-success, #26a69a); }
+    .pnl-pct.loss { color: var(--accent-danger, #ef5350); }
+    .hold-compare { flex-direction: column; gap: 8px; background: rgba(240,185,11,0.04); border: 1px solid rgba(240,185,11,0.12); grid-column: span 2; }
     .hold-header {
       display: flex;
       justify-content: space-between;

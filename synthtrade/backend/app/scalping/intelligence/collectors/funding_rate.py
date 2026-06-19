@@ -46,17 +46,12 @@ class FundingRateCollector:
     def __init__(self, timeout_seconds: float = 10.0, max_retries: int = 3):
         self._timeout = timeout_seconds
         self._max_retries = max_retries
+        from app.scalping.intelligence.collectors.circuit_breaker import CollectorCircuitBreaker
+        self._cb = CollectorCircuitBreaker("funding_rate")
 
     async def collect(self, symbol: str = "BTCUSDT") -> Optional[FundingRate]:
-        """Recupera il funding rate corrente per un simbolo.
-
-        Args:
-            symbol: Simbolo in formato Binance (es: BTCUSDT).
-
-        Returns:
-            FundingRate se la chiamata ha successo, None altrimenti.
-        """
-        # Mappa USDC → USDT per i futures perpetual
+        if not self._cb.is_available():
+            return None
         futures_symbol = FUTURES_SYMBOL_MAP.get(symbol.upper(), symbol.upper())
         
         for attempt in range(self._max_retries):
@@ -87,6 +82,7 @@ class FundingRateCollector:
                     await asyncio.sleep(0.5 * (attempt + 1))  # Backoff
                     continue
                 logger.warning("FundingRateCollector error for %s: %s", symbol, e)
+                self._cb.on_failure()
                 return None
 
     @staticmethod

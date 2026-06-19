@@ -12,6 +12,7 @@ async def build_scalping_context(
     regime: Optional[MarketRegime],
     score: Optional[SignalScore],
     session_id: Optional[str] = None,
+    trade_history: Optional[list] = None,  # TASK-860: performance sessione in-memory
 ) -> dict:
     """Costruisce il context per il supervisor AI.
 
@@ -92,6 +93,27 @@ async def build_scalping_context(
         missing = [c for c in all_possible if c not in active_collectors]
         context["active_collectors"] = active_collectors
         context["missing_collectors"] = missing
+
+    # ── Performance sessione (TASK-860): prima prova trade_history in-memory, poi DB ──
+    # trade_history passata direttamente dallo scheduler (più fresca, evita query DB)
+    if trade_history:
+        closed = [t for t in trade_history if t.get("exit_price")]
+        total = len(closed)
+        if total > 0:
+            wins = len([t for t in closed if (t.get("pnl") or 0) > 0])
+            total_pnl = sum((t.get("pnl") or 0) for t in closed)
+            win_rate = wins / total * 100
+            last_5 = sorted(closed, key=lambda t: t.get("timestamp", ""), reverse=True)[:5]
+            context["session_performance"] = {
+                "total_trades": total,
+                "winning_trades": wins,
+                "losing_trades": total - wins,
+                "win_rate_pct": round(win_rate, 1),
+                "total_pnl": round(total_pnl, 2),
+                "avg_pnl_per_trade": round(total_pnl / total, 2),
+                "last_5_pnl": [t.get("pnl") or 0 for t in last_5],
+                "last_5_reasons": [t.get("signal_reason") or "unknown" for t in last_5],
+            }
 
     # ── Performance sessione (TASK-844) ─────────────────────────────────
     if session_id:

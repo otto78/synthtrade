@@ -25,19 +25,15 @@ class OnChainCollector:
     def __init__(self, timeout_seconds: float = 15.0):
         self._timeout = timeout_seconds
         self._dune_key = settings.scalping.DUNE_API_KEY
+        from app.scalping.intelligence.collectors.circuit_breaker import CollectorCircuitBreaker
+        self._cb = CollectorCircuitBreaker("onchain")
 
     # Chain supportate da Blockchair
     _SUPPORTED_CHAINS = {"btc", "eth", "ltc"}
 
     async def collect(self, symbol: str = "BTC") -> Optional[OnChainData]:
-        """Recupera dati on-chain per un simbolo.
-
-        Args:
-            symbol: Simbolo base (es: BTC, ETH).
-
-        Returns:
-            OnChainData se la raccolta ha successo, None altrimenti.
-        """
+        if not self._cb.is_available():
+            return None
         base_symbol = symbol.replace("USDT", "").replace("USDC", "").replace("USD", "").lower()
 
         # Skip rapido: se il simbolo non è supportato da Blockchair E Dune non è configurato,

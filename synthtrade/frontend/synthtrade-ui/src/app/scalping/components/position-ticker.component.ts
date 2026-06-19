@@ -9,6 +9,7 @@ import { HttpClient } from '@angular/common/http';
 import { Subscription } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { ScalpingWsService, PositionEvent } from '../services/scalping-ws.service';
+import { SessionApiService } from '../services/session-api.service';
 import { Position } from '../models/position.model';
 
 @Component({
@@ -35,10 +36,10 @@ import { Position } from '../models/position.model';
           <span>Current: {{ position.current_price | number:'1.2-2' }}</span>
         </div>
 
-        <!-- Invested amount -->
-        <div class="row invested" *ngIf="position.trade_value_usd">
-          <span class="inv-label">Investito</span>
-          <span class="inv-value">{{ position.trade_value_usd | number:'1.2-2' }} {{ quoteAsset }}</span>
+        <!-- Trade value (gross amount) -->
+        <div class="row invested" *ngIf="getTradeValue()">
+          <span class="inv-label">Valore Trade</span>
+          <span class="inv-value">{{ getTradeValue() | number:'1.2-2' }} {{ quoteAsset }}</span>
         </div>
 
         <div class="row pnl" [ngClass]="position.pnl >= 0 ? 'profit' : 'loss'">
@@ -199,7 +200,8 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
   constructor(
     private ws: ScalpingWsService,
     private http: HttpClient,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private sessionApi: SessionApiService
   ) {}
 
   ngOnInit(): void {
@@ -280,6 +282,17 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
     });
   }
   
+  /**
+   * Returns the trade value from the session config (the exact amount set by user, e.g. 20 USDC).
+   * Fallback to quantity × entry_price if session not yet loaded.
+   */
+  getTradeValue(): number {
+    const session = this.sessionApi.getActiveSession();
+    if (session?.trade_value) return session.trade_value;
+    if (!this.position) return 0;
+    return this.position.quantity * this.position.entry_price;
+  }
+
   getProgressPct(): number {
     if (!this.position) return 0;
     const { side, current_price, stop_loss_price, take_profit_price } = this.position;

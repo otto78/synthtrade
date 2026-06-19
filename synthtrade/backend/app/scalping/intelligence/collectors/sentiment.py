@@ -30,16 +30,13 @@ class SentimentCollector:
         self._timeout = timeout_seconds
         self._newsapi_key = settings.scalping.NEWSAPI_API_KEY
         self._cryptocompare_key = settings.scalping.CRYPTOCOMPARE_API_KEY
+        from app.scalping.intelligence.collectors.circuit_breaker import CollectorCircuitBreaker
+        self._cb = CollectorCircuitBreaker("sentiment")
 
     async def collect(self, symbol: str = "BTC") -> Optional[SentimentData]:
-        """Recupera e analizza il sentiment per un simbolo.
+        if not self._cb.is_available():
+            return None
 
-        Args:
-            symbol: Simbolo base (es: BTC, ETH).
-
-        Returns:
-            SentimentData se la raccolta ha successo, None altrimenti.
-        """
         # Rimuovi USDT se presente (es: BTCUSDT -> BTC)
         base_symbol = symbol.replace("USDT", "").replace("USD", "").upper()
         

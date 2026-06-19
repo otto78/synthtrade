@@ -68,7 +68,8 @@ class BinanceExchangeAdapter:
     async def get_holdings(self) -> Dict[str, float]:
         try:
             balance = await self.client.fetch_balance()
-            return {asset: float(data["free"]) for asset, data in balance["total"].items() if float(data["free"]) > 0}
+            free = balance.get("free", {})
+            return {asset: float(amt) for asset, amt in free.items() if float(amt) > 0}
         except Exception as e:
             raise ExchangeOrderError(f"Holdings fetch failed: {e}")
 

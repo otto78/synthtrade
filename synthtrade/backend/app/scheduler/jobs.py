@@ -17,6 +17,7 @@ from app.scheduler.scalping_jobs import (
     session_health_job,
     spot_reconciliation_job,
     opportunity_monitor_job,
+    verify_supervisor_outcomes_job,
     set_engine as set_scalping_engine,
 )
 
@@ -228,8 +229,28 @@ def setup_scheduler(engine=None) -> AsyncIOScheduler:
         scheduler.add_job(spot_reconciliation_job, "interval",
                           hours=2,
                           id="scalping_spot_reconciliation")
-        scheduler.add_job(opportunity_monitor_job, "interval",
-                          minutes=settings.scalping.SCALPING_OPPORTUNITY_POLL_INTERVAL_MIN,
-                          id="scalping_opportunity_monitor")
+        # ── OPPORTUNITY FEED — STANDBY (2026-06-19) ──────────────────────────────
+        # Il polling delle opportunità (BinanceRSS, CoinGecko, WhaleAlert, News)
+        # è stato messo in standby perché i dati raccolti NON vengono usati dal
+        # Supervisor AI né dal SignalAggregator.
+        #
+        # Motivo: le opportunità classificate (listing, whale, news HIGH urgency)
+        # non sono symbol-specific rispetto al simbolo tradato (es. BNBUSDC),
+        # e i segnali rilevanti (whale, sentiment) sono già coperti dai collector
+        # intelligence esistenti (WhaleCollector, SentimentCollector).
+        #
+        # Il componente UI (OpportunityFeedComponent) è stato rimosso dalla dashboard.
+        #
+        # Per reintrodurlo: decommentare questa riga E aggiungere il componente
+        # alla dashboard in scalping-dashboard.component.ts.
+        # Considerare di collegare le opportunità HIGH urgency al context del Supervisor
+        # SOLO per il simbolo attivo (es. whale su BNB → supervisor BNBUSDC).
+        #
+        # scheduler.add_job(opportunity_monitor_job, "interval",
+        #                   minutes=settings.scalping.SCALPING_OPPORTUNITY_POLL_INTERVAL_MIN,
+        #                   id="scalping_opportunity_monitor")
+        scheduler.add_job(verify_supervisor_outcomes_job, "interval",
+                          minutes=5,
+                          id="scalping_supervisor_outcome_verify")
 
     return scheduler

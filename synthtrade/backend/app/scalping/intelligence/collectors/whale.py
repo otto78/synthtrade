@@ -41,13 +41,12 @@ class WhaleCollector:
 
     def __init__(self, timeout_seconds: float = 12.0):
         self._timeout = timeout_seconds
+        from app.scalping.intelligence.collectors.circuit_breaker import CollectorCircuitBreaker
+        self._cb = CollectorCircuitBreaker("whale")
 
     async def collect(self, symbol: str = "BTC") -> Optional[WhaleData]:
-        """Rileva attività whale recente per un simbolo.
-
-        Returns:
-            WhaleData se trovati dati, None se nessuna sorgente ha risposto.
-        """
+        if not self._cb.is_available():
+            return None
         base_symbol = symbol.replace("USDT", "").replace("USDC", "").replace("USD", "").lower()
 
         whale_count = 0

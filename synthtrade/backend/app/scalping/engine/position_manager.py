@@ -33,9 +33,12 @@ class Position:
     sl_id: Optional[str] = None
     tp_id: Optional[str] = None
     # FIX-2026-06-12: Campi per User Data Stream (match ordini Binance)
-    oco_order_list_id: Optional[str] = None  # orderListId dell'OCO
-    sl_order_id: Optional[str] = None        # orderId dello STOP_LOSS (da orderReports)
-    tp_order_id: Optional[str] = None        # orderId del LIMIT_MAKER (da orderReports)
+    oco_order_list_id: Optional[str] = None
+    sl_order_id: Optional[str] = None
+    tp_order_id: Optional[str] = None
+    # TASK-867: fonte di verità sul close
+    exit_price: Optional[Decimal] = None
+    closed_at: Optional[datetime] = None
 
 
 class PositionManager:
@@ -83,6 +86,8 @@ class PositionManager:
         pos = self.get_open()
         if pos:
             pos.status = PositionStatus.CLOSED
+            pos.exit_price = exit_price
+            pos.closed_at = datetime.now(timezone.utc)
             return pos
         return None
 

@@ -13,9 +13,21 @@ from app.services.llm_model_service import LLMModelService
 
 logger = logging.getLogger(__name__)
 
-# System prompt con gerarchia segnali v2.0 + update_threshold
+# System prompt con gerarchia segnali v2.0 + update_threshold + regole NON AGIRE (TASK-861)
 _SUPERVISOR_SYSTEM_PROMPT = '''
 Sei un supervisore AI esperto in trading scalping. Analizza i dati di intelligence forniti e prendi una decisione operativa.
+
+⚠️ REGOLA QUANDO NON AGIRE (rispetta SEMPRE queste regole prima di ogni altra):
+- Se session_performance mostra < 5 trade totali → rispondi SEMPRE no_action
+  (troppo presto per valutare la strategia, non hai dati sufficienti)
+- Se le ultime 3+ decisioni nella history mostrano la stessa action che stai per proporre → rispondi SEMPRE no_action
+  (loop di decisioni inutili, la misura non ha effetto)
+- Se session_performance mostra win_rate > 60% e total_pnl > 0 → rispondi SEMPRE no_action
+  (la strategia sta funzionando, non interferire)
+- Se coverage collector < 50% → rispondi SEMPRE no_action
+  (dati intelligence insufficienti per decisioni affidabili)
+- Se score è nel range [-5, +5] → rispondi no_action o update_threshold al massimo
+  (segnale troppo debole per cambiare strategia)
 
 ⚠️ REGOLA CRITICA — mapping regime/strategia obbligatorio:
 - regime=ranging  → puoi scegliere SOLO: rsi_bollinger, momentum_base, stoch_rsi_bb_squeeze
@@ -23,29 +35,16 @@ Sei un supervisore AI esperto in trading scalping. Analizza i dati di intelligen
 - regime=volatile → puoi scegliere SOLO: stoch_rsi_bb_squeeze, momentum_base
 - regime=unknown → puoi scegliere SOLO: momentum_base
 - Non puoi MAI assegnare ema_cross a un mercato ranging, indipendentemente dal bias.
-  Il bias bullish in ranging si sfrutta con mean-reversion (rsi_bollinger), non trend-following.
 - Non puoi MAI assegnare stoch_rsi_bb_squeeze in trending perché sprecherebbe breakout reali.
 
 ⚠️ AZIONE update_threshold — modifica la soglia di signal strength:
-- Il contesto mostra la soglia corrente (Current Signal Strength Threshold)
-  con score attuale, gap per passare il gate, collector attivi/assenti, coverage
-- Se lo score intelligence è sempre sotto soglia ma il segnale tecnico è forte e ripetuto,
-  e la copertura collector è buona (coverage > 70%), valuta di ABBASSARE la soglia
-  per permettere trade. Nuova soglia consigliata: ~10.0
-- Se ci sono molti falsi segnali (trade in perdita nonostante score sopra soglia),
-  valuta di ALZARE la soglia per maggiore selettività. Nuova soglia consigliata: ~18.0
-- Se il coverage è basso (< 60%), NON abbassare la soglia perché score inaffidabile
-- Se lo score è stabile tra -5 e +5 per più di 10 candele e il regime è ranging,
-  abbassa threshold a 8-10 per evitare blocchi prolungati
-- Se ci sono stati trade con perdita consecutiva, alza threshold di 2-3 punti
-  per maggiore protezione
-- Non modificare threshold più di una volta ogni 30 minuti (cooldown automatico)
-- La soglia non può scendere sotto 5.0 né salire sopra 30.0 (limiti di sicurezza)
-- Usa update_threshold come alternativa conservativa prima di change_strategy:
-  se la strategia sembra giusta ma non passa il filtro intelligence, abbassa la soglia
-  invece di cambiare strategia
-- Per update_threshold, passa nel campo new_params il valore:
-  {"signal_strength_threshold": NUOVO_VALORE}
+- Se lo score è sempre sotto soglia ma segnale tecnico forte e coverage > 70% → abbassa (~10.0)
+- Se molti falsi segnali (trade in perdita nonostante score sopra soglia) → alza (~18.0)
+- Se coverage < 60% → NON abbassare la soglia (score inaffidabile)
+- Se score stabile tra -5 e +5 per 10+ candele in ranging → abbassa a 8-10
+- Se trade in perdita consecutiva → alza di 2-3 punti
+- Cooldown automatico 30 minuti tra modifiche. Limiti: min 5.0, max 30.0.
+- Per update_threshold: new_params = {"signal_strength_threshold": NUOVO_VALORE}
 
 Gerarchia dei Segnali (ordine di priorità):
 1. Funding Rate: > 0.1% = leva eccessiva long (bias short), < -0.1% = leva eccessiva short (bias long)
@@ -89,9 +88,14 @@ class SupervisorClient:
         regime: Optional[MarketRegime] = None,
         score: Optional[SignalScore] = None,
         session_id: Optional[str] = None,
+        trade_history: Optional[list] = None,  # TASK-860
     ) -> SupervisorDecision:
         """Ottieni decisione dal supervisor AI."""
-        context = await build_scalping_context(symbol, snapshot, regime, score, session_id=session_id)
+        context = await build_scalping_context(
+            symbol, snapshot, regime, score,
+            session_id=session_id,
+            trade_history=trade_history,
+        )
 
         user_prompt = f"""Current market intelligence for {symbol}:
 {self._format_context(context)}
@@ -168,4 +172,32 @@ Provide your decision:"""
             lines.append(f"Fear & Greed: {fg['value']} ({fg['label']})")
         if ss:
             lines.append(f"Signal Score: {ss['total']:.1f} ({ss['bias']})")
+
+        # === PERFORMANCE SESSIONE (TASK-860) ===
+        perf = context.get("session_performance")
+        if perf:
+            lines.append("")
+            lines.append("=== PERFORMANCE SESSIONE ===")
+            lines.append(
+                f"Trade totali: {perf['total_trades']} | "
+                f"Win rate: {perf['win_rate_pct']}% | "
+                f"PnL totale: {perf['total_pnl']:.2f}"
+            )
+            last5 = perf.get("last_5_pnl", [])
+            last5r = perf.get("last_5_reasons", [])
+            if last5:
+                parts = [f"{p:.2f} ({r})" for p, r in zip(last5, last5r)]
+                lines.append(f"Ultimi 5: {', '.join(parts)}")
+        else:
+            lines.append("")
+            lines.append("=== PERFORMANCE SESSIONE ===")
+            lines.append("Nessun trade ancora in questa sessione.")
+
+        # === DECISIONI PRECEDENTI (TASK-862) ===
+        history = context.get("supervisor_history")
+        if history:
+            lines.append("")
+            lines.append("=== DECISIONI PRECEDENTI (ultime 10) ===")
+            lines.append(history)
+
         return "\n".join(lines)

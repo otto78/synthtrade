@@ -24,9 +24,6 @@ import { ConfigService } from '../../core/services/config.service';
           <span class="panel-title">Session</span>
         </div>
         <div class="title-hr"></div>
-        <!-- <div class="session-id-row" *ngIf="sessionId">
-          <span class="session-id">{{ sessionId }}</span>
-        </div> -->
 
         <div class="config-grid">
           <div class="field">
@@ -212,52 +209,6 @@ import { ConfigService } from '../../core/services/config.service';
       height: 1px;
       background: rgba(234,236,239,0.08);
       margin: -6px 0 12px 0;
-    }
-
-    /* Header */
-    .card-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-    .dot.idle { background: #555; }
-    .dot.running {
-      background: #26a69a;
-      box-shadow: 0 0 6px #26a69a99;
-      animation: pulse 2s infinite;
-    }
-    .dot.paused { background: #ffb74d; }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
-    .title {
-      font-size: 14px;
-      font-weight: 700;
-      color: var(--text-primary);
-      flex: 1;
-    }
-    .status-pill {
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.5px;
-      padding: 3px 8px;
-      border-radius: 20px;
-    }
-    .status-pill.running {
-      background: rgba(38,166,154,0.15);
-      color: #26a69a;
-      border: 1px solid rgba(38,166,154,0.3);
-    }
-    .status-pill.paused {
-      background: rgba(255,183,77,0.15);
-      color: #ffb74d;
-      border: 1px solid rgba(255,183,77,0.3);
     }
 
     /* Config */
@@ -499,7 +450,6 @@ import { ConfigService } from '../../core/services/config.service';
     .btn-action.pause { background: rgba(255,183,77,0.15); color: #ffb74d; border: 1px solid rgba(255,183,77,0.3); }
     .btn-action.resume { background: rgba(38,166,154,0.15); color: #26a69a; border: 1px solid rgba(38,166,154,0.3); }
     .btn-action.stop { background: rgba(239,83,80,0.12); color: #ef5350; border: 1px solid rgba(239,83,80,0.25); }
-
   `],
 })
 export class SessionControlsComponent implements OnInit {
@@ -543,24 +493,25 @@ export class SessionControlsComponent implements OnInit {
     this.configService.getMode().subscribe(info => {
       this.globalMode = info.mode;
     });
-    
+
     this.sessionApi.session$.subscribe((data) => {
       this.session = data;
       this.sessionId = data?.session_id || this.sessionId;
-      // Sync tradeValue from session if available
-      if (data?.trade_value) {
+      // Sync tradeValue from backend — also persist to localStorage so it survives reload
+      if (data?.trade_value && data.trade_value > 0) {
         this.tradeValue = data.trade_value;
+        try { localStorage.setItem('scalping_trade_value', String(data.trade_value)); } catch {}
       }
       this.cdr.detectChanges();
     });
     this.sessionApi.getStatus().subscribe();
-    
+
     // Load all Binance symbols
     this.binanceSymbols.getSymbols().subscribe((symbols) => {
       this.allSymbols = symbols;
       this.cdr.detectChanges();
     });
-    
+
     // Close dropdown on click outside
     document.addEventListener('click', (e) => {
       const target = e.target as HTMLElement;
@@ -570,14 +521,14 @@ export class SessionControlsComponent implements OnInit {
       }
     });
   }
-  
+
   get filteredSymbols(): string[] {
     if (!this.symbolFilter) {
       return this.allSymbols.slice(0, 50);
     }
     return this.binanceSymbols.filterSymbols(this.allSymbols, this.symbolFilter);
   }
-  
+
   selectSymbol(symbol: string): void {
     this.selectedSymbol = symbol;
     this.symbolFilter = symbol;
@@ -594,7 +545,7 @@ export class SessionControlsComponent implements OnInit {
     } catch {}
   }
 
-startSession(): void {
+  startSession(): void {
     this.loading = true;
     this.saveTradeValue();
     const executionMode = this.globalMode === 'live' ? 'live' : 'paper';

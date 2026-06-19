@@ -649,7 +649,21 @@ Coverage: 71%
 - `app/scalping/supervisor/supervisor_scheduler.py` — cooldown 30min
 - `app/scalping/supervisor/supervisor_client.py` — prompt esteso
 
+
 ---
+
+
+### TASK-854: Fix dust residue on live trades
+
+**Status:** Complete ✅
+
+- math.floor per qty calculation pre-buy
+- exec_qty = _qty_precise invece di market_res.quantity
+- Verificare: BUY qty == OCO qty su prossimo trade live
+
+
+---
+
 
 ### TASK-822 — Config panel: rimuovere sub-tab "Strategy" e aggiungere titolo "Session" con ID (2026-06-09)
 

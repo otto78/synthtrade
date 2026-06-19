@@ -117,7 +117,7 @@ class BinanceExchangeAdapter:
         return float(ticker["last"])
 
     async def _round_qty(self, symbol: str, qty: float) -> float:
-        """Arrotonda quantity a stepSize usando i filtri del simbolo."""
+        """Arrotonda quantity a stepSize (floor) usando i filtri del simbolo."""
         filters = await self.get_symbol_filters(symbol)
         step_size = float(filters["stepSize"])
         return round(qty - (qty % step_size), 8)
@@ -238,30 +238,28 @@ class BinanceExchangeAdapter:
         """
         Place OCO (One-Cancels-Other) order — solo nativo Binance, nessun fallback sintetico.
 
-        1. Attende settlement del balance post-market fill (0.5s + fetch_balance).
-        2. Legge il balance REALE del base asset (post-fee deduction).
-        3. Piazza OCO nativo Binance (unico metodo consentito).
+        USA la `quantity` passata dal chiamante (calcolata con math.floor NEL ROUTER
+        prima del buy) senza leggere il balance del wallet.
+
+        ⚠️  MOTIVAZIONE: leggere _get_available_base_balance() includeva polvere di
+        trade precedenti, causando OCO per quantità superiori a quelle acquistate.
+        Es: buy 0.033 BNB + 0.001 BNB polvere old → balance 0.034 → OCO per 0.034 ❌
+            buy 0.033 BNB, exec_qty=0.033 → OCO per 0.033 ✅
 
         Se OCO nativo fallisce, solleva ExchangeOrderError: il chiamante (router.py)
         gestisce il caso B (market sell di emergenza + broadcast error).
         """
-        logger.info(f"Placing OCO for {symbol}: TP={price}, SL={stop_price}")
+        logger.info(f"Placing OCO for {symbol}: TP={price}, SL={stop_price}, qty={quantity}")
 
-        # Wait for balance settlement after the market fill
-        await asyncio.sleep(0.5)
-        try:
-            await self.client.fetch_balance()
-        except Exception:
-            pass
+        # Applica floor al stepSize sulla qty già calcolata dal router.
+        # Non leggiamo il balance del wallet — conterrebbe polvere di trade precedenti.
+        qty_rounded = await self._round_qty(symbol, quantity)
+        if qty_rounded <= 0:
+            raise ExchangeOrderError(
+                f"Rounded quantity is 0 for {symbol} OCO (input={quantity})"
+            )
 
-        # Get actual available base asset balance (after fee deduction)
-        actual_qty = await self._get_available_base_balance(symbol)
-        if actual_qty <= 0:
-            logger.warning(f"No {symbol} base asset balance available after trade")
-            raise ExchangeOrderError(f"No base asset balance available for {symbol} OCO")
-
-        qty_rounded = await self._round_qty(symbol, actual_qty)
-
+        logger.info(f"OCO qty after rounding: {qty_rounded} (input={quantity})")
         return await self._place_oco_native(
             symbol=symbol, side=side, quantity=qty_rounded,
             price=price, stop_price=stop_price,
@@ -273,10 +271,10 @@ class BinanceExchangeAdapter:
                                 take_profit_price: float | None = None) -> Dict[str, Any]:
         """
         Native Binance OCO via direct API call POST /api/v3/order/oco.
-        
+
         Binance OCO places a LIMIT TAKE_PROFIT + STOP_LOSS on the same quantity atomically,
         avoiding the double-lock issue where separate orders lock each other's balance.
-        
+
         OCO params for Binance API:
         - symbol: raw symbol ID (e.g. BNBUSDC, no slash)
         - side: 'SELL' (uppercase)
@@ -285,13 +283,13 @@ class BinanceExchangeAdapter:
         - stopPrice: stop trigger price
         - stopLimitPrice: limit price for stop (optional, executed as market if omitted)
         - stopLimitTimeInForce: 'GTC'
-        
+
         The CCXT method private_post_order_oco() maps directly to Binance's OCO endpoint.
         """
         try:
             # Get raw Binance symbol ID (no slash, e.g. BNBUSDC)
             filters = await self.get_symbol_filters(symbol)
-        # Use symbol directly — CCXT resolves it via the internal adapter
+            # Use symbol directly — CCXT resolves it via the internal adapter
             get_id = filters.get("baseAsset", "") + filters.get("quoteAsset", "")
             raw_symbol = get_id if get_id else symbol
 
@@ -316,7 +314,6 @@ class BinanceExchangeAdapter:
             logger.info(f"Native OCO placed: orderListId={order_list_id}")
 
             # Parse response
-            order_list_id = response.get("orderListId", "unknown")
             orders = response.get("orderReports", [])
             sl_id = None
             tp_id = None
@@ -342,10 +339,9 @@ class BinanceExchangeAdapter:
 
     async def _get_available_base_balance(self, symbol: str) -> float:
         """Get the free (available) balance of the base asset for a symbol.
-        
-        After a market buy, Binance takes ~0.1% fee in the base asset (e.g. BNB),
-        so you might have 0.015984 BNB instead of 0.016. This function reads
-        the actual free balance from the exchange.
+
+        Nota: questo metodo NON viene più usato da place_oco_order (vedi docstring).
+        Rimane disponibile per usi diagnostici (es. _handle_oco_failed nel router).
         """
         try:
             filters = await self.get_symbol_filters(symbol)

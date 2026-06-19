@@ -188,6 +188,15 @@ class ExecutionLoop:
         )
 
         # 7. Aggregate signals
+        if self._position_manager.has_open() and technical_signal.type not in ("NONE", "CLOSE"):
+            pos = self._position_manager.get_open()
+            logger.info(f">>> HOLD: existing {pos.side if pos else 'position'} position matches {technical_signal.type} signal")
+            return ExecutionDecision(
+                execute=False,
+                reason="posizione aperta: nessun nuovo ingresso",
+                signal_type="HOLD",
+            )
+
         decision = self._signal_aggregator.should_execute(
             technical_signal, market_score, symbol=self._symbol,
             paper_mode=self.paper_mode,

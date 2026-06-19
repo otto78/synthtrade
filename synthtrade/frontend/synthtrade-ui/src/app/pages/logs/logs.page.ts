@@ -184,7 +184,8 @@ export class LogsPage implements OnInit, OnDestroy {
     this.loadTradeStrategies();
     this.sub.add(
       this.wsService.on<OperationLog>(WsMessageType.NewLog).subscribe(msg => {
-        if (msg.payload) this.logs.update(list => [msg.payload!, ...list]);
+        const payload = msg.payload;
+        if (payload) this.logs.update(list => [payload, ...list]);
       })
     );
   }

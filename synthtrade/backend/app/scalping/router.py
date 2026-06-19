@@ -19,6 +19,7 @@ import asyncio
 import json
 import logging
 import uuid
+import math
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, List, Optional, Any
@@ -1085,6 +1086,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         "entry_price": float(pos_obj.entry_price),
                         "current_price": float(close_price),
                         "quantity": float(pos_obj.quantity),
+                        "trade_value_usd": round(float(pos_obj.quantity) * float(pos_obj.entry_price), 2),
                         "pnl": 0.0,
                         "pnl_pct": 0.0,
                         "stop_loss_price": sl_price,
@@ -1335,7 +1337,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     _trade_val = max(float(filters.get("minNotional", 5.0)), _trade_val)
                                     _qty_raw = _trade_val / float(event.close)
                                     step_size = float(filters["stepSize"])
-                                    _qty_precise = round(_qty_raw - (_qty_raw % step_size), 8)
+                                    _qty_precise = round(math.floor(_qty_raw / step_size) * step_size, 8)
                                     
                                     # 3. Check real free balance in quote asset BEFORE placing order
                                     try:
@@ -1379,7 +1381,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                      # 3. Execute Market Buy
                                     market_res = await exchange.place_market_order(event.symbol.upper(), side, _qty_precise)
                                     exec_price = float(market_res.get("price") or event.close)
-                                    exec_qty = float(market_res.get("quantity") or _qty_precise)
+                                    exec_qty = _qty_precise  # ignora risposta Binance, usa qty calcolata
 
                                     # 4. Calculate Risk SL/TP with proper price precision
                                     risk_cfg = _execution_state.get("risk_config", {})
@@ -1452,6 +1454,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                         "entry_price": float(pos_obj.entry_price),
                                         "current_price": float(candle.close),
                                         "quantity": float(pos_obj.quantity),
+                                        "trade_value_usd": round(float(pos_obj.quantity) * float(pos_obj.entry_price), 2),
                                         "pnl": 0.0,
                                         "pnl_pct": 0.0,
                                         "stop_loss_price": round(sl_price, 2),
@@ -1493,6 +1496,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     "entry_price": float(pos_obj.entry_price),
                                     "current_price": float(candle.close),
                                     "quantity": float(pos_obj.quantity),
+                                    "trade_value_usd": round(float(pos_obj.quantity) * float(pos_obj.entry_price), 2),
                                     "pnl": 0.0,
                                     "pnl_pct": 0.0,
                                 })
@@ -1505,6 +1509,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                 await _close_position_and_record(pm, float(candle.close), pos, reason=decision.reason or "signal")
                             else:
                                 logger.info(f">>> HOLD: existing {pos.side} position matches {side} signal")
+                    elif decision and decision.signal_type == "HOLD":
+                        logger.info(f">>> HOLD: {decision.reason}")
                     else:
                         reason_str = decision.reason if decision else "decision=None"
                         logger.info(f">>> DECISION REJECTED: {reason_str}")
@@ -1567,6 +1573,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         "entry_price": entry_f,
                         "current_price": round(current_price_f, 2),
                         "quantity": qty_f,
+                        "trade_value_usd": round(qty_f * entry_f, 2),
                         "pnl": round(pnl, 2),
                         "pnl_pct": round(pnl_pct, 2),
                         "stop_loss_price": round(sl_price, 2),
@@ -2101,6 +2108,11 @@ async def get_session() -> Dict:
     )
     result["first_trade_entry"] = first_entry
     result["hold_pnl_pct"] = hold_pnl
+    # Add current signal threshold so frontend can show score/threshold
+    try:
+        result["signal_strength_threshold"] = get_scalping_config().signal_strength_threshold
+    except Exception:
+        result["signal_strength_threshold"] = None
     
     return result
 
@@ -2572,8 +2584,9 @@ async def update_trade_value(body: Dict) -> Dict:
 @router.get("/performance")
 async def get_performance() -> Dict:
     """Get performance metrics from trade history."""
-    trades = _execution_state["trade_history"]
-    
+    # Only count completed (closed) trades — exclude open positions still in history
+    trades = [t for t in _execution_state["trade_history"] if t.get("exit_price") is not None]
+
     if not trades:
         return {
             "total_pnl": 0,
@@ -2640,6 +2653,26 @@ async def get_performance() -> Dict:
     initial_balance = _execution_state["session"].get("paper_balance", 10000.0)
     total_pnl_pct = (total_pnl / initial_balance) * 100 if initial_balance else 0
 
+    # Hold PnL: how much we'd have made holding from first trade entry price
+    loop = _execution_state.get("loop")
+    current_price = None
+    if loop and hasattr(loop, "_candle_buffer") and loop._candle_buffer and loop._candle_buffer.latest:
+        current_price = float(loop._candle_buffer.latest.close)
+    first_entry, hold_pnl_pct = _calc_session_entry_and_hold(
+        _execution_state.get("trade_history", []),
+        current_price,
+    )
+
+    # Signal strength threshold (variable, set by supervisor)
+    try:
+        signal_threshold = get_scalping_config().signal_strength_threshold
+    except Exception:
+        signal_threshold = None
+
+    trading_beats_hold = None
+    if hold_pnl_pct is not None:
+        trading_beats_hold = total_pnl_pct >= hold_pnl_pct
+
     return {
         "total_pnl": round(total_pnl, 2),
         "total_pnl_pct": round(total_pnl_pct, 2),
@@ -2652,6 +2685,11 @@ async def get_performance() -> Dict:
         "profit_factor": profit_factor,
         "max_drawdown": max_dd_pct,
         "consecutive_losses": max_cons_losses,
+        # Trading vs Hold comparison
+        "hold_pnl_pct": round(hold_pnl_pct, 2) if hold_pnl_pct is not None else None,
+        "trading_beats_hold": trading_beats_hold,
+        # Signal threshold (for proximity indicator in Market Intel panel)
+        "signal_strength_threshold": signal_threshold,
     }
 
 

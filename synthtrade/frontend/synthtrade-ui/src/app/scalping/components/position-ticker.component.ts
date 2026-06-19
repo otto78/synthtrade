@@ -34,7 +34,13 @@ import { Position } from '../models/position.model';
           <span>Entry: {{ position.entry_price | number:'1.2-2' }}</span>
           <span>Current: {{ position.current_price | number:'1.2-2' }}</span>
         </div>
-        
+
+        <!-- Invested amount -->
+        <div class="row invested" *ngIf="position.trade_value_usd">
+          <span class="inv-label">Investito</span>
+          <span class="inv-value">{{ position.trade_value_usd | number:'1.2-2' }} {{ quoteAsset }}</span>
+        </div>
+
         <div class="row pnl" [ngClass]="position.pnl >= 0 ? 'profit' : 'loss'">
           <span class="pnl-value">PnL: {{ position.pnl | number:'1.2-2' }} {{ quoteAsset }}</span>
           <span class="pnl-pct">{{ position.pnl_pct | number:'1.2-2' }}%</span>
@@ -79,6 +85,15 @@ import { Position } from '../models/position.model';
     .side { padding: 2px 6px; border-radius: 2px; font-size: 11px; }
     .buy { background: var(--accent-success, #26a69a); color: #fff; }
     .sell { background: var(--accent-danger, #ef5350); color: #fff; }
+    .invested { 
+      background: rgba(240,185,11,0.06); 
+      border: 1px solid rgba(240,185,11,0.15); 
+      border-radius: 6px; 
+      padding: 6px 10px;
+      margin-bottom: 2px;
+    }
+    .inv-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); }
+    .inv-value { font-size: 13px; font-weight: 700; color: #F0B90B; }
     .pnl { font-weight: 600; display: flex; justify-content: space-between; }
     .profit { color: var(--accent-success, #26a69a); }
     .loss { color: var(--accent-danger, #ef5350); }
@@ -201,7 +216,7 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
         side: event.side,
         entry_price: event.entry_price,
         current_price: event.current_price,
-        quantity: 0.001,
+        quantity: event.quantity ?? 0,
         pnl: event.pnl,
         pnl_pct: event.pnl_pct,
         leverage: 1,
@@ -210,6 +225,7 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
         take_profit_price: event.take_profit_price,
         stop_loss_pct: event.stop_loss_pct,
         take_profit_pct: event.take_profit_pct,
+        trade_value_usd: event.trade_value_usd ?? (event.quantity ? event.quantity * event.entry_price : undefined),
       };
       this.cdr.markForCheck();
       this.cdr.detectChanges();

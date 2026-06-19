@@ -101,6 +101,7 @@ export interface PositionEvent {
   pnl: number;
   pnl_pct: number;
   quantity?: number;
+  trade_value_usd?: number;
   stop_loss_price?: number;
   take_profit_price?: number;
   stop_loss_pct?: number;
@@ -259,11 +260,16 @@ export class ScalpingWsService implements OnDestroy {
       case 'candle':
         this.candle$.next(event.payload as CandleEvent);
         break;
-      case 'signal':
+      case 'signal': {
+        if (this.position$.getValue()) {
+          return;
+        }
         this.signal$.next(event.payload as SignalEvent);
         break;
+      }
       case 'position':
       case 'position_update':
+        this.signal$.next(null);
         this.position$.next(event.payload as PositionEvent);
         break;
       case 'supervisor':

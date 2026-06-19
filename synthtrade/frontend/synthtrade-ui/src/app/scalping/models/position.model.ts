@@ -19,4 +19,6 @@ export interface Position {
   take_profit_price?: number;
   stop_loss_pct?: number;
   take_profit_pct?: number;
+  // Trade size in USDC/USDT
+  trade_value_usd?: number;
 }

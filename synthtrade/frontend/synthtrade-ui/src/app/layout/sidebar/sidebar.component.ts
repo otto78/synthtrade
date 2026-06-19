@@ -6,8 +6,8 @@ import { UiService } from '../../core/services/ui.service';
 const NAV_ITEMS = [
   { label: 'Dashboard',    icon: '⬡', route: '/dashboard' },
   { label: 'Scalping',     icon: '⚡', route: '/scalping' },
-  { label: 'Strategies',   icon: '◈', route: '/strategies' },
-  { label: 'Active Trade', icon: '◉', route: '/active-trade' },
+  // { label: 'Strategies',   icon: '◈', route: '/strategies' },
+  // { label: 'Active Trade', icon: '◉', route: '/active-trade' },
   { label: 'Logs',         icon: '≡', route: '/logs' },
   { label: 'LLM Models',   icon: '⟡', route: '/llm-models' },
 ];

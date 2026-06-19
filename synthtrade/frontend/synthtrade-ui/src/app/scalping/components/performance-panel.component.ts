@@ -2,6 +2,7 @@
  * Performance Panel Component
  * Displays win rate, profit factor, and trade statistics
  * Updated via WS trade_closed events instead of polling.
+ * Includes Trading vs Hold comparison widget.
  */
 
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
@@ -34,6 +35,39 @@ import { SessionApiService } from '../services/session-api.service';
             </span>
           </span>
         </div>
+
+        <!-- Trading vs Hold comparison -->
+        <div class="metric-item hold-compare" *ngIf="metrics.holdPnlPct !== null">
+          <div class="hold-header">
+            <span class="label">vs Hold</span>
+            <span class="hold-badge" [class.winning]="metrics.tradingBeatsHold === true" [class.losing]="metrics.tradingBeatsHold === false">
+              {{ metrics.tradingBeatsHold === true ? '▲ Batti il Hold' : metrics.tradingBeatsHold === false ? '▼ Hold ti batte' : '—' }}
+            </span>
+          </div>
+          <div class="hold-bars">
+            <div class="hold-bar-row">
+              <span class="bar-label">Trading</span>
+              <div class="bar-track">
+                <div class="bar-fill trading" [style.width.%]="getTradingBarPct()" [class.profit]="metrics.totalPnlPct >= 0" [class.loss]="metrics.totalPnlPct < 0"></div>
+              </div>
+              <span class="bar-val" [class.profit]="metrics.totalPnlPct >= 0" [class.loss]="metrics.totalPnlPct < 0">{{ metrics.totalPnlPct | number:'1.2-2' }}%</span>
+            </div>
+              <div class="hold-bar-row">
+              <span class="bar-label">Hold</span>
+              <div class="bar-track">
+                <div class="bar-fill hold"
+                  [style.width.%]="getHoldBarPct()"
+                  [class.profit]="(metrics.holdPnlPct || 0) >= 0"
+                  [class.loss]="(metrics.holdPnlPct || 0) < 0">
+                </div>
+              </div>
+              <span class="bar-val"
+                [class.profit]="(metrics.holdPnlPct || 0) >= 0"
+                [class.loss]="(metrics.holdPnlPct || 0) < 0">{{ metrics.holdPnlPct | number:'1.2-2' }}%</span>
+            </div>
+          </div>
+        </div>
+
         <div class="metric-item">
           <span class="label">Win Rate</span>
           <span class="value">{{ metrics.winRate | percent:'1.1-1' }}</span>
@@ -80,6 +114,49 @@ import { SessionApiService } from '../services/session-api.service';
     .pnl-values { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
     .pnl-pct { font-size: 12px; opacity: 0.8; }
     .warning { color: var(--accent-warning, #ffb74d); }
+
+    /* Trading vs Hold */
+    .hold-compare {
+      flex-direction: column;
+      gap: 8px;
+      background: rgba(240,185,11,0.04);
+      border: 1px solid rgba(240,185,11,0.12);
+    }
+    .hold-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+    }
+    .hold-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 20px;
+      letter-spacing: 0.3px;
+    }
+    .hold-badge.winning {
+      background: rgba(38,166,154,0.15);
+      color: #26a69a;
+      border: 1px solid rgba(38,166,154,0.3);
+    }
+    .hold-badge.losing {
+      background: rgba(239,83,80,0.12);
+      color: #ef5350;
+      border: 1px solid rgba(239,83,80,0.25);
+    }
+    .hold-bars { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+    .hold-bar-row { display: flex; align-items: center; gap: 6px; }
+    .bar-label { font-size: 10px; color: var(--text-secondary); width: 44px; flex-shrink: 0; }
+    .bar-track { flex: 1; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; min-width: 2px; }
+    .bar-fill.trading.profit { background: linear-gradient(90deg, #26a69a, #4db6ac); }
+    .bar-fill.trading.loss  { background: linear-gradient(90deg, #ef5350, #ff6b6b); }
+    .bar-fill.hold.profit   { background: rgba(38,166,154,0.4); }
+    .bar-fill.hold.loss     { background: rgba(239,83,80,0.4); }
+    .bar-val { font-size: 11px; font-weight: 700; width: 48px; text-align: right; flex-shrink: 0; }
+    .bar-val.profit { color: #26a69a; }
+    .bar-val.loss   { color: #ef5350; }
   `],
 })
 export class PerformancePanelComponent implements OnInit, OnDestroy {
@@ -118,12 +195,24 @@ export class PerformancePanelComponent implements OnInit, OnDestroy {
 
     // Refresh only when a trade closes — no polling
     this.sub.add(this.ws.tradeClosed$.subscribe(() => this.loadMetrics()));
-
-    // Refresh only when a trade closes — no polling, no initial load without session
   }
 
   ngOnDestroy(): void {
     this.sub?.unsubscribe();
+  }
+
+  /** Normalize trading pct to a bar width (max 100%) */
+  getTradingBarPct(): number {
+    if (!this.metrics) return 0;
+    const maxAbs = Math.max(Math.abs(this.metrics.totalPnlPct), Math.abs(this.metrics.holdPnlPct ?? 0), 0.01);
+    return Math.min(100, (Math.abs(this.metrics.totalPnlPct) / maxAbs) * 100);
+  }
+
+  /** Normalize hold pct to a bar width (max 100%) */
+  getHoldBarPct(): number {
+    if (!this.metrics || this.metrics.holdPnlPct === null) return 0;
+    const maxAbs = Math.max(Math.abs(this.metrics.totalPnlPct), Math.abs(this.metrics.holdPnlPct ?? 0), 0.01);
+    return Math.min(100, (Math.abs(this.metrics.holdPnlPct ?? 0) / maxAbs) * 100);
   }
 
   private loadMetrics(): void {

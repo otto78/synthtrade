@@ -9,6 +9,9 @@ from app.scalping.models.market import Candle, MarketRegime
 from app.scalping.engine.regime_detector import RegimeDetector
 from app.scalping.engine.strategy_selector import StrategySelector
 from app.scalping.engine.position_manager import PositionManager, Position
+from app.scalping.engine.execution_loop import ExecutionLoop
+from app.scalping.engine.signal_aggregator import TechnicalSignal
+from app.scalping.models.intelligence import SignalScore
 from app.scalping.strategies.base import AbstractScalpingStrategy
 from app.scalping.strategies.registry import StrategyRegistry
 
@@ -169,6 +172,72 @@ class TestPositionManager:
         pm.open_position("BTCUSDT", "BUY", Decimal("50000"), Decimal("0.001"))
         pm.close_position(Decimal("51000"))
         assert pm.get_open() is None
+
+
+class TestExecutionLoop:
+    @pytest.mark.asyncio
+    async def test_open_position_suppresses_new_entry_signals(self):
+        class FakeSignalEngine:
+            async def compute(self):
+                return SignalScore(
+                    total=65.0,
+                    bias="bullish",
+                    tradeable=True,
+                    signal_strength=65.0,
+                    breakdown={"collector": 65.0},
+                    symbol="BTCUSDT",
+                )
+
+        class FakeStrategy(AbstractScalpingStrategy):
+            @property
+            def name(self) -> str:
+                return "fake"
+
+            def evaluate(self, candles, indicators=None):
+                return TechnicalSignal(type="BUY", confidence=0.8, source="fake")
+
+        class FakeSelector:
+            def select(self, regime):
+                return FakeStrategy()
+
+        class FailingAggregator:
+            def should_execute(self, *args, **kwargs):
+                raise AssertionError("signal_aggregator should not be called while position is open")
+
+        pm = PositionManager()
+        pm.open_position("BTCUSDT", "BUY", Decimal("50000"), Decimal("0.001"))
+
+        loop = ExecutionLoop(
+            symbol="BTCUSDT",
+            candle_buffer=CandleBuffer(size=50),
+            signal_engine=FakeSignalEngine(),
+            signal_aggregator=FailingAggregator(),
+            regime_detector=RegimeDetector(),
+            strategy_selector=FakeSelector(),
+            position_manager=pm,
+        )
+
+        for i in range(50):
+            loop._candle_buffer.add(self._make_candle(i, close=Decimal(str(100 + i))))
+
+        decision = await loop.process_candle(self._make_candle(50, close=Decimal("100.5")))
+
+        assert decision is not None
+        assert decision.execute is False
+        assert decision.signal_type == "HOLD"
+        assert "posizione aperta" in decision.reason
+
+    def _make_candle(self, idx, close=Decimal("100")):
+        return Candle(
+            symbol="BTCUSDT",
+            open=close,
+            high=close + Decimal("1"),
+            low=close - Decimal("1"),
+            close=close,
+            volume=Decimal("1"),
+            timestamp=datetime.now(timezone.utc),
+            closed=True,
+        )
 
 
 # ──────────────────────────────────────────────────────────────

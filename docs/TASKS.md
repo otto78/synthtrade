@@ -470,88 +470,46 @@ Fix issues identified from live session logs:
 
 ### TASK-844 — FASE E1-E2: Supervisor — contesto arricchito con performance sessione (2026-06-15)
 
-**Status:** Todo  
-**Priorità:** Media — supervisor decide senza vedere storico trade né PnL  
-**Fase:** E (dopo Fasi A, B, C)  
-**Stima:** 2h  
-**File coinvolti:** `supervisor_scheduler.py`
+**Status:** Complete ✅
+**Completato:** 2026-06-19 (implementato come TASK-860)
 
-**Scope:**
-- [ ] Aggiungere parametro `session_id` a `build_scalping_context()`
-- [ ] Query DB `scalping_trades` per ultimi 20 trade chiusi della sessione
-- [ ] Calcolare `session_performance`: trade count, wins, losses, pnl, win_rate, ultimi 5
-- [ ] Leggere strategia attiva da `_execution_state`
-- [ ] Aggiornare `_format_context()` con sezione `=== PERFORMANCE SESSIONE ===`
-- [ ] Includere `supervisor_history` nel formato (preparazione per F3)
+Implementato in TASK-860: `build_scalping_context()` calcola `session_performance` da `trade_history` in-memory, con fallback DB. Sezione `=== PERFORMANCE SESSIONE ===` nel prompt supervisor.
 
 ---
 
 ### TASK-845 — FASE E3: Aggiornare system prompt supervisor (2026-06-15)
 
-**Status:** Todo  
-**Priorità:** Media — prompt attuale non guida correttamente quando NO agire  
-**Fase:** E  
-**Stima:** 0.5h  
-**File coinvolti:** `supervisor_client.py`
+**Status:** Complete ✅
+**Completato:** 2026-06-19 (implementato come TASK-861)
 
-**Scope:**
-- [ ] Sostituire `SUPERVISOR_SYSTEM_PROMPT` con versione completa dal piano §E3
-- [ ] Sezione `QUANDO NON AGIRE`: < 5 trade, stessa azione 3+ volte, < 4 collector, score neutrale
-- [ ] Sezione `QUANDO AGIRE`: regole per change_strategy, update_params, pause/resume
-- [ ] Mapping REGIME → STRATEGIA nel prompt
-- [ ] Gerarchia segnali (1-8) nel prompt
-- [ ] Verifica: supervisor risponde `no_action` se < 5 trade in sessione
+Implementato in TASK-861: `_SUPERVISOR_SYSTEM_PROMPT` aggiornato con sezione `⚠️ REGOLA QUANDO NON AGIRE` (< 5 trade, win_rate > 60%, coverage < 50%, loop decisioni, score neutrale).
 
 ---
 
 ### TASK-846 — FASE F1: Migration DB tabella `supervisor_memory` (2026-06-15)
 
-**Status:** Todo  
-**Priorità:** Media — senza memoria il supervisor propone la stessa azione in loop  
-**Fase:** F (dopo Fase E)  
-**Stima:** 0.5h  
-**File coinvolti:** nuova migration Supabase
+**Status:** Complete ✅
+**Completato:** 2026-06-16
 
-**Scope:**
-- [ ] Creare migration SQL `supervisor_memory` con colonne: id, session_id, symbol, decided_at, action, reason, confidence, market_bias, primary_signal, new_strategy, new_params, was_applied, blocked_reason, market_context, session_perf, outcome_*
-- [ ] Creare indici su (symbol, decided_at DESC), session_id, (action, was_applied)
-- [ ] Applicare migration su Supabase
+Migration `supabase/migrations/20260616_supervisor_memory.sql` applicata. Tabella presente su Supabase con tutti i campi pianificati.
 
 ---
 
 ### TASK-847 — FASE F2-F3: Persistenza e caricamento memoria supervisor (2026-06-15)
 
-**Status:** Todo  
-**Priorità:** Media  
-**Fase:** F  
-**Stima:** 1.5h  
-**File coinvolti:** `supervisor_scheduler.py`
+**Status:** Complete ✅
+**Completato:** 2026-06-19 (implementato come TASK-862)
 
-**Scope:**
-- [ ] Implementare `_save_decision_to_memory()`: INSERT su `supervisor_memory` per ogni decisione (anche bloccate)
-- [ ] Chiamare `_save_decision_to_memory()` dopo ogni esecuzione del supervisor con flag `was_applied` e `blocked_reason`
-- [ ] Aggiungere a `build_scalping_context()`: query ultime 10 decisioni da `supervisor_memory` per symbol
-- [ ] Popolare chiave `supervisor_history` nel context dict
-- [ ] Verifica: tabella `supervisor_memory` si popola a ogni ciclo supervisor
+Implementato in TASK-862: `_save_decision_to_memory()` popola `session_perf` reale. `build_scalping_context()` carica ultimi 10 record da `supervisor_memory` e li mostra nel prompt come `=== DECISIONI PRECEDENTI ===`.
 
 ---
 
 ### TASK-848 — FASE F4: Job APScheduler verifica outcome decisioni (2026-06-15)
 
-**Status:** Todo  
-**Priorità:** Bassa  
-**Fase:** F  
-**Stima:** 1h  
-**File coinvolti:** `scheduler/jobs.py` (o equivalente)
+**Status:** Complete ✅
+**Completato:** 2026-06-19 (implementato come TASK-863)
 
-**Scope:**
-- [ ] Implementare `verify_supervisor_outcomes_job()`
-- [ ] Query decisioni applicate 25-35 minuti fa senza outcome
-- [ ] Calcolare `pnl_delta` vs snapshot PnL al momento della decisione
-- [ ] Classificare outcome: positive/negative/neutral (soglia ±0.01)
-- [ ] UPDATE `supervisor_memory` con `outcome_verified_at`, `outcome_pnl_delta`, `outcome_label`
-- [ ] Registrare job in `setup_scheduler()` con interval 5 minuti
-- [ ] Verifica: dopo 30 min da una decisione applicata, `outcome_label` è valorizzato
+Implementato in TASK-863: `verify_supervisor_outcomes_job()` in `scalping_jobs.py`, registrato ogni 5 minuti. Query decisioni applicate 25-35 min fa, classifica `positive/negative/neutral`.
 
 ---
 
@@ -849,13 +807,9 @@ Coverage: 71%
 
 **Rischio:** Basso — rimozione UI senza impatto su logica backend.
 
+---
 
-
-
-  Bug confermati (live-rilevanti, paper escluso)
-
-  ┌────────┬────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-  │ ID     │ Severità   │ Descrizione                                                                                                                    │
+## Epica Scalping Logs — TASK-880 ÷ TASK-883 (2026-06-19)
   ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
   │ BUG-02 │ 🔴 CRITICO │ Doppia chiusura posizione in live: _trade_processor esegue SL/TP software (_close_position_and_record) anche in live mode dove │
   │        │            │ Binance chiude già via OCO. Se arriva un tick trade con prezzo sotto SL mentre l'OCO non è ancora eseguito, il router vende a  │
@@ -884,370 +838,98 @@ Coverage: 71%
 
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-  Lista Task da aggiungere a TASKS.md
+---
 
-  Ecco i task pronti per essere incollati nel file docs/TASKS.md, nell'epica scalping:
-
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-  ---
-
-  ## Epica 800 — Fix Critici Post-Audit (2026-06-19)
-
-  ### TASK-855 — BUG CRITICO: Rimuovere SL/TP software da _trade_processor in live mode
-
-  **Status:** Todo
-  **Priorità:** CRITICA — può causare doppia vendita in live (software close + OCO close)
-  **Stima:** 0.5h
-  **File coinvolti:** `synthtrade/backend/app/scalping/router.py`
-
-  **Problema:**
-  In `_trade_processor()`, il codice esegue `_close_position_and_record()` quando rileva
-  `hit_sl` o `hit_tp` basandosi sul prezzo del tick. In live mode, Binance gestisce già
-  SL/TP tramite OCO nativo. Se il tick software rileva SL/TP PRIMA che l'evento UDS arrivi,
-  il router esegue un market sell → poi l'OCO esegue la vendita di un asset già venduto
-  → errore Binance "insufficient funds" o vendita doppia.
-
-  **Fix:**
-  ```python
-  # In _trade_processor(), PRIMA del blocco hit_sl/hit_tp:
-  _mode_trade = _execution_state["session"].get("mode", "paper")
-  if _mode_trade == "live":
-      pass  # In live: SL/TP gestiti da OCO Binance via UDS, non dal software
-  else:
-      if hit_sl:
-          await _close_position_and_record(pm, current, pos, reason="stop_loss")
-      elif hit_tp:
-          await _close_position_and_record(pm, current, pos, reason="take_profit")
-
-  Verifica: Avviare sessione live, aprire posizione, attendere SL/TP. Deve arrivare
-  solo l'evento UDS con trade_closed, non doppio broadcast.
+## Epica Scalping Logs — TASK-880 ÷ TASK-883 (2026-06-19)
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-02 │ 🔴 CRITICO │ Doppia chiusura posizione in live: _trade_processor esegue SL/TP software (_close_position_and_record) anche in live mode dove │
+  │        │            │ Binance chiude già via OCO. Se arriva un tick trade con prezzo sotto SL mentre l'OCO non è ancora eseguito, il router vende a  │
+  │        │            │ mercato E poi l'OCO si esegue = doppia vendita su asset già venduto.                                                           │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-03 │ 🟡 MEDIO   │ Broadcast signal type sempre BUY: "type": "BUY" if decision.confidence > 0 else "SELL" — confidence è sempre >0, il frontend   │
+  │        │            │ vede solo BUY nel signal panel.                                                                                                │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-04 │ 🟡 MEDIO   │ get_holdings() crash: balance["total"][asset]["free"] — balance["total"] è Dict[str, float], non un dict di oggetti. TypeError │
+  │        │            │ se chiamato.                                                                                                                   │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-05 │ 🟡 MEDIO   │ session_perf sempre vuoto in supervisor_memory: getattr(self._loop, "_execution_state", {}) ritorna sempre {} perché           │
+  │        │            │ ExecutionLoop non ha _execution_state.                                                                                         │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-06 │ 🟡 MEDIO   │ _save_decision_to_memory() non gestisce i task TASK-844/847: Il caricamento storico decisioni dal DB nel context del           │
+  │        │            │ supervisor non è ancora implementato (TASK-847), ma il salvataggio sì — il supervisor opera "senza memoria" nonostante la      │
+  │        │            │ tabella esista.                                                                                                                │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-07 │ 🟠 BASSO   │ Race condition in SessionLoadGuard: _check_timeout() dentro complete_phase() può impostare stato failed prima del check        │
+  │        │            │ issubset() se il timeout scatta nell'ultimo millisecondo.                                                                      │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-08 │ 🟠 BASSO   │ supervisor_scheduler._score_engine default BTCUSDT: Se SupervisorScheduler viene istanziato senza score_engine, usa            │
+  │        │            │ SignalScoreEngine() default che opera su BTCUSDT anche se il simbolo attivo è BNBUSDC. In pratica il supervisor riceve dati    │
+  │        │            │ intelligence per il simbolo sbagliato.                                                                                         │
+  └────────┴────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-  TASK-856 — BUG: Fix broadcast signal type (sempre BUY)
-
-  Status: Todo
-  Priorità: Alta — il pannello signal del frontend mostra sempre BUY
-  Stima: 0.25h
-  File coinvolti: synthtrade/backend/app/scalping/router.py
-
-  Problema:
-
-  Nel candle processor, il broadcast del segnale usa:
-
-  "type": "BUY" if decision.confidence > 0 else "SELL",
-
-  decision.confidence è sempre positivo (range 0..1), quindi il tipo è sempre "BUY".
-  Il campo corretto è decision.signal_type che contiene "BUY", "SELL", "CLOSE", "NONE".
-
-  Fix:
-
-  "type": decision.signal_type,  # usa il tipo reale dal decisore
-
-  Verifica: In paper mode, attendere un segnale SELL nella pipeline.
-  Il broadcast deve mostrare type: "SELL", non type: "BUY".
-
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-  TASK-857 — BUG: Fix get_holdings() in BinanceExchangeAdapter
-
-  Status: Todo
-  Priorità: Media — crash TypeError se get_holdings() viene chiamato
-  Stima: 0.25h
-  File coinvolti: synthtrade/backend/app/execution/exchange.py
-
-  Problema:
-
-  # ERRATO — balance["total"] è Dict[str, float], non Dict[str, {free: float}]
-  return {asset: float(data["free"]) for asset, data in balance["total"].items() ...}
-
-  Fix:
-
-  async def get_holdings(self) -> Dict[str, float]:
-      balance = await self.client.fetch_balance()
-      free = balance.get("free", {})
-      return {asset: float(amt) for asset, amt in free.items() if float(amt) > 0}
-
-  Verifica: Unit test o chiamata diretta a get_holdings() senza eccezione.
-
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-  TASK-858 — BUG: Fix session_perf in supervisor_memory (ExecutionLoop non ha _execution_state)
-
-  Status: Todo
-  Priorità: Media — session_perf sempre vuoto → supervisor decide senza dati performance
-  Stima: 0.5h
-  File coinvolti: synthtrade/backend/app/scalping/supervisor/supervisor_scheduler.py
-
-  Problema:
-
-  # In _save_decision_to_memory():
-  trades = getattr(self._loop, "_execution_state", {}).get("trade_history", [])
-  # ExecutionLoop NON ha _execution_state → sempre {}
-
-  Fix:
-
-  Passare trade_history come parametro a _save_decision_to_memory() oppure
-  accedervi dal modulo router tramite import diretto:
-
-  # In supervisor_scheduler.py → _tick():
-  from app.scalping.router import _execution_state as _router_state
-  trade_history = _router_state.get("trade_history", [])
-  # Passare a _save_decision_to_memory(decision, ..., trade_history=trade_history)
-
-  Verifica: Dopo una decisione supervisor, verificare in supervisor_memory che
-  session_perf contenga {"total_trades": N, "winning_trades": K, "total_pnl": X}.
-
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-  TASK-859 — BUG: Fix SupervisorScheduler score_engine per simbolo corretto
-
-  Status: Todo
-  Priorità: Media — supervisor usa dati BTCUSDT anche per sessioni BNBUSDC
-  Stima: 0.25h
-  File coinvolti: synthtrade/backend/app/scalping/supervisor/supervisor_scheduler.py, router.py
-
-  Problema:
-
-  # SupervisorScheduler.__init__:
-  self._score_engine = score_engine or SignalScoreEngine()  # default BTCUSDT!
-
-  Se il supervisor viene creato senza passare l'engine, usa BTCUSDT.
-
-  Fix:
-
-  self._score_engine = score_engine or SignalScoreEngine(symbol=symbol)
-
-  E in router.py, passare l'engine esistente al supervisor:
-
-  supervisor = SupervisorScheduler(
-      symbol=active_symbol,
-      interval_seconds=settings.scalping.SCALPING_SUPERVISOR_INTERVAL_SEC,
-      score_engine=_execution_state.get("signal_engine"),  # passa engine esistente
-  )
-
-  Verifica: Log supervisor deve mostrare symbol corretto nei dati collector.
-
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-  TASK-860 — FASE E1-E2: Supervisor — context con performance sessione
-
-  Status: Todo (era TASK-844)
-  Priorità: Media
-  Stima: 2h
-  File coinvolti: app/scalping/supervisor/supervisor_scheduler.py, app/ai/supervisor_context.py
-
-  Prerequisiti: TASK-858 (trade_history accessibile nel scheduler)
-
-  Scope:
-
-  - [ ] Passare trade_history da _execution_state a build_scalping_context() via parametro
-  - [ ] In build_scalping_context(): calcolare session_performance:
-    - Ultimi 20 trade chiusi (con exit_price)
-    - Metriche: total_trades, winning_trades, total_pnl, win_rate, avg_pnl, last_5_trades
-
-  - [ ] Aggiornare _format_context() in supervisor_client.py con sezione === PERFORMANCE SESSIONE ===
-  - [ ] Verifica: log supervisor mostra dati performance reali, non vuoti
-
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-  TASK-861 — FASE E3: Aggiornare system prompt supervisor (era TASK-845)
-
-  Status: Todo
-  Priorità: Media
-  Stima: 1h
-  File coinvolti: app/scalping/supervisor/supervisor_client.py
-
-  Scope:
-
-  - [ ] Aggiungere sezione QUANDO NON AGIRE al _SUPERVISOR_SYSTEM_PROMPT:
-    - Se < 5 trade nella sessione → no_action (troppo presto per giudicare)
-    - Se stessa action proposta 3+ volte consecutive → no_action (loop)
-    - Se < 4 collector attivi e coverage < 50% → no_action (dati insufficienti)
-    - Se score è nel range [-5, +5] → neutrale, non cambiare strategia
-
-  - [ ] Aggiungere sezione QUANDO AGIRE con esempi concreti
-  - [ ] Aggiungere regola: se session_perf mostra win_rate > 60% → no_action (strategia funziona)
-  - [ ] Verifica: con < 5 trade, il supervisor risponde no_action
-
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-  TASK-862 — FASE F2-F3: Caricamento storico decisioni in context supervisor (era TASK-847)
-
-  Status: Todo
-  Priorità: Media — senza storico il supervisor propone stesse azioni in loop
-  Prerequisiti: Tabella supervisor_memory già creata (migration 20260616 applicata) ✅
-  Stima: 1.5h
-  File coinvolti: app/scalping/supervisor/supervisor_scheduler.py, app/ai/supervisor_context.py
-
-  Scope:
-
-  - [ ] In build_scalping_context(): query ultimi 10 record da supervisor_memory
-
-    filtrati per symbol e session_id se disponibile, ordinati per decided_at DESC
-
-  - [ ] Mappare i record in lista supervisor_history: [{action, reason, was_applied, decided_at}]
-  - [ ] Aggiungere chiave supervisor_history al context dict
-  - [ ] In _format_context(): aggiungere sezione === DECISIONI PRECEDENTI ===
-
-    (max ultimi 5, formato compatto: [T-10m] change_strategy→rsi_bollinger (applied=True))
-
-  - [ ] Verificare: dopo 2+ decisioni, il context nel log mostra la history
-
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-  TASK-863 — FASE F4: Job verifica outcome decisioni supervisor (era TASK-848)
-
-  Status: Todo
-  Priorità: Bassa
-  Prerequisiti: TASK-862
-  Stima: 1.5h
-  File coinvolti: app/scheduler/scalping_jobs.py
-
-  Scope:
-
-  - [ ] Implementare verify_supervisor_outcomes_job() in scalping_jobs.py:
-    - Query supervisor_memory dove was_applied=True AND outcome_verified_at IS NULL AND decided_at < NOW() - 30min
-    - Per ogni record: calcola pnl_delta confrontando PnL sessione al momento della decisione vs ora
-    - Classifica: positive se pnl_delta > 0.01, negative se < -0.01, neutral altrimenti
-    - UPDATE riga con outcome_verified_at, outcome_pnl_delta, outcome_label
-
-  - [ ] Registrare il job in setup_scheduler() con interval_minutes=5
-  - [ ] Verifica: dopo 30+ min da una decisione applicata, il record ha outcome_label valorizzato
-
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-  TASK-864 — Miglioramento: Circuit breaker collector HTTP
-
-  Status: Todo
-  Priorità: Media — senza circuit breaker, collector falliti vengono riqueri ogni 10s per sempre
-  Stima: 2h
-  File coinvolti: app/scalping/intelligence/collectors/ (tutti i collector)
-
-  Scope:
-
-  - [ ] Creare classe CollectorCircuitBreaker in nuovo file collectors/circuit_breaker.py:
-    - Soglia: 3 errori consecutivi → stato open (disabilitato per 5 min)
-    - Stato half_open dopo 5 min: tenta 1 call → se OK → closed, se KO → open
-    - Metodo call(coro) → esegue coroutine se closed/half_open, ritorna None se open
-
-  - [ ] Integrare in ogni collector: istanza CircuitBreaker per istanza collector
-  - [ ] Nei log: segnalare quando un collector entra in stato open e quando si recupera
-  - [ ] Verifica: simulare errore ripetuto su FundingRateCollector → dopo 3 fallimenti il collector
-
-    smette di essere contattato per 5 min, poi torna operativo automaticamente
-
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-  TASK-865 — Miglioramento: Health check endpoint modulo scalping
-
-  Status: Todo
-  Priorità: Alta — senza health check non si sa lo stato dei componenti interni
-  Stima: 1h
-  File coinvolti: synthtrade/backend/app/scalping/router.py
-
-  Scope:
-
-  - [ ] Aggiungere endpoint GET /scalping/health che restituisce:
-
-  {
-    "ws_client": {"connected": true, "symbol": "bnbusdc", "last_candle_sec_ago": 12},
-    "uds": {"active": true, "connected": true},
-    "supervisor": {"active": true, "last_tick_sec_ago": 432, "interval_sec": 600},
-    "session_guard": {"state": "ready", "phases_completed": ["buffer_phase", ...]},
-    "candle_buffer": {"size": 98, "ready": true},
-    "signal_engine": {"symbol": "BNBUSDC", "last_computed_sec_ago": 8},
-    "collectors": {
-      "funding_rate": "ok",
-      "open_interest": "ok",
-      "fear_greed": "ok",
-      "cvd": "no_data",
-      "long_short_ratio": "error"
-    }
-  }
-
-  - [ ] Verifica: chiamare GET /scalping/health con sessione attiva e leggere output coerente
-
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-  TASK-866 — Miglioramento: Rate limit budget giornaliero chiamate AI supervisor
-
-  Status: Todo
-  Priorità: Bassa — evita saturazione modelli free su OpenRouter
-  Stima: 0.5h
-  File coinvolti: app/scalping/supervisor/supervisor_scheduler.py
-
-  Scope:
-
-  - [ ] Aggiungere contatore _daily_ai_calls: int = 0 e _last_reset_day: str
-  - [ ] In _tick(): se _daily_ai_calls >= MAX_DAILY_SUPERVISOR_CALLS (default 100) → skip e log warning
-  - [ ] Reset contatore a mezzanotte (confronta data corrente con _last_reset_day)
-  - [ ] Aggiungere SCALPING_SUPERVISOR_MAX_DAILY_CALLS=100 a .env e config.py
-  - [ ] Verifica: dopo 100 chiamate simulate, il supervisor smette di chiamare l'AI
-
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-  TASK-867 — Miglioramento: PositionManager — aggiungere exit_price e closed_at
-
-  Status: Todo
-  Priorità: Bassa
-  Stima: 0.5h
-  File coinvolti: app/scalping/engine/position_manager.py
-
-  Scope:
-
-  - [ ] Aggiungere campi exit_price: Optional[Decimal] = None e
-
-    closed_at: Optional[datetime] = None al dataclass Position
-
-  - [ ] In close_position(exit_price, ...): impostare pos.exit_price = exit_price
-
-    e pos.closed_at = datetime.now(timezone.utc)
-
-  - [ ] Nota: non richiede modifiche al router (che già calcola PnL esternamente),
-
-    ma fornisce una fonte di verità sul position object per eventuali audit futuri
-
-  - [ ] Verifica: dopo close_position(), pos.exit_price e pos.closed_at sono valorizzati
-
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-  TASK-868 — Test: Suite di test per componenti core scalping
-
-  Status: Todo
-  Priorità: Media — nessun test copre il modulo scalping
-  Stima: 3h
-  File coinvolti: nuovo synthtrade/backend/tests/test_scalping_core.py
-
-  Scope:
-
-  - [ ] Test SessionLoadGuard: state machine idle→loading→ready, timeout→failed, complete_phase doppio
-  - [ ] Test SignalAggregator.should_execute():
-    - Caso 1: collector insufficienti → bypass se discordi, blocco se concordi
-    - Caso 2: score neutrale → blocco
-    - Caso 3: bias mismatch → blocco
-    - Caso 4: signal CLOSE → sempre permesso
-
-  - [ ] Test ExecutionLoop.process_candle():
-    - Buffer non pronto (< 50 candele) → ritorna None
-    - Buffer pronto → ritorna ExecutionDecision
-
-  - [ ] Test PositionManager: open → get_open → close → has_open=False
-  - [ ] Verifica: pytest tests/test_scalping_core.py passa verde
-
-
-  ---
-
-  Questo è il piano completo aggiornato. I punti chiave della sequenza di implementazione raccomandata:
-
-  1. **Prima**: TASK-855 (doppia chiusura live) — rischio finanziario reale
-  2. **Poi**: TASK-856 + 857 + 858 + 859 — fix veloci (< 2h totali)
-  3. **Poi**: TASK-860 + 861 + 862 — supervisor con context reale (prerequisiti per TASK-863)
-  4. **Poi**: TASK-865 (health check) — osservabilità
-  5. **Infine**: TASK-863, 864, 866, 867, 868 — miglioramenti e test
 
 ---
+
+## Epica Scalping Logs — TASK-880 ÷ TASK-883 (2026-06-19)
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-02 │ 🔴 CRITICO │ Doppia chiusura posizione in live: _trade_processor esegue SL/TP software (_close_position_and_record) anche in live mode dove │
+  │        │            │ Binance chiude già via OCO. Se arriva un tick trade con prezzo sotto SL mentre l'OCO non è ancora eseguito, il router vende a  │
+  │        │            │ mercato E poi l'OCO si esegue = doppia vendita su asset già venduto.                                                           │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-03 │ 🟡 MEDIO   │ Broadcast signal type sempre BUY: "type": "BUY" if decision.confidence > 0 else "SELL" — confidence è sempre >0, il frontend   │
+  │        │            │ vede solo BUY nel signal panel.                                                                                                │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-04 │ 🟡 MEDIO   │ get_holdings() crash: balance["total"][asset]["free"] — balance["total"] è Dict[str, float], non un dict di oggetti. TypeError │
+  │        │            │ se chiamato.                                                                                                                   │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-05 │ 🟡 MEDIO   │ session_perf sempre vuoto in supervisor_memory: getattr(self._loop, "_execution_state", {}) ritorna sempre {} perché           │
+  │        │            │ ExecutionLoop non ha _execution_state.                                                                                         │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-06 │ 🟡 MEDIO   │ _save_decision_to_memory() non gestisce i task TASK-844/847: Il caricamento storico decisioni dal DB nel context del           │
+  │        │            │ supervisor non è ancora implementato (TASK-847), ma il salvataggio sì — il supervisor opera "senza memoria" nonostante la      │
+  │        │            │ tabella esista.                                                                                                                │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-07 │ 🟠 BASSO   │ Race condition in SessionLoadGuard: _check_timeout() dentro complete_phase() può impostare stato failed prima del check        │
+  │        │            │ issubset() se il timeout scatta nell'ultimo millisecondo.                                                                      │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-08 │ 🟠 BASSO   │ supervisor_scheduler._score_engine default BTCUSDT: Se SupervisorScheduler viene istanziato senza score_engine, usa            │
+  │        │            │ SignalScoreEngine() default che opera su BTCUSDT anche se il simbolo attivo è BNBUSDC. In pratica il supervisor riceve dati    │
+  │        │            │ intelligence per il simbolo sbagliato.                                                                                         │
+  └────────┴────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+---
+
+## Epica Scalping Logs — TASK-880 ÷ TASK-883 (2026-06-19)
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-02 │ 🔴 CRITICO │ Doppia chiusura posizione in live: _trade_processor esegue SL/TP software (_close_position_and_record) anche in live mode dove │
+  │        │            │ Binance chiude già via OCO. Se arriva un tick trade con prezzo sotto SL mentre l'OCO non è ancora eseguito, il router vende a  │
+  │        │            │ mercato E poi l'OCO si esegue = doppia vendita su asset già venduto.                                                           │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-03 │ 🟡 MEDIO   │ Broadcast signal type sempre BUY: "type": "BUY" if decision.confidence > 0 else "SELL" — confidence è sempre >0, il frontend   │
+  │        │            │ vede solo BUY nel signal panel.                                                                                                │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-04 │ 🟡 MEDIO   │ get_holdings() crash: balance["total"][asset]["free"] — balance["total"] è Dict[str, float], non un dict di oggetti. TypeError │
+  │        │            │ se chiamato.                                                                                                                   │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-05 │ 🟡 MEDIO   │ session_perf sempre vuoto in supervisor_memory: getattr(self._loop, "_execution_state", {}) ritorna sempre {} perché           │
+  │        │            │ ExecutionLoop non ha _execution_state.                                                                                         │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-06 │ 🟡 MEDIO   │ _save_decision_to_memory() non gestisce i task TASK-844/847: Il caricamento storico decisioni dal DB nel context del           │
+  │        │            │ supervisor non è ancora implementato (TASK-847), ma il salvataggio sì — il supervisor opera "senza memoria" nonostante la      │
+  │        │            │ tabella esista.                                                                                                                │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-07 │ 🟠 BASSO   │ Race condition in SessionLoadGuard: _check_timeout() dentro complete_phase() può impostare stato failed prima del check        │
+  │        │            │ issubset() se il timeout scatta nell'ultimo millisecondo.                                                                      │
+  ├────────┼────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ BUG-08 │ 🟠 BASSO   │ supervisor_scheduler._score_engine default BTCUSDT: Se SupervisorScheduler viene istanziato senza score_engine, usa            │
+  │        │            │ SignalScoreEngine() default che opera su BTCUSDT anche se il simbolo attivo è BNBUSDC. In pratica il supervisor riceve dati    │
+  │        │            │ intelligence per il simbolo sbagliato.                                                                                         │
+  └────────┴────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 ---
 

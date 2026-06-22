@@ -123,7 +123,8 @@ const PAGE_SIZE = 50;
               <span>Durata</span>
               <span style="text-align:center">Trade</span>
               <span style="text-align:center">Wins</span>
-              <span style="text-align:right">P&L €</span>
+              <span style="text-align:right">P&L</span>
+              <span style="text-align:right">P&L%</span>
               <span style="text-align:right">Win%</span>
               <span style="text-align:right">vs Hold</span>
               <span></span>
@@ -144,7 +145,10 @@ const PAGE_SIZE = 50;
                 <span class="session-trades">{{ s.trade_count }}</span>
                 <span class="session-wins">{{ s.win_count }}/{{ s.trade_count }}</span>
                 <span class="session-pnl" [ngClass]="{ positive: s.total_pnl >= 0, negative: s.total_pnl < 0 }">
-                  {{ s.total_pnl >= 0 ? '+' : '' }}{{ s.total_pnl | number:'1.2-2' }} €
+                  {{ s.total_pnl >= 0 ? '+' : '' }}{{ s.total_pnl | number:'1.2-2' }} {{ quoteAssetFromSymbol(s.symbol) }}
+                </span>
+                <span class="session-pnl-pct" [ngClass]="{ positive: (s.total_pnl_pct ?? 0) >= 0, negative: (s.total_pnl_pct ?? 0) < 0 }">
+                  {{ s.total_pnl_pct != null ? ((s.total_pnl_pct >= 0 ? '+' : '') + (s.total_pnl_pct | number:'1.2-2') + '%') : '—' }}
                 </span>
                 <span class="session-winrate" [ngClass]="{ positive: winRate(s) >= 50, negative: winRate(s) < 50 }">
                   {{ s.trade_count > 0 ? (winRate(s) | number:'1.1-1') + '%' : '—' }}
@@ -152,7 +156,7 @@ const PAGE_SIZE = 50;
                 <span class="session-hold" [ngClass]="{ positive: (s.hold_pnl_pct ?? 0) >= 0, negative: (s.hold_pnl_pct ?? 0) < 0 }">
                   {{ s.hold_pnl_pct != null ? ((s.hold_pnl_pct >= 0 ? '+' : '') + (s.hold_pnl_pct | number:'1.2-2') + '%') : '—' }}
                 </span>
-                <span class="expand-arrow">{{ expandedSessionId() === s.id ? '🔼' : '🔽' }}</span>
+                <span class="expand-arrow" [class.open]="expandedSessionId() === s.id">&#8250;</span>
               </div>
 
               @if (expandedSessionId() === s.id) {
@@ -165,7 +169,7 @@ const PAGE_SIZE = 50;
                         <thead>
                           <tr>
                             <th>Ora</th><th>Pair</th><th>Tipo</th><th>Entry</th><th>Exit</th>
-                            <th>Q.tà</th><th>Durata</th><th>P&L €</th><th>P&L %</th><th>Motivo</th>
+                            <th>Q.tà</th><th>Durata</th><th>P&L</th><th>P&L %</th><th>Motivo</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -179,7 +183,7 @@ const PAGE_SIZE = 50;
                               <td class="cell-qty">{{ t.quantity | number:'1.4-8' }}</td>
                               <td class="cell-duration">{{ tradeDuration(t.entry_time, t.exit_time) }}</td>
                               <td class="cell-pnl-eur" [ngClass]="{ positive: (t.pnl ?? 0) >= 0, negative: (t.pnl ?? 0) < 0 }">
-                                {{ t.pnl != null ? ((t.pnl >= 0 ? '+' : '') + (t.pnl | number:'1.2-2') + ' €') : '—' }}
+                                {{ t.pnl != null ? ((t.pnl >= 0 ? '+' : '') + (t.pnl | number:'1.2-2') + ' ' + quoteAssetFromSymbol(t.symbol)) : '—' }}
                               </td>
                               <td class="cell-pnl" [ngClass]="{ positive: (t.pnl_pct ?? 0) >= 0, negative: (t.pnl_pct ?? 0) < 0 }">
                                 {{ t.pnl_pct != null ? ((t.pnl_pct >= 0 ? '+' : '') + (t.pnl_pct | number:'1.2-2') + '%') : '—' }}
@@ -244,9 +248,9 @@ const PAGE_SIZE = 50;
     .page-info { color: var(--text-muted); font-size: 13px; }
     /* Scalping accordion */
     .sessions-list { display: flex; flex-direction: column; width: 100%; }
-    .session-header, .session-row {
+      .session-header, .session-row {
       display: grid;
-      grid-template-columns: 2% 12% 6% 12% 12% 9% 6% 8% 14% 8% 8% 3%;
+      grid-template-columns: 2% 12% 6% 12% 12% 9% 5% 5% 10% 7% 7% 8% 5%;
       gap: 0;
       align-items: center;
       width: 100%;
@@ -279,14 +283,21 @@ const PAGE_SIZE = 50;
     .status-dot.stopped { background: #555; }
     .session-symbol { font-family: monospace; font-weight: 700; font-size: 14px; color: var(--text-primary); }
     .mode-badge { font-size: 11px; font-weight: 700; padding: 3px 7px; border-radius: 3px; text-transform: uppercase; justify-self: start; }
-    .mode-badge.live { background: rgba(239,83,80,0.2); color: #ef5350; }
+    .mode-badge.live { background: rgba(38,166,154,0.2); color: #26a69a; }
     .mode-badge.paper { background: rgba(38,166,154,0.2); color: #26a69a; }
     .session-start, .session-end { font-family: monospace; font-size: 12px; color: var(--text-muted); }
     .session-duration { font-family: monospace; font-size: 13px; color: var(--text-secondary); }
     .session-trades, .session-wins { font-size: 13px; color: var(--text-secondary); text-align: center; }
     .session-pnl { font-family: monospace; font-weight: 700; font-size: 14px; text-align: right; white-space: nowrap; }
+    .session-pnl-pct { font-family: monospace; font-weight: 600; font-size: 13px; text-align: right; }
     .session-winrate, .session-hold { font-family: monospace; font-weight: 600; font-size: 13px; text-align: right; }
-    .expand-arrow { font-size: 12px; text-align: right; justify-self: end; }
+    .expand-arrow {
+      font-size: 22px; text-align: right; justify-self: end;
+      font-weight: 600; color: var(--text-muted);
+      transition: transform 0.2s ease; line-height: 1;
+      display: inline-block; padding: 0 4px;
+    }
+    .expand-arrow.open { transform: rotate(90deg); color: var(--accent-primary); }
     .session-detail { background: var(--bg-elevated); border: 1px solid var(--accent-primary); border-top: none; border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; padding: 12px; margin-bottom: 6px; }
   `]
 })
@@ -469,6 +480,13 @@ export class LogsPage implements OnInit, OnDestroy {
     if (sec >= 3600) return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
     if (sec >= 60) return `${Math.floor(sec / 60)}m ${sec % 60}s`;
     return `${sec}s`;
+  }
+
+  quoteAssetFromSymbol(symbol: string): string {
+    if (symbol.endsWith('USDC')) return 'USDC';
+    if (symbol.endsWith('EUR')) return 'EUR';
+    if (symbol.endsWith('FDUSD')) return 'FDUSD';
+    return 'USDT';
   }
 
   trackByTrade(index: number, trade: SessionTradeLog): string {

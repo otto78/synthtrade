@@ -141,6 +141,7 @@ async def scalping_websocket(ws: WebSocket):
                     "side": pos.side,
                     "entry_price": entry_f,
                     "current_price": entry_f,
+                    "entry_time": pos.entry_time.isoformat(),
                     "quantity": qty_f,
                     "pnl": 0.0,
                     "pnl_pct": 0.0,
@@ -423,7 +424,7 @@ async def _save_open_position_to_db(pos, db_session_id: str,
                 "session_id": db_session_id,
                 "symbol": pos.symbol,
                 "side": pos.side,
-                "entry_price": float(pos.entry_price),
+                "entry_price": round(float(pos.entry_price), 2),
                 "exit_price": None,
                 "quantity": float(pos.quantity),
                 "pnl": None,
@@ -446,7 +447,9 @@ async def _save_open_position_to_db(pos, db_session_id: str,
 
 async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl_pct: float, reason: str):
     """Update the open position row in DB to 'closed' with exit price and PnL.
-    Matches by session_id + entry_price + status='open' (latest match).
+    
+    FIX-2026-06-21: Strategy 1 uses oco_order_list_id (univoco per trade, match deterministico).
+    Strategy 2 (fallback) uses session_id + entry_price + entry_time for pre-OCO-ID trades.
     """
     try:
         db_sid = _execution_state["session"].get("db_session_id")
@@ -454,17 +457,39 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
             return
         def _db_op():
             supabase = get_supabase()
-            # Find the latest open trade for this session and entry price
-            resp = supabase.table("scalping_trades") \
-                .select("id") \
-                .eq("session_id", db_sid) \
-                .eq("entry_price", float(pos.entry_price)) \
-                .eq("status", "open") \
-                .order("entry_time", desc=True) \
-                .limit(1) \
-                .execute()
-            if resp.data:
-                trade_id = resp.data[0]["id"]
+            trade_id = None
+            # Pre-compute fallback values (used in Strategy 2 and extrema ratio)
+            entry_price_rounded = round(float(pos.entry_price), 2)
+            entry_time_str = pos.entry_time.isoformat() if pos.entry_time else None
+            
+            # ── Strategy 1: match via oco_order_list_id (univoco, deterministico) ──
+            if pos.oco_order_list_id:
+                resp = supabase.table("scalping_trades") \
+                    .select("id") \
+                    .eq("oco_order_list_id", pos.oco_order_list_id) \
+                    .eq("status", "open") \
+                    .limit(1) \
+                    .execute()
+                if resp.data:
+                    trade_id = resp.data[0]["id"]
+            
+            # ── Strategy 2 (fallback): session_id + entry_price + entry_time ──
+            # Usato per trade pre-TASK-825 che non hanno oco_order_list_id.
+            # Arrotonda entry_price a 2 decimali per evitare mismatch floating-point.
+            if not trade_id:
+                resp = supabase.table("scalping_trades") \
+                    .select("id") \
+                    .eq("session_id", db_sid) \
+                    .eq("entry_price", entry_price_rounded) \
+                    .eq("entry_time", entry_time_str) \
+                    .eq("status", "open") \
+                    .limit(1) \
+                    .execute()
+                if resp.data:
+                    trade_id = resp.data[0]["id"]
+            
+            if trade_id:
+                # UPDATE — modifica la riga 'open' esistente
                 supabase.table("scalping_trades").update({
                     "exit_price": close_price,
                     "pnl": round(pnl, 2),
@@ -473,13 +498,15 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
                     "status": "closed",
                     "exit_time": datetime.now(timezone.utc).isoformat(),
                 }).eq("id", trade_id).execute()
+                logger.debug(f"DB position closed (match via {'oco_order_list_id' if pos.oco_order_list_id else 'fallback'}): trade_id={trade_id}")
             else:
-                # Fallback: insert new row if no open row found (backward compat)
+                # Fallback extrema ratio: insert new row if no open row found
+                logger.warning(f"No open row found for close: session={db_sid} symbol={pos.symbol} entry_price={entry_price_rounded} entry_time={entry_time_str} — inserting as new row")
                 supabase.table("scalping_trades").insert({
                     "session_id": db_sid,
                     "symbol": pos.symbol,
                     "side": pos.side,
-                    "entry_price": float(pos.entry_price),
+                    "entry_price": round(float(pos.entry_price), 2),
                     "exit_price": close_price,
                     "quantity": float(pos.quantity),
                     "pnl": round(pnl, 2),
@@ -489,6 +516,7 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
                     "status": "closed",
                     "entry_time": pos.entry_time.isoformat(),
                     "exit_time": datetime.now(timezone.utc).isoformat(),
+                    "oco_order_list_id": pos.oco_order_list_id,
                 }).execute()
         await asyncio.to_thread(_db_op)
     except Exception as db_e:
@@ -1085,6 +1113,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         "side": pos_obj.side,
                         "entry_price": float(pos_obj.entry_price),
                         "current_price": float(close_price),
+                        "entry_time": pos_obj.entry_time.isoformat(),
                         "quantity": float(pos_obj.quantity),
                         "trade_value_usd": round(float(pos_obj.quantity) * float(pos_obj.entry_price), 2),
                         "pnl": 0.0,
@@ -1453,6 +1482,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                         "side": pos_obj.side,
                                         "entry_price": float(pos_obj.entry_price),
                                         "current_price": float(candle.close),
+                                        "entry_time": pos_obj.entry_time.isoformat(),
                                         "quantity": float(pos_obj.quantity),
                                         "trade_value_usd": round(float(pos_obj.quantity) * float(pos_obj.entry_price), 2),
                                         "pnl": 0.0,
@@ -1495,6 +1525,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     "side": pos_obj.side,
                                     "entry_price": float(pos_obj.entry_price),
                                     "current_price": float(candle.close),
+                                    "entry_time": pos_obj.entry_time.isoformat(),
                                     "quantity": float(pos_obj.quantity),
                                     "trade_value_usd": round(float(pos_obj.quantity) * float(pos_obj.entry_price), 2),
                                     "pnl": 0.0,
@@ -1509,8 +1540,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                 await _close_position_and_record(pm, float(candle.close), pos, reason=decision.reason or "signal")
                             else:
                                 logger.info(f">>> HOLD: existing {pos.side} position matches {side} signal")
-                    elif decision and decision.signal_type == "HOLD":
-                        logger.info(f">>> HOLD: {decision.reason}")
+
                     else:
                         reason_str = decision.reason if decision else "decision=None"
                         logger.info(f">>> DECISION REJECTED: {reason_str}")
@@ -1801,7 +1831,7 @@ async def list_scalping_sessions(limit: int = 50, offset: int = 0) -> List[Dict]
         if session_ids:
             try:
                 tr = supabase.table("scalping_trades") \
-                    .select("session_id, pnl, signal_reason, status, entry_price, exit_price, entry_time") \
+                    .select("session_id, pnl, signal_reason, status, entry_price, exit_price, entry_time, quantity") \
                     .in_("session_id", session_ids) \
                     .eq("status", "closed") \
                     .execute()
@@ -1826,12 +1856,20 @@ async def list_scalping_sessions(limit: int = 50, offset: int = 0) -> List[Dict]
             else:
                 row["duration_seconds"] = None
 
-            # Arricchisci con dati reali dai trade (override se trade_count == 0)
+                # Arricchisci con dati reali dai trade (override se trade_count == 0)
             session_trades = trades_by_session.get(row["id"], [])
             if session_trades:
                 row["trade_count"] = len(session_trades)
                 row["win_count"] = len([t for t in session_trades if (t.get("pnl") or 0) > 0])
                 row["total_pnl"] = round(sum((t.get("pnl") or 0) for t in session_trades), 4)
+                # Calcola total_pnl_pct: somma PnL / somma (entry_price * quantity) * 100
+                total_entry_value = sum(
+                    (float(t.get("entry_price") or 0) * float(t.get("quantity") or 0))
+                    for t in session_trades
+                )
+                row["total_pnl_pct"] = round(
+                    (row["total_pnl"] / total_entry_value) * 100, 2
+                ) if total_entry_value > 0 else None
                 # Calcola vs Hold: (exit_price ultimo trade / entry_price primo trade - 1) * 100
                 sorted_trades = sorted(session_trades, key=lambda t: t.get("entry_time") or "")
                 first_entry = float(sorted_trades[0].get("entry_price") or 0)

@@ -12,6 +12,7 @@ export interface Position {
   pnl_pct: number;
   leverage: number;
   opened_at: string;
+  entry_time?: string;
   stop_loss?: number;
   take_profit?: number;
   // New fields for exit targets

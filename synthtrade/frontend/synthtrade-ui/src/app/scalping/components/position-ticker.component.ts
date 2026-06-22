@@ -33,7 +33,7 @@ import { Position } from '../models/position.model';
         
         <div class="row prices">
           <span>Entry: {{ position.entry_price | number:'1.2-2' }}</span>
-          <span>Current: {{ position.current_price | number:'1.2-2' }}</span>
+          <span>Date: {{ formatEntryTime() }}</span>
         </div>
 
         <!-- Trade value (gross amount) -->
@@ -213,16 +213,20 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
       filter(event => event !== null)
     ).subscribe((event: PositionEvent) => {
       this._updateQuoteAsset(event.symbol);
+      // Preserve existing entry_time/opened_at if the event doesn't carry it
+      // (position_update events only update PnL/price, not entry metadata)
+      const existingEntryTime = this.position?.entry_time || this.position?.opened_at;
       this.position = {
         symbol: event.symbol,
         side: event.side,
         entry_price: event.entry_price,
         current_price: event.current_price,
+        entry_time: event.entry_time || existingEntryTime,
         quantity: event.quantity ?? 0,
         pnl: event.pnl,
         pnl_pct: event.pnl_pct,
         leverage: 1,
-        opened_at: new Date().toISOString(),
+        opened_at: existingEntryTime || new Date().toISOString(),
         stop_loss_price: event.stop_loss_price,
         take_profit_price: event.take_profit_price,
         stop_loss_pct: event.stop_loss_pct,
@@ -323,6 +327,25 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
     if (progress < 30) return 'danger';
     if (progress < 70) return 'warning';
     return 'success';
+  }
+
+  /**
+   * Format entry_time for display. Shows short time + date (e.g. "14:32 20/06")
+   * Falls back to opened_at if entry_time is not available.
+   */
+  formatEntryTime(): string {
+    const ts = this.position?.entry_time || this.position?.opened_at;
+    if (!ts) return '--';
+    try {
+      const d = new Date(ts);
+      const h = d.getHours().toString().padStart(2, '0');
+      const m = d.getMinutes().toString().padStart(2, '0');
+      const day = d.getDate().toString().padStart(2, '0');
+      const month = (d.getMonth() + 1).toString().padStart(2, '0');
+      return `${h}:${m} ${day}/${month}`;
+    } catch {
+      return ts.slice(0, 16);
+    }
   }
 
   ngOnDestroy(): void {

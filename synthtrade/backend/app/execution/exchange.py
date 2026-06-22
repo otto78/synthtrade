@@ -300,14 +300,18 @@ class BinanceExchangeAdapter:
                 "quantity": quantity,
                 "price": price,
                 "stopPrice": stop_price,
-                "stopLimitTimeInForce": "GTC",
             }
-            if stop_price is not None:
-                # stopLimitPrice = prezzo LIMITE per lo STOP LOSS (di solito uguale o leggermente sopra stopPrice)
-                # IMPORTANTE: NON usare take_profit_price qui! Altrimenti lo SL proverà a vendere al prezzo del TP,
-                # e quando il mercato scende sotto stopPrice, lo SL non sarà riempito perché il prezzo limite è sopra.
-                # Usando stop_price, lo SL vende a market non appena il trigger scatta.
-                params["stopLimitPrice"] = stop_price
+            # ⚠️ IMPORTANTE: NON includere stopLimitPrice!
+            # Se includiamo stopLimitPrice, Binance crea un ordine STOP_LOSS_LIMIT invece di STOP_LOSS.
+            # Con STOP_LOSS_LIMIT, quando stopPrice viene triggerato, Binance piazza un LIMIT order
+            # a stopLimitPrice. Se il mercato salta sotto quel prezzo (slippage rapido), l'ordine
+            # NON viene eseguito e la posizione rimane aperta senza protezione.
+            # Con STOP_LOSS (senza stopLimitPrice), quando stopPrice viene triggerato, Binance piazza
+            # un MARKET order che viene SEMPRE eseguito al mejor prezzo disponibile.
+            # 
+            # CORREZIONE BUG 2026-06-20: Rimosso stopLimitPrice per usare STOP_LOSS (market) invece
+            # di STOP_LOSS_LIMIT (limit). Il bug causava lo stop loss che non veniva eseguito quando
+            # il prezzo scendeva rapidamente sotto lo stop.
 
             # Use the private OCO endpoint directly
             response = await self.client.private_post_order_oco(params)

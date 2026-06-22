@@ -7,6 +7,7 @@ export interface ScalpingSessionLog {
   stopped_at?: string;
   duration_seconds?: number;
   total_pnl: number;
+  total_pnl_pct?: number;
   trade_count: number;
   win_count: number;
   strategy?: string;

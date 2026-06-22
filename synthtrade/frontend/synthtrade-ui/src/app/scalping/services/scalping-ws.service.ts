@@ -98,6 +98,7 @@ export interface PositionEvent {
   side: 'BUY' | 'SELL';
   entry_price: number;
   current_price: number;
+  entry_time?: string;
   pnl: number;
   pnl_pct: number;
   quantity?: number;

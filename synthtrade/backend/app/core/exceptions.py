@@ -3,10 +3,14 @@ from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from httpx import RemoteProtocolError
 import logging
 import traceback
 
 logger = logging.getLogger(__name__)
+
+# Errori di connessione DB che non meritano stack trace completo
+_QUIET_ERRORS = (RemoteProtocolError,)
 
 class SynthTradeError(Exception):
     """Base exception for SynthTrade"""
@@ -35,6 +39,21 @@ async def global_exception_handler(request: Request, exc: Exception):
     TASK-301: Handler globale Exception
     """
     request_id = request.headers.get("X-Request-ID", "unknown")
+    
+    # Errori di connessione transitori (es. Supabase HTTP/2 drop) — log ridotto
+    if isinstance(exc, _QUIET_ERRORS):
+        logger.warning(
+            f"Transient connection error: {exc} [request_id={request_id}]"
+        )
+        return JSONResponse(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            content={
+                "error": "upstream_disconnected",
+                "message": "Servizio temporaneamente non disponibile, riprova.",
+                "request_id": request_id
+            }
+        )
+    
     logger.error(f"Unhandled error: {exc}", extra={"request_id": request_id, "stack_trace": traceback.format_exc()})
     
     return JSONResponse(

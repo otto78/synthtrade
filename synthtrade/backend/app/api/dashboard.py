@@ -89,15 +89,20 @@ async def get_dashboard(
         logger.error(f"Failed to fetch Binance balance: {e}")
 
     # ——— KPI: trade chiusi oggi ———
-    closed_trades_today_res = _mode_filter(
-        db.table("trades").select("pnl_pct,price,quantity,fee_eur").eq("status", "CLOSED").gte("closed_at", today)
-    ).execute()
-    closed_trades_count = len(closed_trades_today_res.data or [])
+    closed_trades_count = 0
     closed_trades_pnl = 0.0
-    for t in closed_trades_today_res.data or []:
-        if t.get("pnl_pct") and t.get("price") and t.get("quantity"):
-            closed_trades_pnl += (t["price"] * t["quantity"]) * abs(t["pnl_pct"]) / 100
-    closed_trades_pnl = round(closed_trades_pnl, 2)
+    try:
+        closed_trades_today_res = _mode_filter(
+            db.table("trades").select("pnl_pct,price,quantity,fee_eur").eq("status", "CLOSED").gte("closed_at", today)
+        ).execute()
+        closed_trades_count = len(closed_trades_today_res.data or [])
+        closed_trades_pnl = 0.0
+        for t in closed_trades_today_res.data or []:
+            if t.get("pnl_pct") and t.get("price") and t.get("quantity"):
+                closed_trades_pnl += (t["price"] * t["quantity"]) * abs(t["pnl_pct"]) / 100
+        closed_trades_pnl = round(closed_trades_pnl, 2)
+    except Exception:
+        logger.warning("Dashboard: DB query for closed trades failed (non-critical, showing 0)")
 
     return {
         "balance": balance_eur,

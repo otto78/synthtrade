@@ -43,6 +43,7 @@ class ScalpingConfigLoader:
             "SCALPING_SUPERVISOR_MAX_REPEAT_DECISIONS": settings.scalping.SCALPING_SUPERVISOR_MAX_REPEAT_DECISIONS,
             "SCALPING_REGIME_TREND_THRESHOLD_PCT":   settings.scalping.SCALPING_REGIME_TREND_THRESHOLD_PCT,
             "SCALPING_REGIME_VOLATILE_THRESHOLD":    settings.scalping.SCALPING_REGIME_VOLATILE_THRESHOLD,
+            "SCALPING_TA_VOLUME_ANOMALY_MULTIPLIER": settings.scalping.SCALPING_TA_VOLUME_ANOMALY_MULTIPLIER,
         }
         self._config = base
 
@@ -124,6 +125,10 @@ class ScalpingConfigLoader:
     @property
     def regime_volatile_threshold(self) -> float:
         return self._config["SCALPING_REGIME_VOLATILE_THRESHOLD"]
+
+    @property
+    def ta_volume_anomaly_multiplier(self) -> float:
+        return self._config["SCALPING_TA_VOLUME_ANOMALY_MULTIPLIER"]
 
 
 # Singleton — istanziato all'avvio, condiviso da tutti i moduli scalping

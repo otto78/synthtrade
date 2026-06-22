@@ -61,6 +61,7 @@ class BinanceExchangeAdapter:
                 self.client.set_sandbox_mode(False)
         self._filters_cache = {}
         self._symbol_cache = {}
+        self._macro_cache = {"timestamp": 0.0, "data": {}}
 
     async def close(self):
         await self.client.close()
@@ -116,6 +117,58 @@ class BinanceExchangeAdapter:
         ccxt_symbol = await self._get_ccxt_symbol(symbol)
         ticker = await self.client.fetch_ticker(ccxt_symbol)
         return float(ticker["last"])
+
+    async def get_btc_macro_context(self) -> Dict[str, Any]:
+        """
+        Fetch BTC macro context (price, 1h change %, 24h change %, regime).
+        Uses a 60-second cache to avoid rate limits during rapid polling.
+        """
+        import time
+        now = time.time()
+        if now - self._macro_cache["timestamp"] < 60 and self._macro_cache["data"]:
+            return self._macro_cache["data"]
+
+        try:
+            # Ticker 24h for 24h change and current price
+            ticker_24h = await self.client.fetch_ticker("BTC/USDT")
+            price = float(ticker_24h.get("last", 0.0))
+            change_24h_pct = float(ticker_24h.get("percentage", 0.0))
+
+            # Klines 1h for 1h change
+            klines = await self.client.fetch_ohlcv("BTC/USDT", timeframe="1h", limit=2)
+            change_1h_pct = 0.0
+            if len(klines) >= 2:
+                # kline format: [timestamp, open, high, low, close, volume]
+                close_prev = float(klines[0][4])
+                close_now = float(klines[1][4])
+                if close_prev > 0:
+                    change_1h_pct = ((close_now - close_prev) / close_prev) * 100
+
+            # Determine regime
+            regime = "normal"
+            if change_1h_pct < -2.0:
+                regime = "crash"
+            elif change_1h_pct > 2.0:
+                regime = "rally"
+
+            data = {
+                "btc_price_at_entry": price,
+                "btc_change_1h_pct": round(change_1h_pct, 2),
+                "btc_change_24h_pct": round(change_24h_pct, 2),
+                "macro_regime": regime
+            }
+            self._macro_cache["timestamp"] = now
+            self._macro_cache["data"] = data
+            return data
+
+        except Exception as e:
+            logger.warning(f"Failed to fetch BTC macro context: {e}")
+            return {
+                "btc_price_at_entry": 0.0,
+                "btc_change_1h_pct": 0.0,
+                "btc_change_24h_pct": 0.0,
+                "macro_regime": "unknown"
+            }
 
     async def _round_qty(self, symbol: str, qty: float) -> float:
         """Arrotonda quantity a stepSize (floor) usando i filtri del simbolo."""

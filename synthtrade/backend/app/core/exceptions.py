@@ -3,14 +3,16 @@ from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from httpx import RemoteProtocolError
+from httpx import RemoteProtocolError, ConnectError as HttpxConnectError
 import logging
 import traceback
 
 logger = logging.getLogger(__name__)
 
-# Errori di connessione DB che non meritano stack trace completo
-_QUIET_ERRORS = (RemoteProtocolError,)
+# Errori di connessione transitori (DB, API esterne) — no stack trace
+# RemoteProtocolError: connessione HTTP/2 drop
+# HttpxConnectError: DNS non risolvibile (getaddrinfo failed)
+_QUIET_ERRORS = (RemoteProtocolError, HttpxConnectError)
 
 class SynthTradeError(Exception):
     """Base exception for SynthTrade"""

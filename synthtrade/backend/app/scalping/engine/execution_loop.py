@@ -158,6 +158,18 @@ class ExecutionLoop:
         # 2. Detect regime (usa detect_trend/detect_volatility da app/core/indicators.py via RegimeDetector)
         self._current_regime = self._regime_detector.detect(candles, self._indicators)
 
+        # 2b. Compute TA patterns and Volume Anomaly
+        from app.scalping.engine.ta_analyzer import TAAnalyzer
+        from app.scalping.config_loader import get_scalping_config
+        
+        history_candles = [
+            {"open": c.open, "high": c.high, "low": c.low, "close": c.close, "volume": c.volume}
+            for c in candles
+        ]
+        multiplier = get_scalping_config().ta_volume_anomaly_multiplier
+        ta_patterns = TAAnalyzer.analyze_candlesticks(history_candles)
+        vol_anomaly = TAAnalyzer.detect_volume_anomaly(history_candles, multiplier)
+
         # 3. Select strategy — ONLY if not overridden by supervisor
         if not self._strategy_overridden:
             if self._strategy_selector:
@@ -200,7 +212,14 @@ class ExecutionLoop:
         decision = self._signal_aggregator.should_execute(
             technical_signal, market_score, symbol=self._symbol,
             paper_mode=self.paper_mode,
+            ta_patterns=ta_patterns,
+            vol_anomaly=vol_anomaly
         )
+
+        # Attach them to the decision so the router can save them without recalculating
+        # We use setattr to inject them into the frozen dataclass, or we can just update the dataclass.
+        # Actually, ExecutionDecision is frozen=True. We must update its definition in signal_aggregator.py first.
+        # But we'll do it by replacing the constructor call in signal_aggregator anyway.
 
         # 7. Risk check via RiskManager core (opzionale, se fornito)
         if decision and decision.execute and self._risk_manager:

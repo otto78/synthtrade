@@ -411,7 +411,8 @@ async def _live_close_position(exchange, pos, qty: float) -> float:
 
 
 async def _save_open_position_to_db(pos, db_session_id: str,
-                                    tp_price: float = 0.0, sl_price: float = 0.0):
+                                    tp_price: float = 0.0, sl_price: float = 0.0,
+                                    supervisor_context: Optional[Dict[str, Any]] = None):
     """Save opened position to Supabase with status='open' and no exit/pnl yet.
     Called immediately after pm.open_position() to persist the current trade
     so session restore can pick it up after restart.
@@ -420,7 +421,8 @@ async def _save_open_position_to_db(pos, db_session_id: str,
     try:
         def _db_op():
             supabase = get_supabase()
-            supabase.table("scalping_trades").insert({
+            
+            insert_data = {
                 "session_id": db_session_id,
                 "symbol": pos.symbol,
                 "side": pos.side,
@@ -439,7 +441,25 @@ async def _save_open_position_to_db(pos, db_session_id: str,
                 "oco_order_list_id": pos.oco_order_list_id,
                 "sl_order_id": pos.sl_order_id,
                 "tp_order_id": pos.tp_order_id,
-            }).execute()
+            }
+            if supervisor_context:
+                insert_data.update({
+                    "btc_price_at_entry": supervisor_context.get("btc_price_at_entry"),
+                    "btc_change_1h_pct": supervisor_context.get("btc_change_1h_pct"),
+                    "btc_change_24h_pct": supervisor_context.get("btc_change_24h_pct"),
+                    "macro_regime": supervisor_context.get("macro_regime"),
+                    "signal_price": supervisor_context.get("signal_price"),
+                    "slippage_pct": supervisor_context.get("slippage_pct"),
+                    "signal_to_fill_ms": supervisor_context.get("signal_to_fill_ms"),
+                    "strategies_considered": supervisor_context.get("strategies_considered"),
+                    "strategy_rejection_reason": supervisor_context.get("strategy_rejection_reason"),
+                    "regime_classified": supervisor_context.get("regime_classified"),
+                    "candlestick_pattern": supervisor_context.get("candlestick_pattern"),
+                    "volume_anomaly": supervisor_context.get("volume_anomaly"),
+                    "support_resistance_data": supervisor_context.get("support_resistance_data"),
+                })
+            
+            supabase.table("scalping_trades").insert(insert_data).execute()
         await asyncio.to_thread(_db_op)
     except Exception as db_e:
         logger.warning(f"Failed to save open position to DB: {db_e}")
@@ -1347,7 +1367,32 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                             if _check_daily_loss():
                                 logger.warning("Max daily loss exceeded. Blocking new real trade.")
                                 continue
+
+                            # --- COMPILE SUPERVISOR CONTEXT ---
+                            supervisor_context = {}
+                            try:
+                                exchange = _execution_state.get("exchange")
+                                if exchange:
+                                    macro = await exchange.get_btc_macro_context()
+                                    supervisor_context.update(macro)
                                 
+                                from app.scalping.engine.ta_analyzer import TAAnalyzer
+                                from app.scalping.config_loader import get_scalping_config
+                                history_candles = [
+                                    {"open": c.open, "high": c.high, "low": c.low, "close": c.close, "volume": c.volume}
+                                    for c in execution_loop._candle_buffer.get()
+                                ]
+                                multiplier = get_scalping_config().ta_volume_anomaly_multiplier
+                                supervisor_context["candlestick_pattern"] = TAAnalyzer.analyze_candlesticks(history_candles)
+                                supervisor_context["volume_anomaly"] = TAAnalyzer.detect_volume_anomaly(history_candles, multiplier)
+                                
+                                supervisor_context["regime_classified"] = getattr(decision, "regime", None)
+                                supervisor_context["strategy_rejection_reason"] = getattr(decision, "reason", None)
+                                supervisor_context["signal_price"] = float(candle.close)
+                            except Exception as ctx_e:
+                                logger.warning(f"Failed to compile supervisor context: {ctx_e}")
+                            # ----------------------------------
+
                             # Mode and trade values
                             _mode = _execution_state["session"].get("mode", "paper")
                             _trade_val = float(_execution_state["session"].get("trade_value", 10.0))
@@ -1462,9 +1507,15 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     pos_obj.tp_order_id = str(oco_res.get("take_profit_id", ""))
 
                                     # Persist open position to DB con tp/sl price e OCO IDs (TASK-825)
+                                    if supervisor_context:
+                                        # Calculate slippage
+                                        sig_p = supervisor_context.get("signal_price")
+                                        if sig_p and float(sig_p) > 0:
+                                            supervisor_context["slippage_pct"] = round(abs(float(exec_price) - sig_p) / sig_p * 100, 4)
                                     await _save_open_position_to_db(
                                         pos_obj, session.get("db_session_id"),
-                                        tp_price=tp_price, sl_price=sl_price
+                                        tp_price=tp_price, sl_price=sl_price,
+                                        supervisor_context=supervisor_context
                                     )
 
                                     # Avvia UDS singleton post-OCO (TASK-827)
@@ -1515,7 +1566,11 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     quantity=_qty,
                                 )
                                 # Persist open position to DB immediately
-                                await _save_open_position_to_db(pos_obj, session.get("db_session_id"))
+                                if supervisor_context:
+                                    sig_p = supervisor_context.get("signal_price")
+                                    if sig_p and float(sig_p) > 0:
+                                        supervisor_context["slippage_pct"] = round(abs(float(event.close) - sig_p) / sig_p * 100, 4)
+                                await _save_open_position_to_db(pos_obj, session.get("db_session_id"), supervisor_context=supervisor_context)
                                 
                                 # Update paper balance to reflect Free Balance
                                 session["paper_balance"] -= float(_trade_val)

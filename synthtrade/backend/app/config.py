@@ -60,6 +60,7 @@ class ScalpingSettings(BaseSettings):
     # ── Scalping — Regime Detector ───────────────────────────────
     SCALPING_REGIME_TREND_THRESHOLD_PCT: float = 3.0
     SCALPING_REGIME_VOLATILE_THRESHOLD: float = 0.02
+    SCALPING_TA_VOLUME_ANOMALY_MULTIPLIER: float = 2.0
 
     # Opportunity Monitor
     SCALPING_OPPORTUNITY_POLL_INTERVAL_MIN: int = 5

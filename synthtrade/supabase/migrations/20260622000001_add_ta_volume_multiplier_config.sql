@@ -1,0 +1,1 @@
+INSERT INTO scalping_runtime_config (key, value, value_type, description) VALUES ('SCALPING_TA_VOLUME_ANOMALY_MULTIPLIER', '2.0', 'float', 'Moltiplicatore applicato alla media mobile dei volumi per identificare anomalie (whale entries).') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;

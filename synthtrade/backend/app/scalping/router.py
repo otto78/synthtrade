@@ -1325,6 +1325,13 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 logger.info(f">>> PROCESSING closed candle for {event.symbol} @ {candle.close}")
                 try:
                     decision = await execution_loop.process_candle(candle)
+                    # Sync actual running strategy to session for frontend display
+                    if execution_loop._strategy and execution_loop._strategy.name:
+                        actual_strategy = execution_loop._strategy.name
+                        if session.get("strategy") != actual_strategy:
+                            session["strategy"] = actual_strategy
+                            logger.info(f"Session strategy synced to actual: {actual_strategy}")
+                            await broadcast_scalping_event("session_restored", session.copy())
                     if decision and decision.execute:
                         pm = _execution_state["position_manager"]
                         

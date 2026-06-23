@@ -45,7 +45,7 @@ class SupervisorScheduler:
         self._client = client or SupervisorClient()
         self._updater = updater or ParameterUpdater()
         # TASK-859: usa symbol corretto invece del default BTCUSDT
-        self._score_engine = score_engine or SignalScoreEngine(symbol=symbol)
+        self._score_engine = score_engine or SignalScoreEngine.get_or_create(symbol=symbol)
         self._running = False
         self._task: Optional[asyncio.Task] = None
         self._loop: Optional[ExecutionLoop] = None

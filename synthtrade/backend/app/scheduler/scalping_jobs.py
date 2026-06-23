@@ -115,7 +115,8 @@ async def intelligence_snapshot_job() -> None:
         logger.info(
             f"Intel snapshot job completed for {snapshot.symbol}: "
             f"score={snapshot.signal_score.total if snapshot.signal_score else 'N/A'}, "
-            f"bias={snapshot.signal_score.bias if snapshot.signal_score else 'N/A'}"
+            f"bias={snapshot.signal_score.bias if snapshot.signal_score else 'N/A'}, "
+            f"engine_id={id(engine)}"
         )
     except Exception as e:
         logger.error(f"Intel snapshot job error: {e}")

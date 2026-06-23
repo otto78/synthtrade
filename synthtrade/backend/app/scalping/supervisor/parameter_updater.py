@@ -69,11 +69,15 @@ class ParameterUpdater:
             self._loop.set_strategy(new_strategy)
             logger.info(f"Strategy changed successfully in execution loop")
             
-            # Salva la nuova strategia nella sessione di memoria
+            # Aggiorna la strategia nella sessione di memoria e broadcast al frontend
             try:
-                from app.scalping.router import _execution_state
+                from app.scalping.router import _execution_state, broadcast_scalping_event
                 _execution_state["session"]["strategy"] = new_strategy
                 logger.info(f"Session strategy updated in memory: {new_strategy}")
+                
+                # Broadcast session_restored per aggiornare frontend (scheda strategia + badge AI)
+                await broadcast_scalping_event("session_restored", _execution_state["session"].copy())
+                logger.info(f"Session broadcasted to frontend with new strategy: {new_strategy}")
                 
                 # Salva la nuova strategia su DB (colonna strategy + active_strategy)
                 db_sid = _execution_state["session"].get("db_session_id")

@@ -128,9 +128,9 @@ class SignalScoreEngine:
                 threshold=threshold,
                 timeout=timeout
             )
-            logger.debug(f"[SignalScoreEngine] Created singleton instance for {symbol}")
+        logger.info(f"[SignalScoreEngine] Created singleton instance for {symbol}")
         instance = cls._instances[symbol]
-        logger.debug(f"[SignalScoreEngine] get_or_create({symbol}) -> id={id(instance)}, cvd_calculator={instance._cvd_calculator is not None}")
+        logger.info(f"[SignalScoreEngine] get_or_create({symbol}) -> id={id(instance)}, cvd_calculator={instance._cvd_calculator is not None}")
         return instance
 
     def _set_cvd_calculator(self, calculator: CVDCalculator) -> None:

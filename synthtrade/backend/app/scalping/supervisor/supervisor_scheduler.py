@@ -178,6 +178,19 @@ class SupervisorScheduler:
         self._current_strategy = self._loop.strategy.name if self._loop and self._loop.strategy else None
         session_id = getattr(self._loop, "session_id", None) if self._loop else None
 
+        # Extract TA data for supervisor
+        ta_patterns = None
+        vol_anomaly = False
+        try:
+            if self._loop and getattr(self._loop, "_candle_buffer", None):
+                from app.scalping.engine.ta_analyzer import TAAnalyzer
+                history = [c.model_dump() for c in list(self._loop._candle_buffer)]
+                if len(history) >= 10:
+                    ta_patterns = TAAnalyzer.analyze_candlesticks(history)
+                    vol_anomaly = TAAnalyzer.detect_volume_anomaly(history, multiplier=2.0)
+        except Exception as e:
+            logger.warning(f"Failed to calculate TA for supervisor: {e}")
+
         # TASK-860: passa trade_history al client per arricchire il context
         decision = await self._client.decide(
             symbol=self._symbol,
@@ -186,6 +199,8 @@ class SupervisorScheduler:
             score=score,
             session_id=session_id,
             trade_history=trade_history,
+            ta_patterns=ta_patterns,
+            vol_anomaly=vol_anomaly,
         )
 
         if not self._running:

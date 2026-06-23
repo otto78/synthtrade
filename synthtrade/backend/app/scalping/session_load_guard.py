@@ -84,8 +84,8 @@ class SessionLoadGuard:
         if self.REQUIRED_PHASES.issubset(self._phases_completed):
             self._state = "ready"
             self._ready_event.set()
-            logger.info(
-                "[SESSION_LOCK] Session READY after %.1fs — all phases complete",
+            logger.warning(
+                "\033[92m*** [SESSION_LOCK] Session READY after %.1fs — all phases complete ***\033[0m",
                 self._get_elapsed(),
             )
 

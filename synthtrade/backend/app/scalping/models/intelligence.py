@@ -171,6 +171,12 @@ class SignalScore(BaseModel):
         description="Contributo di ogni collector allo score totale"
     )
     signal_strength: Optional[float] = Field(default=None, ge=0.0, le=100.0)
+    
+    # Campi per analisi del trend (TASK-866)
+    trend_5m: Optional[float] = Field(default=None, description="Variazione assoluta dello score negli ultimi 5 minuti")
+    velocity: Optional[float] = Field(default=None, description="Variazione media per minuto")
+    trend_direction: Optional[str] = Field(default=None, description="'converging', 'diverging', o 'stable'")
+    
     symbol: str = "BTCUSDT"
     computed_at: datetime = Field(default_factory=_utcnow)
 

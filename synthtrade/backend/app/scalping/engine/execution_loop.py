@@ -152,23 +152,25 @@ class ExecutionLoop:
 
         candles = self._candle_buffer.get()
 
-        # 1. Calcola indicatori
-        self._indicators = AbstractScalpingStrategy.calculate_indicators(candles)
+        # Calcoli CPU-heavy delegati a un thread separato per non bloccare l'Event Loop
+        def _compute_ta_heavy() -> tuple:
+            # 1. Calcola indicatori
+            inds = AbstractScalpingStrategy.calculate_indicators(candles)
+            # 2. Detect regime
+            reg = self._regime_detector.detect(candles, inds)
+            # 2b. Compute TA patterns and Volume Anomaly
+            from app.scalping.engine.ta_analyzer import TAAnalyzer
+            from app.scalping.config_loader import get_scalping_config
+            hist = [
+                {"open": c.open, "high": c.high, "low": c.low, "close": c.close, "volume": c.volume}
+                for c in candles
+            ]
+            mult = get_scalping_config().ta_volume_anomaly_multiplier
+            pats = TAAnalyzer.analyze_candlesticks(hist)
+            anom = TAAnalyzer.detect_volume_anomaly(hist, mult)
+            return inds, reg, pats, anom
 
-        # 2. Detect regime (usa detect_trend/detect_volatility da app/core/indicators.py via RegimeDetector)
-        self._current_regime = self._regime_detector.detect(candles, self._indicators)
-
-        # 2b. Compute TA patterns and Volume Anomaly
-        from app.scalping.engine.ta_analyzer import TAAnalyzer
-        from app.scalping.config_loader import get_scalping_config
-        
-        history_candles = [
-            {"open": c.open, "high": c.high, "low": c.low, "close": c.close, "volume": c.volume}
-            for c in candles
-        ]
-        multiplier = get_scalping_config().ta_volume_anomaly_multiplier
-        ta_patterns = TAAnalyzer.analyze_candlesticks(history_candles)
-        vol_anomaly = TAAnalyzer.detect_volume_anomaly(history_candles, multiplier)
+        self._indicators, self._current_regime, ta_patterns, vol_anomaly = await asyncio.to_thread(_compute_ta_heavy)
 
         # 3. Select strategy — ONLY if not overridden by supervisor
         if not self._strategy_overridden:
@@ -191,12 +193,15 @@ class ExecutionLoop:
 
         # 6. Log pipeline state
         regime_name = self._current_regime.regime if self._current_regime else "N/A"
+        ta_score = ta_patterns.get("score", 0) if ta_patterns else 0
+        vol_str = f" vol_anomaly={vol_anomaly}" if vol_anomaly else ""
         logger.info(
             f"{CYAN}PIPELINE: {self._symbol} regime={regime_name} "
             f"strategy={self._strategy.name} "
             f"tech={technical_signal.type}@{technical_signal.confidence:.2f} "
             f"intel={market_score.total:.1f} ({market_score.bias}) "
-            f"tradeable={market_score.tradeable}{RESET}"
+            f"tradeable={market_score.tradeable} "
+            f"ta_score={ta_score}{vol_str}{RESET}"
         )
 
         # 7. Aggregate signals

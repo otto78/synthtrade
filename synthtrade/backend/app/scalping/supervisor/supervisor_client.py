@@ -18,8 +18,8 @@ _SUPERVISOR_SYSTEM_PROMPT = '''
 Sei un supervisore AI esperto in trading scalping. Analizza i dati di intelligence forniti e prendi una decisione operativa.
 
 ⚠️ REGOLA QUANDO NON AGIRE (rispetta SEMPRE queste regole prima di ogni altra):
-- Se session_performance mostra < 5 trade totali → rispondi SEMPRE no_action
-  (troppo presto per valutare la strategia, non hai dati sufficienti)
+- Se session_performance mostra < 5 trade totali E NON c'è un'anomalia di volume → rispondi SEMPRE no_action
+  (troppo presto per valutare la strategia, a meno che non ci siano volumi eccezionali che richiedono un intervento immediato)
 - Se le ultime 3+ decisioni nella history mostrano la stessa action che stai per proporre → rispondi SEMPRE no_action
   (loop di decisioni inutili, la misura non ha effetto)
 - Se session_performance mostra win_rate > 60% e total_pnl > 0 → rispondi SEMPRE no_action
@@ -38,6 +38,7 @@ Sei un supervisore AI esperto in trading scalping. Analizza i dati di intelligen
 - Non puoi MAI assegnare stoch_rsi_bb_squeeze in trending perché sprecherebbe breakout reali.
 
 ⚠️ AZIONE update_threshold — modifica la soglia di signal strength:
+- Se ci sono volumi anomali (Anomalia di Volume: SÌ) e/o forti pattern candlestick concordanti al trend (ignorando il macro-sentiment) → abbassa drasticamente la soglia (es. a 5.0 o 6.0) per permettere al tecnico di operare il breakout.
 - Se lo score è sempre sotto soglia ma segnale tecnico forte e coverage > 70% → abbassa (~10.0)
 - Se molti falsi segnali (trade in perdita nonostante score sopra soglia) → alza (~18.0)
 - Se coverage < 60% → NON abbassare la soglia (score inaffidabile)
@@ -55,6 +56,8 @@ Gerarchia dei Segnali (ordine di priorità):
 6. Flusso Exchange On-chain: inflow = bearish, outflow = bullish
 7. Sentiment: solo per conferma
 8. Indicatori Tecnici (EMA, RSI, BB): solo come filtri di timing
+
+NOTA: le posizioni SHORT non sono ancora supportate, i segnali SELL per apertura vengono sempre bloccati indipendentemente dalla soglia
 
 IMPORTANTE: Rispondi SEMPRE in lingua ITALIANA nel campo "reason".
 
@@ -89,12 +92,16 @@ class SupervisorClient:
         score: Optional[SignalScore] = None,
         session_id: Optional[str] = None,
         trade_history: Optional[list] = None,  # TASK-860
+        ta_patterns: Optional[dict] = None,
+        vol_anomaly: bool = False,
     ) -> SupervisorDecision:
         """Ottieni decisione dal supervisor AI."""
         context = await build_scalping_context(
             symbol, snapshot, regime, score,
             session_id=session_id,
             trade_history=trade_history,
+            ta_patterns=ta_patterns,
+            vol_anomaly=vol_anomaly,
         )
 
         user_prompt = f"""Current market intelligence for {symbol}:
@@ -172,6 +179,20 @@ Provide your decision:"""
             lines.append(f"Fear & Greed: {fg['value']} ({fg['label']})")
         if ss:
             lines.append(f"Signal Score: {ss['total']:.1f} ({ss['bias']})")
+
+        # === ANALISI TECNICA & VOLUMI ===
+        lines.append("")
+        lines.append("=== ANALISI TECNICA & VOLUMI ===")
+        if context.get("ta_patterns"):
+            score_ta = context["ta_patterns"].get("score", 0)
+            bullish = len(context["ta_patterns"].get("bullish", []))
+            bearish = len(context["ta_patterns"].get("bearish", []))
+            lines.append(f"Pattern Candlestick: Score = {score_ta} ({bullish} bullish, {bearish} bearish)")
+        else:
+            lines.append("Pattern Candlestick: Nessuno")
+            
+        anomaly = "SÌ (Volumi eccezionalmente alti!)" if context.get("vol_anomaly") else "No"
+        lines.append(f"Anomalia di Volume: {anomaly}")
 
         # === PERFORMANCE SESSIONE (TASK-860) ===
         perf = context.get("session_performance")

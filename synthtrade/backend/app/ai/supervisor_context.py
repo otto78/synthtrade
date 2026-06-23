@@ -13,6 +13,8 @@ async def build_scalping_context(
     score: Optional[SignalScore],
     session_id: Optional[str] = None,
     trade_history: Optional[list] = None,  # TASK-860: performance sessione in-memory
+    ta_patterns: Optional[dict] = None,
+    vol_anomaly: bool = False,
 ) -> dict:
     """Costruisce il context per il supervisor AI.
 
@@ -27,12 +29,19 @@ async def build_scalping_context(
         regime: Regime di mercato corrente
         score: Score intelligence calcolato
         session_id: ID sessione DB per query performance e memoria
+        trade_history: Cronologia trade in-memory
+        ta_patterns: Pattern tecnici estratti dall'ultima candela
+        vol_anomaly: Flag se la candela corrente ha volumi anomali
     """
     context = {
         "symbol": symbol,
         "regime": regime.regime if regime else "unknown",
         "regime_confidence": regime.confidence if regime else 0.0,
+        "vol_anomaly": vol_anomaly,
     }
+    
+    if ta_patterns:
+        context["ta_patterns"] = ta_patterns
 
     # Threshold corrente (può essere modificato dal Supervisor stesso)
     from app.scalping.config_loader import get_scalping_config

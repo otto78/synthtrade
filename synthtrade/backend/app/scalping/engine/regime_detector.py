@@ -55,13 +55,13 @@ class RegimeDetector:
         volatility_ratio = atr / closes[-1] if closes[-1] > 0 else 0
 
         # Determine regime
-        if volatility_ratio > 0.02:  # High volatility
+        if volatility_ratio > 0.01:  # High volatility (> 1% ATR in 20m)
             regime = "volatile"
             confidence = 0.7
-        elif price_change > 0.03:  # 3% up
+        elif price_change > 0.003:  # 0.3% up over 20 candles
             regime = "trending_up"
             confidence = 0.85
-        elif price_change < -0.03:  # 3% down
+        elif price_change < -0.003:  # 0.3% down over 20 candles
             regime = "trending_down"
             confidence = 0.85
         else:

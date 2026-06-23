@@ -30,6 +30,8 @@ class ExecutionDecision:
     confidence: float = 0.0
     reason: Optional[str] = None
     signal_type: str = ""  # BUY/SELL/CLONE dal segnale tecnico originale
+    ta_patterns: Optional[dict] = None
+    vol_anomaly: bool = False
 
 
 @dataclass(frozen=True)
@@ -103,8 +105,10 @@ class SignalAggregator:
         market_score: SignalScore,
         symbol: str = "",
         paper_mode: bool = False,
+        ta_patterns: Optional[dict] = None,
+        vol_anomaly: bool = False,
     ) -> ExecutionDecision:
-        """Decide se eseguire un ordine basandosi su intelligence + tecnico.
+        """Decide se eseguire un ordine basandosi su intelligence + tecnico e volumi.
 
         Args:
             technical: Segnale tecnico dalla strategia attiva.
@@ -117,12 +121,19 @@ class SignalAggregator:
         """
         min_confidence = self._get_min_confidence()
 
+        trend_str = ""
+        if market_score.trend_direction:
+            t_val = market_score.trend_5m or 0.0
+            trend_val = f"+{t_val:.1f}" if t_val > 0 else f"{t_val:.1f}"
+            trend_str = f" [trend={trend_val} {market_score.trend_direction}]"
+
         # Se il technical e' NONE, non fare nulla
         if technical.type == "NONE":
             return ExecutionDecision(
                 execute=False,
                 reason="nessun segnale tecnico",
                 signal_type=technical.type,
+                ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
             )
 
         # ── FIX-2026-06-12: CLOSE sempre permesso ──
@@ -135,6 +146,7 @@ class SignalAggregator:
                 confidence=min(technical.confidence, 1.0),
                 reason=f"close_signal: {technical.type}@{technical.confidence:.2f} (uscita sempre permessa)",
                 signal_type=technical.type,
+                ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
             )
 
         # Conta tutti i collector che hanno risposto (non None)
@@ -165,6 +177,7 @@ class SignalAggregator:
                     execute=False,
                     reason=f"collector concordi ({list(active_biases)[0]}), score={market_score.total:.1f}",
                     signal_type=technical.type,
+                    ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
                 )
 
             # Collector discordi o pochi dati → bypass intelligence (usa solo tecnico)
@@ -178,25 +191,28 @@ class SignalAggregator:
                     confidence=technical.confidence,
                     reason=f"{mode_label.lower()}_mode fallback (no intel): {technical.type}@{technical.confidence:.2f}",
                     signal_type=technical.type,
+                    ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
                 )
             else:
                 return ExecutionDecision(
                     execute=False,
                     reason=f"{mode_label.lower()}_mode: technical confidence {technical.confidence:.2f} < {min_confidence}",
                     signal_type=technical.type,
+                    ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
                 )
 
         # ── Caso 2: COLLECTOR SUFFICIENTI MA SCORE NEUTRALE → BLOCCO ──
         if abs(market_score.total) < 5.0:
             reason = (
                 f"intelligence neutrale "
-                f"({num_collectors_responded} collectors, score={market_score.total:.1f})"
+                f"({num_collectors_responded} collectors, score={market_score.total:.1f}){trend_str}"
             )
             logger.warning(f"{RED}🔴 BLOCK: {symbol} {reason}{RESET}")
             return ExecutionDecision(
                 execute=False,
                 reason=reason,
                 signal_type=technical.type,
+                ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
             )
 
         # ── Caso 3: SCORE ≥ 5.0 → filtro soglia ────────────────────────
@@ -205,7 +221,7 @@ class SignalAggregator:
             soglia = get_scalping_config().signal_strength_threshold
             # Log pulito: mostra |score| < threshold (confronto reale, nessuna ambiguità)
             reason = (
-                f"|score|={market_score.signal_strength:.1f} < threshold {soglia}"
+                f"|score|={market_score.signal_strength:.1f} < threshold {soglia}{trend_str}"
             )
             logger.warning(
                 f"{RED}🔴 BLOCK: {symbol} {reason} (bias={market_score.bias}){RESET}"
@@ -214,6 +230,7 @@ class SignalAggregator:
                 execute=False,
                 reason=reason,
                 signal_type=technical.type,
+                ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
             )
 
         # ── Mean-reversion bypass per strategie ranging ─────────────────
@@ -229,12 +246,13 @@ class SignalAggregator:
                     f"nonostante bias={bias} — chiusura range, non short direzionale"
                 )
             else:
-                reason = f"conflitto intelligence-tecnico: bias={bias}, segnale={technical.type}"
+                reason = f"conflitto intelligence-tecnico: bias={bias}, segnale={technical.type}{trend_str}"
                 logger.warning(f"{RED}🔴 BLOCK: {symbol} {reason}{RESET}")
                 return ExecutionDecision(
                     execute=False,
                     reason=reason,
                     signal_type=technical.type,
+                    ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
                 )
 
         if bias == "bearish" and technical.type not in ("SELL", "CLOSE"):
@@ -243,15 +261,16 @@ class SignalAggregator:
             ):
                 logger.info(
                     f"⚡ MEAN-REVERSION BUY permesso (source={technical.source}) "
-                    f"nonostante bias={bias} — chiusura range, non long direzionale"
+                    f"nonostante bias={bias}{trend_str} — chiusura range, non long direzionale"
                 )
             else:
-                reason = f"conflitto intelligence-tecnico: bias={bias}, segnale={technical.type}"
+                reason = f"conflitto intelligence-tecnico: bias={bias}, segnale={technical.type}{trend_str}"
                 logger.warning(f"{RED}🔴 BLOCK: {symbol} {reason}{RESET}")
                 return ExecutionDecision(
                     execute=False,
                     reason=reason,
                     signal_type=technical.type,
+                    ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
                 )
 
         if bias == "neutral":
@@ -261,7 +280,32 @@ class SignalAggregator:
                 execute=False,
                 reason=reason,
                 signal_type=technical.type,
+                ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
             )
+
+        # ── Logica TA & Volume: Blocco Preventivo o Boost (per posizioni BUY) ──
+        score_ta = ta_patterns.get("score", 0) if ta_patterns else 0
+        if technical.type == "BUY" and vol_anomaly:
+            # Se abbiamo volumi molto alti e un sentiment fortemente ribassista dai pattern
+            if score_ta < -1:
+                reason = f"TA FILTER BLOCK: anomalia di volume ({vol_anomaly}) con forti pattern BEARISH (score={score_ta})"
+                logger.warning(f"{RED}🔴 BLOCK: {symbol} {reason}{RESET}")
+                return ExecutionDecision(
+                    execute=False,
+                    reason=reason,
+                    signal_type=technical.type,
+                    ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
+                )
+            # Se abbiamo volumi molto alti e un sentiment rialzista dai pattern, spingiamo il confidence
+            elif score_ta > 0:
+                boost_amount = 0.2
+                logger.info(f"🚀 TA FILTER BOOST: anomalia di volume con pattern BULLISH (score={score_ta}) -> Aggiungo +{boost_amount} al confidence")
+                # Lo applichiamo temporaneamente al tecnico per il calcolo combinato
+                technical = TechnicalSignal(
+                    type=technical.type,
+                    confidence=min(technical.confidence + boost_amount, 1.0),
+                    source=technical.source
+                )
 
         # ── Calcolo confidenza combinata (pesata 70% tecnico, 30% intelligence) ──
         # Motivazione: la confidence tecnica è più reattiva al prezzo (rsi_bollinger
@@ -277,13 +321,17 @@ class SignalAggregator:
                 execute=False,
                 reason=reason,
                 signal_type=technical.type,
+                ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
             )
 
         # ── TRADE ESEGUITO ───────────────────────────────────────────────
         reason_str = (
-            f"intelligence={market_score.total:.1f} ({market_score.bias}) + "
+            f"intelligence={market_score.total:.1f} ({market_score.bias}){trend_str} + "
             f"tecnico={technical.type}@{technical.confidence:.2f}"
         )
+        if vol_anomaly and score_ta > 0:
+            reason_str += f" [BOOST TA: {score_ta} patterns]"
+            
         logger.info(
             f"{GREEN}🟢 SIGNAL: {technical.type} {symbol} conf={combined:.3f} | {reason_str}{RESET}"
         )
@@ -292,4 +340,5 @@ class SignalAggregator:
             confidence=round(combined, 3),
             reason=reason_str,
             signal_type=technical.type,
+            ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
         )

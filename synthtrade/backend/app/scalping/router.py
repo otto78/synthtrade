@@ -867,7 +867,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     candle_buffer = CandleBuffer()
     signal_engine = _execution_state.get("signal_engine")
     if not signal_engine:
-        signal_engine = SignalScoreEngine(symbol=symbol)
+        signal_engine = SignalScoreEngine.get_or_create(symbol=symbol)
         _execution_state["signal_engine"] = signal_engine
 
     # Wire CVD calculator: accumulates real-time trade pressure from Binance WS
@@ -1350,7 +1350,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                             })
 
                         # Simulate trade execution
-                        side = "BUY" if decision.confidence > 0 else "SELL"
+                        side = decision.signal_type
                         logger.info(f">>> TRADE: side={side} has_open={pm.has_open()} daily_loss={_check_daily_loss()}")
                         
                         guard = _execution_state.get("session_load_guard")
@@ -1364,6 +1364,10 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                             continue
 
                         if not pm.has_open():
+                            if side == "SELL":
+                                logger.warning(f"BLOCKING SHORT ENTRY: side=SELL is not supported for opening positions yet.")
+                                continue
+
                             if _check_daily_loss():
                                 logger.warning("Max daily loss exceeded. Blocking new real trade.")
                                 continue
@@ -1376,15 +1380,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     macro = await exchange.get_btc_macro_context()
                                     supervisor_context.update(macro)
                                 
-                                from app.scalping.engine.ta_analyzer import TAAnalyzer
-                                from app.scalping.config_loader import get_scalping_config
-                                history_candles = [
-                                    {"open": c.open, "high": c.high, "low": c.low, "close": c.close, "volume": c.volume}
-                                    for c in execution_loop._candle_buffer.get()
-                                ]
-                                multiplier = get_scalping_config().ta_volume_anomaly_multiplier
-                                supervisor_context["candlestick_pattern"] = TAAnalyzer.analyze_candlesticks(history_candles)
-                                supervisor_context["volume_anomaly"] = TAAnalyzer.detect_volume_anomaly(history_candles, multiplier)
+                                supervisor_context["candlestick_pattern"] = getattr(decision, "ta_patterns", None)
+                                supervisor_context["volume_anomaly"] = getattr(decision, "vol_anomaly", False)
                                 
                                 supervisor_context["regime_classified"] = getattr(decision, "regime", None)
                                 supervisor_context["strategy_rejection_reason"] = getattr(decision, "reason", None)
@@ -1917,14 +1914,13 @@ async def list_scalping_sessions(limit: int = 50, offset: int = 0) -> List[Dict]
                 row["trade_count"] = len(session_trades)
                 row["win_count"] = len([t for t in session_trades if (t.get("pnl") or 0) > 0])
                 row["total_pnl"] = round(sum((t.get("pnl") or 0) for t in session_trades), 4)
-                # Calcola total_pnl_pct: somma PnL / somma (entry_price * quantity) * 100
-                total_entry_value = sum(
-                    (float(t.get("entry_price") or 0) * float(t.get("quantity") or 0))
-                    for t in session_trades
-                )
+                # Calcola total_pnl_pct sull'effettivo capitale allocato per singolo trade, non sulla somma
+                allocated_capital = float(row.get("trade_value") or 0)
+                if allocated_capital <= 0:
+                    allocated_capital = float(row.get("paper_balance") or 10000.0)
                 row["total_pnl_pct"] = round(
-                    (row["total_pnl"] / total_entry_value) * 100, 2
-                ) if total_entry_value > 0 else None
+                    (row["total_pnl"] / allocated_capital) * 100, 2
+                ) if allocated_capital > 0 else None
                 # Calcola vs Hold: (exit_price ultimo trade / entry_price primo trade - 1) * 100
                 sorted_trades = sorted(session_trades, key=lambda t: t.get("entry_time") or "")
                 first_entry = float(sorted_trades[0].get("entry_price") or 0)
@@ -2878,8 +2874,12 @@ async def get_performance() -> Dict:
         else:
             current_run = 0
     
-    initial_balance = _execution_state["session"].get("paper_balance", 10000.0)
-    total_pnl_pct = (total_pnl / initial_balance) * 100 if initial_balance else 0
+    session = _execution_state["session"]
+    allocated_capital = float(session.get("trade_value") or 0)
+    if allocated_capital <= 0:
+        allocated_capital = float(session.get("paper_balance") or 10000.0)
+    
+    total_pnl_pct = (total_pnl / allocated_capital) * 100 if allocated_capital > 0 else 0
 
     # Hold PnL: how much we'd have made holding from first trade entry price
     loop = _execution_state.get("loop")

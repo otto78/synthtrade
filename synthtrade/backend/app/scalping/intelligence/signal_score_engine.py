@@ -20,8 +20,10 @@ Il SignalScoreEngine:
 
 import asyncio
 import logging
+import collections
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +102,9 @@ class SignalScoreEngine:
         self._whale = WhaleCollector(timeout_seconds=timeout)
         self._onchain = OnChainCollector(timeout_seconds=timeout)
         
+        # Buffer circolare in memory per gli ultimi 60 score (1 ora se snapshot = 1 min)
+        self._score_history: collections.deque = collections.deque(maxlen=60)
+        
         # CVDCalculator e' diverso: non fa chiamate HTTP, accumula trades
         self._cvd_calculator: Optional[CVDCalculator] = None
 
@@ -124,7 +129,9 @@ class SignalScoreEngine:
                 timeout=timeout
             )
             logger.debug(f"[SignalScoreEngine] Created singleton instance for {symbol}")
-        return cls._instances[symbol]
+        instance = cls._instances[symbol]
+        logger.debug(f"[SignalScoreEngine] get_or_create({symbol}) -> id={id(instance)}, cvd_calculator={instance._cvd_calculator is not None}")
+        return instance
 
     def _set_cvd_calculator(self, calculator: CVDCalculator) -> None:
         """Collega un CVDCalculator esterno (alimentato dal WS client)."""
@@ -227,7 +234,11 @@ class SignalScoreEngine:
                 logger.warning(f"{name} collector failed: {result}")
 
         # CVD dall'accumulatore interno (se collegato)
+        # NOTA: CVD calculator viene collegato dal router via _set_cvd_calculator().
+        # Se l'istanza è singleton (get_or_create), il CVD è condiviso tra pipeline e snapshot job.
         cvd_data = self._cvd_calculator.snapshot(self.symbol) if self._cvd_calculator else None
+        if cvd_data is None:
+            logger.debug(f"[ScoreEngine] CVD not available for {self.symbol} — calculator not wired or still initializing")
 
         # Calcola contributi individuali
         breakdown: Dict[str, float] = {}
@@ -241,14 +252,24 @@ class SignalScoreEngine:
             weighted_score += fr_score * self.weights.get("funding_rate", 0.20)
             total_weight += self.weights.get("funding_rate", 0.20)
 
-        # CVD
+        # CVD — con periodo di grazia: salta CVD se il calculator è appena partito
+        # (meno di 100 trades accumulati) per non falsare lo score con CVD=0
+        trades_count = 0  # default per logging e grace period
         if cvd_data is not None:
-            cvd_score = CVDCalculator.cvd_to_score(
-                cvd_data.cvd, Decimal("1000")
-            )
-            breakdown["cvd"] = round(cvd_score, 2)
-            weighted_score += cvd_score * self.weights.get("cvd", 0.20)
-            total_weight += self.weights.get("cvd", 0.20)
+            trades_count = getattr(self._cvd_calculator, '_trades_since_reset', 0) if self._cvd_calculator else 0
+            if trades_count < 100 and self._cvd_calculator is not None:
+                logger.debug(
+                    f"[ScoreEngine] CVD grace period: only {trades_count} trades, "
+                    f"excluding CVD from score to avoid bias"
+                )
+                # Non aggiungere CVD al breakdown né al weighted score
+            else:
+                cvd_score = CVDCalculator.cvd_to_score(
+                    cvd_data.cvd, Decimal("1000")
+                )
+                breakdown["cvd"] = round(cvd_score, 2)
+                weighted_score += cvd_score * self.weights.get("cvd", 0.20)
+                total_weight += self.weights.get("cvd", 0.20)
 
         # Open Interest — usa baseline rolling dinamica invece di valore fisso
         if oi is not None:
@@ -336,9 +357,10 @@ class SignalScoreEngine:
 
         # DEBUG: log dettagliato per diagnosticare scala reale dei collector
         logger.debug(
-            "[ScoreEngine DEBUG] raw_scores=%s | weighted_sum=%.4f | total_weight=%.4f | "
+            "[ScoreEngine DEBUG] id=%s raw_scores=%s | weighted_sum=%.4f | total_weight=%.4f | "
             "weighted_avg=%.4f | coverage=%.4f (%.0f%%) | threshold_configured=%.4f | "
-            "final_total=%.1f | bias=%s | tradeable=%s",
+            "final_total=%.1f | bias=%s | tradeable=%s | cvd_trades=%s",
+            id(self),
             {k: round(v, 4) for k, v in breakdown.items()},
             weighted_score,
             total_weight,
@@ -348,15 +370,25 @@ class SignalScoreEngine:
             self.threshold,
             total,
             bias,
-            tradeable
+            tradeable,
+            trades_count if cvd_data is not None else "N/A",
         )
 
         logger.debug(
-            f"[ScoreEngine] {self.symbol} total={total:.1f} "
+            f"[ScoreEngine] id={id(self)} {self.symbol} total={total:.1f} "
             f"coverage={coverage:.2f} eff_threshold={effective_threshold:.1f} "
             f"bias={bias} tradeable={tradeable} "
-            f"collectors={list(breakdown.keys())}"
+            f"collectors={list(breakdown.keys())} "
+            f"cvd_wired={self._cvd_calculator is not None}"
         )
+
+        computed_at = datetime.now(timezone.utc)
+        
+        # Salva in memory history
+        self._score_history.append((computed_at, total))
+        
+        # Calcola trend
+        trend_5m, velocity, trend_direction = self._calculate_trend(computed_at)
 
         signal_score = SignalScore(
             total=total,
@@ -364,8 +396,11 @@ class SignalScoreEngine:
             tradeable=tradeable,
             breakdown=breakdown,
             signal_strength=abs(total),
+            trend_5m=trend_5m,
+            velocity=velocity,
+            trend_direction=trend_direction,
             symbol=self.symbol,
-            computed_at=datetime.now(timezone.utc)
+            computed_at=computed_at
         )
 
         return MarketIntelSnapshot(
@@ -381,3 +416,40 @@ class SignalScoreEngine:
             signal_score=signal_score,
             snapshot_at=signal_score.computed_at
         )
+
+    def _calculate_trend(self, now: datetime) -> Tuple[Optional[float], Optional[float], Optional[str]]:
+        """Calcola trend, velocity e direction basandosi sulla history in RAM degli ultimi 5 min."""
+        if len(self._score_history) < 2:
+            return None, None, None
+            
+        current_score = self._score_history[-1][1]
+        
+        # Trova lo score di circa 5 minuti fa (cerca indietro)
+        past_score = None
+        for timestamp, score in reversed(self._score_history):
+            delta_seconds = (now - timestamp).total_seconds()
+            # Prendiamo il primo score che sia vecchio di almeno 4 minuti (fino a 6 max)
+            if delta_seconds >= 240:
+                past_score = score
+                break
+                
+        if past_score is None:
+            # Rimuoviamo il fallback (come suggerito dalla review).
+            # Se la sessione è appena partita e non abbiamo dati di almeno 4 minuti fa, 
+            # non falsifichiamo la velocity calcolandola su una finestra troppo corta.
+            return None, None, None
+            
+        trend_5m = round(current_score - past_score, 2)
+        velocity = round(trend_5m / 5.0, 2)
+        
+        # Direction: converging (verso lo zero), diverging (si allontana dallo zero), stable (variazione minima)
+        if abs(trend_5m) < 0.5:
+            trend_direction = "stable"
+        else:
+            # Sta andando verso 0?
+            if abs(current_score) < abs(past_score):
+                trend_direction = "converging"
+            else:
+                trend_direction = "diverging"
+                
+        return trend_5m, velocity, trend_direction

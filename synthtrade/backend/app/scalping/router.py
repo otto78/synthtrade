@@ -2433,9 +2433,9 @@ async def control_session(control: Dict) -> Dict:
             except (TypeError, ValueError):
                 pass  # keep existing value
 
-        # Initialize SignalScoreEngine for the symbol
+        # Initialize SignalScoreEngine for the symbol (usando singleton)
         try:
-            _execution_state["signal_engine"] = SignalScoreEngine(symbol=active_symbol)
+            _execution_state["signal_engine"] = SignalScoreEngine.get_or_create(symbol=active_symbol)
         except Exception as e:
             logger.warning(f"Could not initialize SignalScoreEngine: {e}")
 

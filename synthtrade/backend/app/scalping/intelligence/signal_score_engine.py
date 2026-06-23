@@ -118,19 +118,23 @@ class SignalScoreEngine:
     ) -> "SignalScoreEngine":
         """Factory method: ritorna istanza singleton per simbolo.
         
+        IMPORTANT: Il simbolo viene normalizzato in UPPERCASE per evitare
+        duplicati per case mismatch (es. "bnbusdc" vs "BNBUSDC").
+        
         Se una istanza per questo simbolo esiste già, la ritorna.
         Altrimenti crea una nuova e la registra nel global registry.
         """
-        if symbol not in cls._instances:
-            cls._instances[symbol] = cls(
-                symbol=symbol,
+        normalized = symbol.upper()
+        if normalized not in cls._instances:
+            cls._instances[normalized] = cls(
+                symbol=symbol,  # Mantiene il case originale per compatibilità interna
                 weights=weights,
                 threshold=threshold,
                 timeout=timeout
             )
-        logger.info(f"[SignalScoreEngine] Created singleton instance for {symbol}")
-        instance = cls._instances[symbol]
-        logger.info(f"[SignalScoreEngine] get_or_create({symbol}) -> id={id(instance)}, cvd_calculator={instance._cvd_calculator is not None}")
+            logger.info(f"[SignalScoreEngine] Created singleton instance for {normalized} (id={id(cls._instances[normalized])})")
+        instance = cls._instances[normalized]
+        logger.info(f"[SignalScoreEngine] get_or_create({symbol}) -> normalized={normalized} id={id(instance)}, cvd_calculator={instance._cvd_calculator is not None}")
         return instance
 
     def _set_cvd_calculator(self, calculator: CVDCalculator) -> None:

@@ -68,14 +68,24 @@ class PositionManager:
         entry_price: Decimal,
         quantity: Decimal,
         order_id: Optional[str] = None,
+        entry_commission: Optional[float] = None,
+        entry_commission_asset: Optional[str] = None,
     ) -> Position:
-        """Apre una nuova posizione."""
+        """Apre una nuova posizione.
+
+        TASK-886: entry_commission/entry_commission_asset opzionali — se forniti
+        (commissione reale dall'ordine market), vengono salvati subito sulla
+        posizione invece di restare None e far scattare il fallback a fee tier
+        in ogni calcolo di PnL successivo.
+        """
         position = Position(
             symbol=symbol,
             side=side,
             entry_price=entry_price,
             quantity=quantity,
             order_id=order_id,
+            entry_commission=entry_commission,
+            entry_commission_asset=entry_commission_asset,
         )
         self._positions.append(position)
         return position

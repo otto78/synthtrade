@@ -1605,6 +1605,10 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     exec_price = float(market_res.get("price") or event.close)
                                     exec_qty = _qty_precise  # ignora risposta Binance, usa qty calcolata
 
+                                    # TASK-886: commissione reale dell'entry, dalla risposta dell'ordine market
+                                    entry_commission_real = float(market_res.get("commission") or 0.0)
+                                    entry_commission_asset_real = market_res.get("commission_asset")
+
                                     # 4. Calculate Risk SL/TP with proper price precision
                                     risk_cfg = _execution_state.get("risk_config", {})
                                     sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3)) / 100
@@ -1639,11 +1643,14 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
 
                                     # ── CASO A: OCO RIUSCITO ──
                                     # 3b. Register position AFTER OCO confermato (TASK-827)
+                                    # TASK-886: propaga la commissione reale dell'entry sulla Position
                                     pos_obj = pm.open_position(
                                         symbol=event.symbol.upper(),
                                         side=side,
                                         entry_price=Decimal(str(exec_price)),
-                                        quantity=Decimal(str(exec_qty))
+                                        quantity=Decimal(str(exec_qty)),
+                                        entry_commission=entry_commission_real if entry_commission_real > 0 else None,
+                                        entry_commission_asset=entry_commission_asset_real,
                                     )
 
                                     # Salva OCO IDs sul position object
@@ -2540,6 +2547,7 @@ async def get_session() -> Dict:
     )
     result["first_trade_entry"] = first_entry
     result["hold_pnl_pct"] = hold_pnl
+    result["fee_tier_certified"] = _execution_state.get("fee_tier_certified", None)
     # Add current signal threshold so frontend can show score/threshold
     try:
         result["signal_strength_threshold"] = get_scalping_config().signal_strength_threshold
@@ -2589,13 +2597,17 @@ async def control_session(control: Dict) -> Dict:
                     logger.info(f"✓ \033[96m\033[1mStarting balance: {selected_balance} {quote_asset}\033[0m")
                     
                     # TASK-877: Recupera fee tier account all'avvio sessione
+                    # TASK-886: marca esplicitamente se il fee tier è certificato (da Binance)
+                    # o un fallback non verificato, così lo stato sessione lo riflette onestamente.
                     try:
                         fee_tier = await adapter.get_trade_fee(active_symbol)
                         _execution_state["fee_tier"] = fee_tier
+                        _execution_state["fee_tier_certified"] = True
                         logger.info(f"✓ Fee tier salvato: maker={fee_tier['maker']}, taker={fee_tier['taker']}")
                     except Exception as e:
-                        logger.warning(f"Impossibile recuperare fee tier: {e} — uso default 0.001")
+                        logger.error(f"Impossibile recuperare fee tier reale: {e} — uso default 0.001 NON CERTIFICATO")
                         _execution_state["fee_tier"] = {"maker": 0.001, "taker": 0.001}
+                        _execution_state["fee_tier_certified"] = False
                 else:
                     error_msg = (
                         f"Nessun saldo Spot disponibile per {quote_asset} (trovato: {selected_balance}). "

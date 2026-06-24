@@ -208,6 +208,29 @@ con la somma delle commissioni reali di entrata + uscita.
 
 ---
 
+### TASK-886 — Fee reali: Fase 4B - Popolare entry_commission con dato reale (2026-06-24) ✅
+
+**Status:** Complete ✅
+
+**Obiettivo:** Popolare `pos_obj.entry_commission` con la commissione reale dell'ordine market invece di lasciarlo None (che attiva sempre il fallback a fee tier).
+
+**File modificati:**
+- `synthtrade/backend/app/execution/exchange.py` — `place_market_order` ora estrae e restituisce commission/commission_asset
+- `synthtrade/backend/app/scalping/engine/position_manager.py` — `open_position` accetta parametri opzionali entry_commission/entry_commission_asset
+- `synthtrade/backend/app/scalping/router.py` — flusso LIVE passa commissione reale a `open_position`; flusso PAPER mantiene None (fallback corretto)
+- `synthtrade/backend/app/scalping/router.py` — aggiunto flag `fee_tier_certified` nello stato sessione per tracciare fallback silenziosi
+
+**Modifiche:**
+1. **exchange.py**: `place_market_order` estrae fee da CCXT response (order["fee"] o order["fees"]), somma per asset, logga warning se multi-asset o nessun dato
+2. **position_manager.py**: `open_position` accetta parametri opzionali e li passa al costruttore Position
+3. **router.py** (flusso LIVE): dopo `place_market_order`, estrae `commission` e `commission_asset` e li passa a `open_position`
+4. **router.py** (flusso PAPER): nessuna modifica — fallback a fee tier rimane intenzionale per paper mode
+5. **router.py** (fee tier): aggiunto `_execution_state["fee_tier_certified"]` per tracciare se il fee tier è certificato da Binance o fallback non verificato; esposto in GET /session
+
+**Verifica:** Al prossimo trade chiuso live, verificare nel log che `entry_commission` sia popolato con valore reale (non None)
+
+---
+
 ### TASK-884 — Fee reali: Fase 3G - Sostituire hardcode righe 2768-2769 (2026-06-24) ✅
 
 **Status:** Done

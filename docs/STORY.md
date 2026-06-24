@@ -4,6 +4,26 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.3.1 — 2026-06-24
+
+**Milestone:** Fee reali - Fase 4B: Popolare entry_commission con dato reale (TASK-886)
+
+**Completato:**
+- ✅ Backend: `place_market_order` estrae commission/commission_asset da CCXT response
+- ✅ Backend: `open_position` accetta parametri opzionali entry_commission/entry_commission_asset
+- ✅ Backend: flusso LIVE passa commissione reale al momento dell'apertura posizione
+- ✅ Backend: flusso PAPER mantiene None (fallback a fee tier intenzionale)
+- ✅ Backend: aggiunto flag `fee_tier_certificated` nello stato sessione per tracciare fallback silenziosi
+- ✅ TASK-886 completato: entry_commission ora popolato con dato reale quando disponibile
+
+**File modificati:**
+- `synthtrade/backend/app/execution/exchange.py` — estrazione fee da CCXT response
+- `synthtrade/backend/app/scalping/engine/position_manager.py` — parametri opzionali in open_position
+- `synthtrade/backend/app/scalping/router.py` — propagazione commissione reale + flag fee_tier_certified
+- `docs/TASKS.md` — TASK-886 marcato come complete
+
+---
+
 ### v1.3.0 — 2026-06-24
 
 **Milestone:** Fee reali - Fase 4: UI target netti TP/SL (TASK-885)

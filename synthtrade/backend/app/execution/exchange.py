@@ -188,7 +188,46 @@ class BinanceExchangeAdapter:
                 side=side,
                 amount=qty_rounded
             )
-            return cast(Dict[str, Any], order)
+            result = cast(Dict[str, Any], order)
+
+            # TASK-886: Estrai commissione reale dell'ordine market.
+            # CCXT normalizza la fee Binance in order["fee"] (singolo fill) o
+            # order["fees"] (lista, se l'ordine market si è riempito in più fill
+            # a prezzi diversi — comune su qty piccole). Somma tutte le fee
+            # dello stesso asset; se ci sono asset diversi nella lista (raro),
+            # prendiamo quello con costo maggiore come principale e logghiamo un warning.
+            commission = 0.0
+            commission_asset = None
+            try:
+                fees_list = order.get("fees") or ([order["fee"]] if order.get("fee") else [])
+                fees_by_asset: Dict[str, float] = {}
+                for f in fees_list:
+                    if not f:
+                        continue
+                    cost = float(f.get("cost", 0) or 0)
+                    currency = f.get("currency")
+                    if currency and cost > 0:
+                        fees_by_asset[currency] = fees_by_asset.get(currency, 0.0) + cost
+                if fees_by_asset:
+                    if len(fees_by_asset) > 1:
+                        logger.warning(
+                            f"place_market_order: multiple fee currencies in single order "
+                            f"for {symbol}: {fees_by_asset} — using largest"
+                        )
+                    commission_asset, commission = max(fees_by_asset.items(), key=lambda kv: kv[1])
+            except Exception as fee_e:
+                logger.warning(f"place_market_order: failed to extract commission for {symbol}: {fee_e}")
+
+            result["commission"] = commission
+            result["commission_asset"] = commission_asset
+            if commission > 0:
+                logger.info(f"Market order commission for {symbol}: {commission} {commission_asset}")
+            else:
+                logger.warning(
+                    f"Market order for {symbol} returned no commission data in CCXT response — "
+                    f"entry_commission will fall back to fee tier estimate"
+                )
+            return result
         except ccxt.InsufficientFunds as e:
             raise ExchangeOrderError(f"Insufficient funds: {e}")
         except Exception as e:

@@ -443,22 +443,17 @@ class BinanceExchangeAdapter:
             Dict con "maker" e "taker" come percentuali (es. 0.001 per 0.1%)
         """
         try:
-            # Chiama l'endpoint SAPI per trade fee
-            # CCXT non ha un metodo specifico, usiamo request generico
-            response = await self.client.request(
-                "sapi",
-                "get",
-                "asset/tradeFee",
-                {"symbol": symbol}
-            )
+            # CCXT ha il metodo nativo fetchTradingFee per ottenere le fee
+            # Converti il symbol nel formato CCXT (es. BNBUSDC -> BNB/USDC)
+            ccxt_symbol = await self._get_ccxt_symbol(symbol)
+            response = await self.client.fetch_trading_fee(ccxt_symbol)
             
-            if not response or len(response) == 0:
-                logger.warning(f"get_trade_fee: empty response for {symbol}")
+            if not response or response.get("maker") is None or response.get("taker") is None:
+                logger.warning(f"get_trade_fee: invalid response for {symbol}: {response}")
                 return {"maker": 0.001, "taker": 0.001}  # fallback default
             
-            fee_data = response[0]
-            maker_comm = float(fee_data.get("makerCommission", 0.001))
-            taker_comm = float(fee_data.get("takerCommission", 0.001))
+            maker_comm = float(response.get("maker", 0.001))
+            taker_comm = float(response.get("taker", 0.001))
             
             logger.info(f"Fee tier for {symbol}: maker={maker_comm}, taker={taker_comm}")
             return {"maker": maker_comm, "taker": taker_comm}

@@ -49,6 +49,8 @@ from app.core.binance_balance import LD_MAP
 from app.config import settings
 from app.scalping.session_load_guard import SessionLoadGuard
 from app.scalping.config_loader import get_scalping_config
+from app.core.logging import SessionContextFilter
+from app.core.session_log_handler import SessionLogHandler
 
 logger = logging.getLogger(__name__)
 
@@ -581,13 +583,44 @@ async def _on_order_update(event: dict):
             logger.warning(f"[UDS] FILLED event with fill_price=0 for {symbol} orderId={order_id} — skip close")
             return
 
-        # Calcola PnL
+        # TASK-878: Calcola PnL con commissioni reali
         entry_f = float(pos.entry_price)
         qty_f = float(pos.quantity)
         gross_pnl = (fill_price - entry_f) * qty_f if pos.side == "BUY" else (entry_f - fill_price) * qty_f
-        fees = (entry_f * qty_f * 0.001) + (fill_price * qty_f * 0.001)
-        pnl = gross_pnl - fees
+        
+        # Commissione di uscita reale dal WebSocket (TASK-876)
+        exit_commission = event.get("commission", 0.0)
+        exit_commission_asset = event.get("commission_asset")
+        
+        # Se la commissione non è in USDC, convertila usando il prezzo corrente
+        if exit_commission_asset and exit_commission_asset != "USDC" and exit_commission > 0:
+            try:
+                from app.execution.exchange import BinanceExchangeAdapter
+                exchange = _execution_state.get("exchange")
+                if exchange:
+                    # Ottieni prezzo BNB/USDC per conversione
+                    if exit_commission_asset == "BNB":
+                        bnb_price = await exchange.get_ticker_price("BNBUSDC")
+                        exit_commission_usdc = exit_commission * bnb_price
+                        logger.debug(f"Converted {exit_commission} {exit_commission_asset} to {exit_commission_usdc:.4f} USDC @ {bnb_price}")
+                        exit_commission = exit_commission_usdc
+            except Exception as e:
+                logger.warning(f"Failed to convert commission {exit_commission_asset} to USDC: {e}")
+        
+        # Commissione di entrata: usa fee tier se non disponibile da WebSocket
+        # (Nota: l'ordine market di entrata non passa attraverso UDS, quindi non abbiamo
+        # la commissione reale di entrata. Usiamo il fee tier come costo atteso.)
+        fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+        entry_fee_rate = fee_tier.get("taker", 0.001)  # market order = taker
+        entry_commission = entry_f * qty_f * entry_fee_rate
+        
+        # Totale fee = entrata (attesa) + uscita (reale)
+        total_fees = entry_commission + exit_commission
+        
+        pnl = gross_pnl - total_fees
         pnl_pct = (pnl / (entry_f * qty_f)) * 100 if entry_f > 0 else 0.0
+        
+        logger.debug(f"[TASK-878] PnL calc: gross={gross_pnl:.4f}, entry_fee={entry_commission:.4f}, exit_fee={exit_commission:.4f}, total_fees={total_fees:.4f}, pnl={pnl:.4f}")
 
         # Chiudi posizione in memoria
         _execution_state["position_manager"].close_position(Decimal(str(fill_price)))
@@ -687,10 +720,37 @@ async def _on_uds_reconnect_sync():
             entry_f = float(pos.entry_price)
             qty_f = float(pos.quantity)
             gross_pnl = (fill_price - entry_f) * qty_f if pos.side == "BUY" else (entry_f - fill_price) * qty_f
-            fees = (entry_f * qty_f * 0.001) + (fill_price * qty_f * 0.001)
-            pnl = gross_pnl - fees
+            
+            # TASK-879: Usa commissioni reali/attese invece di hardcode
+            # Entry: commissione reale se disponibile da WebSocket (TASK-876), altrimenti fee tier
+            if pos.entry_commission is not None and pos.entry_commission > 0:
+                entry_commission = float(pos.entry_commission)
+                # Converti BNB to USDC se necessario
+                if pos.entry_commission_asset == "BNB":
+                    try:
+                        bnb_price = await exchange.get_ticker_price("BNBUSDC")
+                        entry_commission_usdc = entry_commission * bnb_price
+                        logger.debug(f"UDS sync: converted entry commission {entry_commission} BNB to {entry_commission_usdc:.4f} USDC @ {bnb_price}")
+                        entry_commission = entry_commission_usdc
+                    except Exception as e:
+                        logger.warning(f"UDS sync: failed to convert entry commission BNB to USDC: {e}")
+            else:
+                # Fallback: usa fee tier per entrata (costo atteso)
+                fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                entry_fee_rate = fee_tier.get("taker", 0.001)  # market order = taker
+                entry_commission = entry_f * qty_f * entry_fee_rate
+            
+            # Exit: usa fee tier (non abbiamo la commissione reale di uscita in questo scenario di riconnessione)
+            fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+            exit_fee_rate = fee_tier.get("maker", 0.001)  # OCO stop/limit orders = maker
+            exit_commission = fill_price * qty_f * exit_fee_rate
+            
+            total_fees = entry_commission + exit_commission
+            pnl = gross_pnl - total_fees
             pnl_pct = (pnl / (entry_f * qty_f)) * 100 if entry_f > 0 else 0.0
             reason = "take_profit" if pnl > 0 else "stop_loss"
+            
+            logger.debug(f"[TASK-879] UDS sync PnL: gross={gross_pnl:.4f}, entry_fee={entry_commission:.4f}, exit_fee={exit_commission:.4f}, total_fees={total_fees:.4f}, pnl={pnl:.4f}")
 
             _execution_state["position_manager"].close_position(Decimal(str(fill_price)))
             trade_record = {
@@ -908,35 +968,39 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 if hasattr(c, "timestamp") and hasattr(c, "open"):
                     candle_buffer.add(c)
                     loaded_count += 1
-                # Broadcast each historical candle to frontend WS clients
+            # Broadcast solo l'ultima candela: il buffer è già popolato, evita 100 WS sequenziali
+            if loaded_count > 0:
+                last = past_candles[loaded_count - 1]
                 await broadcast_scalping_event("candle", {
                     "symbol": symbol,
-                    "open": float(c.open),
-                    "high": float(c.high),
-                    "low": float(c.low),
-                    "close": float(c.close),
-                    "volume": float(c.volume),
-                    "timestamp": c.timestamp.isoformat() if hasattr(c.timestamp, 'isoformat') else str(c.timestamp),
+                    "open": float(last.open),
+                    "high": float(last.high),
+                    "low": float(last.low),
+                    "close": float(last.close),
+                    "volume": float(last.volume),
+                    "timestamp": last.timestamp.isoformat() if hasattr(last.timestamp, 'isoformat') else str(last.timestamp),
                 })
-            logger.info(f"Successfully loaded and broadcast {loaded_count} historical candles for {symbol}. Buffer size: {len(candle_buffer)}, ready: {candle_buffer.is_ready(50)}")
+            logger.info(
+                f"Successfully loaded {loaded_count} historical candles for {symbol} "
+                f"(WS broadcast: last candle only). "
+                f"Buffer size: {len(candle_buffer)}, ready: {candle_buffer.is_ready(50)}"
+            )
             
-            # ── SAFETY: Fix buffer mismatch ───────────────────────────────────
-            # Nonostante candle_buffer venga passato all'ExecutionLoop,
-            # a volte il buffer interno risulta vuoto (stesso ID oggetto ma
-            # contenuto diverso). Forziamo il caricamento direttamente dentro
-            # execution_loop._candle_buffer per sicurezza.
+            # ── FIX: Allinea buffer reference (CATEGORIA 6) ──────────────────
+            # Il buffer mismatch era causato da un problema di referenziamento:
+            # candle_buffer veniva passato all'ExecutionLoop, ma internamente
+            # ExecutionLoop copiava il riferimento e non lo manteneva allineato.
+            # Forziamo l'allineamento diretto del riferimento.
             if len(execution_loop._candle_buffer) < 50:
-                logger.warning(
-                    f"Buffer mismatch detected — warmup loaded into candle_buffer "
-                    f"(id={id(candle_buffer)}, len={len(candle_buffer)}) but "
-                    f"execution_loop._candle_buffer (id={id(execution_loop._candle_buffer)}) "
-                    f"has only {len(execution_loop._candle_buffer)}. Force-loading..."
-                )
-                for c in past_candles:
-                    if hasattr(c, "timestamp") and hasattr(c, "open"):
-                        execution_loop._candle_buffer.add(c)
                 logger.info(
-                    f"Force-loaded {len(past_candles)} candles into execution_loop buffer. "
+                    f"Buffer sync: aligning execution_loop buffer with candle_buffer "
+                    f"(candle_buffer len={len(candle_buffer)}, "
+                    f"execution_loop buffer len={len(execution_loop._candle_buffer)}). "
+                    f"Setting direct reference..."
+                )
+                execution_loop._candle_buffer = candle_buffer
+                logger.info(
+                    f"Buffer sync complete. "
                     f"Buffer now: {len(execution_loop._candle_buffer)}, "
                     f"ready: {execution_loop._candle_buffer.is_ready(50)}"
                 )
@@ -968,10 +1032,11 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 try:
                     _forced_decision = await execution_loop.process_candle(forced_candle)
                     if _forced_decision:
+                        _d = _forced_decision
                         logger.info(
                             f">>> FORCED FIRST PIPELINE: regime={execution_loop._current_regime.regime if execution_loop._current_regime else 'N/A'} "
                             f"strategy={execution_loop._strategy.name if execution_loop._strategy else 'N/A'} "
-                            f"decision={_forced_decision}"
+                            f"decision=execute={_d.execute} confidence={_d.confidence:.2f} reason='{_d.reason}' type={_d.signal_type}"
                         )
                 except Exception as forced_err:
                     logger.warning(f"First forced process_candle failed (non-fatal): {forced_err}")
@@ -1372,7 +1437,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
 
                         if not pm.has_open():
                             if side == "SELL":
-                                logger.warning(f"BLOCKING SHORT ENTRY: side=SELL is not supported for opening positions yet.")
+                                logger.info("Short selling non implementato — segnale SELL ignorato (feature futura)")
                                 continue
 
                             if _check_daily_loss():
@@ -2379,6 +2444,15 @@ async def control_session(control: Dict) -> Dict:
                     session["live_balance"] = selected_balance
                     session["paper_balance"] = selected_balance
                     logger.info(f"✓ \033[96m\033[1mStarting balance: {selected_balance} {quote_asset}\033[0m")
+                    
+                    # TASK-877: Recupera fee tier account all'avvio sessione
+                    try:
+                        fee_tier = await adapter.get_trade_fee(active_symbol)
+                        _execution_state["fee_tier"] = fee_tier
+                        logger.info(f"✓ Fee tier salvato: maker={fee_tier['maker']}, taker={fee_tier['taker']}")
+                    except Exception as e:
+                        logger.warning(f"Impossibile recuperare fee tier: {e} — uso default 0.001")
+                        _execution_state["fee_tier"] = {"maker": 0.001, "taker": 0.001}
                 else:
                     error_msg = (
                         f"Nessun saldo Spot disponibile per {quote_asset} (trovato: {selected_balance}). "
@@ -2423,6 +2497,10 @@ async def control_session(control: Dict) -> Dict:
         session["error_message"] = None
         _execution_state["trade_history"] = []
         _execution_state["position_manager"] = PositionManager()
+        
+        # TASK-877: Inizializza fee tier (default per paper trading, sovrascritto per live)
+        if session["mode"] != "live":
+            _execution_state["fee_tier"] = {"maker": 0.001, "taker": 0.001}  # default paper
         
         # Reset strategy override if there's an existing execution loop
         existing_loop = _execution_state.get("loop")
@@ -2512,6 +2590,13 @@ async def control_session(control: Dict) -> Dict:
         # Log exception if task fails silently
         task.add_done_callback(lambda t: logger.error(f"Scalping broadcast task crashed: {t.exception()}") if t.exception() else None)
         
+        # ── SESSION LOGGING: attach session_id to all logs + start capture ──
+        SessionContextFilter.set_session_id(session["session_id"])
+        session_log_handler = SessionLogHandler()
+        logging.getLogger().addHandler(session_log_handler)
+        _execution_state["session_log_handler"] = session_log_handler
+        logger.info(f"Session log capture started for {session['session_id']}")
+
         logger.info(f"Session started: {session['session_id']} mode={session['mode']} symbol={active_symbol}")
 
     elif action == "stop":
@@ -2584,6 +2669,30 @@ async def control_session(control: Dict) -> Dict:
             _execution_state["supervisor_scheduler"].stop()
             _execution_state["supervisor_scheduler"] = None
         
+        # ── SESSION LOGGING: flush logs to file before clearing state ──
+        session_log_handler = _execution_state.pop("session_log_handler", None)
+        mem_session_id = session.get("session_id")
+        db_sid_for_log = session.get("db_session_id")
+        if session_log_handler and mem_session_id:
+            try:
+                log_path = session_log_handler.flush_to_file(
+                    session_id=mem_session_id,
+                    symbol=session.get("symbol", "UNKNOWN"),
+                )
+                if log_path and db_sid_for_log:
+                    supabase_log = get_supabase()
+                    supabase_log.table("scalping_sessions").update({
+                        "log_file_path": log_path,
+                    }).eq("id", db_sid_for_log).execute()
+                    logger.info(f"Session logs saved to {log_path}")
+            except Exception as log_e:
+                logger.warning(f"Failed to flush session logs: {log_e}")
+        # Remove session log handler from root logger
+        if session_log_handler:
+            logging.getLogger().removeHandler(session_log_handler)
+        # Clear session_id from log context
+        SessionContextFilter.set_session_id(None)
+
         # Clear session state
         session["session_id"] = None
         session["started_at"] = None
@@ -2660,6 +2769,50 @@ async def control_session(control: Dict) -> Dict:
                 logger.warning(f"Failed to update session in DB: {e}")
 
     return session.copy()
+
+
+# ---------------------------------------------------------------------------
+# Session Log Download endpoint
+# ---------------------------------------------------------------------------
+
+from fastapi.responses import FileResponse
+
+@router.get("/session/{session_id}/logs")
+async def download_session_logs(session_id: str) -> FileResponse:
+    """Download the log file for a given session.
+
+    Returns the .txt file as a downloadable attachment.
+    The path is stored in scalping_sessions.log_file_path.
+    """
+    try:
+        supabase = get_supabase()
+        resp = supabase.table("scalping_sessions") \
+            .select("log_file_path, symbol") \
+            .eq("id", session_id) \
+            .limit(1) \
+            .execute()
+        if not resp.data or not resp.data[0].get("log_file_path"):
+            raise HTTPException(status_code=404, detail="Session log file not found.")
+        
+        log_path = resp.data[0]["log_file_path"]
+        symbol = resp.data[0].get("symbol", "UNKNOWN")
+        
+        import os
+        if not os.path.exists(log_path):
+            raise HTTPException(status_code=404, detail="Log file not found on disk.")
+        
+        filename = f"session_{symbol}_{session_id}_logs.txt"
+        return FileResponse(
+            path=log_path,
+            media_type="text/plain",
+            filename=filename,
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"Failed to download session logs: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to download logs: {e}")
 
 
 # ---------------------------------------------------------------------------

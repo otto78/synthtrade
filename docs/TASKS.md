@@ -2,6 +2,221 @@
 
 ## Active Tasks
 
+### TASK-876 — Fee reali: Fase 1 - Catturare commissione reale dal WebSocket (2026-06-24) ✅
+
+**Status:** Complete ✅
+
+**Obiettivo:** Propagare `n` (commission) e `N` (commissionAsset) dal payload Binance fino al chiamante, per ogni fill.
+
+**File:** `synthtrade/backend/app/execution/user_data_stream.py`
+
+**Intervento puntuale in `_dispatch_message`, dentro il blocco `if event_type == "executionReport":`:**
+
+1. Aggiungere l'estrazione dei due campi, vicino a dove viene letto `fill_price`:
+   ```python
+   commission = float(event.get("n", 0) or 0)
+   commission_asset = event.get("N")
+   ```
+
+2. Aggiungere questi due valori al dict passato a `on_order_update`:
+   ```python
+   await self._on_order_update({
+       "symbol": symbol,
+       "side": order_side,
+       "order_id": order_id,
+       "order_list_id": order_list_id,
+       "status": order_status.lower(),
+       "fill_price": fill_price,
+       "commission": commission,
+       "commission_asset": commission_asset,
+       "leg": ...,
+   })
+   ```
+
+**Verifica:** Loggare temporaneamente il dict completo ricevuto al prossimo fill reale e confermare che `commission` e `commission_asset` arrivano popolati e coerenti con quanto visibile su Binance (sezione "Trade History" / "Fee" dell'account).
+
+---
+
+### TASK-877 — Fee reali: Fase 2 - Recuperare fee tier account con certezza (2026-06-24) ✅
+
+**Status:** Complete ✅
+
+**Obiettivo:** Avere a disposizione, senza ipotesi, il tier fee corrente dell'account per il symbol tradato — necessario per i calcoli di PnL non realizzato e come cross-check rispetto alla commissione realizzata.
+
+**File:** `synthtrade/backend/app/execution/exchange.py` (o dove risiede `BinanceExchangeAdapter`)
+
+**Intervento:**
+1. Aggiungere un metodo che chiama l'endpoint firmato Binance `GET /sapi/v1/asset/tradeFee` con `symbol=BNBUSDC`. Risposta contiene `makerCommission` e `takerCommission` esatti per l'account, in quel momento, incluso eventuale sconto BNB già applicato.
+2. Chiamarlo una volta all'avvio sessione (dove oggi si inizializza l'`ExecutionLoop` / la sessione di trading) e salvare il risultato in `_execution_state` in `router.py`, nuova chiave `fee_tier`.
+3. Definire una politica di refresh: refresh ad ogni avvio sessione è sufficiente; opzionale refresh ogni 24h via APScheduler come miglioria non bloccante.
+
+**Verifica:** Confrontare il valore restituito dall'endpoint con quanto mostrato nella UI Binance (Account → Fee). Devono coincidere esattamente.
+
+---
+
+### TASK-878 — Fee reali: Fase 3A - Sostituire hardcode riga 590 (2026-06-24) ✅
+
+**Status:** Complete ✅
+
+**Obiettivo:** Sostituire fee hardcoded (0.001) con commissione reale per PnL realizzato in `on_order_update` (chiusura trade via OCO fill).
+
+**File:** `synthtrade/backend/app/scalping/router.py`
+
+**Riga target:** 590 — `on_order_update` — chiusura trade via OCO fill (la funzione che produce il log `✅ Trade chiuso da...`)
+
+**Caso A — PnL realizzato (trade chiuso, fill avvenuto):**
+- Usare commissione reale entry (da salvare su `pos` al momento dell'apertura del trade — verificare se `pos` ha già un campo adatto o va aggiunto a `PositionManager`/al modello posizione)
+- Usare commissione reale exit (da Fase 1, TASK-876, sullo stesso evento che triggera questa riga)
+- Se `commission_asset` non è `USDC` (es. è `BNB`), convertire in USDC al prezzo di mercato BNB/USDC al momento del fill — prezzo ottenibile da un ticker spot in tempo reale (dato reale, non stimato)
+
+**Sostituire:**
+```python
+fees = (entry_f * qty_f * 0.001) + (fill_price * qty_f * 0.001)
+```
+con la somma delle commissioni reali di entrata + uscita.
+
+**Verifica:** Dopo il deploy, osservare il prossimo trade chiuso reale e confrontare manualmente: prezzo entry, prezzo exit (fill reali dai log), commissioni reali (dal payload Fase 1), e il PnL finale calcolato dal sistema. Il conto deve quadrare a mano.
+
+---
+
+### TASK-879 — Fee reali: Fase 3B - Verificare e fixare riga 692 (2026-06-24)
+
+**Status:** Done
+
+**Obiettivo:** Verificare se il codice alla riga 692 è raggiungibile o dead code, quindi applicare fix se necessario.
+
+**File:** `synthtrade/backend/app/scalping/router.py`
+
+**Riga target:** 692 — sezione duplicata/simile alla riga 590
+
+**Azione:**
+1. Verificare se questo codice è raggiungibile o dead code (codice morto)
+2. Se è dead code → valutare rimozione invece di fix
+3. Se è raggiungibile → stesso trattamento della riga 590 (TASK-878): usare commissioni reali entry + exit
+
+**Verifica:** Se il codice è mantenuto, verificare con un trade reale che il PnL calcolato coincida con i dati Binance.
+
+---
+
+### TASK-880 — Fee reali: Fase 3C - Sostituire hardcode righe 805-806 (2026-06-24)
+
+**Status:** Pending
+
+**Obiettivo:** Sostituire fee hardcoded con commissione reale per PnL realizzato in `_close_position_and_record` (helper di chiusura manuale/signal-based).
+
+**File:** `synthtrade/backend/app/scalping/router.py`
+
+**Righe target:** 805-806 — `_close_position_and_record` — helper di chiusura manuale/signal-based
+
+**Caso A — PnL realizzato:**
+- Se questo helper riceve un fill reale con commissione nota → stesso trattamento del TASK-878
+- Usare commissioni reali entry + exit
+
+**Verifica:** Testare con una chiusura manuale/signal-based e verificare che il PnL coincida con i dati Binance.
+
+---
+
+### TASK-881 — Fee reali: Fase 3D - Sostituire hardcode righe 1066-1067 (2026-06-24)
+
+**Status:** Pending
+
+**Obiettivo:** Sostituire fee hardcoded con fee tier per PnL non realizzato durante il loop di monitoraggio candele.
+
+**File:** `synthtrade/backend/app/scalping/router.py`
+
+**Righe target:** 1066-1067 — calcolo PnL non realizzato durante il loop di monitoraggio candele
+
+**Caso B — PnL non realizzato (posizione ancora aperta, mostrato live in UI):**
+- Fee di entrata: commissione reale del fill di apertura (dalla Fase 1, TASK-876)
+- Fee di uscita: non è ancora un fatto → usare il fee tier certo recuperato in Fase 2 (TASK-877) come "costo di chiusura atteso al tier corrente"
+- Etichettare esplicitamente nel codice/commenti come "costo di chiusura atteso"
+- Nel payload verso il frontend etichettare come tale (vedi Fase 4, TASK-885)
+
+**Verifica:** Verificare che il PnL non realizzato mostrato in UI sia coerente con il fee tier dell'account.
+
+---
+
+### TASK-882 — Fee reali: Fase 3E - Sostituire hardcode righe 1629-1630 (2026-06-24)
+
+**Status:** Pending
+
+**Obiettivo:** Sostituire fee hardcoded con fee tier per PnL non realizzato in altro punto del loop monitoraggio.
+
+**File:** `synthtrade/backend/app/scalping/router.py`
+
+**Righe target:** 1629-1630 — calcolo PnL non realizzato, altro punto del loop monitoraggio
+
+**Caso B — PnL non realizzato:**
+- Stesso trattamento del TASK-881
+- Fee entrata reale + fee uscita attesa (fee tier)
+
+**Verifica:** Verificare coerenza con TASK-881 e dati UI.
+
+---
+
+### TASK-883 — Fee reali: Fase 3F - Sostituire hardcode righe 1736-1737 (2026-06-24)
+
+**Status:** Pending
+
+**Obiettivo:** Sostituire fee hardcoded con fee tier per PnL non realizzato nel consumo del trade_queue (per CVD/broadcast).
+
+**File:** `synthtrade/backend/app/scalping/router.py`
+
+**Righe target:** 1736-1737 — calcolo PnL non realizzato nel consumo del trade_queue (per CVD/broadcast)
+
+**Caso B — PnL non realizzato:**
+- Stesso trattamento del TASK-881
+- Fee entrata reale + fee uscita attesa (fee tier)
+
+**Verifica:** Verificare che il broadcast CVD sia coerente con il fee tier.
+
+---
+
+### TASK-884 — Fee reali: Fase 3G - Sostituire hardcode righe 2768-2769 (2026-06-24)
+
+**Status:** Pending
+
+**Obiettivo:** Sostituire fee hardcoded con fee tier per PnL in endpoint di lettura stato.
+
+**File:** `synthtrade/backend/app/scalping/router.py`
+
+**Righe target:** 2768-2769 — calcolo PnL in un endpoint di lettura stato (probabilmente `/position` o `/performance`)
+
+**Caso B — PnL non realizzato:**
+- Stesso trattamento del TASK-881
+- Fee entrata reale + fee uscita attesa (fee tier)
+- Verificare endpoint di provenienza
+
+**Verifica:** Verificare che l'endpoint restituisca PnL coerente con il fee tier.
+
+---
+
+### TASK-885 — Fee reali: Fase 4 - UI: mostrare target netti TP/SL separati da realizzato (2026-06-24)
+
+**Status:** Pending
+
+**Obiettivo:** La card POSITION deve mostrare TP%/SL% che riflettono il guadagno/perdita netto reale atteso, non il movimento di prezzo lordo.
+
+**File:** `synthtrade/backend/app/scalping/router.py` (backend) + frontend Angular
+
+**Intervento Backend:**
+1. Dove oggi viene inviato al frontend `stop_loss_pct`/`take_profit_pct` lordi (es. nel blocco WebSocket di `router.py` righe 134-153, e ovunque venga emesso un evento `position`), calcolare e aggiungere due nuovi campi:
+   - `stop_loss_pct_net` — movimento di prezzo SL meno il costo fee tier (Fase 2) round-trip stimato sul *prezzo*, espresso come percentuale netta attesa
+   - `take_profit_pct_net` — stesso calcolo sul lato TP
+   
+   Questi due campi sono "target netti attesi", calcolati con il fee tier certo dell'account.
+
+2. Quando il trade si chiude realmente (evento `trade_closed`, riga 618 e dintorni), il payload deve includere il PnL realizzato già corretto dalla Fase 3 — dato definitivo.
+
+**Intervento Frontend (Angular):**
+1. La card POSITION deve mostrare esplicitamente la differenza semantica tra le due fasi:
+   - Mentre il trade è aperto: "TP target netto: +X% / SL target netto: -Y%" (dai campi `*_pct_net`)
+   - Dopo la chiusura, nel Trade Log: il PnL realizzato esatto (già presente, ora corretto dalla Fase 3)
+
+**Verifica:** Aprire un trade in condizioni live, leggere `stop_loss_pct_net`/`take_profit_pct_net` mostrati in UI, e verificare che siano effettivamente più piccoli in valore assoluto rispetto ai campi lordi `stop_loss_pct`/`take_profit_pct` (la fee riduce sempre il guadagno netto disponibile, mai lo aumenta).
+
+---
+
 ### TASK-814 — Live Mode Bug Fixes (2026-06-05 → 2026-06-09) ✅
 
 **Status:** Complete ✅

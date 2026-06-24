@@ -23,7 +23,13 @@ from app.scheduler.scalping_jobs import (
 
 logger = logging.getLogger(__name__)
 
-scheduler = AsyncIOScheduler()
+scheduler = AsyncIOScheduler(
+    job_defaults={
+        "coalesce": True,        # Se in ritardo, salta esecuzioni accumulate
+        "max_instances": 3,      # Permetti concorrenza tra job
+    },
+    timezone="UTC",
+)
 
 
 async def run_pipeline_job() -> None:
@@ -48,10 +54,14 @@ async def monitor_positions_job(engine=None) -> None:
     try:
         positions = engine.order_tracker.get_open_positions()
         for pos in positions:
-            price = get_current_price(pos.symbol)
+            price = await asyncio.to_thread(get_current_price, pos.symbol)
             await engine.close_position_if_needed(pos, price)
     except Exception as e:
-        logger.error(f"Monitor positions job error: {e}")
+        err_str = str(e)
+        if "Server disconnected" in err_str or "connection" in err_str.lower():
+            logger.warning(f"Monitor positions job: connection issue (retry will happen on next interval): {e}")
+        else:
+            logger.error(f"Monitor positions job error: {e}")
 
 
 async def monitor_pnl_job(engine=None) -> None:
@@ -92,7 +102,7 @@ async def monitor_pnl_job(engine=None) -> None:
             for trade in open_trades:
                 entry_price = float(trade.get("price", 0))
                 qty = float(trade.get("quantity", 0))
-                current_price = get_current_price(trade["pair"])
+                current_price = await asyncio.to_thread(get_current_price, trade["pair"])
                 if trade["action"] == "BUY":
                     pnl_pct = ((current_price - entry_price) / entry_price) * 100
                 else:

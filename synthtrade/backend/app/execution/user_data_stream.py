@@ -13,6 +13,7 @@ Riferimento: https://developers.binance.com/docs/binance-spot-api-docs/websocket
 
 TASK-824: Implementato per risolvere il disallineamento trade log vs Binance.
 FIX-2026-06-12: Migrato da listenKey REST (410 Gone) a WS API con firma HMAC.
+TASK-876: Catturare commissione reale dal WebSocket (campi n e N).
 """
 
 import asyncio
@@ -222,6 +223,9 @@ class UserDataStreamManager:
             symbol = event.get("s")
             # L: last executed price; Z: cumulative quote qty (fallback)
             fill_price = float(event.get("L", 0) or event.get("Z", 0) or 0)
+            # TASK-876: cattura commissione reale dal payload Binance
+            commission = float(event.get("n", 0) or 0)
+            commission_asset = event.get("N")
 
             # Ci interessano solo FILLED o EXPIRED
             if order_status not in ("FILLED", "EXPIRED"):
@@ -248,6 +252,8 @@ class UserDataStreamManager:
                         "order_list_id": order_list_id,
                         "status": order_status.lower(),
                         "fill_price": fill_price,
+                        "commission": commission,  # TASK-876
+                        "commission_asset": commission_asset,  # TASK-876
                         "leg": "take_profit" if order_id and order_list_id != "-1" and self._is_tp_order(order_id, order_list_id) else "stop_loss" if order_id and order_list_id != "-1" and self._is_sl_order(order_id, order_list_id) else "oco",
                     })
                 except Exception as e:

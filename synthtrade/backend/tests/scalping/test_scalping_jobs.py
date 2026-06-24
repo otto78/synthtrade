@@ -17,6 +17,10 @@ from app.scheduler.scalping_jobs import (
 class TestScalpingJobs:
     """Test suite per i job periodici scalping."""
 
+    _RUNNING_SESSION_STATE = {
+        "session": {"symbol": "BTCUSDT", "status": "running"},
+    }
+
     @pytest.mark.asyncio
     async def test_intel_snapshot_job_disabled(self):
         """Job non esegue nulla se disabilitato."""
@@ -43,9 +47,13 @@ class TestScalpingJobs:
             "app.scalping.intelligence.signal_score_engine.SignalScoreEngine.get_snapshot",
             new_callable=AsyncMock,
             return_value=mock_snapshot,
+        ) as mock_get_snapshot, patch(
+            "app.scalping.router._execution_state",
+            self._RUNNING_SESSION_STATE,
         ):
             result = await intelligence_snapshot_job()
             assert result is None
+            mock_get_snapshot.assert_called_once_with(force_refresh=True)
 
     @pytest.mark.asyncio
     async def test_intel_snapshot_job_handles_none_snapshot(self):
@@ -54,6 +62,9 @@ class TestScalpingJobs:
             "app.scalping.intelligence.signal_score_engine.SignalScoreEngine.get_snapshot",
             new_callable=AsyncMock,
             return_value=None,
+        ), patch(
+            "app.scalping.router._execution_state",
+            self._RUNNING_SESSION_STATE,
         ):
             with patch("app.scheduler.scalping_jobs.logger") as mock_logger:
                 await intelligence_snapshot_job()
@@ -68,6 +79,9 @@ class TestScalpingJobs:
             "app.scalping.intelligence.signal_score_engine.SignalScoreEngine.get_snapshot",
             new_callable=AsyncMock,
             side_effect=Exception("API error"),
+        ), patch(
+            "app.scalping.router._execution_state",
+            self._RUNNING_SESSION_STATE,
         ):
             with patch("app.scheduler.scalping_jobs.logger") as mock_logger:
                 await intelligence_snapshot_job()
@@ -171,8 +185,8 @@ class TestScalpingJobs:
         ):
             with patch("app.scheduler.scalping_jobs.logger") as mock_logger:
                 await supervisor_check_job()
-                mock_logger.info.assert_called_once_with(
-                    "Supervisor check: no decision returned"
+                mock_logger.debug.assert_called_once_with(
+                    "Supervisor check: no decision returned (scheduler not running)"
                 )
 
     @pytest.mark.asyncio

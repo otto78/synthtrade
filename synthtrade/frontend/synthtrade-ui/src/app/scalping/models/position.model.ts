@@ -20,6 +20,9 @@ export interface Position {
   take_profit_price?: number;
   stop_loss_pct?: number;
   take_profit_pct?: number;
+  // TASK-885: Net targets (fee-adjusted)
+  stop_loss_pct_net?: number;
+  take_profit_pct_net?: number;
   // Trade size in USDC/USDT
   trade_value_usd?: number;
 }

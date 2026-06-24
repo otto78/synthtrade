@@ -54,7 +54,7 @@ async def intelligence_snapshot_job() -> None:
 
         # Usa singleton per garantire che snapshot_job e execution_loop usino la STESSA istanza
         engine = SignalScoreEngine.get_or_create(symbol=active_symbol)
-        snapshot = await engine.get_snapshot()
+        snapshot = await engine.get_snapshot(force_refresh=True)
         if snapshot is None:
             logger.warning("Intel snapshot job: snapshot is None")
             return
@@ -180,7 +180,7 @@ async def supervisor_check_job() -> None:
                 f"confidence={decision.confidence}, reason={decision.reason[:100] if decision.reason else 'N/A'}"
             )
         else:
-            logger.info("Supervisor check: no decision returned")
+            logger.debug("Supervisor check: no decision returned (scheduler not running)")
     except Exception as e:
         logger.error(f"Supervisor check job error: {e}")
 
@@ -331,55 +331,3 @@ async def verify_supervisor_outcomes_job() -> None:
     except Exception as e:
         logger.warning(f"verify_supervisor_outcomes_job error: {e}")
 
-
-
-async def verify_supervisor_outcomes_job() -> None:
-    """TASK-863: Verifica outcome decisioni supervisor applicate 25-35 min fa."""
-    try:
-        import asyncio
-        from datetime import timedelta
-        from app.db.supabase_client import get_supabase
-
-        now = datetime.now(timezone.utc)
-        cutoff_from = (now - timedelta(minutes=35)).isoformat()
-        cutoff_to = (now - timedelta(minutes=25)).isoformat()
-
-        def _fetch():
-            db = get_supabase()
-            return db.table("supervisor_memory") \
-                .select("id") \
-                .eq("was_applied", True) \
-                .is_("outcome_verified_at", "null") \
-                .gte("decided_at", cutoff_from) \
-                .lte("decided_at", cutoff_to) \
-                .execute()
-
-        result = await asyncio.to_thread(_fetch)
-        records = result.data or []
-        if not records:
-            return
-
-        current_pnl = 0.0
-        try:
-            from app.scalping.router import _execution_state
-            trade_history = _execution_state.get("trade_history", [])
-            current_pnl = sum((t.get("pnl") or 0) for t in trade_history if t.get("exit_price"))
-        except Exception:
-            pass
-
-        label = "positive" if current_pnl > 0.01 else ("negative" if current_pnl < -0.01 else "neutral")
-        now_iso = now.isoformat()
-
-        def _update(record_id):
-            get_supabase().table("supervisor_memory").update({
-                "outcome_verified_at": now_iso,
-                "outcome_pnl_delta": round(current_pnl, 2),
-                "outcome_label": label,
-            }).eq("id", record_id).execute()
-
-        for rec in records:
-            await asyncio.to_thread(_update, rec["id"])
-
-        logger.info(f"verify_supervisor_outcomes_job: {len(records)} records updated (label={label})")
-    except Exception as e:
-        logger.warning(f"verify_supervisor_outcomes_job error: {e}")

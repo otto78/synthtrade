@@ -1,5 +1,44 @@
 import logging
 import sys
+from typing import ClassVar, Optional
+from threading import Lock
+
+
+class SessionContextFilter(logging.Filter):
+    """Inietta session_id in ogni record di log quando una sessione è attiva.
+
+    Usage:
+        from app.core.logging import SessionContextFilter
+        SessionContextFilter.set_session_id("sess_a1b2c3d4")
+
+    Formato output record:
+        con sessione:  "2026-06-24 10:30:00,123 [DEBUG] [sess_a1b2c3d4] logger.name: msg"
+        senza sessione: "2026-06-24 10:30:00,123 [DEBUG] logger.name: msg"
+    """
+
+    _session_id: ClassVar[Optional[str]] = None
+    _lock: ClassVar[Lock] = Lock()
+
+    @classmethod
+    def set_session_id(cls, session_id: str | None) -> None:
+        """Set the active session_id (None to clear)."""
+        with cls._lock:
+            cls._session_id = session_id
+
+    @classmethod
+    def get_session_id(cls) -> str | None:
+        with cls._lock:
+            return cls._session_id
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        with self._lock:
+            sid = self._session_id
+        record.session_id = f" [{sid}]" if sid else ""  # type: ignore[attr-defined]
+        return True
+
+
+# Format string: %(session_id)s renders as " [sess_xxx]" or ""
+SESSION_FORMAT = "%(asctime)s [%(levelname)s]%(session_id)s %(name)s: %(message)s"
 
 
 class _ColorFormatter(logging.Formatter):
@@ -26,11 +65,13 @@ def setup_logging():
     except AttributeError:
         pass  # Some environments (e.g., test runners) may not support reconfigure
 
-    formatter = _ColorFormatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    )
+    formatter = _ColorFormatter(SESSION_FORMAT)
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
+
+    # Attach SessionContextFilter to the handler so all log records
+    # get the session_id field injected automatically.
+    handler.addFilter(SessionContextFilter())
 
     # Root logger: everything goes through our handler
     logging.basicConfig(
@@ -80,11 +121,10 @@ def setup_logging():
 def reconfigure_uvicorn_loggers():
     """Post-lifespan hook: override uvicorn loggers that recreate their handlers
     after lifespan setup completes."""
-    formatter = _ColorFormatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    )
+    formatter = _ColorFormatter(SESSION_FORMAT)
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
+    handler.addFilter(SessionContextFilter())
 
     for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         lib_logger = logging.getLogger(logger_name)

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 import pandas as pd
@@ -140,9 +141,10 @@ async def run_pipeline(
                 if eval_result is None:
                     continue
                 if eval_result.verdict == "DEMOTE":
+                    sid = eval_result.strategy_id
                     def _demote():
                         db.table("strategies").update({"status": "REJECTED"}).eq(
-                            "id", eval_result.strategy_id).execute()
+                            "id", sid).execute()
                     await asyncio.to_thread(_demote)
                     logger.info(f"Strategy {eval_result.strategy_id} DEMOTED → REJECTED")
                 elif eval_result.verdict == "PROMOTE":
@@ -162,5 +164,8 @@ async def run_pipeline(
         except Exception as e:
             logger.error(f"AI eval step failed (pipeline continues): {e}")
 
-    logger.info(f"Pipeline completata: {saved} strategie salvate")
+    if saved == 0:
+        logger.info("Pipeline completata: 0 strategie salvate (nessuna strategia ACTIVE o dati insufficienti)")
+    else:
+        logger.info(f"Pipeline completata: {saved} strategie salvate")
     return saved

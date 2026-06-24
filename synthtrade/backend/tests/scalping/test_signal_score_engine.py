@@ -177,3 +177,48 @@ class TestSignalScoreEngine:
         assert snapshot.funding_rate is not None
         assert snapshot.signal_score is not None
         assert snapshot.sentiment is None # Come da mock
+
+    @pytest.mark.asyncio
+    async def test_get_snapshot_cache_hit(self):
+        """Seconda chiamata senza force_refresh usa la cache (no refetch collector)."""
+        from datetime import datetime, timezone
+        from app.scalping.models.intelligence import FundingRate
+
+        engine = SignalScoreEngine(symbol="BTCUSDT", threshold=30.0)
+        engine._funding_rate.collect = AsyncMock(return_value=FundingRate(
+            rate=Decimal("0"), symbol="BTCUSDT", timestamp=datetime.now(timezone.utc)
+        ))
+        engine._open_interest.collect = AsyncMock(return_value=None)
+        engine._long_short.collect = AsyncMock(return_value=None)
+        engine._fear_greed.collect = AsyncMock(return_value=None)
+        engine._sentiment.collect = AsyncMock(return_value=None)
+        engine._whale.collect = AsyncMock(return_value=None)
+        engine._onchain.collect = AsyncMock(return_value=None)
+
+        first = await engine.get_snapshot(force_refresh=True)
+        second = await engine.get_snapshot()
+
+        assert first is second
+        engine._funding_rate.collect.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_snapshot_force_refresh_bypasses_cache(self):
+        """force_refresh=True invalida la cache e richiama i collector."""
+        from datetime import datetime, timezone
+        from app.scalping.models.intelligence import FundingRate
+
+        engine = SignalScoreEngine(symbol="BTCUSDT", threshold=30.0)
+        engine._funding_rate.collect = AsyncMock(return_value=FundingRate(
+            rate=Decimal("0"), symbol="BTCUSDT", timestamp=datetime.now(timezone.utc)
+        ))
+        engine._open_interest.collect = AsyncMock(return_value=None)
+        engine._long_short.collect = AsyncMock(return_value=None)
+        engine._fear_greed.collect = AsyncMock(return_value=None)
+        engine._sentiment.collect = AsyncMock(return_value=None)
+        engine._whale.collect = AsyncMock(return_value=None)
+        engine._onchain.collect = AsyncMock(return_value=None)
+
+        await engine.get_snapshot(force_refresh=True)
+        await engine.get_snapshot(force_refresh=True)
+
+        assert engine._funding_rate.collect.call_count == 2

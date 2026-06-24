@@ -87,7 +87,7 @@ async def _ping_model(model: str, api_key: str, api_base: str) -> ModelCheckResu
                 logger.warning("Model %s responded HTTP %d", model, resp.status_code)
                 return ModelCheckResult(model=model, status="offline")
     except (httpx.TimeoutException, httpx.HTTPError, Exception) as e:
-        logger.warning("Model %s ping failed: %s", model, e)
+        logger.debug("Model %s ping failed: %s", model, e)
         return ModelCheckResult(model=model, status="offline")
 
 

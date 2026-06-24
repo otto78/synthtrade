@@ -1168,6 +1168,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 if pos.entry_commission is not None and pos.entry_commission > 0:
                     entry_commission = float(pos.entry_commission)
                     # Converti BNB to USDC se necessario
+                    # Retrieve the exchange adapter from the execution state (if live mode)
+                    exchange = _execution_state.get("exchange")
                     if pos.entry_commission_asset == "BNB" and exchange:
                         try:
                             bnb_price = await exchange.get_ticker_price("BNBUSDC")
@@ -1768,6 +1770,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     if pos.entry_commission is not None and pos.entry_commission > 0:
                         entry_commission = float(pos.entry_commission)
                         # Converti BNB to USDC se necessario
+                        exchange = _execution_state.get("exchange")
                         if pos.entry_commission_asset == "BNB" and exchange:
                             try:
                                 bnb_price = await exchange.get_ticker_price("BNBUSDC")
@@ -1912,6 +1915,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 if pos.entry_commission is not None and pos.entry_commission > 0:
                     entry_commission = float(pos.entry_commission)
                     # Converti BNB to USDC se necessario
+                    exchange = _execution_state.get("exchange")
                     if pos.entry_commission_asset == "BNB" and exchange:
                         try:
                             bnb_price = await exchange.get_ticker_price("BNBUSDC")

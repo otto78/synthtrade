@@ -11,6 +11,7 @@ import { BadgeStatusComponent } from '../../shared/components/badge-status/badge
 import { RelativeTimePipe } from '../../shared/pipes/relative-time.pipe';
 import { ScalpingSessionLogsService } from './logs.service';
 import { ScalpingSessionLog, SessionTradeLog } from './logs.model';
+import { SessionApiService } from '../../scalping/services/session-api.service';
 
 const PAGE_SIZE = 50;
 
@@ -157,6 +158,9 @@ const PAGE_SIZE = 50;
                   {{ s.hold_pnl_pct != null ? ((s.hold_pnl_pct >= 0 ? '+' : '') + (s.hold_pnl_pct | number:'1.2-2') + '%') : '—' }}
                 </span>
                 <span class="expand-arrow" [class.open]="expandedSessionId() === s.id">&#8250;</span>
+                <button class="btn-download" (click)="downloadSessionLogs(s.id, s.symbol); $event.stopPropagation()">
+                  &#8595;
+                </button>
               </div>
 
               @if (expandedSessionId() === s.id) {
@@ -248,7 +252,7 @@ const PAGE_SIZE = 50;
     .page-info { color: var(--text-muted); font-size: 13px; }
     /* Scalping accordion */
     .sessions-list { display: flex; flex-direction: column; width: 100%; }
-      .session-header, .session-row {
+    .session-header, .session-row {
       display: grid;
       grid-template-columns: 2% 12% 6% 12% 12% 9% 5% 5% 10% 7% 7% 8% 5%;
       gap: 0;
@@ -298,6 +302,26 @@ const PAGE_SIZE = 50;
       display: inline-block; padding: 0 4px;
     }
     .expand-arrow.open { transform: rotate(90deg); color: var(--accent-primary); }
+    .session-row { position: relative; }
+    .btn-download {
+      position: absolute;
+      right: 26px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--text-muted);
+      transition: all 0.2s;
+      line-height: 1;
+    }
+    .btn-download:hover {
+      color: var(--accent-primary);
+      background: rgba(240,185,11,0.1);
+    }
     .session-detail { background: var(--bg-elevated); border: 1px solid var(--accent-primary); border-top: none; border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; padding: 12px; margin-bottom: 6px; }
   `]
 })
@@ -306,6 +330,7 @@ export class LogsPage implements OnInit, OnDestroy {
   private tradeService = inject(TradeService);
   private wsService = inject(WsService);
   private scalpingSessionLogsService = inject(ScalpingSessionLogsService);
+  private sessionApi = inject(SessionApiService);
   private sub = new Subscription();
 
   readonly levels: LogLevel[] = ['BUY', 'SELL', 'SKIP', 'BLOCK', 'ERROR'];
@@ -458,8 +483,12 @@ export class LogsPage implements OnInit, OnDestroy {
     }
   }
 
-  // ── Helpers ──
+  // New method: download logs for a session
+  downloadSessionLogs(_sessionId: string, _symbol: string): void {
+    this.sessionApi.downloadSessionLogs(_sessionId, _symbol);
+  }
 
+  // Helper: win rate calculation
   winRate(s: ScalpingSessionLog): number {
     return s.trade_count > 0 ? (s.win_count / s.trade_count) * 100 : 0;
   }

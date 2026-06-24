@@ -39,6 +39,9 @@ class Position:
     # TASK-867: fonte di verità sul close
     exit_price: Optional[Decimal] = None
     closed_at: Optional[datetime] = None
+    # TASK-876: commissione reale di entrata (dal WebSocket)
+    entry_commission: Optional[float] = None
+    entry_commission_asset: Optional[str] = None
 
 
 class PositionManager:

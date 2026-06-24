@@ -4,6 +4,8 @@
 
 export interface ScalpingSession {
   session_id: string;
+  /** UUID del DB (scalping_sessions.id) — usato per download logs, etc. */
+  db_session_id?: string;
   status: 'idle' | 'running' | 'paused' | 'stopped';
   mode: 'paper' | 'live';
   strategy: string;

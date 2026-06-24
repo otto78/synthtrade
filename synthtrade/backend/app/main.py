@@ -4,8 +4,10 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
+from app.execution.exchange import BinanceExchangeAdapter
 from app.api import auth, strategies, dashboard, logs, ws, trades, eval as eval_api, pipeline, exchange, monitor, config_api
 # WatchFiles reload uccide la connessione WS Binance in corso, causando
 # "unknown" regime e blocchi di pipeline. Disabilitiamo il watch su file
@@ -20,7 +22,8 @@ from app.core.exceptions import (
     global_exception_handler,
     http_exception_handler,
     validation_exception_handler,
-    synthtrade_exception_handler
+    synthtrade_exception_handler,
+    _QUIET_ERRORS,
 )
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -117,6 +120,10 @@ async def _restore_scalping_session(db) -> None:
         if db_trade_value is not None:
             _execution_state["session"]["trade_value"] = float(db_trade_value)
 
+        # TASK-877: Inizializza fee tier (default per paper trading)
+        if session_mode != "live":
+            _execution_state["fee_tier"] = {"maker": 0.001, "taker": 0.001}
+
         logger.info(
             "Scalping session restored: id=%s symbol=%s mode=%s trade_value=%s",
             session_id,
@@ -195,16 +202,17 @@ async def _restore_scalping_session(db) -> None:
     # Step 6b — Inizializza balance live se la modalità è live
     if session_mode == "live":
         try:
+            from app.execution.exchange import BinanceExchangeAdapter
             adapter = _execution_state.get("exchange") or BinanceExchangeAdapter(
-                app_settings.BINANCE_API_KEY_LIVE or app_settings.BINANCE_API_KEY,
-                app_settings.BINANCE_SECRET_KEY_LIVE or app_settings.BINANCE_SECRET_KEY,
+                settings.BINANCE_API_KEY_LIVE or settings.BINANCE_API_KEY,
+                settings.BINANCE_SECRET_KEY_LIVE or settings.BINANCE_SECRET_KEY,
                 testnet=False,
             )
             if not _execution_state.get("exchange"):
                 _execution_state["exchange"] = adapter
 
             symbol = _execution_state["session"]["symbol"]
-            from app.scalping.router import _normalize_binance_total_balance, _select_preferred_quote_balance
+            from app.scalping.router import _normalize_binance_total_balance, _select_preferred_quote_balance, _get_spot_balances_from_info
 
             ccxt_balance = await adapter.client.fetch_balance()
             spot_balances = _get_spot_balances_from_info(ccxt_balance)
@@ -220,6 +228,16 @@ async def _restore_scalping_session(db) -> None:
                 _execution_state["session"]["live_balance"] = live_bal or 0
                 _execution_state["session"]["paper_balance"] = live_bal or 0
                 logger.info("Live balance noted (position already open): %s %s", live_bal, quote)
+                
+                # TASK-877: Recupera fee tier durante restore sessione
+                try:
+                    fee_tier = await adapter.get_trade_fee(symbol)
+                    _execution_state["fee_tier"] = fee_tier
+                    logger.info(f"✓ Fee tier salvato durante restore: maker={fee_tier['maker']}, taker={fee_tier['taker']}")
+                except Exception as e:
+                    logger.warning(f"Impossibile recuperare fee tier durante restore: {e} — uso default 0.001")
+                    _execution_state["fee_tier"] = {"maker": 0.001, "taker": 0.001}
+                
                 guard.complete_phase("exchange_phase")
             else:
                 # No open position - balance check applies
@@ -227,6 +245,15 @@ async def _restore_scalping_session(db) -> None:
                 if live_bal is not None and live_bal > 0 and live_bal >= trade_val:
                     _execution_state["session"]["live_balance"] = live_bal
                     _execution_state["session"]["paper_balance"] = live_bal
+                    
+                    # TASK-877: Recupera fee tier durante restore sessione (no open position)
+                    try:
+                        fee_tier = await adapter.get_trade_fee(symbol)
+                        _execution_state["fee_tier"] = fee_tier
+                        logger.info(f"✓ Fee tier salvato durante restore: maker={fee_tier['maker']}, taker={fee_tier['taker']}")
+                    except Exception as e:
+                        logger.warning(f"Impossibile recuperare fee tier durante restore: {e} — uso default 0.001")
+                        _execution_state["fee_tier"] = {"maker": 0.001, "taker": 0.001}
                     logger.info("Live balance restored: %s %s", live_bal, quote)
                 else:
                     logger.warning(
@@ -438,7 +465,6 @@ async def lifespan(app: FastAPI):
     app.state.exchange = exchange
 
     sched = setup_scheduler(engine=engine)
-    sched.start()
     logger.info("ExecutionEngine singleton ready (testnet=%s)", settings.BINANCE_TESTNET)
 
     print("")
@@ -457,13 +483,31 @@ async def lifespan(app: FastAPI):
     print("  Mode      : %s" % ("TESTNET" if settings.BINANCE_TESTNET else "LIVENET"))
     print("  Host      : 0.0.0.0:8000")
     print("  API Docs  : http://0.0.0.0:8000/docs")
-    print("  Scheduler : Active")
     print("")
     print("====================================================================")
     print("")
 
     # --- Restore active scalping session from DB ---
     await _restore_scalping_session(db)
+
+    # Avvia scheduler solo dopo restore (e warmup pipeline se attivo)
+    try:
+        from app.scalping.router import _execution_state
+        guard = _execution_state.get("session_load_guard")
+        if guard and guard.monitor_data.get("state") == "loading":
+            logger.info("Waiting for scalping session load guard before starting scheduler...")
+            try:
+                await asyncio.wait_for(guard._ready_event.wait(), timeout=30.0)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Session load guard not ready after 30s — starting scheduler anyway"
+                )
+    except Exception as e:
+        logger.debug("Session load guard wait skipped: %s", e)
+
+    sched.start()
+    logger.info("Scheduler started")
+    logger.info("Scheduler : Active")
 
     yield
 
@@ -486,7 +530,18 @@ async def add_request_id(request: Request, call_next):
     request_id = str(uuid.uuid4())
     start_time = time.time()
 
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except _QUIET_ERRORS as exc:
+        logger.warning(f"Transient connection error: {exc} [request_id={request_id}]")
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": "upstream_disconnected",
+                "message": "Servizio temporaneamente non disponibile, riprova.",
+                "request_id": request_id,
+            },
+        )
 
     process_time = (time.time() - start_time) * 1000
     response.headers["X-Request-ID"] = request_id

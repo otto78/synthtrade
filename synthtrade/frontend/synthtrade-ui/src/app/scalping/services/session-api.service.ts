@@ -80,4 +80,23 @@ export class SessionApiService {
       { trade_value: tradeValue }
     );
   }
+
+  /** Download session log file as .txt */
+  downloadSessionLogs(sessionId: string, symbol?: string): void {
+    const url = `/api/scalping/session/${sessionId}/logs`;
+    this.http.get(url, { responseType: 'blob' }).subscribe({
+      next: (blob: Blob) => {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `session_${symbol || 'UNKNOWN'}_${sessionId}_logs.txt`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+      },
+      error: (err) => {
+        console.error('Failed to download session logs:', err);
+      }
+    });
+  }
 }

@@ -184,7 +184,7 @@ class SupervisorScheduler:
         try:
             if self._loop and getattr(self._loop, "_candle_buffer", None):
                 from app.scalping.engine.ta_analyzer import TAAnalyzer
-                history = [c.model_dump() for c in list(self._loop._candle_buffer)]
+                history = [c.model_dump() for c in self._loop._candle_buffer.get()]
                 if len(history) >= 10:
                     ta_patterns = TAAnalyzer.analyze_candlesticks(history)
                     vol_anomaly = TAAnalyzer.detect_volume_anomaly(history, multiplier=2.0)

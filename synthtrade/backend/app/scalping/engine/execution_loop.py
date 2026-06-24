@@ -26,6 +26,7 @@ GREEN = "\033[92m"
 RED = "\033[91m"
 YELLOW = "\033[93m"
 CYAN = "\033[96m"
+MAGENTA = "\033[95m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
@@ -174,7 +175,7 @@ class ExecutionLoop:
 
         # 3. Select strategy — ONLY if not overridden by supervisor
         if not self._strategy_overridden:
-            if self._strategy_selector:
+            if self._strategy_selector and self._current_regime:
                 self._strategy = self._strategy_selector.select(self._current_regime)
             else:
                 self._strategy = None
@@ -196,7 +197,7 @@ class ExecutionLoop:
         ta_score = ta_patterns.get("score", 0) if ta_patterns else 0
         vol_str = f" vol_anomaly={vol_anomaly}" if vol_anomaly else ""
         logger.info(
-            f"{CYAN}PIPELINE: {self._symbol} regime={regime_name} "
+            f"{MAGENTA}PIPELINE: {self._symbol} regime={regime_name} "
             f"strategy={self._strategy.name} "
             f"tech={technical_signal.type}@{technical_signal.confidence:.2f} "
             f"intel={market_score.total:.1f} ({market_score.bias}) "

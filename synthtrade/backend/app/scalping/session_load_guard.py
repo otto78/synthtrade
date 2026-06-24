@@ -65,7 +65,7 @@ class SessionLoadGuard:
                 )
                 self._ready_event.clear()
                 logger.error("[SESSION_LOCK] %s", self._error)
-            elif elapsed > 0 and int(elapsed) % 5 == 0 and elapsed - int(elapsed) < 0.5:
+            elif elapsed >= 5 and int(elapsed) % 5 == 0 and elapsed - int(elapsed) < 0.5:
                 logger.warning(
                     "[SESSION_LOCK] Session still loading after %.0fs — phases completed: %s",
                     elapsed,
@@ -103,12 +103,22 @@ class SessionLoadGuard:
         }
         self._trade_attempts_during_load.append(entry)
         self._blocked_attempts += 1
-        logger.warning(
-            "[SESSION_LOCK] Trade attempt BLOCKED (%s): %s | total blocked: %d",
-            source,
-            entry,
-            self._blocked_attempts,
-        )
+        # I primi 3 blocchi sono normali durante il caricamento (log INFO)
+        # Dopo il 3°, il caricamento è anomalo (log WARNING)
+        if self._blocked_attempts > 3:
+            logger.warning(
+                "[SESSION_LOCK] Trade attempt BLOCKED (%s): %s | total blocked: %d",
+                source,
+                entry,
+                self._blocked_attempts,
+            )
+        else:
+            logger.info(
+                "[SESSION_LOCK] Trade attempt BLOCKED (%s): %s | total blocked: %d",
+                source,
+                entry,
+                self._blocked_attempts,
+            )
 
     def fail(self, error: str) -> None:
         if self._state in {"ready", "failed"}:

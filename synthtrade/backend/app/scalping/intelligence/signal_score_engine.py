@@ -21,6 +21,7 @@ Il SignalScoreEngine:
 import asyncio
 import logging
 import collections
+import time
 from decimal import Decimal
 from typing import Dict, Optional, Tuple
 from datetime import datetime, timezone
@@ -108,6 +109,10 @@ class SignalScoreEngine:
         # CVDCalculator e' diverso: non fa chiamate HTTP, accumula trades
         self._cvd_calculator: Optional[CVDCalculator] = None
 
+        # Cache snapshot: evita refetch HTTP ad ogni candela chiusa
+        self._cached_snapshot: Optional[MarketIntelSnapshot] = None
+        self._cached_at: float = 0.0
+
     @classmethod
     def get_or_create(
         cls,
@@ -160,12 +165,34 @@ class SignalScoreEngine:
             )
         return snapshot.signal_score
 
-    async def get_snapshot(self) -> MarketIntelSnapshot:
+    def _cache_ttl_sec(self) -> float:
+        return float(settings.scalping.SCALPING_INTEL_UPDATE_INTERVAL_SEC)
+
+    def _is_cache_valid(self) -> bool:
+        if self._cached_snapshot is None:
+            return False
+        return (time.monotonic() - self._cached_at) < self._cache_ttl_sec()
+
+    async def get_snapshot(self, force_refresh: bool = False) -> MarketIntelSnapshot:
         """Raccoglie tutti i dati e calcola lo score, restituendo uno snapshot completo.
+
+        Args:
+            force_refresh: Se True, ignora la cache e raccoglie dati freschi (es. intel job).
 
         Returns:
             MarketIntelSnapshot con dati grezzi e score.
         """
+        if not force_refresh and self._is_cache_valid():
+            logger.debug("[ScoreEngine] snapshot cache hit for %s", self.symbol)
+            return self._cached_snapshot
+
+        snapshot = await self._build_snapshot()
+        self._cached_snapshot = snapshot
+        self._cached_at = time.monotonic()
+        return snapshot
+
+    async def _build_snapshot(self) -> MarketIntelSnapshot:
+        """Raccoglie dati dai collector e costruisce uno snapshot (senza cache)."""
         from datetime import datetime, timezone
         from typing import cast
         from app.scalping.models.intelligence import (

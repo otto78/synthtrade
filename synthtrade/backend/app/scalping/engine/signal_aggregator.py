@@ -247,7 +247,7 @@ class SignalAggregator:
                 )
             else:
                 reason = f"conflitto intelligence-tecnico: bias={bias}, segnale={technical.type}{trend_str}"
-                logger.warning(f"{RED}🔴 BLOCK: {symbol} {reason}{RESET}")
+                logger.info(f"{RED}🔴 BLOCK: {symbol} {reason}{RESET}")
                 return ExecutionDecision(
                     execute=False,
                     reason=reason,
@@ -265,7 +265,7 @@ class SignalAggregator:
                 )
             else:
                 reason = f"conflitto intelligence-tecnico: bias={bias}, segnale={technical.type}{trend_str}"
-                logger.warning(f"{RED}🔴 BLOCK: {symbol} {reason}{RESET}")
+                logger.info(f"{RED}🔴 BLOCK: {symbol} {reason}{RESET}")
                 return ExecutionDecision(
                     execute=False,
                     reason=reason,

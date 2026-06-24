@@ -52,12 +52,12 @@ import { Position } from '../models/position.model';
           <div class="target sl">
             <span class="target-label">Stop Loss</span>
             <span class="target-price">{{ position.stop_loss_price | number:'1.2-2' }}</span>
-            <span class="target-pct">({{ position.stop_loss_pct | number:'1.2-2' }}%)</span>
+            <span class="target-pct">({{ position.stop_loss_pct_net ?? position.stop_loss_pct | number:'1.2-2' }}%)</span>
           </div>
           <div class="target tp">
             <span class="target-label">Take Profit</span>
             <span class="target-price">{{ position.take_profit_price | number:'1.2-2' }}</span>
-            <span class="target-pct">(+{{ position.take_profit_pct | number:'1.2-2' }}%)</span>
+            <span class="target-pct">(+{{ position.take_profit_pct_net ?? position.take_profit_pct | number:'1.2-2' }}%)</span>
           </div>
         </div>
         

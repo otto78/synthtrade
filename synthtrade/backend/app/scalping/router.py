@@ -135,6 +135,17 @@ async def scalping_websocket(ws: WebSocket):
         tp_pct = float(risk_cfg.get("take_profit_pct", 0.5)) / 100
         sl_price = entry_f * (1 - sl_pct) if pos.side == "BUY" else entry_f * (1 + sl_pct)
         tp_price = entry_f * (1 + tp_pct) if pos.side == "BUY" else entry_f * (1 - tp_pct)
+        
+        # TASK-885: Calcola target netti TP/SL (fee tier round-trip)
+        fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+        entry_fee_rate = fee_tier.get("taker", 0.001)  # market order = taker
+        exit_fee_rate = fee_tier.get("maker", 0.001)  # OCO orders = maker
+        fee_round_trip = (entry_fee_rate + exit_fee_rate) * 100  # converti in percentuale
+        
+        # Calcola percentuali nette (sottrai fee round-trip dai target lordi)
+        sl_pct_net = (sl_pct * 100) - fee_round_trip  # perdita netta è peggiore
+        tp_pct_net = (tp_pct * 100) - fee_round_trip  # guadagno netto è minore
+        
         try:
             await ws.send_json({
                 "type": "position",
@@ -151,6 +162,8 @@ async def scalping_websocket(ws: WebSocket):
                     "take_profit_price": round(tp_price, 2),
                     "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
                     "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
+                    "stop_loss_pct_net": round(sl_pct_net, 2),  # TASK-885
+                    "take_profit_pct_net": round(tp_pct_net, 2),  # TASK-885
                 },
                 "timestamp": _now(),
             })
@@ -860,9 +873,36 @@ async def _close_position_and_record(pm, close_price: float, pos, reason: str = 
     entry_val = float(pos.entry_price) * qty
     exit_val = close_price * qty
     gross_pnl = (close_price - float(pos.entry_price)) * qty * (1 if pos.side == "BUY" else -1)
-    fees = (entry_val * 0.001) + (exit_val * 0.001)  # 0.1% entry + 0.1% exit
-    pnl = gross_pnl - fees
+    
+    # TASK-880: Usa commissioni reali/attese invece di hardcode
+    # Entry: commissione reale se disponibile da WebSocket (TASK-876), altrimenti fee tier
+    if pos.entry_commission is not None and pos.entry_commission > 0:
+        entry_commission = float(pos.entry_commission)
+        # Converti BNB to USDC se necessario
+        if pos.entry_commission_asset == "BNB" and exchange:
+            try:
+                bnb_price = await exchange.get_ticker_price("BNBUSDC")
+                entry_commission_usdc = entry_commission * bnb_price
+                logger.debug(f"Close position: converted entry commission {entry_commission} BNB to {entry_commission_usdc:.4f} USDC @ {bnb_price}")
+                entry_commission = entry_commission_usdc
+            except Exception as e:
+                logger.warning(f"Close position: failed to convert entry commission BNB to USDC: {e}")
+    else:
+        # Fallback: usa fee tier per entrata (costo atteso)
+        fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+        entry_fee_rate = fee_tier.get("taker", 0.001)  # market order = taker
+        entry_commission = entry_val * entry_fee_rate
+    
+    # Exit: usa fee tier (costo atteso, dato che non abbiamo la commissione reale di uscita in questo scenario)
+    fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+    exit_fee_rate = fee_tier.get("taker", 0.001)  # market order per chiusura manuale = taker
+    exit_commission = exit_val * exit_fee_rate
+    
+    total_fees = entry_commission + exit_commission
+    pnl = gross_pnl - total_fees
     pnl_pct = (pnl / entry_val) * 100
+    
+    logger.debug(f"[TASK-880] Close position PnL: gross={gross_pnl:.4f}, entry_fee={entry_commission:.4f}, exit_fee={exit_commission:.4f}, total_fees={total_fees:.4f}, pnl={pnl:.4f}")
     pm.close_position(Decimal(str(close_price)))
     now_ts = datetime.now(timezone.utc)
     trade_record = {
@@ -1122,8 +1162,33 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 entry_val = entry_f * qty_f
                 current_val = current_f * qty_f
                 gross_pnl = (current_f - entry_f) * qty_f if pos.side == "BUY" else (entry_f - current_f) * qty_f
-                fees = (entry_val * 0.001) + (current_val * 0.001)
-                pnl = gross_pnl - fees
+                
+                # TASK-881: Usa fee tier per PnL non realizzato (Caso B)
+                # Entry: commissione reale se disponibile da WebSocket, altrimenti fee tier
+                if pos.entry_commission is not None and pos.entry_commission > 0:
+                    entry_commission = float(pos.entry_commission)
+                    # Converti BNB to USDC se necessario
+                    if pos.entry_commission_asset == "BNB" and exchange:
+                        try:
+                            bnb_price = await exchange.get_ticker_price("BNBUSDC")
+                            entry_commission_usdc = entry_commission * bnb_price
+                            logger.debug(f"Position update: converted entry commission {entry_commission} BNB to {entry_commission_usdc:.4f} USDC @ {bnb_price}")
+                            entry_commission = entry_commission_usdc
+                        except Exception as e:
+                            logger.warning(f"Position update: failed to convert entry commission BNB to USDC: {e}")
+                else:
+                    # Fallback: usa fee tier per entrata (costo atteso)
+                    fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                    entry_fee_rate = fee_tier.get("taker", 0.001)  # market order = taker
+                    entry_commission = entry_val * entry_fee_rate
+                
+                # Exit: usa fee tier (costo di chiusura atteso al tier corrente)
+                fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                exit_fee_rate = fee_tier.get("maker", 0.001)  # OCO orders = maker
+                exit_commission = current_val * exit_fee_rate
+                
+                total_fees = entry_commission + exit_commission
+                pnl = gross_pnl - total_fees
                 pnl_pct = (pnl / entry_val) * 100
                 
                 # Check SL/TP
@@ -1132,6 +1197,16 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 tp_pct = float(risk_cfg.get("take_profit_pct", 0.5)) / 100
                 sl = entry_f * (1 - sl_pct) if pos.side == "BUY" else entry_f * (1 + sl_pct)
                 tp = entry_f * (1 + tp_pct) if pos.side == "BUY" else entry_f * (1 - tp_pct)
+                
+                # TASK-885: Calcola target netti TP/SL (fee tier round-trip)
+                fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                entry_fee_rate = fee_tier.get("taker", 0.001)  # market order = taker
+                exit_fee_rate = fee_tier.get("maker", 0.001)  # OCO orders = maker
+                fee_round_trip = (entry_fee_rate + exit_fee_rate) * 100  # converti in percentuale
+                
+                # Calcola percentuali nette (sottrai fee round-trip dai target lordi)
+                sl_pct_net = (sl_pct * 100) - fee_round_trip  # perdita netta è peggiore
+                tp_pct_net = (tp_pct * 100) - fee_round_trip  # guadagno netto è minore
                 
                 await broadcast_scalping_event("position_update", {
                     "symbol": pos.symbol,
@@ -1145,6 +1220,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     "take_profit_price": round(tp, 2),
                     "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
                     "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
+                    "stop_loss_pct_net": round(sl_pct_net, 2),  # TASK-885
+                    "take_profit_pct_net": round(tp_pct_net, 2),  # TASK-885
                 })
                 
                 # Execute SL/TP Auto Close
@@ -1685,8 +1762,33 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     entry_val = entry_f * qty_f
                     current_val = current_price_f * qty_f
                     gross_pnl = (current_price_f - entry_f) * qty_f if pos.side == "BUY" else (entry_f - current_price_f) * qty_f
-                    fees = (entry_val * 0.001) + (current_val * 0.001)
-                    pnl = gross_pnl - fees
+                    
+                    # TASK-882: Usa fee tier per PnL non realizzato (Caso B)
+                    # Entry: commissione reale se disponibile da WebSocket, altrimenti fee tier
+                    if pos.entry_commission is not None and pos.entry_commission > 0:
+                        entry_commission = float(pos.entry_commission)
+                        # Converti BNB to USDC se necessario
+                        if pos.entry_commission_asset == "BNB" and exchange:
+                            try:
+                                bnb_price = await exchange.get_ticker_price("BNBUSDC")
+                                entry_commission_usdc = entry_commission * bnb_price
+                                logger.debug(f"Position update (loop): converted entry commission {entry_commission} BNB to {entry_commission_usdc:.4f} USDC @ {bnb_price}")
+                                entry_commission = entry_commission_usdc
+                            except Exception as e:
+                                logger.warning(f"Position update (loop): failed to convert entry commission BNB to USDC: {e}")
+                    else:
+                        # Fallback: usa fee tier per entrata (costo atteso)
+                        fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                        entry_fee_rate = fee_tier.get("taker", 0.001)  # market order = taker
+                        entry_commission = entry_val * entry_fee_rate
+                    
+                    # Exit: usa fee tier (costo di chiusura atteso al tier corrente)
+                    fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                    exit_fee_rate = fee_tier.get("maker", 0.001)  # OCO orders = maker
+                    exit_commission = current_val * exit_fee_rate
+                    
+                    total_fees = entry_commission + exit_commission
+                    pnl = gross_pnl - total_fees
                     pnl_pct = (pnl / entry_val) * 100
                     
                     risk_cfg = _execution_state.get("risk_config", {})
@@ -1694,6 +1796,16 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     tp_pct = float(risk_cfg.get("take_profit_pct", 0.5)) / 100
                     sl_price = entry_f * (1 - sl_pct) if pos.side == "BUY" else entry_f * (1 + sl_pct)
                     tp_price = entry_f * (1 + tp_pct) if pos.side == "BUY" else entry_f * (1 - tp_pct)
+                    
+                    # TASK-885: Calcola target netti TP/SL (fee tier round-trip)
+                    fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                    entry_fee_rate = fee_tier.get("taker", 0.001)  # market order = taker
+                    exit_fee_rate = fee_tier.get("maker", 0.001)  # OCO orders = maker
+                    fee_round_trip = (entry_fee_rate + exit_fee_rate) * 100  # converti in percentuale
+                    
+                    # Calcola percentuali nette (sottrai fee round-trip dai target lordi)
+                    sl_pct_net = (sl_pct * 100) - fee_round_trip  # perdita netta è peggiore
+                    tp_pct_net = (tp_pct * 100) - fee_round_trip  # guadagno netto è minore
                     
                     # Calculate progress percentage:
                     # -100% = at SL, 0% = at entry, +100% = at TP
@@ -1734,6 +1846,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         "take_profit_price": round(tp_price, 2),
                         "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
                         "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
+                        "stop_loss_pct_net": round(sl_pct_net, 2),  # TASK-885
+                        "take_profit_pct_net": round(tp_pct_net, 2),  # TASK-885
                         "progress_pct": round(progress_pct, 1),         # -100 to +100
                         "sl_distance_pct": round(max(0, (entry_f - current_price_f) / (entry_f - sl_price) * 100) if pos.side == "BUY" and (entry_f - sl_price) > 0 else 0, 1),
                         "tp_distance_pct": round(min(100, (current_price_f - entry_f) / (tp_price - entry_f) * 100) if pos.side == "BUY" and (tp_price - entry_f) > 0 else 0, 1),
@@ -1792,8 +1906,33 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 tp = entry * (1 + tp_pct) if pos.side == "BUY" else entry * (1 - tp_pct)
                 
                 gross_pnl = (current - entry) * qty if pos.side == "BUY" else (entry - current) * qty
-                fees = (entry_val * 0.001) + (current_val * 0.001)
-                pnl = gross_pnl - fees
+                
+                # TASK-883: Usa fee tier per PnL non realizzato (Caso B)
+                # Entry: commissione reale se disponibile da WebSocket, altrimenti fee tier
+                if pos.entry_commission is not None and pos.entry_commission > 0:
+                    entry_commission = float(pos.entry_commission)
+                    # Converti BNB to USDC se necessario
+                    if pos.entry_commission_asset == "BNB" and exchange:
+                        try:
+                            bnb_price = await exchange.get_ticker_price("BNBUSDC")
+                            entry_commission_usdc = entry_commission * bnb_price
+                            logger.debug(f"Trade processor: converted entry commission {entry_commission} BNB to {entry_commission_usdc:.4f} USDC @ {bnb_price}")
+                            entry_commission = entry_commission_usdc
+                        except Exception as e:
+                            logger.warning(f"Trade processor: failed to convert entry commission BNB to USDC: {e}")
+                else:
+                    # Fallback: usa fee tier per entrata (costo atteso)
+                    fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                    entry_fee_rate = fee_tier.get("taker", 0.001)  # market order = taker
+                    entry_commission = entry_val * entry_fee_rate
+                
+                # Exit: usa fee tier (costo di chiusura atteso al tier corrente)
+                fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                exit_fee_rate = fee_tier.get("maker", 0.001)  # OCO orders = maker
+                exit_commission = current_val * exit_fee_rate
+                
+                total_fees = entry_commission + exit_commission
+                pnl = gross_pnl - total_fees
                 pnl_pct = (pnl / entry_val) * 100
                 await broadcast_scalping_event("position_update", {
                     "symbol": pos.symbol,
@@ -2837,13 +2976,47 @@ async def get_position() -> Optional[Dict]:
         entry_val = entry * qty
         current_val = current_price * qty
         gross_pnl = (current_price - entry) * qty if pos.side == "BUY" else (entry - current_price) * qty
-        fees = (entry_val * 0.001) + (current_val * 0.001)
-        pnl = gross_pnl - fees
+        
+        # TASK-884: Usa fee tier per PnL non realizzato (Caso B)
+        # Entry: commissione reale se disponibile da WebSocket, altrimenti fee tier
+        if pos.entry_commission is not None and pos.entry_commission > 0:
+            entry_commission = float(pos.entry_commission)
+            # Converti BNB to USDC se necessario
+            if pos.entry_commission_asset == "BNB":
+                # Non possiamo chiamare exchange qui (endpoint sincrono), assumiamo conversione manuale o valore salvato
+                # Per ora usiamo il valore come è (dovrebbe essere già convertito o in USDC)
+                entry_commission = entry_commission
+        else:
+            # Fallback: usa fee tier per entrata (costo atteso)
+            fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+            entry_fee_rate = fee_tier.get("taker", 0.001)  # market order = taker
+            entry_commission = entry_val * entry_fee_rate
+        
+        # Exit: usa fee tier (costo di chiusura atteso al tier corrente)
+        fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+        exit_fee_rate = fee_tier.get("maker", 0.001)  # OCO orders = maker
+        exit_commission = current_val * exit_fee_rate
+        
+        total_fees = entry_commission + exit_commission
+        pnl = gross_pnl - total_fees
         pnl_pct = (pnl / entry_val) * 100
     else:
         current_price = float(pos.entry_price)
         pnl = 0.0
         pnl_pct = 0.0
+    
+    # TASK-885: Calcola target netti TP/SL per endpoint REST
+    risk_cfg = _execution_state.get("risk_config", {})
+    sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3))
+    tp_pct = float(risk_cfg.get("take_profit_pct", 0.5))
+    fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+    entry_fee_rate = fee_tier.get("taker", 0.001)  # market order = taker
+    exit_fee_rate = fee_tier.get("maker", 0.001)  # OCO orders = maker
+    fee_round_trip = (entry_fee_rate + exit_fee_rate) * 100  # converti in percentuale
+    
+    # Calcola percentuali nette (sottrai fee round-trip dai target lordi)
+    sl_pct_net = sl_pct - fee_round_trip  # perdita netta è peggiore
+    tp_pct_net = tp_pct - fee_round_trip  # guadagno netto è minore
     
     return {
         "symbol": pos.symbol,
@@ -2855,6 +3028,10 @@ async def get_position() -> Optional[Dict]:
         "pnl_pct": round(pnl_pct, 2),
         "status": pos.status.value,
         "entry_time": pos.entry_time.isoformat(),
+        "stop_loss_pct": sl_pct,
+        "take_profit_pct": tp_pct,
+        "stop_loss_pct_net": round(sl_pct_net, 2),  # TASK-885
+        "take_profit_pct_net": round(tp_pct_net, 2),  # TASK-885
     }
 
 

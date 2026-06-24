@@ -28,6 +28,7 @@ class BinanceExchangeAdapter:
     """
     TASK-082, TASK-083: Implementazione BinanceExchangeAdapter via CCXT
     TASK-413: Aggiunto get_holdings()
+    TASK-877: Aggiunto get_trade_fee() per recupero fee tier account
     """
     def __init__(self, api_key: str, secret: str, testnet: bool = True, client=None):
         if client:
@@ -428,3 +429,36 @@ class BinanceExchangeAdapter:
         except Exception as e:
             logger.warning(f"_fetch_fill_price_by_order_id failed for {symbol} orderId={order_id}: {e}")
         return None
+
+    async def get_trade_fee(self, symbol: str) -> Dict[str, float]:
+        """Recupera il fee tier corrente dell'account per un symbol specifico.
+
+        TASK-877: Chiama l'endpoint Binance GET /sapi/v1/asset/tradeFee per ottenere
+        makerCommission e takerCommission esatti per l'account, inclusi sconti BNB.
+
+        Args:
+            symbol: Symbol da interrogare (es. "BNBUSDC")
+
+        Returns:
+            Dict con "maker" e "taker" come percentuali (es. 0.001 per 0.1%)
+        """
+        try:
+            # Chiama l'endpoint SAPI per trade fee
+            # CCXT usa sapi_get_asset_tradeFee per questo endpoint
+            response = await self.client.sapi_get_asset_tradeFee({"symbol": symbol})
+            
+            if not response or len(response) == 0:
+                logger.warning(f"get_trade_fee: empty response for {symbol}")
+                return {"maker": 0.001, "taker": 0.001}  # fallback default
+            
+            fee_data = response[0]
+            maker_comm = float(fee_data.get("makerCommission", 0.001))
+            taker_comm = float(fee_data.get("takerCommission", 0.001))
+            
+            logger.info(f"Fee tier for {symbol}: maker={maker_comm}, taker={taker_comm}")
+            return {"maker": maker_comm, "taker": taker_comm}
+            
+        except Exception as e:
+            logger.error(f"get_trade_fee failed for {symbol}: {e}")
+            # Fallback al default 0.1% se l'endpoint fallisce
+            return {"maker": 0.001, "taker": 0.001}

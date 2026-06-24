@@ -444,8 +444,13 @@ class BinanceExchangeAdapter:
         """
         try:
             # Chiama l'endpoint SAPI per trade fee
-            # CCXT usa sapi_get_asset_tradeFee per questo endpoint
-            response = await self.client.sapi_get_asset_tradeFee({"symbol": symbol})
+            # CCXT non ha un metodo specifico, usiamo request generico
+            response = await self.client.request(
+                "sapi",
+                "get",
+                "asset/tradeFee",
+                {"symbol": symbol}
+            )
             
             if not response or len(response) == 0:
                 logger.warning(f"get_trade_fee: empty response for {symbol}")

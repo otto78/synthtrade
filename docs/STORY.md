@@ -4,6 +4,25 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.3.0 — 2026-06-24
+
+**Milestone:** Fee reali - Fase 4: UI target netti TP/SL (TASK-885)
+
+**Completato:**
+- ✅ Backend: calcolo e invio `stop_loss_pct_net` e `take_profit_pct_net` nello stato posizione iniziale
+- ✅ Backend: fee round-trip calcolato come `(entry_fee_rate + exit_fee_rate) * 100`
+- ✅ Backend: percentuali nette = percentuali lordi - fee round-trip
+- ✅ Frontend: PositionTickerComponent mostra percentuali nette con fallback a lordi
+- ✅ Model: `position.model.ts` già include campi `*_pct_net`
+- ✅ TASK-885 completato: UI ora mostra target fee-adjusted
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/router.py` — calcolo target netti in stato iniziale
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/position-ticker.component.ts` — display net percentages
+- `docs/TASKS.md` — TASK-885 marcato come complete
+
+---
+
 ### v0.1.0 — 2025-01-15
 
 **Milestone:** Fase 0 — Setup & Infrastruttura completata

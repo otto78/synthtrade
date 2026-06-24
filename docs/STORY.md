@@ -156,6 +156,11 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - [x] Integration tests (happy path, fallback, cache hit, JSON malformato, all models down) — 5 test
 
 ### v2.0.0 — Modulo Scalping (Signal Intelligence) 🚀
+
+**2026-06-24 — TASK-879 completato:**
+- Fix hardcoded fees in UDS reconnect sync function
+- Ora usa commissioni reali di entrata (se disponibili da WebSocket) e fee tier per uscita attesa
+- Conversione automatica BNB→USDC quando necessario
 - [ ] **Fase 1: Foundation & Models** (TASK-801 -> 804)
 - [ ] **Fase 2: Signal Intelligence Collectors** (TASK-805 -> 810)
 - [ ] **Fase 3: Engine & Signal Aggregation** (TASK-811 -> 813)

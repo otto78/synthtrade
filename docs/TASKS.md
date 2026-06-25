@@ -1655,9 +1655,10 @@ switchTab(tab: 'logs' | 'trades' | 'scalping'): void {
 
 ### TASK-DEPLOY-001 — Configurazione Deployment Piattaforme (2026-06-25)
 
-**Status:** Partially Complete - File configuration done, platform setup pending  
-**Priorità:** ALTA — Deploy produzione su GitHub Pages + Render  
-**Stima:** 4-6 ore  
+**Status:** Phase 1 Complete (File config + push), Phase 2-9 Pending (Platform setup)
+**Priorità:** ALTA — Deploy produzione su GitHub Pages + Render
+**Stima:** 4-6 ore
+**Ultimo aggiornamento:** 2026-06-25 (commit ee21ba7)  
 **File coinvolti:** `angular.json`, `package.json`, `proxy.conf.json`, `environment.prod.ts`, `.github/workflows/deploy-frontend.yml`, `render.yaml`, `main.py`
 
 **Architettura target:**
@@ -1697,6 +1698,35 @@ switchTab(tab: 'logs' | 'trades' | 'scalping'): void {
 - [x] Aggiornato `config.py` con CORS origins per sviluppo e produzione
 - [x] Aggiornato `main.py` per usare `settings.cors_origins_list`
 - [x] Aggiornato `.env.example` con CORS origins
+- [x] Commit e push modifiche commit ee21ba7
+- [x] GitHub Actions workflow triggerato da push commit ee21ba7
+
+---
+
+### 📝 NOTE TECNICHE - File .env.example
+
+**Perché è stato modificato `.env.example` invece di `.env`:**
+
+Il file `.env.example` serve come **template/template di esempio** per:
+1. Documentare tutte le variabili d'ambiente necessarie
+2. Fornire un template per nuovi sviluppatori
+3. Servire come riferimento per la configurazione su piattaforme esterne (Render, etc.)
+4. Essere committato su Git (sicuro perché contiene solo placeholder)
+
+Il file `.env` (senza .example) contiene i **valori reali** (API keys, secrets) e:
+- **NON deve mai essere committato** su Git (è in .gitignore)
+- Contiene le credenziali reali in produzione
+- Viene usato localmente per lo sviluppo
+
+**Modifiche apportate a `.env.example`:**
+- Aggiunto `CORS_ORIGINS=http://localhost:4208,https://otto78.github.io,https://synthtrade-backend.onrender.com`
+- Questo documento la configurazione CORS richiesta per deploy
+
+**Modifiche apportate a `.env` locale:**
+- ✅ Aggiunto `CORS_ORIGINS=http://localhost:4208,https://otto78.github.io,https://synthtrade-backend.onrender.com`
+- Abilita sviluppo locale + test frontend produzione + test backend Render
+
+**NOTA IMPORTANTE:** Per configurare Render, le environment variables vanno inserite **direttamente nella dashboard Render**, non tramite file .env. Il `.env.example` serve solo come riferimento di quali variabili configurare.
 
 ---
 
@@ -1745,7 +1775,7 @@ switchTab(tab: 'logs' | 'trades' | 'scalping'): void {
 #### FASE 9: Test e Verifica (Manuale)
 
 **9.1 Test deploy frontend**
-- [ ] Push su GitHub per triggerare workflow
+- [x] Push su GitHub per triggerare workflow (commit ee21ba7)
 - [ ] Verificare deploy su GitHub Pages
 - [ ] Testare accesso frontend: `https://otto78.github.io/synthtrade-ui/`
 
@@ -1862,20 +1892,22 @@ switchTab(tab: 'logs' | 'trades' | 'scalping'): void {
 
 ### 🔧 CONFIGURAZIONI ESTERNE
 
+- [x] Aggiornare `.env` locale con CORS_ORIGINS completo ✅
 - [ ] Abilitare GitHub Pages (Settings → Pages → GitHub Actions)
 - [ ] Configurare UptimeRobot per /health endpoint
 - [ ] Creare servizio su Render con render.yaml
 - [ ] Configurare environment variables su Render
-- [ ] Aggiornare CORS_ORIGINS con URL GitHub Pages
+- [ ] Aggiornare CORS_ORIGINS su Render con URL GitHub Pages
 
 ### 🚀 ORDINE DI ESECUZIONE
 
-1. Configurare GitHub Pages (Settings → Pages → GitHub Actions)
-2. Creare/Modificare file frontend (angular.json, package.json, proxy.conf.json)
-3. Creare GitHub Actions workflow
-4. Push su GitHub per testare deploy frontend
-5. Creare render.yaml
-6. Deploy backend su Render
-7. Configurare environment variables su Render
-8. Configurare UptimeRobot con URL backend /health
-9. Test completo integrazione
+- [x] 1. Configurare GitHub Pages (Settings → Pages → GitHub Actions) ✅
+- [x] 2. Creare/Modificare file frontend (angular.json, package.json, proxy.conf.json) ✅
+- [x] 3. Creare GitHub Actions workflow ✅
+- [x] 4. Push su GitHub per testare deploy frontend ✅ (commit ee21ba7)
+- [x] 5. Creare render.yaml ✅
+- [ ] 6. Abilitare GitHub Pages nel repository
+- [ ] 7. Deploy backend su Render
+- [ ] 8. Configurare environment variables su Render
+- [ ] 9. Configurare UptimeRobot con URL backend /health
+- [ ] 10. Test completo integrazione

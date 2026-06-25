@@ -1658,7 +1658,7 @@ switchTab(tab: 'logs' | 'trades' | 'scalping'): void {
 **Status:** Phase 1 Complete (File config + push), Phase 2-9 Pending (Platform setup)
 **Priorità:** ALTA — Deploy produzione su GitHub Pages + Render
 **Stima:** 4-6 ore
-**Ultimo aggiornamento:** 2026-06-25 (commit fe4dd1c)  
+**Ultimo aggiornamento:** 2026-06-25 (commit 4dfd70b)  
 **URL Render confermato:** https://synthtrade.onrender.com
 **File coinvolti:** `angular.json`, `package.json`, `proxy.conf.json`, `environment.prod.ts`, `.github/workflows/deploy-frontend.yml`, `render.yaml`, `main.py`
 

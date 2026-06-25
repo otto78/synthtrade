@@ -4,6 +4,20 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.3.4 — 2026-06-25
+
+**Milestone:** GitHub Pages fix - Correzione path artifact
+
+**Completato:**
+- ✅ Corretto path artifact da `dist` a `dist/synthtrade-ui` nel workflow
+- ✅ Rimozione path filtering per trigger su tutti i push main
+- ✅ Fix struttura build Angular per GitHub Pages
+
+**File modificati:**
+- `.github/workflows/deploy-frontend.yml`
+
+---
+
 ### v1.3.3 — 2026-06-25
 
 **Milestone:** GitHub Pages fix - Correzione baseHref

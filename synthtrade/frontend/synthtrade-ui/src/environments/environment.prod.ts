@@ -1,7 +1,9 @@
 export const environment = {
   production: true,
-  apiUrl: 'https://api.synthtrade.app',
-  wsUrl: 'wss://api.synthtrade.app/ws',
+  // TODO: Configurare con URL del backend Render dopo la fase 2 di deploy
+  // Esempio: 'https://synthtrade-backend.onrender.com'
+  apiUrl: 'https://RENDER_BACKEND_URL_HERE',
+  wsUrl: 'wss://RENDER_BACKEND_URL_HERE/ws',
   supabaseUrl: '',
   supabaseAnonKey: '',
 };

@@ -1648,3 +1648,172 @@ switchTab(tab: 'logs' | 'trades' | 'scalping'): void {
 - [ ] P&L colorato verde/rosso
 - [ ] Win rate colorato verde (≥50%) / rosso (<50%)
 - [ ] Performance decente con molte sessioni (OnPush change detection)
+
+---
+
+## Active Tasks
+
+### TASK-DEPLOY-001 — Configurazione Deployment Piattaforme (2026-06-25)
+
+**Status:** In Progress  
+**Priorità:** ALTA — Deploy produzione su GitHub Pages + Render  
+**Stima:** 4-6 ore  
+**File coinvolti:** `angular.json`, `package.json`, `proxy.conf.json`, `environment.prod.ts`, `.github/workflows/deploy-frontend.yml`, `render.yaml`, `main.py`
+
+**Architettura target:**
+- Frontend: GitHub Pages (hosting statico gratuito)
+- Backend: Render (free tier con keep-alive UptimeRobot)
+- Database: Supabase (già in uso)
+- Keep-alive: UptimeRobot ping /health endpoint ogni 5 min
+
+---
+
+### ✅ PASSI GIÀ ESEGUITI
+
+#### 1. Environment Production Configuration ✅
+- [x] Creato segnaposto URL backend in `environment.prod.ts`
+- [x] Aggiunta variabile `RENDER_BACKEND_URL` in `.env.example`
+- [x] Commit e push modifiche
+
+---
+
+### ⏳ PASSI DA ESEGUIRE
+
+#### FASE 1: Configurazione Frontend per GitHub Pages
+
+**1.1 Aggiornare `angular.json`**
+- [ ] Modificare `architect.build.options.production` in `angular.json`
+- [ ] Aggiungere `"baseHref": "/synthtrade-ui/"` alle opzioni di produzione
+
+**1.2 Creare script deploy in `package.json`**
+- [ ] Aggiungere comando `"deploy": "ng deploy --base-href=/synthtrade-ui/ --cname=synthtrade.yourdomain.com"`
+
+---
+
+#### FASE 2: GitHub Actions Workflow per Deploy Automatico
+
+**2.1 Creare workflow file**
+- [ ] Creare directory `.github/workflows/` se non esiste
+- [ ] Creare file `.github/workflows/deploy-frontend.yml`
+- [ ] Configurare trigger su push branch main con path filtering
+- [ ] Setup Node.js v20 con cache npm
+- [ ] Configurare build Angular app
+- [ ] Configurare Pages deployment
+
+---
+
+#### FASE 3: Configurazione Backend per Render
+
+**3.1 Creare `render.yaml`**
+- [ ] Creare file `render.yaml` nella root del progetto
+- [ ] Configurare servizio web Python
+- [ ] Runtime: Python 3.11.0
+- [ ] Build command: `cd synthtrade/backend && pip install -r requirements.txt`
+- [ ] Start command: `cd synthtrade/backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- [ ] Configurare environment variables (Supabase, Binance, AI, CORS, etc.)
+- [ ] Health check path: `/health`
+
+---
+
+#### FASE 4: Configurazione CORS e Proxy Frontend
+
+**4.1 Aggiornare `proxy.conf.json` per produzione**
+- [ ] Aggiornare target per `/api/*` → `https://synthtrade-backend.onrender.com`
+- [ ] Aggiornare target per `/ws` → `wss://synthtrade-backend.onrender.com`
+- [ ] Impostare `secure: true` per entrambi
+
+**4.2 Aggiornare `environment.prod.ts`**
+- [ ] Sostituire `https://RENDER_BACKEND_URL_HERE` con URL reale dopo deploy backend
+- [ ] Configurare `apiUrl` e `wsUrl` corretti
+
+**4.3 Aggiornare backend CORS in `main.py`**
+- [ ] Attualmente `allow_origins=["*"]` - da aggiornare con URL specifici
+- [ ] Aggiungere URL GitHub Pages: `https://[YOUR_USERNAME].github.io`
+- [ ] Aggiungere dominio personalizzato se presente
+
+---
+
+#### FASE 5: Configurazione UptimeRobot
+
+**5.1 Setup UptimeRobot**
+- [ ] Accedere a uptimerobot.com
+- [ ] Creare nuovo monitor HTTPS
+- [ ] URL: `https://synthtrade-backend.onrender.com/health`
+- [ ] Interval: 5 minuti (per evitare spin-down)
+- [ ] Configurare alert contacts
+
+**5.2 Verifica keep-alive**
+- [ ] Verificare che endpoint `/health` risponda con JSON status
+- [ ] Confermare che UptimeRobot mantenga il backend attivo
+
+---
+
+#### FASE 6: Configurazione GitHub Pages
+
+**6.1 Abilitare GitHub Pages nel repository**
+- [ ] Vai su Settings → Pages
+- [ ] Source: GitHub Actions
+- [ ] Verificare che il workflow possa gestire il deploy
+
+**6.2 Configurare custom domain (opzionale)**
+- [ ] Aggiungere record DNS CNAME se richiesto
+- [ ] Configurare in GitHub Pages settings
+
+---
+
+#### FASE 7: Backend Environment Variables su Render
+
+**7.1 Variabili da configurare manualmente su Render**
+- [ ] Creare servizio su Render usando `render.yaml`
+- [ ] Configurare variabili Supabase (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`)
+- [ ] Configurare variabili Binance (`BINANCE_API_KEY`, `BINANCE_SECRET_KEY`, ecc.)
+- [ ] Configurare variabili AI (`AI_API_KEY`, ecc.)
+- [ ] Aggiornare `CORS_ORIGINS` con URL GitHub Pages dopo deploy frontend
+
+---
+
+#### FASE 8: Test e Verifica
+
+**8.1 Test locale del build**
+- [ ] Eseguire `npm run build:prod` in `synthtrade/frontend/synthtrade-ui`
+- [ ] Verificare che il build funzioni correttamente
+
+**8.2 Test health endpoint**
+- [ ] Testare `curl https://synthtrade-backend.onrender.com/health`
+- [ ] Verificare risposta: `{"status": "ok"}`
+
+**8.3 Test WebSocket**
+- [ ] Testare connessione WebSocket nel browser console
+- [ ] Verificare che `wss://synthtrade-backend.onrender.com/ws` funzioni
+
+---
+
+### 📋 CHECKLIST FILE DA CREARE/MODIFICARE
+
+- [ ] `angular.json` - aggiornare baseHref
+- [ ] `package.json` - aggiungere script deploy
+- [ ] `proxy.conf.json` - aggiornare URL backend
+- [ ] `environment.prod.ts` - aggiornare con URL reale
+- [ ] `.github/workflows/deploy-frontend.yml` - creare workflow
+- [ ] `render.yaml` - creare configurazione Render
+- [ ] `main.py` - aggiornare CORS_ORIGINS
+
+### 🔧 CONFIGURAZIONI ESTERNE
+
+- [ ] Abilitare GitHub Pages (Settings → Pages → GitHub Actions)
+- [ ] Configurare UptimeRobot per /health endpoint
+- [ ] Creare servizio su Render con render.yaml
+- [ ] Configurare environment variables su Render
+- [ ] Aggiornare CORS_ORIGINS con URL GitHub Pages
+
+### 🚀 ORDINE DI ESECUZIONE
+
+1. Configurare GitHub Pages (Settings → Pages → GitHub Actions)
+2. Creare/Modificare file frontend (angular.json, package.json, proxy.conf.json)
+3. Creare GitHub Actions workflow
+4. Push su GitHub per testare deploy frontend
+5. Creare render.yaml
+6. Deploy backend su Render
+7. Configurare environment variables su Render
+8. Configurare UptimeRobot con URL backend /health
+9. Test completo integrazione

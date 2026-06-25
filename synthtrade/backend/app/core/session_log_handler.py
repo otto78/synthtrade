@@ -42,6 +42,49 @@ class SessionLogHandler(logging.Handler):
         """Restituisce una copia di tutti i log accumulati."""
         return list(self._buffer)
 
+    def get_formatted_content(
+        self,
+        session_id: str,
+        symbol: str = "UNKNOWN",
+    ) -> Optional[str]:
+        """Restituisce il contenuto formattato dei log come stringa (senza scrivere su file).
+
+        Utile per salvare il contenuto direttamente nel DB invece che su filesystem.
+
+        Args:
+            session_id: ID della sessione
+            symbol: Simbolo trading per arricchire l'header
+
+        Returns:
+            Contenuto formattato del log, oppure None se buffer vuoto.
+        """
+        if not self._buffer:
+            return None
+
+        safe_symbol = symbol.replace("/", "_").upper()
+        header = (
+            f"{'=' * 72}\n"
+            f" SESSION LOG DUMP\n"
+            f" Session ID : {session_id}\n"
+            f" Symbol     : {safe_symbol}\n"
+            f" Entries    : {len(self._buffer)}\n"
+            f" Generated  : {datetime.now(timezone.utc).isoformat()}\n"
+            f"{'=' * 72}\n\n"
+        )
+
+        lines = [header]
+        for line in self._buffer:
+            lines.append(line + "\n")
+
+        return "".join(lines)
+
+    def get_content(self, session_id: str, symbol: str = "UNKNOWN") -> Optional[str]:
+        """Alias per get_formatted_content.
+
+        Deprecato: mantenuto per backward compatibilità, preferire get_formatted_content.
+        """
+        return self.get_formatted_content(session_id, symbol)
+
     def flush_to_file(
         self,
         session_id: str,

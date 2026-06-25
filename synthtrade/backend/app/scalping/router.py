@@ -2824,24 +2824,25 @@ async def control_session(control: Dict) -> Dict:
             _execution_state["supervisor_scheduler"].stop()
             _execution_state["supervisor_scheduler"] = None
         
-        # ── SESSION LOGGING: flush logs to file before clearing state ──
+    # ── SESSION LOGGING: save log content to DB (deploy-safe) ──
         session_log_handler = _execution_state.pop("session_log_handler", None)
         mem_session_id = session.get("session_id")
         db_sid_for_log = session.get("db_session_id")
+        log_symbol = session.get("symbol", "UNKNOWN")
         if session_log_handler and mem_session_id:
             try:
-                log_path = session_log_handler.flush_to_file(
+                log_content = session_log_handler.get_formatted_content(
                     session_id=mem_session_id,
-                    symbol=session.get("symbol", "UNKNOWN"),
+                    symbol=log_symbol,
                 )
-                if log_path and db_sid_for_log:
+                if log_content and db_sid_for_log:
                     supabase_log = get_supabase()
                     supabase_log.table("scalping_sessions").update({
-                        "log_file_path": log_path,
+                        "log_content": log_content,
                     }).eq("id", db_sid_for_log).execute()
-                    logger.info(f"Session logs saved to {log_path}")
+                    logger.info(f"Session log content saved to DB for session {db_sid_for_log}")
             except Exception as log_e:
-                logger.warning(f"Failed to flush session logs: {log_e}")
+                logger.warning(f"Failed to save log content to DB: {log_e}")
         # Remove session log handler from root logger
         if session_log_handler:
             logging.getLogger().removeHandler(session_log_handler)
@@ -2930,37 +2931,41 @@ async def control_session(control: Dict) -> Dict:
 # Session Log Download endpoint
 # ---------------------------------------------------------------------------
 
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 
 @router.get("/session/{session_id}/logs")
-async def download_session_logs(session_id: str) -> FileResponse:
+async def download_session_logs(session_id: str) -> Response:
     """Download the log file for a given session.
 
-    Returns the .txt file as a downloadable attachment.
-    The path is stored in scalping_sessions.log_file_path.
+    Genera il file .txt al volo dal contenuto salvato nel DB (log_content).
+    I log vengono salvati nel DB allo stop della sessione.
     """
     try:
         supabase = get_supabase()
         resp = supabase.table("scalping_sessions") \
-            .select("log_file_path, symbol") \
+            .select("log_content, symbol") \
             .eq("id", session_id) \
             .limit(1) \
             .execute()
-        if not resp.data or not resp.data[0].get("log_file_path"):
-            raise HTTPException(status_code=404, detail="Session log file not found.")
-        
-        log_path = resp.data[0]["log_file_path"]
-        symbol = resp.data[0].get("symbol", "UNKNOWN")
-        
-        import os
-        if not os.path.exists(log_path):
-            raise HTTPException(status_code=404, detail="Log file not found on disk.")
-        
+
+        if not resp.data:
+            raise HTTPException(status_code=404, detail="Session not found.")
+
+        row = resp.data[0]
+        log_content = row.get("log_content")
+        if not log_content:
+            raise HTTPException(
+                status_code=404,
+                detail="Log non disponibili per questa sessione. "
+                       "I log vengono salvati nel DB allo stop della sessione. "
+                       "Sessioni precedenti alla migration potrebbero non averli."
+            )
+
+        symbol = row.get("symbol", "UNKNOWN")
         filename = f"session_{symbol}_{session_id}_logs.txt"
-        return FileResponse(
-            path=log_path,
+        return Response(
+            content=log_content,
             media_type="text/plain",
-            filename=filename,
             headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
     except HTTPException:

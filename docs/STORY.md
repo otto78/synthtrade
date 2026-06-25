@@ -4,6 +4,29 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.3.2 — 2026-06-25
+
+**Milestone:** Deploy Phase 1 - Correzione URL Render backend
+
+**Completato:**
+- ✅ Aggiornato tutti i file di configurazione con URL Render corretto: `https://synthtrade.onrender.com`
+- ✅ `environment.prod.ts`: apiUrl e wsUrl aggiornati
+- ✅ `proxy.conf.json`: target /api e /ws aggiornati
+- ✅ `.env.example`: CORS_ORIGINS aggiornato
+- ✅ `.env` locale: CORS_ORIGINS aggiornato
+- ✅ `render.yaml`: CORS_ORIGINS aggiornato
+- ✅ `docs/TASKS.md`: TASK-DEPLOY-001 aggiornato con URL confermato
+
+**File modificati:**
+- `synthtrade/frontend/synthtrade-ui/src/environments/environment.prod.ts`
+- `synthtrade/frontend/synthtrade-ui/proxy.conf.json`
+- `synthtrade/backend/.env.example`
+- `synthtrade/backend/.env` (locale, non committato)
+- `render.yaml`
+- `docs/TASKS.md`
+
+---
+
 ### v1.3.1 — 2026-06-24
 
 **Milestone:** Fee reali - Fase 4B: Popolare entry_commission con dato reale (TASK-886)

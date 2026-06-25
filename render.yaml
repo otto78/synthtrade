@@ -50,7 +50,7 @@ services:
         value: https://openrouter.ai/api/v1
       # CORS - IMPORTANT: Update after GitHub Pages URL is known
       - key: CORS_ORIGINS
-        value: https://otto78.github.io
+        value: https://otto78.github.io,https://synthtrade.onrender.com
       - key: BACKEND_HOST
         value: 0.0.0.0
       - key: BACKEND_PORT

@@ -254,12 +254,12 @@ const PAGE_SIZE = 50;
     .sessions-list { display: flex; flex-direction: column; width: 100%; }
     .session-header, .session-row {
       display: grid;
-      grid-template-columns: 2% 12% 6% 12% 12% 9% 5% 5% 10% 7% 7% 8% 5%;
-      gap: 0;
+      grid-template-columns: 2% 12% 6% 12% 12% 9% 5% 5% 10% 7% 7% 8% 5% 5%;
+      gap: 2px;
       align-items: center;
       width: 100%;
       box-sizing: border-box;
-      padding: 12px 20px;
+      padding: 12px 16px;
     }
     .session-header {
       font-size: 13px;
@@ -304,19 +304,16 @@ const PAGE_SIZE = 50;
     .expand-arrow.open { transform: rotate(90deg); color: var(--accent-primary); }
     .session-row { position: relative; }
     .btn-download {
-      position: absolute;
-      right: 26px;
-      top: 50%;
-      transform: translateY(-50%);
       background: none;
       border: none;
       cursor: pointer;
-      font-size: 16px;
-      padding: 2px 6px;
+      font-size: 14px;
+      padding: 4px 8px;
       border-radius: 4px;
       color: var(--text-muted);
       transition: all 0.2s;
       line-height: 1;
+      justify-self: start;
     }
     .btn-download:hover {
       color: var(--accent-primary);

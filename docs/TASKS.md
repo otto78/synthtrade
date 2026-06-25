@@ -1659,6 +1659,7 @@ switchTab(tab: 'logs' | 'trades' | 'scalping'): void {
 **Priorità:** ALTA — Deploy produzione su GitHub Pages + Render
 **Stima:** 4-6 ore
 **Ultimo aggiornamento:** 2026-06-25 (commit ee21ba7)  
+**URL Render confermato:** https://synthtrade.onrender.com
 **File coinvolti:** `angular.json`, `package.json`, `proxy.conf.json`, `environment.prod.ts`, `.github/workflows/deploy-frontend.yml`, `render.yaml`, `main.py`
 
 **Architettura target:**
@@ -1719,11 +1720,11 @@ Il file `.env` (senza .example) contiene i **valori reali** (API keys, secrets) 
 - Viene usato localmente per lo sviluppo
 
 **Modifiche apportate a `.env.example`:**
-- Aggiunto `CORS_ORIGINS=http://localhost:4208,https://otto78.github.io,https://synthtrade-backend.onrender.com`
+- Aggiunto `CORS_ORIGINS=http://localhost:4208,https://otto78.github.io,https://synthtrade.onrender.com`
 - Questo documento la configurazione CORS richiesta per deploy
 
 **Modifiche apportate a `.env` locale:**
-- ✅ Aggiunto `CORS_ORIGINS=http://localhost:4208,https://otto78.github.io,https://synthtrade-backend.onrender.com`
+- ✅ Aggiunto `CORS_ORIGINS=http://localhost:4208,https://otto78.github.io,https://synthtrade.onrender.com`
 - Abilita sviluppo locale + test frontend produzione + test backend Render
 
 **NOTA IMPORTANTE:** Per configurare Render, le environment variables vanno inserite **direttamente nella dashboard Render**, non tramite file .env. Il `.env.example` serve solo come riferimento di quali variabili configurare.
@@ -1751,7 +1752,7 @@ Il file `.env` (senza .example) contiene i **valori reali** (API keys, secrets) 
 - [ ] Accedere a render.com e creare account
 - [ ] Connettere repository GitHub: `otto78/Synthtrade`
 - [ ] Usare il file `render.yaml` per configurazione automatica
-- [ ] Ottenere URL del backend (es: `https://synthtrade-backend.onrender.com`)
+- [ ] ✅ URL del backend confermato: `https://synthtrade.onrender.com`
 
 **7.2 Configurare environment variables su Render**
 - [ ] Configurare variabili Supabase (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`)
@@ -1766,7 +1767,7 @@ Il file `.env` (senza .example) contiene i **valori reali** (API keys, secrets) 
 **8.1 Setup UptimeRobot**
 - [ ] Accedere a uptimerobot.com
 - [ ] Creare nuovo monitor HTTPS
-- [ ] URL: `https://synthtrade-backend.onrender.com/health`
+- [ ] URL: `https://synthtrade.onrender.com/health`
 - [ ] Interval: 5 minuti (per evitare spin-down)
 - [ ] Configurare alert contacts
 
@@ -1780,7 +1781,7 @@ Il file `.env` (senza .example) contiene i **valori reali** (API keys, secrets) 
 - [ ] Testare accesso frontend: `https://otto78.github.io/synthtrade-ui/`
 
 **9.2 Test backend**
-- [ ] Testare health endpoint: `curl https://synthtrade-backend.onrender.com/health`
+- [ ] Testare health endpoint: `curl https://synthtrade.onrender.com/health`
 - [ ] Verificare risposta: `{"status": "ok"}`
 
 **9.3 Test integrazione**

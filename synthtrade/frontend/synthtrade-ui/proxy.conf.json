@@ -1,12 +1,12 @@
 {
   "/api": {
-    "target": "https://synthtrade-backend.onrender.com",
+    "target": "https://synthtrade.onrender.com",
     "secure": true,
     "changeOrigin": true,
     "ws": true
   },
   "/ws": {
-    "target": "wss://synthtrade-backend.onrender.com",
+    "target": "wss://synthtrade.onrender.com",
     "secure": true,
     "ws": true
   }

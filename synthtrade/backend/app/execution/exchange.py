@@ -60,30 +60,6 @@ class BinanceExchangeAdapter:
                     }
             else:
                 self.client.set_sandbox_mode(False)
-                # Proxy via Cloudflare Worker (bypassare geo-blocco Binance su Render/Oregon)
-                try:
-                    from app.config import settings as _settings
-                    proxy_url = _settings.BINANCE_PROXY_URL.strip()
-                    if proxy_url:
-                        worker_urls = {
-                            "public":      f"{proxy_url}/api/v3",
-                            "private":     f"{proxy_url}/api/v3",
-                            "v3":          f"{proxy_url}/api/v3",
-                            "v1":          f"{proxy_url}/api/v1",
-                            "sapi":        f"{proxy_url}/sapi/v1",
-                            "sapiV2":      f"{proxy_url}/sapi/v2",
-                            "sapiV3":      f"{proxy_url}/sapi/v3",
-                            "sapiV4":      f"{proxy_url}/sapi/v4",
-                            "fapiPublic":  f"{proxy_url}/fapi/v1",
-                            "fapiPrivate": f"{proxy_url}/fapi/v1",
-                            "dapiPublic":  f"{proxy_url}/dapi/v1",
-                            "dapiPrivate": f"{proxy_url}/dapi/v1",
-                        }
-                        if self.client.urls and isinstance(self.client.urls, dict):
-                            self.client.urls["api"] = worker_urls  # type: ignore[assignment]
-                        logger.info("BinanceExchangeAdapter: proxy Cloudflare Worker attivo → %s", proxy_url)
-                except Exception as _proxy_err:
-                    logger.warning("BinanceExchangeAdapter: impossibile applicare proxy: %s", _proxy_err)
         self._filters_cache = {}
         self._symbol_cache = {}
         self._macro_cache = {"timestamp": 0.0, "data": {}}

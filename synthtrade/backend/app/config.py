@@ -106,12 +106,6 @@ class Settings(BaseSettings):
     BINANCE_API_KEY_LIVE: str = ''
     BINANCE_SECRET_KEY_LIVE: str = ''
 
-    # Binance — Proxy URL (opzionale)
-    # Lascia vuoto in locale (connessione diretta).
-    # Su Render (Oregon) imposta l'URL del Cloudflare Worker per bypassare il geo-blocco:
-    #   BINANCE_PROXY_URL=https://crimson-wood-dbe2.andrea-mazzarotto.workers.dev
-    BINANCE_PROXY_URL: str = ''
-
     # Modalità trading
     TRADING_MODE: str = 'test'       # 'test' | 'live'
     ALLOW_LIVE_MODE: bool = False    # Flag sicurezza

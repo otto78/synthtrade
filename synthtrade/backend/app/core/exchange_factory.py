@@ -21,10 +21,6 @@ def _build_exchange() -> ccxt.binance:
 
     Usa le proprietà dinamiche di settings che selezionano automaticamente
     le key/URL giuste in base a TRADING_MODE.
-
-    Se BINANCE_PROXY_URL è impostato (es. su Render), tutte le chiamate API
-    vengono instradata attraverso il Cloudflare Worker per bypassare il
-    geo-blocco US di Binance. In locale la variabile è vuota → connessione diretta.
     """
     api_key = settings.binance_api_key
     secret_key = settings.binance_secret_key
@@ -44,36 +40,6 @@ def _build_exchange() -> ccxt.binance:
         logger.info("ExchangeFactory: istanza TESTNET creata")
     else:
         logger.info("ExchangeFactory: istanza LIVE creata")
-
-    # Proxy via Cloudflare Worker (bypassare geo-blocco Binance su Render/Oregon)
-    proxy_url = settings.BINANCE_PROXY_URL.strip()
-    if proxy_url:
-        # Sostituisce tutti gli endpoint REST di Binance con il Worker URL.
-        # Il Worker fa da reverse proxy trasparente verso api.binance.com.
-        # IMPORTANTE: include il path prefix per ogni key.
-        # CCXT costruisce l'URL finale come: base_url + endpoint_path
-        # Esempio: sapi="https://worker.dev/sapi/v1" + "/capital/config/getall"
-        #       => Worker riceve "/sapi/v1/capital/config/getall"
-        #       => Worker forward a "https://api.binance.com/sapi/v1/capital/config/getall" ✅
-        worker_urls = {
-            "public":      f"{proxy_url}/api/v3",
-            "private":     f"{proxy_url}/api/v3",
-            "v3":          f"{proxy_url}/api/v3",
-            "v1":          f"{proxy_url}/api/v1",
-            "sapi":        f"{proxy_url}/sapi/v1",
-            "sapiV2":      f"{proxy_url}/sapi/v2",
-            "sapiV3":      f"{proxy_url}/sapi/v3",
-            "sapiV4":      f"{proxy_url}/sapi/v4",
-            "fapiPublic":  f"{proxy_url}/fapi/v1",
-            "fapiPrivate": f"{proxy_url}/fapi/v1",
-            "dapiPublic":  f"{proxy_url}/dapi/v1",
-            "dapiPrivate": f"{proxy_url}/dapi/v1",
-        }
-        if exchange.urls and isinstance(exchange.urls, dict):
-            exchange.urls["api"] = worker_urls  # type: ignore[assignment]
-        logger.info("ExchangeFactory: proxy Cloudflare Worker attivo → %s", proxy_url)
-    else:
-        logger.debug("ExchangeFactory: connessione diretta a Binance (no proxy)")
 
     return exchange
 

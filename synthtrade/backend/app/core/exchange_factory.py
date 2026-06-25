@@ -50,19 +50,24 @@ def _build_exchange() -> ccxt.binance:
     if proxy_url:
         # Sostituisce tutti gli endpoint REST di Binance con il Worker URL.
         # Il Worker fa da reverse proxy trasparente verso api.binance.com.
+        # IMPORTANTE: include il path prefix per ogni key.
+        # CCXT costruisce l'URL finale come: base_url + endpoint_path
+        # Esempio: sapi="https://worker.dev/sapi/v1" + "/capital/config/getall"
+        #       => Worker riceve "/sapi/v1/capital/config/getall"
+        #       => Worker forward a "https://api.binance.com/sapi/v1/capital/config/getall" ✅
         worker_urls = {
-            "public":       proxy_url,
-            "private":      proxy_url,
-            "v3":           proxy_url,
-            "v1":           proxy_url,
-            "sapi":         proxy_url,
-            "sapiV2":       proxy_url,
-            "sapiV3":       proxy_url,
-            "sapiV4":       proxy_url,
-            "fapiPublic":   proxy_url,
-            "fapiPrivate":  proxy_url,
-            "dapiPublic":   proxy_url,
-            "dapiPrivate":  proxy_url,
+            "public":      f"{proxy_url}/api/v3",
+            "private":     f"{proxy_url}/api/v3",
+            "v3":          f"{proxy_url}/api/v3",
+            "v1":          f"{proxy_url}/api/v1",
+            "sapi":        f"{proxy_url}/sapi/v1",
+            "sapiV2":      f"{proxy_url}/sapi/v2",
+            "sapiV3":      f"{proxy_url}/sapi/v3",
+            "sapiV4":      f"{proxy_url}/sapi/v4",
+            "fapiPublic":  f"{proxy_url}/fapi/v1",
+            "fapiPrivate": f"{proxy_url}/fapi/v1",
+            "dapiPublic":  f"{proxy_url}/dapi/v1",
+            "dapiPrivate": f"{proxy_url}/dapi/v1",
         }
         if exchange.urls and isinstance(exchange.urls, dict):
             exchange.urls["api"] = worker_urls  # type: ignore[assignment]

@@ -66,18 +66,18 @@ class BinanceExchangeAdapter:
                     proxy_url = _settings.BINANCE_PROXY_URL.strip()
                     if proxy_url:
                         worker_urls = {
-                            "public":      proxy_url,
-                            "private":     proxy_url,
-                            "v3":          proxy_url,
-                            "v1":          proxy_url,
-                            "sapi":        proxy_url,
-                            "sapiV2":      proxy_url,
-                            "sapiV3":      proxy_url,
-                            "sapiV4":      proxy_url,
-                            "fapiPublic":  proxy_url,
-                            "fapiPrivate": proxy_url,
-                            "dapiPublic":  proxy_url,
-                            "dapiPrivate": proxy_url,
+                            "public":      f"{proxy_url}/api/v3",
+                            "private":     f"{proxy_url}/api/v3",
+                            "v3":          f"{proxy_url}/api/v3",
+                            "v1":          f"{proxy_url}/api/v1",
+                            "sapi":        f"{proxy_url}/sapi/v1",
+                            "sapiV2":      f"{proxy_url}/sapi/v2",
+                            "sapiV3":      f"{proxy_url}/sapi/v3",
+                            "sapiV4":      f"{proxy_url}/sapi/v4",
+                            "fapiPublic":  f"{proxy_url}/fapi/v1",
+                            "fapiPrivate": f"{proxy_url}/fapi/v1",
+                            "dapiPublic":  f"{proxy_url}/dapi/v1",
+                            "dapiPrivate": f"{proxy_url}/dapi/v1",
                         }
                         if self.client.urls and isinstance(self.client.urls, dict):
                             self.client.urls["api"] = worker_urls  # type: ignore[assignment]

@@ -6,6 +6,8 @@ on:
     paths:
       - 'synthtrade/frontend/**'
       - '.github/workflows/deploy-frontend.yml'
+      - 'synthtrade/frontend/synthtrade-ui/angular.json'
+      - 'synthtrade/frontend/synthtrade-ui/package.json'
 
 permissions:
   contents: read

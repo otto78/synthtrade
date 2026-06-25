@@ -4,6 +4,20 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.3.3 — 2026-06-25
+
+**Milestone:** GitHub Pages fix - Correzione baseHref
+
+**Completato:**
+- ✅ Corretto baseHref da `/synthtrade-ui/` a `/synthtrade/` in angular.json
+- ✅ Allineamento con URL GitHub Pages reale: https://otto78.github.io/synthtrade/
+- ✅ Fix deploy workflow trigger con path filtering corretto
+
+**File modificati:**
+- `synthtrade/frontend/synthtrade-ui/angular.json`
+
+---
+
 ### v1.3.2 — 2026-06-25
 
 **Milestone:** Deploy Phase 1 - Correzione URL Render backend

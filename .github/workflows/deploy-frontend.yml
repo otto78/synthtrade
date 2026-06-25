@@ -3,11 +3,6 @@ name: Deploy Frontend to GitHub Pages
 on:
   push:
     branches: [main]
-    paths:
-      - 'synthtrade/frontend/**'
-      - '.github/workflows/deploy-frontend.yml'
-      - 'synthtrade/frontend/synthtrade-ui/angular.json'
-      - 'synthtrade/frontend/synthtrade-ui/package.json'
 
 permissions:
   contents: read

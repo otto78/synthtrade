@@ -1,13 +1,13 @@
 {
   "/api": {
-    "target": "https://synthtrade.onrender.com",
-    "secure": true,
+    "target": "http://localhost:8000",
+    "secure": false,
     "changeOrigin": true,
     "ws": true
   },
   "/ws": {
-    "target": "wss://synthtrade.onrender.com",
-    "secure": true,
+    "target": "ws://localhost:8000",
+    "secure": false,
     "ws": true
   }
 }

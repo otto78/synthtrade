@@ -45,7 +45,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: synthtrade/frontend/synthtrade-ui/dist
+          path: synthtrade/frontend/synthtrade-ui/dist/synthtrade-ui
 
   deploy:
     environment:

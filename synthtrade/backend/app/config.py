@@ -203,7 +203,7 @@ class Settings(BaseSettings):
     # Backend
     BACKEND_HOST: str = '0.0.0.0'
     BACKEND_PORT: int = 8888
-    CORS_ORIGINS: str = 'http://localhost:4208'
+    CORS_ORIGINS: str = 'http://localhost:4208,https://otto78.github.io,https://synthtrade-backend.onrender.com'
     LOG_LEVEL: str = 'INFO'
 
     @computed_field

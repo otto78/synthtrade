@@ -1655,7 +1655,7 @@ switchTab(tab: 'logs' | 'trades' | 'scalping'): void {
 
 ### TASK-DEPLOY-001 — Configurazione Deployment Piattaforme (2026-06-25)
 
-**Status:** In Progress  
+**Status:** Partially Complete - File configuration done, platform setup pending  
 **Priorità:** ALTA — Deploy produzione su GitHub Pages + Render  
 **Stima:** 4-6 ore  
 **File coinvolti:** `angular.json`, `package.json`, `proxy.conf.json`, `environment.prod.ts`, `.github/workflows/deploy-frontend.yml`, `render.yaml`, `main.py`
@@ -1675,28 +1675,88 @@ switchTab(tab: 'logs' | 'trades' | 'scalping'): void {
 - [x] Aggiunta variabile `RENDER_BACKEND_URL` in `.env.example`
 - [x] Commit e push modifiche
 
+#### 2. Configurazione File Frontend ✅
+- [x] Aggiornato `angular.json` con `baseHref: "/synthtrade-ui/"`
+- [x] Aggiunto script deploy in `package.json`
+- [x] Aggiornato `proxy.conf.json` per produzione (Render backend)
+- [x] Aggiornato `environment.prod.ts` con URL Render backend
+
+#### 3. GitHub Actions Workflow ✅
+- [x] Creata directory `.github/workflows/`
+- [x] Creato file `.github/workflows/deploy-frontend.yml`
+- [x] Configurato trigger su push branch main con path filtering
+- [x] Setup Node.js v20 con cache npm
+- [x] Configurato build Angular app e deploy Pages
+
+#### 4. Configurazione Render ✅
+- [x] Creato file `render.yaml` nella root del progetto
+- [x] Configurato servizio web Python con tutte le environment variables
+- [x] Configurato health check path `/health`
+
+#### 5. Configurazione CORS ✅
+- [x] Aggiornato `config.py` con CORS origins per sviluppo e produzione
+- [x] Aggiornato `main.py` per usare `settings.cors_origins_list`
+- [x] Aggiornato `.env.example` con CORS origins
+
 ---
 
-### ⏳ PASSI DA ESEGUIRE
+### ⏳ PASSI DA ESEGUIRE SOLO SULLE PIATTAFORME ESTERNE
 
-#### FASE 1: Configurazione Frontend per GitHub Pages
+#### FASE 6: Configurazione GitHub Pages (Manuale)
 
-**1.1 Aggiornare `angular.json`**
-- [ ] Modificare `architect.build.options.production` in `angular.json`
-- [ ] Aggiungere `"baseHref": "/synthtrade-ui/"` alle opzioni di produzione
+**6.1 Abilitare GitHub Pages nel repository**
+- [ ] Vai su Settings → Pages
+- [ ] Source: GitHub Actions
+- [ ] Verificare che il workflow possa gestire il deploy
 
-**1.2 Creare script deploy in `package.json`**
-- [ ] Aggiungere comando `"deploy": "ng deploy --base-href=/synthtrade-ui/ --cname=synthtrade.yourdomain.com"`
+**6.2 Configurare custom domain (opzionale)**
+- [ ] Aggiungere record DNS CNAME se richiesto
+- [ ] Configurare in GitHub Pages settings
 
 ---
 
-#### FASE 2: GitHub Actions Workflow per Deploy Automatico
+#### FASE 7: Backend Deployment su Render (Manuale)
 
-**2.1 Creare workflow file**
-- [ ] Creare directory `.github/workflows/` se non esiste
-- [ ] Creare file `.github/workflows/deploy-frontend.yml`
-- [ ] Configurare trigger su push branch main con path filtering
-- [ ] Setup Node.js v20 con cache npm
+**7.1 Creare servizio su Render**
+- [ ] Accedere a render.com e creare account
+- [ ] Connettere repository GitHub: `otto78/Synthtrade`
+- [ ] Usare il file `render.yaml` per configurazione automatica
+- [ ] Ottenere URL del backend (es: `https://synthtrade-backend.onrender.com`)
+
+**7.2 Configurare environment variables su Render**
+- [ ] Configurare variabili Supabase (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`)
+- [ ] Configurare variabili Binance (`BINANCE_API_KEY`, `BINANCE_SECRET_KEY`, ecc.)
+- [ ] Configurare variabili AI (`AI_API_KEY`, ecc.)
+- [ ] Verificare che `CORS_ORIGINS` includa URL GitHub Pages
+
+---
+
+#### FASE 8: Configurazione UptimeRobot (Manuale)
+
+**8.1 Setup UptimeRobot**
+- [ ] Accedere a uptimerobot.com
+- [ ] Creare nuovo monitor HTTPS
+- [ ] URL: `https://synthtrade-backend.onrender.com/health`
+- [ ] Interval: 5 minuti (per evitare spin-down)
+- [ ] Configurare alert contacts
+
+---
+
+#### FASE 9: Test e Verifica (Manuale)
+
+**9.1 Test deploy frontend**
+- [ ] Push su GitHub per triggerare workflow
+- [ ] Verificare deploy su GitHub Pages
+- [ ] Testare accesso frontend: `https://otto78.github.io/synthtrade-ui/`
+
+**9.2 Test backend**
+- [ ] Testare health endpoint: `curl https://synthtrade-backend.onrender.com/health`
+- [ ] Verificare risposta: `{"status": "ok"}`
+
+**9.3 Test integrazione**
+- [ ] Testare WebSocket connection dal frontend
+- [ ] Verificare che API calls funzionino
+- [ ] Testare login e funzionalità base
 - [ ] Configurare build Angular app
 - [ ] Configurare Pages deployment
 
@@ -1790,13 +1850,15 @@ switchTab(tab: 'logs' | 'trades' | 'scalping'): void {
 
 ### 📋 CHECKLIST FILE DA CREARE/MODIFICARE
 
-- [ ] `angular.json` - aggiornare baseHref
-- [ ] `package.json` - aggiungere script deploy
-- [ ] `proxy.conf.json` - aggiornare URL backend
-- [ ] `environment.prod.ts` - aggiornare con URL reale
-- [ ] `.github/workflows/deploy-frontend.yml` - creare workflow
-- [ ] `render.yaml` - creare configurazione Render
-- [ ] `main.py` - aggiornare CORS_ORIGINS
+- [x] `angular.json` - aggiornare baseHref ✅
+- [x] `package.json` - aggiungere script deploy ✅
+- [x] `proxy.conf.json` - aggiornare URL backend ✅
+- [x] `environment.prod.ts` - aggiornare con URL reale ✅
+- [x] `.github/workflows/deploy-frontend.yml` - creare workflow ✅
+- [x] `render.yaml` - creare configurazione Render ✅
+- [x] `main.py` - aggiornare CORS_ORIGINS ✅
+- [x] `config.py` - aggiornare CORS_ORIGINS ✅
+- [x] `.env.example` - aggiornare CORS_ORIGINS ✅
 
 ### 🔧 CONFIGURAZIONI ESTERNE
 

@@ -14,7 +14,8 @@
     "test:coverage": "jest --coverage",
     "test:e2e": "playwright test",
     "lint": "eslint src --ext .ts,.html",
-    "format": "prettier --write \"src/**/*.{ts,html,scss}\""
+    "format": "prettier --write \"src/**/*.{ts,html,scss}\"",
+    "deploy": "ng deploy --base-href=/synthtrade-ui/ --cname=synthtrade.yourdomain.com"
   },
   "prettier": {
     "printWidth": 100,

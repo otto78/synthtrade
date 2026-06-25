@@ -157,10 +157,12 @@ const PAGE_SIZE = 50;
                 <span class="session-hold" [ngClass]="{ positive: (s.hold_pnl_pct ?? 0) >= 0, negative: (s.hold_pnl_pct ?? 0) < 0 }">
                   {{ s.hold_pnl_pct != null ? ((s.hold_pnl_pct >= 0 ? '+' : '') + (s.hold_pnl_pct | number:'1.2-2') + '%') : '—' }}
                 </span>
-                <span class="expand-arrow" [class.open]="expandedSessionId() === s.id">&#8250;</span>
-                <button class="btn-download" (click)="downloadSessionLogs(s.id, s.symbol); $event.stopPropagation()">
-                  &#8595;
-                </button>
+                <span class="session-actions">
+                  <button class="btn-download" (click)="downloadSessionLogs(s.id, s.symbol); $event.stopPropagation()">
+                    &#8595;
+                  </button>
+                  <span class="expand-arrow" [class.open]="expandedSessionId() === s.id">&#8250;</span>
+                </span>
               </div>
 
               @if (expandedSessionId() === s.id) {
@@ -254,12 +256,12 @@ const PAGE_SIZE = 50;
     .sessions-list { display: flex; flex-direction: column; width: 100%; }
     .session-header, .session-row {
       display: grid;
-      grid-template-columns: 2% 12% 6% 12% 12% 9% 5% 5% 10% 7% 7% 8% 5% 5%;
-      gap: 2px;
+      grid-template-columns: 2% 12% 6% 12% 12% 9% 5% 5% 10% 7% 7% 8% 5%;
+      gap: 0;
       align-items: center;
       width: 100%;
       box-sizing: border-box;
-      padding: 12px 16px;
+      padding: 12px 20px;
     }
     .session-header {
       font-size: 13px;
@@ -295,25 +297,30 @@ const PAGE_SIZE = 50;
     .session-pnl { font-family: monospace; font-weight: 700; font-size: 14px; text-align: right; white-space: nowrap; }
     .session-pnl-pct { font-family: monospace; font-weight: 600; font-size: 13px; text-align: right; }
     .session-winrate, .session-hold { font-family: monospace; font-weight: 600; font-size: 13px; text-align: right; }
+    .session-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+      width: 100%;
+    }
     .expand-arrow {
-      font-size: 22px; text-align: right; justify-self: end;
+      font-size: 22px;
       font-weight: 600; color: var(--text-muted);
       transition: transform 0.2s ease; line-height: 1;
       display: inline-block; padding: 0 4px;
     }
     .expand-arrow.open { transform: rotate(90deg); color: var(--accent-primary); }
-    .session-row { position: relative; }
     .btn-download {
       background: none;
       border: none;
       cursor: pointer;
-      font-size: 14px;
+      font-size: 15px;
       padding: 4px 8px;
       border-radius: 4px;
       color: var(--text-muted);
       transition: all 0.2s;
       line-height: 1;
-      justify-self: start;
     }
     .btn-download:hover {
       color: var(--accent-primary);

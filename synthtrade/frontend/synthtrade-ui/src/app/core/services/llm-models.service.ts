@@ -24,8 +24,9 @@ export class LLMModelsService {
   /** Emitted whenever a health check completes — Topbar listens to stay in sync. */
   checkCompleted = new Subject<ModelsCheckResponse>();
 
-  getModels(): Observable<LLMModelsPayload> {
-    return this.http.get<LLMModelsPayload>(this.base).pipe(
+  getModels(useCase: string = 'pipeline_eval'): Observable<LLMModelsPayload> {
+    let params = new HttpParams().set('use_case', useCase);
+    return this.http.get<LLMModelsPayload>(this.base, { params }).pipe(
       timeout(REQUEST_TIMEOUT_MS),
       catchError(err => {
         console.error('Error fetching LLM models:', err);
@@ -34,8 +35,9 @@ export class LLMModelsService {
     );
   }
 
-  setModels(payload: LLMModelsPayload): Observable<LLMModelsPayload> {
-    return this.http.post<LLMModelsPayload>(this.base, payload).pipe(
+  setModels(payload: LLMModelsPayload, useCase: string = 'pipeline_eval'): Observable<LLMModelsPayload> {
+    let params = new HttpParams().set('use_case', useCase);
+    return this.http.post<LLMModelsPayload>(this.base, payload, { params }).pipe(
       timeout(REQUEST_TIMEOUT_MS),
       catchError(err => {
         console.error('Error saving LLM models:', err);
@@ -44,8 +46,8 @@ export class LLMModelsService {
     );
   }
 
-  checkModels(models?: string[], includeFallback = false): Observable<ModelsCheckResponse> {
-    let params = new HttpParams();
+  checkModels(models?: string[], includeFallback = false, useCase: string = 'pipeline_eval'): Observable<ModelsCheckResponse> {
+    let params = new HttpParams().set('use_case', useCase);
     if (models && models.length > 0) {
       for (const m of models) {
         params = params.append('models', m);

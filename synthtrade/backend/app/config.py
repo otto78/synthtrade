@@ -36,7 +36,7 @@ class ScalpingSettings(BaseSettings):
     SCALPING_MAX_POSITION_SIZE: float = 0.01
 
     # ── Scalping — Signal Intelligence ──────────────────────────
-    SCALPING_SIGNAL_STRENGTH_THRESHOLD: float = 15.0
+    SCALPING_SIGNAL_STRENGTH_THRESHOLD: float = 10.0
     SCALPING_MIN_CONFIDENCE: float = 0.25
     SCALPING_MIN_COLLECTORS: int = 4
     SCALPING_INTEL_UPDATE_INTERVAL_SEC: int = 60
@@ -48,6 +48,10 @@ class ScalpingSettings(BaseSettings):
     SCALPING_SUPERVISOR_MIN_TRADES_BEFORE_CHANGE: int = 5
     SCALPING_SUPERVISOR_MAX_REPEAT_DECISIONS: int = 3
     SCALPING_SUPERVISOR_MAX_DAILY_CALLS: int = 100
+
+    # ── Scalping — Supervisor AI Models ───────────────────────────
+    SCALPING_SUPERVISOR_CASCADE_MODELS: str = 'anthropic/claude-haiku-4.5,anthropic/claude-3.5-sonnet'
+    SCALPING_SUPERVISOR_FALLBACK_MODEL: str = 'anthropic/claude-haiku-4.5'
     
     # Old Supervisor settings kept for compatibility
     SCALPING_SUPERVISOR_MIN_TRADES_BEFORE_DECISION: int = 3
@@ -149,6 +153,10 @@ class Settings(BaseSettings):
     AI_API_BASE_URL: str = 'https://openrouter.ai/api/v1'
     AI_CASCADE_MODELS: str = 'google/gemini-2.0-flash-exp:free,meta-llama/llama-3.1-8b-instruct:free,mistralai/mistral-7b-instruct:free'
     AI_FALLBACK_MODEL: str = 'anthropic/claude-haiku-4.5'
+
+    # AI Supervisor (TASK-887)
+    AI_SUPERVISOR_CASCADE_MODELS: str = 'anthropic/claude-haiku-4.5,anthropic/claude-3.5-sonnet'
+    AI_SUPERVISOR_FALLBACK_MODEL: str = 'anthropic/claude-haiku-4.5'
     AI_MAX_TOKENS: int = 1024
     AI_TEMPERATURE: float = 0.2
     AI_TIMEOUT_SECONDS: float = 30.0
@@ -168,6 +176,11 @@ class Settings(BaseSettings):
     @property
     def ai_cascade_models_list(self) -> List[str]:
         return [m.strip() for m in self.AI_CASCADE_MODELS.split(',') if m.strip()]
+
+    @computed_field
+    @property
+    def ai_supervisor_cascade_models_list(self) -> List[str]:
+        return [m.strip() for m in self.AI_SUPERVISOR_CASCADE_MODELS.split(',') if m.strip()]
 
     # Engine
     EXECUTION_INTERVAL_SECONDS: int = 300

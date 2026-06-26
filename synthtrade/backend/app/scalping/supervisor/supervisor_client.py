@@ -80,9 +80,9 @@ class SupervisorClient:
     """Client per supervisor AI che riutilizza la cascata modelli esistente."""
 
     def __init__(self):
-        """Create supervisor client using models from DB (or settings fallback)."""
+        """Create supervisor client using dedicated cascade for critical decisions."""
         service = LLMModelService()
-        self._client = service.create_model_client()
+        self._client = service.create_model_client(use_case="supervisor")
 
     async def decide(
         self,

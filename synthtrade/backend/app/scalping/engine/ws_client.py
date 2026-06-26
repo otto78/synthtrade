@@ -141,6 +141,20 @@ class BinanceWSClient:
     async def start(self) -> None:
         """Avvia un task per ogni stream (kline + trade per simbolo)."""
         self._stop_event.clear()
+        loop = asyncio.get_event_loop()
+        previous_handler = loop.get_exception_handler()
+
+        def _ws_exception_handler(loop, context):
+            exc = context.get("exception")
+            if isinstance(exc, ConnectionResetError):
+                logger.warning("WS connessione interrotta (WinError 10054), riconnessione automatica in corso...")
+                return
+            if previous_handler is not None:
+                previous_handler(loop, context)
+            else:
+                loop.default_exception_handler(context)
+
+        loop.set_exception_handler(_ws_exception_handler)
         for symbol in self.symbols:
             # Two separate connections: one for kline, one for trade
             # (testnet doesn't support combined /stream endpoint)
@@ -198,6 +212,18 @@ class BinanceWSClient:
                             await self._dispatch_candle(text, symbol)
                         else:
                             await self._dispatch_trade(text, symbol)
+            except ConnectionResetError as exc:
+                logger.info(
+                    "WS %s@%s resettato dall'host (WinError 10054). Riconnessione in %.1fs...",
+                    symbol, stream_type, delay,
+                )
+                self._emit_status(
+                    ConnectionStatusEvent(symbol, connected=False, error=str(exc)),
+                )
+                if self._stop_event.is_set():
+                    break
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, self._reconnect_max_delay)
             except asyncio.CancelledError:
                 logger.debug("WS %s@%s cancellato.", symbol, stream_type)
                 break

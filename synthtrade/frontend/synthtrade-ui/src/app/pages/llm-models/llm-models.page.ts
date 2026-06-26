@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { Subscription } from 'rxjs';
 import { LLMModelsService } from '../../core/services/llm-models.service';
-import { LLMModelsPayload } from '../../core/models/llm-models.model';
+import { LLMModelsPayload, LLM_USE_CASES, LLMUseCase } from '../../core/models/llm-models.model';
 
 interface ModelEntry {
   current: string;
@@ -18,6 +18,17 @@ interface ModelEntry {
   template: `
     <div class="llm-page">
       <h2>Configurazione Modelli LLM</h2>
+      <div class="use-case-tabs">
+        <button
+          *ngFor="let uc of useCases"
+          class="tab-btn"
+          [class.active]="selectedUseCase === uc.id"
+          (click)="selectUseCase(uc.id)"
+        >
+          {{ uc.name }}
+        </button>
+      </div>
+      <div class="use-case-desc">{{ getUseCaseDescription() }}</div>
       <form (ngSubmit)="save()" #modelForm="ngForm">
         <h3>Cascade Modelli</h3>
         <p class="hint">Sostituisci un modello inserendo il nuovo nome nel campo. Lascia vuoto per mantenerlo invariato.</p>
@@ -68,6 +79,14 @@ interface ModelEntry {
       color: var(--text-primary, #e0e0e0);
     }
     .input:focus { border-color: var(--accent-primary, #0066cc); outline: none; }
+    .use-case-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+    .tab-btn {
+      padding: 8px 16px; border: 1px solid var(--border-default, #444);
+      border-radius: 4px; background: var(--bg-input, #1e1e2e);
+      color: var(--text-primary, #e0e0e0); cursor: pointer;
+    }
+    .tab-btn.active { background: var(--accent-primary, #0066cc); border-color: var(--accent-primary, #0066cc); }
+    .use-case-desc { color: var(--text-secondary, #888); font-size: 0.85rem; margin-bottom: 16px; }
     .model-list { margin-bottom: 8px; }
     .model-row { margin-bottom: 10px; }
     .row-label { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
@@ -103,6 +122,8 @@ export class LLMModelsPage implements OnInit, OnDestroy {
   private service = inject(LLMModelsService);
   private cdr = inject(ChangeDetectorRef);
   private sub = new Subscription();
+  selectedUseCase: string = 'pipeline_eval';
+  useCases = LLM_USE_CASES;
   entries: ModelEntry[] = [];
   fallback = '';
   fallbackCurrent = '';
@@ -123,10 +144,20 @@ export class LLMModelsPage implements OnInit, OnDestroy {
     return index;
   }
 
+  selectUseCase(useCase: string) {
+    this.selectedUseCase = useCase;
+    this.load();
+  }
+
+  getUseCaseDescription(): string {
+    const uc = this.useCases.find(c => c.id === this.selectedUseCase);
+    return uc ? uc.description : '';
+  }
+
   load() {
     this.loading = true;
     this.sub.add(
-      this.service.getModels().subscribe({
+      this.service.getModels(this.selectedUseCase).subscribe({
         next: (data: LLMModelsPayload) => {
           this.entries = data.cascade.length > 0
             ? data.cascade.map((m: string) => ({ current: m, newValue: '', status: 'checking' as const }))
@@ -151,7 +182,7 @@ export class LLMModelsPage implements OnInit, OnDestroy {
   runHealthCheck(includeFallback = false) {
     this.checking = true;
     this.sub.add(
-      this.service.checkModels(undefined, includeFallback).subscribe({
+      this.service.checkModels(undefined, includeFallback, this.selectedUseCase).subscribe({
         next: (res) => {
           const statusMap = new Map<string, 'online' | 'offline'>();
           for (const check of res.checks) {
@@ -224,7 +255,7 @@ export class LLMModelsPage implements OnInit, OnDestroy {
     }
     this.checking = true;
     this.sub.add(
-      this.service.checkModels(allModels).subscribe({
+      this.service.checkModels(allModels, false, this.selectedUseCase).subscribe({
         next: (res) => {
           this.checking = false;
           const offlineModels = res.checks.filter(c => c.status === 'offline').map(c => c.model);
@@ -250,7 +281,7 @@ export class LLMModelsPage implements OnInit, OnDestroy {
   }
   private doSetModels(cascadeArray: string[], fallbackVal: string) {
     this.sub.add(
-      this.service.setModels({ cascade: cascadeArray, fallback: fallbackVal }).subscribe({
+      this.service.setModels({ cascade: cascadeArray, fallback: fallbackVal }, this.selectedUseCase).subscribe({
         next: () => {
           this.message = 'Salvataggio completato';
           this.entries = cascadeArray.map(m => ({ current: m, newValue: '', status: 'checking' as const }));

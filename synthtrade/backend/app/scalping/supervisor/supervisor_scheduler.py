@@ -143,10 +143,92 @@ class SupervisorScheduler:
         except Exception as e:
             logger.warning(f"Failed to save supervisor memory: {e}")
 
+    async def _count_recent_blocks(self, minutes: int = 20) -> int:
+        """Conta quante decisioni bloccate consecutive ci sono state."""
+        try:
+            from app.db.supabase_client import get_supabase
+            from datetime import datetime, timedelta, timezone
+
+            def _fetch():
+                supabase = get_supabase()
+                cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+                resp = supabase.table("supervisor_memory") \
+                    .select("was_applied,action") \
+                    .eq("symbol", self._symbol) \
+                    .gte("decided_at", cutoff.isoformat()) \
+                    .order("decided_at", desc=True) \
+                    .limit(50) \
+                    .execute()
+                return resp.data if resp.data else []
+
+            records = await asyncio.to_thread(_fetch)
+
+            # Conta blocchi consecutivi (dal più recente)
+            blocks = 0
+            for r in records:
+                if not r.get("was_applied", True) or r.get("action") in ("no_action",):
+                    blocks += 1
+                else:
+                    break  # fermati al primo blocco non consecutivo
+            return blocks
+        except Exception:
+            return 0
+
+    async def _auto_adjust_threshold(self) -> None:
+        """Logica hardcoded di auto-aggiustamento soglia, indipendente dall'AI.
+        
+        Se il sistema è bloccato da troppi minuti consecutivi, riduce
+        gradualmente la soglia per evitare stallo permanente.
+        """
+        try:
+            from app.scalping.config_loader import get_scalping_config
+            current = get_scalping_config().signal_strength_threshold
+            
+            # 1) Se vol_anomaly è True, abbassa immediatamente a 8.0 (segnali forti)
+            if self._loop and getattr(self._loop, "_candle_buffer", None):
+                from app.scalping.engine.ta_analyzer import TAAnalyzer
+                history = [c.model_dump() for c in self._loop._candle_buffer.get()]
+                if len(history) >= 10:
+                    vol_anomaly = TAAnalyzer.detect_volume_anomaly(history, multiplier=2.0)
+                    if vol_anomaly and current > 8.0:
+                        logger.warning(
+                            f"⚡ Auto-decay: vol_anomaly rilevato! Soglia {current} → 8.0"
+                        )
+                        await self._updater.apply(SupervisorDecision(
+                            action="update_threshold",
+                            reason="Auto-decay: volume anomaly detected, lowering threshold to allow breakout trades",
+                            confidence=0.9,
+                            new_params={"signal_strength_threshold": 8.0},
+                        ))
+                        self._last_threshold_change = time.time()
+                        return
+            
+            # 2) Se bloccato da >20 minuti consecutivi, riduci gradualmente
+            blocks = await self._count_recent_blocks(minutes=20)
+            if blocks >= 15 and current > 8.0:
+                new_val = max(8.0, current - 2.0)
+                logger.warning(
+                    f"⚡ Auto-decay: {blocks} blocchi consecutivi in 20min. "
+                    f"Soglia {current} → {new_val}"
+                )
+                await self._updater.apply(SupervisorDecision(
+                    action="update_threshold",
+                    reason=f"Auto-decay: {blocks} blocked decisions in 20min, reducing threshold from {current} to {new_val}",
+                    confidence=0.8,
+                    new_params={"signal_strength_threshold": new_val},
+                ))
+                self._last_threshold_change = time.time()
+                
+        except Exception as e:
+            logger.warning(f"Auto-decay threshold error: {e}")
+
     async def _tick(self) -> Optional[SupervisorDecision]:
         if not self._running:
             logger.debug("Supervisor tick skipped: scheduler not running")
             return None
+
+        # Auto-aggiustamento soglia (hardcoded, indipendente dall'AI)
+        await self._auto_adjust_threshold()
 
         # TASK-866: check budget giornaliero
         today = date.today().isoformat()

@@ -92,8 +92,12 @@ async def _ping_model(model: str, api_key: str, api_base: str) -> ModelCheckResu
 
 
 @router.get("", response_model=LLMModelsResponse)
-def get_models(repo: LLMModelRepository = Depends(get_repo), _user: str = Depends(get_current_user)):
-    data = repo.get_models()
+def get_models(
+    repo: LLMModelRepository = Depends(get_repo),
+    _user: str = Depends(get_current_user),
+    use_case: str = Query(default="pipeline_eval", description="Use case: pipeline_eval or supervisor")
+):
+    data = repo.get_models(use_case=use_case)
     return {"cascade": data.get('cascade', []), "fallback": data.get('fallback', '')}
 
 
@@ -103,6 +107,7 @@ async def check_models(
     _user: str = Depends(get_current_user),
     models: list[str] | None = Query(default=None),
     include_fallback: bool = False,
+    use_case: str = Query(default="pipeline_eval", description="Use case: pipeline_eval or supervisor")
 ):
     """Ping configured models and return their status.
 
@@ -121,7 +126,7 @@ async def check_models(
         # Use provided models (e.g. from form before saving)
         all_models = list(dict.fromkeys(models))  # dedup preserving order
     else:
-        data = repo.get_models()
+        data = repo.get_models(use_case=use_case)
         cascade: list[str] = data.get('cascade', [])
         fallback: str = data.get('fallback', '')
         all_models: list[str] = list(cascade)
@@ -153,9 +158,14 @@ async def check_models(
 
 
 @router.post("", response_model=LLMModelsPayload, status_code=status.HTTP_200_OK)
-def set_models(payload: LLMModelsPayload, repo: LLMModelRepository = Depends(get_repo), _user: str = Depends(get_current_user)):
+def set_models(
+    payload: LLMModelsPayload,
+    repo: LLMModelRepository = Depends(get_repo),
+    _user: str = Depends(get_current_user),
+    use_case: str = Query(default="pipeline_eval", description="Use case: pipeline_eval or supervisor")
+):
     try:
-        repo.set_models(payload.cascade, payload.fallback)
+        repo.set_models(payload.cascade, payload.fallback, use_case=use_case)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     return payload

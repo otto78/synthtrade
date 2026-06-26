@@ -7,6 +7,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.3.5] — 2026-06-26
+
+### Removed
+- **Render Deployment Plan (TASK-DEPLOY-001)**: Archiviato come FALLITO a causa del blocco Binance su server americani. Render e altre piattaforme PaaS americane non possono connettersi a Binance API per il geo-blocco.
+- **Note**: L'unica soluzione per andare online è utilizzare una VPS europea per il backend. I file di configurazione creati per il tentativo (render.yaml, GitHub Actions workflow, etc.) sono stati mantenuti nel repository per riferimento futuro.
+
+### Changed
+- **Version bump**: Frontend version aggiornata a 1.3.5
+- **Documentation**: TASKS.md aggiornato con sezione Archivio per task falliti
+- **Documentation**: STORY.md aggiornato con milestone v1.3.5
+
+---
+
 ## [2.0.0-alpha.6] — 2026-06-11
 
 ### Fixed

@@ -1653,262 +1653,242 @@ switchTab(tab: 'logs' | 'trades' | 'scalping'): void {
 
 ## Active Tasks
 
+### TASK-887 — Supervisor: usare Claude Haiku 4.5 come modello primario dedicato (2026-06-26)
+
+**Status:** 🔴 Da fare — prossima mossa
+**Priorità:** ALTA — il supervisor prende decisioni su capitale reale
+**Stima:** 1h
+**File coinvolti:** `supervisor_client.py`, `llm_model_service.py`
+
+#### Problema
+
+Il supervisor usa `LLMModelService.create_model_client()` che carica la stessa cascade del valutatore di pipeline:
+```
+deepseek/deepseek-v4-flash:free, openai/gpt-oss-120b:free, z-ai/glm-4.5-air:free
+```
+con fallback `anthropic/claude-haiku-4.5`.
+
+Nella sessione del 25 giugno, il supervisor ha sempre usato `poolside/laguna-m.1:free` (un modello free su OpenRouter) perché:
+1. La cascade parte dai modelli free (primo nella lista)
+2. Solo quando TUTTI falliscono viene usato Haiku (fallback)
+3. Il modello free è troppo debole per seguire le 10+ regole condizionali del prompt
+
+**Evidenza:** Il modello free ha proposto `ema_cross` in regime `ranging` (violazione delle regole) e non ha mai chiamato `update_threshold` nonostante score sotto soglia per 45+ minuti.
+
+#### Costo
+
+| Modello | Costo/chiamata | Chiamate/h | Costo/h | Costo/giorno (16h) |
+|---------|---------------|-----------|---------|-------------------|
+| Claude Haiku 4.5 | ~$0.001 | 6 (ogni 10min) | $0.006 | $0.096 (~€0.09) |
+
+È un costo trascurabile per decisioni su capitale reale.
+
+#### Soluzione A (consigliata) — Cascade dedicata per il supervisor
+
+Modificare `SupervisorClient.__init__` per creare un `ModelClient` separato che usa Haiku come primo modello invece che come ultimo fallback. La cascade esistente per gli altri consumatori (eval pipeline) rimane invariata.
+
+**File: `synthtrade/backend/app/scalping/supervisor/supervisor_client.py`**
+
+Modificare `__init__`:
+
+```python
+# Invece di:
+# service = LLMModelService()
+# self._client = service.create_model_client()
+
+# Nuovo: cascade dedicata per il supervisor
+from app.ai.model_client import ModelClient
+
+SUPERVISOR_CASCADE = [
+    "anthropic/claude-haiku-4.5",  # primario
+    "anthropic/claude-3.5-sonnet",  # fallback se Haiku è down
+]
+SUPERVISOR_FALLBACK = "anthropic/claude-haiku-4.5"
+
+class SupervisorClient:
+    def __init__(self):
+        from app.config import settings
+        self._client = ModelClient(
+            api_key=settings.OPENROUTER_API_KEY,
+            api_base_url=settings.AI_API_BASE_URL,
+            cascade_models=SUPERVISOR_CASCADE,
+            fallback_model=SUPERVISOR_FALLBACK,
+            timeout=settings.AI_TIMEOUT_SECONDS,
+            max_retries=settings.AI_MAX_RETRIES,
+            backoff_base=settings.AI_BACKOFF_BASE,
+        )
+```
+
+**Vantaggi:**
+- Haiku chiamato SEMPRE per primo (non solo come fallback)
+- La cascade esistente (modelli free) rimane per gli eval pipeline
+- Costo prevedibile e basso (~€0.09/giorno)
+- Se Haiku è down, cascade su Sonnet come backup
+- Nessuna modifica a DB o .env
+
+**Svantaggi:**
+- Hardcoded models nel codice (vs configurabile da DB)
+- Mitigazione: accettabile per ora, si può rendere configurabile in futuro con una chiave `.env` tipo `SUPERVISOR_MODEL`
+
+#### Soluzione B (alternativa) — Env var dedicata
+
+Aggiungere `SCALPING_SUPERVISOR_MODEL=anthropic/claude-haiku-4.5` in `.env` e `config.py`. LLMModelService.read_supervisor_model() o SupervisorClient lo legge direttamente.
+
+Più configurabile ma richiede più modifiche. Soluzione A è più rapida e sufficiente.
+
+#### Verifica
+
+1. Avviare sessione scalping
+2. Controllare log: `[ModelClient] Trying Tier 1: anthropic/claude-haiku-4.5`
+3. Verificare che appaia `[ModelClient] SUCCESS with anthropic/claude-haiku-4.5`
+4. Verificare che le decisioni siano coerenti (es. non propone ema_cross in ranging)
+5. Controllare nel DB `supervisor_memory` che `action` non sia sempre `no_action`
+
+---
+
+### TASK-888 — Analizzare outcome trade basandosi sul trend converging/diverging/stable (2026-06-26)
+
+**Status:** 🔴 Da fare — dopo TASK-887 e dopo aver raccolto dati con soglia 10.0
+**Priorità:** MEDIA — dipende da dati reali con la nuova soglia
+**Stima:** 2h
+**File coinvolti:** `signal_aggregator.py`, `supervisor_client.py`, `supervisor_scheduler.py`
+
+#### Contesto
+
+Nei log del 25 giugno, il BLOCK message mostrava un campo `trend`:
+
+```
+🔴 BLOCK: bnbusdc |score|=9.5 < threshold 18.0 [trend=+4.5 converging] (bias=neutral)
+🔴 BLOCK: bnbusdc intelligence neutrale (6 collectors, score=-4.7) [trend=+4.8 converging]
+🔴 BLOCK: bnbusdc |score|=5.0 < threshold 18.0 [trend=0.0 stable] (bias=neutral)
+🔴 BLOCK: bnbusdc |score|=8.7 < threshold 18.0 [trend=-6.4 diverging] (bias=neutral)
+```
+
+Il trend indica dove sta andando lo score intelligence nel tempo:
+- **converging** → lo score si sta avvicinando a 0 (condizioni che migliorano / peggiorano? dipende dalla direzione)
+- **diverging** → lo score si sta allontanando da 0 (segnale che si rafforza)
+- **stable** → lo score è piatto
+
+#### Ipotesi da verificare
+
+Con soglia 10.0 i trade passeranno. L'obiettivo è verificare se il `trend` al momento dell'apertura è predittivo dell'outcome:
+
+| Trend | Ipotesi | Azione suggerita |
+|-------|---------|-----------------|
+| `converging` verso BUY | Il segnale sta diventando più forte, probabile trade positivo | Nessun filtro extra |
+| `converging` verso SELL | Il segnale si sta indebolendo, trade rischioso | Aggiungere filtro "no trade se trend diverging dalla direzione del trade" |
+| `diverging` | Il segnale si sta indebolendo, trade rischioso | Richiedere score più alto (soglia +20%) o bloccare |
+| `stable` | Scenario neutro, dipende tutto dal tecnico | Nessun filtro extra |
+
+#### Fasi
+
+##### Fase 1 — Raccogliere dati (dopo TASK-887, 1-2 sessioni)
+
+1. Avviare sessioni con soglia 10.0 e Haiku come supervisor
+2. Per ogni trade aperto, loggare:
+   - `score` al momento dell'apertura
+   - `trend` (converging/diverging/stable)
+   - `trend_direction` (verso BUY o verso SELL)
+   - `outcome` del trade (pnl positivo/negativo)
+   - `ta_score` al momento dell'apertura
+
+Formato log suggerito:
+```
+[TRADE_ANALYSIS] score=-3.4 trend=+4.8 converging trend_dir=BUY ta_score=2 outcome=POSITIVE
+[TRADE_ANALYSIS] score=-6.4 trend=-3.1 diverging trend_dir=SELL ta_score=0 outcome=NEGATIVE
+```
+
+**File da modificare:** `synthtrade/backend/app/scalping/router.py` — aggiungere log nel punto in cui il trade viene aperto (dopo la decisione di eseguire)
+
+##### Fase 2 — Analizzare correlazione trend/outcome
+
+Script standalone per analizzare i log raccolti:
+```python
+# scripts/analyze_trend_outcome.py
+# Legge i log con [TRADE_ANALYSIS]
+# Calcola:
+# - Win rate per convergente vs divergente vs stable
+# - Win rate per trend_dir=BUY vs trend_dir=SELL
+# - Correlazione tra |trend| e pnl medio
+```
+
+**Output atteso:**
+```
+Trend converge BUY:   12 trade, 9 win (75%)
+Trend converge SELL:  8 trade, 3 win (37%)  ← potenziale filtro
+Trend diverge:        5 trade, 1 win (20%)  ← potenziale blocco
+Trend stable:         15 trade, 8 win (53%)
+```
+
+##### Fase 3 — Implementare filtro (se confermato dai dati)
+
+Se la Fase 2 mostra che trend diverging o converge-SELL hanno win rate significativamente più basso:
+
+**Opzione A — Blocco in SignalAggregator:**
+```python
+# In signal_aggregator.py, dopo il check threshold
+if trend_direction == "SELL" and trend == "converging":
+    block_reason = f"trend converging verso SELL (score {score} -> 0)"
+    return False, block_reason
+```
+
+**Opzione B — Segnale debolezza nel context supervisor:**
+```python
+# In supervisor_context.py, aggiungere al prompt
+"Trend score: {trend} ({trend_direction}) - convergenza verso 0 = segnale che si indebolisce"
+```
+
+**Opzione C — Soglia dinamica per trend diverging:**
+```python
+# In signal_aggregator.py
+if trend == "diverging":
+    effective_threshold = current_threshold * 1.3  # +30% più severo
+```
+
+#### Metriche di successo
+
+- Dopo Fase 1: almeno 20 trade raccolti con metadati trend
+- Dopo Fase 2: differenza statisticamente significativa (>10%) tra win rate converging vs diverging
+- Dopo Fase 3: win rate complessivo migliorato del 5-10% rispetto a prima del filtro
+
+#### Rischi
+
+- Campione troppo piccolo per conclusioni statistiche (BNBUSDC in ranging fa pochi trade)
+- Il trend potrebbe essere rumoroso (calcolato su finestra mobile di 5-10 minuti)
+- Correlazione non implica causalità: il trend potrebbe essere proxy di altre variabili
+
+---
+
 ### TASK-DEPLOY-001 — Configurazione Deployment Piattaforme (2026-06-25)
 
-**Status:** Phase 1 Complete (File config + push), Phase 2-9 Pending (Platform setup)
-**Priorità:** ALTA — Deploy produzione su GitHub Pages + Render
-**Stima:** 4-6 ore
-**Ultimo aggiornamento:** 2026-06-25 (commit 4dfd70b)  
-**URL Render confermato:** https://synthtrade.onrender.com
-**File coinvolti:** `angular.json`, `package.json`, `proxy.conf.json`, `environment.prod.ts`, `.github/workflows/deploy-frontend.yml`, `render.yaml`, `main.py`
+**Status:** ❌ FALLITO - Blocco Binance su server americani
+**Motivo fallimento:** Render (e altre piattaforme PaaS americane) non possono connettersi a Binance API a causa del geo-blocco. L'unico modo per andare online è utilizzare una VPS europea.
+**Priorità:** N/A — Archiviato
+**Ultimo aggiornamento:** 2026-06-26
+**Nota:** Questo task è stato archiviato per evitare di perdere tempo su questo argomento. L'architettura proposta (GitHub Pages + Render) non è fattibile per il caso d'uso di SynthTrade (connessione a Binance API).
 
-**Architettura target:**
+**Architettura target originale (non realizzabile):**
 - Frontend: GitHub Pages (hosting statico gratuito)
 - Backend: Render (free tier con keep-alive UptimeRobot)
 - Database: Supabase (già in uso)
 - Keep-alive: UptimeRobot ping /health endpoint ogni 5 min
 
----
+**Soluzione alternativa necessaria:**
+- Backend: VPS europea (es: Hetzner, DigitalOcean, AWS EU region)
+- Frontend: GitHub Pages o stesso VPS
+- Database: Supabase (già in uso)
 
-### ✅ PASSI GIÀ ESEGUITI
-
-#### 1. Environment Production Configuration ✅
-- [x] Creato segnaposto URL backend in `environment.prod.ts`
-- [x] Aggiunta variabile `RENDER_BACKEND_URL` in `.env.example`
-- [x] Commit e push modifiche
-
-#### 2. Configurazione File Frontend ✅
-- [x] Aggiornato `angular.json` con `baseHref: "/synthtrade-ui/"`
-- [x] Aggiunto script deploy in `package.json`
-- [x] Aggiornato `proxy.conf.json` per produzione (Render backend)
-- [x] Aggiornato `environment.prod.ts` con URL Render backend
-
-#### 3. GitHub Actions Workflow ✅
-- [x] Creata directory `.github/workflows/`
-- [x] Creato file `.github/workflows/deploy-frontend.yml`
-- [x] Configurato trigger su push branch main con path filtering
-- [x] Setup Node.js v20 con cache npm
-- [x] Configurato build Angular app e deploy Pages
-
-#### 4. Configurazione Render ✅
-- [x] Creato file `render.yaml` nella root del progetto
-- [x] Configurato servizio web Python con tutte le environment variables
-- [x] Configurato health check path `/health`
-
-#### 5. Configurazione CORS ✅
-- [x] Aggiornato `config.py` con CORS origins per sviluppo e produzione
-- [x] Aggiornato `main.py` per usare `settings.cors_origins_list`
-- [x] Aggiornato `.env.example` con CORS origins
-- [x] Commit e push modifiche commit ee21ba7
-- [x] GitHub Actions workflow triggerato da push commit ee21ba7
+**Nota archiviazione:** Tutti i file di configurazione creati per questo tentativo (render.yaml, GitHub Actions workflow, etc.) sono stati mantenuti nel repository per riferimento futuro, ma non verranno utilizzati.
 
 ---
 
-### 📝 NOTE TECNICHE - File .env.example
+## 🗄️ Archivio
 
-**Perché è stato modificato `.env.example` invece di `.env`:**
+Task completati, cancellati o falliti che non sono più attivi.
 
-Il file `.env.example` serve come **template/template di esempio** per:
-1. Documentare tutte le variabili d'ambiente necessarie
-2. Fornire un template per nuovi sviluppatori
-3. Servire come riferimento per la configurazione su piattaforme esterne (Render, etc.)
-4. Essere committato su Git (sicuro perché contiene solo placeholder)
+### TASK-DEPLOY-001 — Configurazione Deployment Piattaforme (2026-06-25) ❌ FALLITO
 
-Il file `.env` (senza .example) contiene i **valori reali** (API keys, secrets) e:
-- **NON deve mai essere committato** su Git (è in .gitignore)
-- Contiene le credenziali reali in produzione
-- Viene usato localmente per lo sviluppo
-
-**Modifiche apportate a `.env.example`:**
-- Aggiunto `CORS_ORIGINS=http://localhost:4208,https://otto78.github.io,https://synthtrade.onrender.com`
-- Questo documento la configurazione CORS richiesta per deploy
-
-**Modifiche apportate a `.env` locale:**
-- ✅ Aggiunto `CORS_ORIGINS=http://localhost:4208,https://otto78.github.io,https://synthtrade.onrender.com`
-- Abilita sviluppo locale + test frontend produzione + test backend Render
-
-**NOTA IMPORTANTE:** Per configurare Render, le environment variables vanno inserite **direttamente nella dashboard Render**, non tramite file .env. Il `.env.example` serve solo come riferimento di quali variabili configurare.
-
----
-
-### ⏳ PASSI DA ESEGUIRE SOLO SULLE PIATTAFORME ESTERNE
-
-#### FASE 6: Configurazione GitHub Pages (Manuale)
-
-**6.1 Abilitare GitHub Pages nel repository**
-- [ ] Vai su Settings → Pages
-- [ ] Source: GitHub Actions
-- [ ] Verificare che il workflow possa gestire il deploy
-
-**6.2 Configurare custom domain (opzionale)**
-- [ ] Aggiungere record DNS CNAME se richiesto
-- [ ] Configurare in GitHub Pages settings
-
----
-
-#### FASE 7: Backend Deployment su Render (Manuale)
-
-**7.1 Creare servizio su Render**
-- [ ] Accedere a render.com e creare account
-- [ ] Connettere repository GitHub: `otto78/Synthtrade`
-- [ ] Usare il file `render.yaml` per configurazione automatica
-- [ ] ✅ URL del backend confermato: `https://synthtrade.onrender.com`
-
-**7.2 Configurare environment variables su Render**
-- [ ] Configurare variabili Supabase (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`)
-- [ ] Configurare variabili Binance (`BINANCE_API_KEY`, `BINANCE_SECRET_KEY`, ecc.)
-- [ ] Configurare variabili AI (`AI_API_KEY`, ecc.)
-- [ ] Verificare che `CORS_ORIGINS` includa URL GitHub Pages
-
----
-
-#### FASE 8: Configurazione UptimeRobot (Manuale)
-
-**8.1 Setup UptimeRobot**
-- [ ] Accedere a uptimerobot.com
-- [ ] Creare nuovo monitor HTTPS
-- [ ] URL: `https://synthtrade.onrender.com/health`
-- [ ] Interval: 5 minuti (per evitare spin-down)
-- [ ] Configurare alert contacts
-
----
-
-#### FASE 9: Test e Verifica (Manuale)
-
-**9.1 Test deploy frontend**
-- [x] Push su GitHub per triggerare workflow (commit ee21ba7)
-- [ ] Verificare deploy su GitHub Pages
-- [ ] Testare accesso frontend: `https://otto78.github.io/synthtrade-ui/`
-
-**9.2 Test backend**
-- [ ] Testare health endpoint: `curl https://synthtrade.onrender.com/health`
-- [ ] Verificare risposta: `{"status": "ok"}`
-
-**9.3 Test integrazione**
-- [ ] Testare WebSocket connection dal frontend
-- [ ] Verificare che API calls funzionino
-- [ ] Testare login e funzionalità base
-- [ ] Configurare build Angular app
-- [ ] Configurare Pages deployment
-
----
-
-#### FASE 3: Configurazione Backend per Render
-
-**3.1 Creare `render.yaml`**
-- [ ] Creare file `render.yaml` nella root del progetto
-- [ ] Configurare servizio web Python
-- [ ] Runtime: Python 3.11.0
-- [ ] Build command: `cd synthtrade/backend && pip install -r requirements.txt`
-- [ ] Start command: `cd synthtrade/backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-- [ ] Configurare environment variables (Supabase, Binance, AI, CORS, etc.)
-- [ ] Health check path: `/health`
-
----
-
-#### FASE 4: Configurazione CORS e Proxy Frontend
-
-**4.1 Aggiornare `proxy.conf.json` per produzione**
-- [ ] Aggiornare target per `/api/*` → `https://synthtrade-backend.onrender.com`
-- [ ] Aggiornare target per `/ws` → `wss://synthtrade-backend.onrender.com`
-- [ ] Impostare `secure: true` per entrambi
-
-**4.2 Aggiornare `environment.prod.ts`**
-- [ ] Sostituire `https://RENDER_BACKEND_URL_HERE` con URL reale dopo deploy backend
-- [ ] Configurare `apiUrl` e `wsUrl` corretti
-
-**4.3 Aggiornare backend CORS in `main.py`**
-- [ ] Attualmente `allow_origins=["*"]` - da aggiornare con URL specifici
-- [ ] Aggiungere URL GitHub Pages: `https://[YOUR_USERNAME].github.io`
-- [ ] Aggiungere dominio personalizzato se presente
-
----
-
-#### FASE 5: Configurazione UptimeRobot
-
-**5.1 Setup UptimeRobot**
-- [ ] Accedere a uptimerobot.com
-- [ ] Creare nuovo monitor HTTPS
-- [ ] URL: `https://synthtrade-backend.onrender.com/health`
-- [ ] Interval: 5 minuti (per evitare spin-down)
-- [ ] Configurare alert contacts
-
-**5.2 Verifica keep-alive**
-- [ ] Verificare che endpoint `/health` risponda con JSON status
-- [ ] Confermare che UptimeRobot mantenga il backend attivo
-
----
-
-#### FASE 6: Configurazione GitHub Pages
-
-**6.1 Abilitare GitHub Pages nel repository**
-- [ ] Vai su Settings → Pages
-- [ ] Source: GitHub Actions
-- [ ] Verificare che il workflow possa gestire il deploy
-
-**6.2 Configurare custom domain (opzionale)**
-- [ ] Aggiungere record DNS CNAME se richiesto
-- [ ] Configurare in GitHub Pages settings
-
----
-
-#### FASE 7: Backend Environment Variables su Render
-
-**7.1 Variabili da configurare manualmente su Render**
-- [ ] Creare servizio su Render usando `render.yaml`
-- [ ] Configurare variabili Supabase (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`)
-- [ ] Configurare variabili Binance (`BINANCE_API_KEY`, `BINANCE_SECRET_KEY`, ecc.)
-- [ ] Configurare variabili AI (`AI_API_KEY`, ecc.)
-- [ ] Aggiornare `CORS_ORIGINS` con URL GitHub Pages dopo deploy frontend
-
----
-
-#### FASE 8: Test e Verifica
-
-**8.1 Test locale del build**
-- [ ] Eseguire `npm run build:prod` in `synthtrade/frontend/synthtrade-ui`
-- [ ] Verificare che il build funzioni correttamente
-
-**8.2 Test health endpoint**
-- [ ] Testare `curl https://synthtrade-backend.onrender.com/health`
-- [ ] Verificare risposta: `{"status": "ok"}`
-
-**8.3 Test WebSocket**
-- [ ] Testare connessione WebSocket nel browser console
-- [ ] Verificare che `wss://synthtrade-backend.onrender.com/ws` funzioni
-
----
-
-### 📋 CHECKLIST FILE DA CREARE/MODIFICARE
-
-- [x] `angular.json` - aggiornare baseHref ✅
-- [x] `package.json` - aggiungere script deploy ✅
-- [x] `proxy.conf.json` - aggiornare URL backend ✅
-- [x] `environment.prod.ts` - aggiornare con URL reale ✅
-- [x] `.github/workflows/deploy-frontend.yml` - creare workflow ✅
-- [x] `render.yaml` - creare configurazione Render ✅
-- [x] `main.py` - aggiornare CORS_ORIGINS ✅
-- [x] `config.py` - aggiornare CORS_ORIGINS ✅
-- [x] `.env.example` - aggiornare CORS_ORIGINS ✅
-
-### 🔧 CONFIGURAZIONI ESTERNE
-
-- [x] Aggiornare `.env` locale con CORS_ORIGINS completo ✅
-- [ ] Abilitare GitHub Pages (Settings → Pages → GitHub Actions)
-- [ ] Configurare UptimeRobot per /health endpoint
-- [ ] Creare servizio su Render con render.yaml
-- [ ] Configurare environment variables su Render
-- [ ] Aggiornare CORS_ORIGINS su Render con URL GitHub Pages
-
-### 🚀 ORDINE DI ESECUZIONE
-
-- [x] 1. Configurare GitHub Pages (Settings → Pages → GitHub Actions) ✅
-- [x] 2. Creare/Modificare file frontend (angular.json, package.json, proxy.conf.json) ✅
-- [x] 3. Creare GitHub Actions workflow ✅
-- [x] 4. Push su GitHub per testare deploy frontend ✅ (commit ee21ba7)
-- [x] 5. Creare render.yaml ✅
-- [ ] 6. Abilitare GitHub Pages nel repository
-- [ ] 7. Deploy backend su Render
-- [ ] 8. Configurare environment variables su Render
-- [ ] 9. Configurare UptimeRobot con URL backend /health
-- [ ] 10. Test completo integrazione
+**Status:** Archiviato - Fallito per blocco Binance su server americani
+**Motivo:** Render (e altre piattaforme PaaS americane) non possono connettersi a Binance API a causa del geo-blocco.
+**Soluzione alternativa:** Utilizzare una VPS europea per il backend.
+**Data archiviazione:** 2026-06-26

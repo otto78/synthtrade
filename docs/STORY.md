@@ -4,6 +4,29 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.3.5 — 2026-06-26
+
+**Milestone:** Archiviazione piano deploy Render - Blocco Binance su server americani
+
+**Completato:**
+- ❌ TASK-DEPLOY-001 archiviato come FALLITO
+- ❌ Pianificato deploy su Render (e altre piattaforme PaaS americane) non realizzabile
+- ❌ Blocco Binance API su server con IP americani impedisce funzionamento backend
+- ✅ Documentazione aggiornata in TASKS.md (archivio)
+- ✅ Soluzione alternativa identificata: VPS europea necessaria
+
+**Motivo fallimento:**
+- Render (e altre piattaforme PaaS americane) non possono connettersi a Binance API
+- Il geo-blocco di Binance blocca le connessioni da IP americani
+- L'unico modo per andare online è utilizzare una VPS europea
+
+**File modificati:**
+- `docs/TASKS.md` — TASK-DEPLOY-001 marcato come fallito e spostato in archivio
+
+**Nota:** I file di configurazione creati per il tentativo (render.yaml, GitHub Actions workflow, etc.) sono stati mantenuti nel repository per riferimento futuro.
+
+---
+
 ### v1.3.4 — 2026-06-25
 
 **Milestone:** GitHub Pages fix - Correzione path artifact

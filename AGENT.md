@@ -284,6 +284,6 @@ Read `docs/HANDOFF.md` for last session notes. / Leggi `docs/HANDOFF.md` per not
 
 ---
 
-**Version**: 1.3.5  
+**Version**: 1.1.0  
 **Last updated**: 2026-06-26  
 **Framework**: loom v1.0

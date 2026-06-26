@@ -897,6 +897,31 @@ Motore di backtest per validare le strategie scalping su dati storici prima del 
 4. `ReportGenerator` in `app/scalping/backtest/report_generator.py`: report JSON con confronto with/without intelligence.
 5. Modelli Pydantic: `BacktestConfig`, `BacktestResult`, `SimulatedTrade`.
 6. Endpoint `POST /scalping/backtest/run` e `GET /scalping/backtest/{id}/result`.
+
+---
+
+## ❌ Task Falliti / Abbandonati
+
+### TASK-DEPLOY-001 — Configurazione Deployment Piattaforme (2026-06-25)
+**Status:** ❌ FALLITO
+**Completato:** 2026-06-26 (archiviato)
+**Motivo:** Blocco Binance su server americani
+
+**Descrizione:**
+Piano di deploy su GitHub Pages + Render fallito a causa del geo-blocco di Binance su server con IP americani. Render e altre piattaforme PaaS americane non possono connettersi a Binance API.
+
+**Architettura target (non realizzabile):**
+- Frontend: GitHub Pages (hosting statico gratuito)
+- Backend: Render (free tier con keep-alive UptimeRobot)
+- Database: Supabase (già in uso)
+- Keep-alive: UptimeRobot ping /health endpoint ogni 5 min
+
+**Soluzione alternativa necessaria:**
+- Backend: VPS europea (es: Hetzner, DigitalOcean, AWS EU region)
+- Frontend: GitHub Pages o stesso VPS
+- Database: Supabase (già in uso)
+
+**Nota:** Tutti i file di configurazione creati per questo tentativo (render.yaml, GitHub Actions workflow, etc.) sono stati mantenuti nel repository per riferimento futuro, ma non verranno utilizzati.
 7. 10+ test su sequenze candele mock - tutti passanti.
 
 ---

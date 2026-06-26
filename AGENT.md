@@ -7,59 +7,56 @@
 
 ---
 
-## What is {PROJECT_NAME} / Cos'è {PROJECT_NAME}
+## What is SynthTrade / Cos'è SynthTrade
 
-{Brief description of your project — what problem it solves, who uses it, and why it matters.}
-{Breve descrizione del progetto — quale problema risolve, chi lo usa, perché è importante.}
+SynthTrade è una piattaforma di trading algoritmico che utilizza AI per analizzare i mercati finanziari e eseguire strategie di scalping automatizzate. Il sistema integra LLM per valutazione di pipeline e decisioni di supervisione.
 
-**Stack**: {Language / Framework / Database / Hosting}  
-**Principle**: {Your core architectural principle — e.g., "Business logic in services, not controllers"}
-{Il tuo principio architetturale — es: "Logica di business nei servizi, non nei controller"}
+**Stack**: Python 3.11 / FastAPI / PostgreSQL / Supabase / Angular  
+**Principle**: Service-oriented architecture con separazione chiara tra logica di business e presentation layer
 
 ---
 
 ## Tech Stack / Stack Tecnologico
 
 ### Backend / Frontend / Core
-- **Language**: {e.g., Python 3.11, TypeScript 5.0, Rust}
-- **Framework**: {e.g., FastAPI, React, Express}
-- **Database**: {e.g., PostgreSQL, MongoDB, SQLite}
-- **Auth**: {e.g., JWT, OAuth2, Session-based}
-- **Validation**: {e.g., Pydantic, Zod, Joi}
+- **Language**: Python 3.11 (backend), TypeScript 5.0 (frontend)
+- **Framework**: FastAPI (backend), Angular (frontend)
+- **Database**: PostgreSQL via Supabase
+- **Auth**: Supabase Auth
+- **Validation**: Pydantic (backend), TypeScript interfaces (frontend)
 
 ### Testing
-- **Framework**: {e.g., pytest, Jest, vitest}
-- **Coverage**: {Aim for X%}
+- **Framework**: pytest (backend), Jest (frontend)
+- **Coverage**: Aim for 80%+
 
 ### Infrastructure
-- **Hosting**: {e.g., Render, Vercel, AWS}
-- **CI/CD**: {e.g., GitHub Actions, GitLab CI}
+- **Hosting**: Supabase (database), Custom hosting (application)
+- **CI/CD**: GitHub Actions
 - **Secrets**: `.env` (never commit / mai committare)
 
-### AI Layer (Optional / Opzionale)
-- **Orchestration**: {e.g., LangGraph, custom orchestrator}
-- **LLM Gateway**: {e.g., LiteLLM, direct API}
-- **STT**: {e.g., Whisper, self-hosted}
-- **Browser Automation**: {e.g., Playwright, Selenium}
-- **MCP**: {Model Context Protocol configuration}
+### AI Layer
+- **Orchestration**: Custom supervisor AI system
+- **LLM Gateway**: OpenRouter
+- **LLM Models**: Claude Haiku 4.5, Claude Sonnet 4.5, GPT-4o-mini
+- **MCP**: Supabase MCP server integration
 
-### Channels / Canali (Optional / Opzionale)
-- **Primary**: {e.g., WhatsApp, Telegram, Web}
-- **Secondary**: {e.g., Mobile App, Email}
+### Channels / Canali
+- **Primary**: Web application
+- **Secondary**: TBD
 
 ### Extended Infrastructure / Infrastruttura Estesa
-- **Container**: {e.g., Docker, Kubernetes}
-- **Monitoring**: {e.g., Grafana, Prometheus}
-- **GPU**: {e.g., RunPod, Lambda Labs}
+- **Container**: Docker (planned)
+- **Monitoring**: TBD
+- **GPU**: Not required (cloud LLM inference)
 
 ---
 
 ## Project Structure / Struttura Progetto
 
 ```
-{project-name}/
+synthtrade/
 ├── AGENT.md                    ← this file (source of truth / fonte di verità)
-├── PROJECT.md                  ← project description / descrizione progetto
+├── AGENTS.md                   ← cross-tool configuration
 ├── docs/
 │   ├── TASKS.md                ← task tracking / tracciamento task
 │   ├── BACKLOG.md              ← future ideas / idee future
@@ -67,12 +64,29 @@
 │   ├── CHANGELOG.md            ← version changelog / changelog versioni
 │   └── HANDOFF.md              ← agent handoff notes / note passaggio agente
 │
-├── src/  # or /app, /lib, etc.
-│   ├── main.{ext}              ← app entry point / punto ingresso
-│   └── ...
+├── backend/
+│   ├── app/
+│   │   ├── api/                ← API endpoints
+│   │   ├── config.py           ← configuration and environment variables
+│   │   ├── db/
+│   │   │   └── repositories/   ← database repositories
+│   │   ├── services/           ← business logic services
+│   │   └── scalping/
+│   │       └── supervisor/     ← supervisor AI implementation
+│   └── init_supervisor_models.py ← initialization script
 │
-├── tests/                      ← test files / file di test
-├── loom/                       ← loom framework
+├── frontend/
+│   └── synthtrade-ui/
+│       └── src/
+│           ├── app/
+│           │   ├── core/
+│           │   │   ├── models/ ← TypeScript models
+│           │   │   └── services/ ← API services
+│           │   └── pages/      ← Angular pages
+│
+├── supabase/
+│   └── migrations/             ← database migrations
+│
 └── .env                        ← secrets (never commit / mai committare)
 ```
 
@@ -201,17 +215,26 @@ Se una direttiva o configurazione è usata sia da file locali (`directives/*.md`
 
 ## Project-Specific Rules / Regole Specifiche Progetto
 
-### {Domain 1 — e.g., API Design / Design API}
-- {Rule 1}
-- {Rule 2}
+### LLM Model Configuration
+- **OpenRouter IDs**: Usare sempre ID completi OpenRouter (es: `anthropic/claude-haiku-4.5`), non nomi corti
+- **Use_case**: Configurare modelli per use_case specifici (`pipeline_eval`, `supervisor`)
+- **Default behavior**: Se use_case non specificato, default a 'pipeline_eval' per retrocompatibilità
+- **Supervisor models**: Il supervisor deve avere sempre un primary e un fallback model configurati
 
-### {Domain 2 — e.g., Database}
-- {Rule 1}
-- {Rule 2}
+### Database Migrations
+- Eseguire le migrations via Supabase dashboard o CLI
+- Verificare sempre le migrations in ambiente di test prima di produzione
+- DROP INDEX è accettabile se immediatamente ricreato
 
-### {Domain 3 — e.g., Testing}
-- {Rule 1}
-- {Rule 2}
+### API Design
+- Tutte le API devono supportare use_case come parametro opzionale
+- Seguire il pattern Repository → Service → API
+- Validare input con Pydantic models
+
+### Frontend
+- Usare TypeScript interfaces per tipi complessi
+- Seguire il pattern Model → Service → Page
+- Filtrare automaticamente per use_case nella UI
 
 ---
 

@@ -4,6 +4,28 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.3.7 — 2026-06-29
+
+**Milestone:** Fix Pylance + SessionLogHandler summary
+
+**Completato:**
+- ✅ Fix Pylance error: `_signal_log_id` possibly unbound in `router.py`
+- ✅ Fix `SessionLogHandler._analyze()`: wrong key path `analysis["pipeline_decisions"]` → `analysis["trades"]["pipeline_decisions"]`
+- ✅ Session Analysis Summary spostato all'inizio del dump log (prima delle entry di log)
+
+**Dettagli TASK-887:**
+- `supervisor_client.py`: usa `service.create_model_client(use_case="supervisor")`
+- `llm_model_service.py`: handling dedicato per use_case "supervisor"
+- `config.py`: cascade configurata con Haiku 4.5 primario, Sonnet fallback
+- Costo prevedibile (~€0.09/giorno) per decisioni su capitale reale
+
+**File modificati:**
+- `docs/TASKS.md` — rimossi 69 task completati, corretto ID duplicati
+- `docs/ARCHIVE_TASKS.md` — aggiunta sezione con TASK-887 e task fee reali
+- `docs/STORY.md` — aggiunta versione v1.3.6
+
+---
+
 ### v1.3.5 — 2026-06-26
 
 **Milestone:** Archiviazione piano deploy Render - Blocco Binance su server americani

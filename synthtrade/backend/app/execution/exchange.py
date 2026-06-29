@@ -2,6 +2,7 @@ import asyncio
 import ccxt.async_support as ccxt
 from typing import Protocol, Dict, Any, List, Literal, Optional, cast
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,8 @@ class BinanceExchangeAdapter:
         self._filters_cache = {}
         self._symbol_cache = {}
         self._macro_cache = {"timestamp": 0.0, "data": {}}
+        self._price_cache: Dict[str, Dict[str, Any]] = {}
+        self._price_cache_ttl = 15  # seconds
 
     async def close(self):
         await self.client.close()
@@ -115,9 +118,23 @@ class BinanceExchangeAdapter:
         return symbol
 
     async def get_ticker_price(self, symbol: str) -> float:
+        now = time.time()
+        cached = self._price_cache.get(symbol)
+        if cached and (now - cached["timestamp"]) < self._price_cache_ttl:
+            return cached["price"]
+
         ccxt_symbol = await self._get_ccxt_symbol(symbol)
-        ticker = await self.client.fetch_ticker(ccxt_symbol)
-        return float(ticker["last"])
+        try:
+            ticker = await self.client.fetch_ticker(ccxt_symbol)
+            price = float(ticker["last"])
+            self._price_cache[symbol] = {"price": price, "timestamp": now}
+            return price
+        except Exception as e:
+            # If fetch fails, return stale cached price if available (better than raising)
+            if cached is not None:
+                logger.warning(f"get_ticker_price({symbol}) fetch failed: {e} — returning stale cached price ({now - cached['timestamp']:.0f}s old)")
+                return cached["price"]
+            raise
 
     async def get_btc_macro_context(self) -> Dict[str, Any]:
         """

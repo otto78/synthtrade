@@ -65,6 +65,7 @@ class ExecutionLoop:
         self._running = False
         self._strategy_overridden: bool = False  # True when supervisor has set a specific strategy
         self._indicators: dict = {}
+        self._last_market_score = None  # ultimo SignalScore calcolato, per accesso dal router
         self.session_id: Optional[str] = None
         self.paper_mode: bool = True  # Default paper — impostato da router al session start
         # Callback per eventi
@@ -191,6 +192,7 @@ class ExecutionLoop:
 
         # 5. Get market intelligence score
         market_score = await self._signal_engine.compute()
+        self._last_market_score = market_score  # esposto al router per logging decisioni
 
         # 6. Log pipeline state
         regime_name = self._current_regime.regime if self._current_regime else "N/A"

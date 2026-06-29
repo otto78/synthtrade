@@ -2,7 +2,7 @@
 
 import asyncio
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock, call
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.scheduler.scalping_jobs import (
@@ -209,11 +209,27 @@ class TestScalpingJobs:
 
     @pytest.mark.asyncio
     async def test_health_job_with_engine(self):
-        """Health job esegue check con engine impostato."""
+        """Health job verifica cheengine e stato siano configurati."""
         set_engine(MagicMock())
+        from app.scalping import router as scalping_router
+        original_state = scalping_router._execution_state
+        scalping_router._execution_state = {
+            "session": {
+                "status": "running",
+                "symbol": "BNBUSDC",
+                "mode": "live",
+            },
+            "ws_client": MagicMock(_running=True),
+            "loop": MagicMock(_candle_buffer=MagicMock(__len__=lambda self: 100)),
+            "ws_tasks": [],
+        }
         with patch("app.scheduler.scalping_jobs.logger") as mock_logger:
             await session_health_job()
-            mock_logger.debug.assert_called_once_with("Session health check: OK")
+            assert mock_logger.debug.call_args_list[-1] == call(
+                "Session health check OK: status=running, symbol=BNBUSDC, "
+                "mode=live, tasks=0, buffer_ready=True"
+            )
+        scalping_router._execution_state = original_state
 
 
 class TestScalpingJobsRegistration:

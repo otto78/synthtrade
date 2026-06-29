@@ -18,33 +18,13 @@ def log_signal_decision(
     decision_type: str,
     decision_reason: Optional[str] = None,
     **context_kwargs
-) -> bool:
+) -> Optional[str]:
     """Logga una decisione su session_signal_log usando DecisionContextExtractor.
-    
-    Args:
-        session_id: ID della sessione
-        symbol: Simbolo trading
-        decision_type: Tipo di decisione (execute, block_conflict, mean_reversion_override, etc.)
-        decision_reason: Motivo della decisione (opzionale)
-        **context_kwargs: Campi contesto (regime, strategy, tech_signal, intel_score, etc.)
-    
+
     Returns:
-        True se loggato con successo, False altrimenti (non-blocking)
-    
-    Example:
-        log_signal_decision(
-            session_id="123",
-            symbol="BTCUSDT",
-            decision_type="execute",
-            regime="ranging",
-            strategy_type="rsi_bollinger",
-            tech_signal="BUY",
-            intel_score=0.75,
-            intel_bias="bullish"
-        )
+        UUID della riga inserita se successo, None altrimenti (non-blocking)
     """
     try:
-        # Normalizza contesto usando DecisionContextExtractor
         ctx = extract_decision_context(
             session_id=session_id,
             symbol=symbol,
@@ -52,25 +32,20 @@ def log_signal_decision(
             decision_reason=decision_reason,
             **context_kwargs
         )
-        
-        # Converti in dict per DB
         db_data = ctx.to_db_dict()
-        
-        # Esegui INSERT su session_signal_log
         supabase = get_supabase()
-        supabase.table("session_signal_log").insert(db_data).execute()
-        
-        logger.debug(f"Decisione loggata su session_signal_log: {decision_type} per sessione {session_id}")
-        return True
-        
+        resp = supabase.table("session_signal_log").insert(db_data).execute()
+        if resp.data:
+            inserted_id = resp.data[0].get("id")
+            logger.debug(f"Decisione loggata su session_signal_log: {decision_type} id={inserted_id}")
+            return inserted_id
+        return None
     except ValueError as e:
-        # Errori di validazione (campi obbligatori mancanti)
         logger.error(f"Errore validazione contesto decisionale (non-blocking): {e}")
-        return False
+        return None
     except Exception as e:
-        # Altri errori (DB, network, etc.)
         logger.error(f"Errore logging decisione su session_signal_log (non-blocking): {e}")
-        return False
+        return None
 
 
 def log_pipeline_decision(

@@ -188,8 +188,8 @@ async def supervisor_check_job() -> None:
 async def session_health_job() -> None:
     """Job: health check sessione scalping.
 
-    Verifica che la sessione scalping sia attiva e che l'engine risponda.
-    Se l'engine non è impostato, logga un warning.
+    Verifica che la sessione scalping sia attiva, che il WS client sia connesso,
+    che il buffer candele riceva dati e che i task principali siano vivi.
     Frequenza: ogni 30 secondi.
     """
     if not settings.scalping.SCALPING_SCHEDULER_HEALTH_ENABLED:
@@ -199,9 +199,53 @@ async def session_health_job() -> None:
             logger.debug("Session health: engine not set (skipping)")
             return
 
-        # Verifica heartbeat engine
-        # (placeholder — in futuro si può estendere con check reali)
-        logger.debug("Session health check: OK")
+        from app.scalping.router import _execution_state
+        session = _execution_state.get("session", {})
+        status = session.get("status", "idle")
+        symbol = session.get("symbol", "N/A")
+        mode = session.get("mode", "N/A")
+
+        checks = {
+            "session_running": status == "running",
+            "symbol_set": symbol != "N/A",
+            "mode_valid": mode in ("paper", "live"),
+        }
+
+        ws_client = _execution_state.get("ws_client")
+        if ws_client:
+            checks["ws_connected"] = not ws_client._stop_event.is_set()
+        else:
+            checks["ws_connected"] = False
+
+        loop = _execution_state.get("loop")
+        if loop:
+            buf = getattr(loop, "_candle_buffer", None)
+            checks["buffer_has_data"] = len(buf) >= 50 if buf else False
+        else:
+            checks["buffer_has_data"] = False
+
+        ws_tasks = _execution_state.get("ws_tasks", [])
+        dead_tasks = [t.get_name() for t in ws_tasks if t.done()]
+        checks["tasks_alive"] = len(dead_tasks) == 0
+
+        failed = [k for k, v in checks.items() if not v]
+        if failed:
+            # Se la sessione è intenzionalmente idle, logga a DEBUG invece di WARNING
+            if status == "idle":
+                logger.debug(
+                    f"Session health: idle (no active session) — {failed} "
+                    f"(symbol={symbol}, mode={mode})"
+                )
+            else:
+                logger.warning(
+                    f"Session health check FAILED: {failed} "
+                    f"(status={status}, symbol={symbol}, mode={mode})"
+                )
+        else:
+            logger.debug(
+                f"Session health check OK: status={status}, symbol={symbol}, "
+                f"mode={mode}, tasks={len(ws_tasks)}, buffer_ready={checks['buffer_has_data']}"
+            )
     except Exception as e:
         logger.error(f"Session health job error: {e}")
 

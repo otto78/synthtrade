@@ -51,6 +51,12 @@ from app.scalping.session_load_guard import SessionLoadGuard
 from app.scalping.config_loader import get_scalping_config
 from app.core.logging import SessionContextFilter
 from app.core.session_log_handler import SessionLogHandler
+from app.core.signal_log_writer import (
+    log_signal_decision,
+    log_block_decision,
+    log_hold_decision,
+    log_execution_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +103,73 @@ _execution_state: Dict[str, Any] = {
 
 # WebSocket connections
 _scalping_ws_connections: List[WebSocket] = []
+
+
+# ── Cache locale per conversione commissione BNB ──────────────────────────
+# Previene il flood di chiamate API quando Binance è rate-limited.
+# Il prezzo BNB/USDC viene aggiornato ogni 60s massimo.
+_bnb_price_cache: Dict[str, Any] = {"price": 0.0, "timestamp": 0.0}
+_bnb_price_cache_ttl = 60  # secondi — più lungo del TTL di get_ticker_price (15s)
+
+# ── Log throttling: evita flood di warning identici ──────────────────────
+# Traccia l'ultimo messaggio di warning per contesto, e sopprime duplicati
+# ravvicinati (< 10s dallo stesso contesto).
+_last_warning: Dict[str, float] = {}
+_warning_throttle_sec = 10.0
+
+def _throttled_warning(msg: str, key: str = "") -> None:
+    """Emette un warning solo se non è già stato emesso negli ultimi N secondi."""
+    import time
+    now = time.time()
+    throttle_key = key or msg[:80]
+    last = _last_warning.get(throttle_key, 0.0)
+    if now - last >= _warning_throttle_sec:
+        logger.warning(msg)
+        _last_warning[throttle_key] = now
+    else:
+        logger.debug(f"[THROTTLED] {msg}")
+
+
+async def _convert_bnb_commission_to_usdc(exchange, bnb_amount: float, context: str = "") -> float:
+    """Convert BNB commission to USDC using exchange ticker price.
+
+    Uses a local cache (60s TTL) to minimize API calls.
+    Falls back to last known cached price if fetch fails, then to fee-tier estimate.
+    Log throttling prevents flood of identical warnings during rate limiting.
+    """
+    import time
+    global _bnb_price_cache
+    now = time.time()
+
+    # Try to fetch fresh price (get_ticker_price has its own 15s cache)
+    bnb_price = None
+    try:
+        bnb_price = await exchange.get_ticker_price("BNBUSDC")
+        _bnb_price_cache = {"price": bnb_price, "timestamp": now}
+    except Exception as e:
+        # Use local cache if available (60s TTL)
+        if now - _bnb_price_cache["timestamp"] < _bnb_price_cache_ttl and _bnb_price_cache["price"] > 0:
+            bnb_price = _bnb_price_cache["price"]
+            _throttled_warning(
+                f"{context}failed to fetch BNB price: {e} — using cached price ({bnb_price})",
+                key=f"bnb_price_fetch_{context}"
+            )
+        else:
+            _throttled_warning(
+                f"{context}failed to convert {bnb_amount} BNB to USDC: {e} — using fee-tier estimate",
+                key=f"bnb_conv_fail_{context}"
+            )
+
+    if bnb_price is not None and bnb_price > 0:
+        usdc_value = bnb_amount * bnb_price
+        logger.debug(f"{context}converted {bnb_amount} BNB to {usdc_value:.4f} USDC @ {bnb_price}")
+        return usdc_value
+
+    # Ultimate fallback: fee-tier estimate
+    fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+    entry_fee_rate = fee_tier.get("taker", 0.001)
+    entry_val = float(_execution_state.get("session", {}).get("live_balance", 0))
+    return entry_val * entry_fee_rate if entry_val > 0 else 0.0
 
 # ---------------------------------------------------------------------------
 # WebSocket endpoint
@@ -227,6 +300,15 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _enrich_session_with_threshold(session_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Add signal_strength_threshold to a session dict (if it's a copy)."""
+    try:
+        session_data["signal_strength_threshold"] = get_scalping_config().signal_strength_threshold
+    except Exception:
+        session_data["signal_strength_threshold"] = None
+    return session_data
+
+
 def _sync_session_load_guard() -> None:
     guard = _execution_state.get("session_load_guard")
     if guard:
@@ -285,28 +367,39 @@ async def _refresh_session_balance():
     """Refresh session live_balance from exchange (Spot wallet only)."""
     session = _execution_state["session"]
     if session["mode"] == "live" and _execution_state.get("exchange"):
-        try:
-            adapter = _execution_state["exchange"]
-            symbol = session.get("symbol", "BTCUSDT")
-            filters = await adapter.get_symbol_filters(symbol)
-            quote = filters.get("quoteAsset", "USDT")
+        max_retries = 3
+        retry_delay = 1.0
+        last_error = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                adapter = _execution_state["exchange"]
+                symbol = session.get("symbol", "BTCUSDT")
+                filters = await adapter.get_symbol_filters(symbol)
+                quote = filters.get("quoteAsset", "USDT")
 
-            ccxt_balance = await adapter.client.fetch_balance()
-            spot_balances = _get_spot_balances_from_info(ccxt_balance)
-            normalized_balances = _normalize_binance_total_balance(spot_balances)
-            bal = _select_preferred_quote_balance(normalized_balances, quote)
+                ccxt_balance = await adapter.client.fetch_balance()
+                spot_balances = _get_spot_balances_from_info(ccxt_balance)
+                normalized_balances = _normalize_binance_total_balance(spot_balances)
+                bal = _select_preferred_quote_balance(normalized_balances, quote)
 
-            if bal is None or bal <= 0:
-                logger.warning(
-                    "Session balance refresh found no preferred quote asset balance. Keeping previous live_balance=%s",
-                    session.get("live_balance"),
-                )
-            else:
-                session["live_balance"] = bal
-                logger.info(f"Session balance refreshed: {bal} {quote}")
-                await broadcast_scalping_event("session_restored", session.copy())
-        except Exception as e:
-            logger.warning(f"Balance refresh failed: {e}")
+                if bal is None or bal <= 0:
+                    logger.warning(
+                        "Session balance refresh found no preferred quote asset balance. Keeping previous live_balance=%s",
+                        session.get("live_balance"),
+                    )
+                else:
+                    session["live_balance"] = bal
+                    logger.info(f"Session balance refreshed: {bal} {quote}")
+                    enriched = _enrich_session_with_threshold(session.copy())
+                    await broadcast_scalping_event("session_restored", enriched)
+                return
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Balance refresh attempt {attempt}/{max_retries} failed: {e}")
+                if attempt < max_retries:
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2
+        logger.error(f"Balance refresh failed after {max_retries} attempts: {last_error}")
 
 async def _live_close_position(exchange, pos, qty: float) -> float:
     """Execute live close on exchange: cancel open orders + market sell (with retry).
@@ -427,7 +520,8 @@ async def _live_close_position(exchange, pos, qty: float) -> float:
 
 async def _save_open_position_to_db(pos, db_session_id: str,
                                     tp_price: float = 0.0, sl_price: float = 0.0,
-                                    supervisor_context: Optional[Dict[str, Any]] = None):
+                                    supervisor_context: Optional[Dict[str, Any]] = None,
+                                    signal_log_id: Optional[str] = None):
     """Save opened position to Supabase with status='open' and no exit/pnl yet.
     Called immediately after pm.open_position() to persist the current trade
     so session restore can pick it up after restart.
@@ -457,6 +551,8 @@ async def _save_open_position_to_db(pos, db_session_id: str,
                 "sl_order_id": pos.sl_order_id,
                 "tp_order_id": pos.tp_order_id,
             }
+            if signal_log_id:
+                insert_data["signal_log_id"] = signal_log_id
             if supervisor_context:
                 insert_data.update({
                     "btc_price_at_entry": supervisor_context.get("btc_price_at_entry"),
@@ -740,13 +836,9 @@ async def _on_uds_reconnect_sync():
                 entry_commission = float(pos.entry_commission)
                 # Converti BNB to USDC se necessario
                 if pos.entry_commission_asset == "BNB":
-                    try:
-                        bnb_price = await exchange.get_ticker_price("BNBUSDC")
-                        entry_commission_usdc = entry_commission * bnb_price
-                        logger.debug(f"UDS sync: converted entry commission {entry_commission} BNB to {entry_commission_usdc:.4f} USDC @ {bnb_price}")
-                        entry_commission = entry_commission_usdc
-                    except Exception as e:
-                        logger.warning(f"UDS sync: failed to convert entry commission BNB to USDC: {e}")
+                    entry_commission = await _convert_bnb_commission_to_usdc(
+                        exchange, entry_commission, context="UDS sync: "
+                    )
             else:
                 # Fallback: usa fee tier per entrata (costo atteso)
                 fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
@@ -880,13 +972,9 @@ async def _close_position_and_record(pm, close_price: float, pos, reason: str = 
         entry_commission = float(pos.entry_commission)
         # Converti BNB to USDC se necessario
         if pos.entry_commission_asset == "BNB" and exchange:
-            try:
-                bnb_price = await exchange.get_ticker_price("BNBUSDC")
-                entry_commission_usdc = entry_commission * bnb_price
-                logger.debug(f"Close position: converted entry commission {entry_commission} BNB to {entry_commission_usdc:.4f} USDC @ {bnb_price}")
-                entry_commission = entry_commission_usdc
-            except Exception as e:
-                logger.warning(f"Close position: failed to convert entry commission BNB to USDC: {e}")
+            entry_commission = await _convert_bnb_commission_to_usdc(
+                exchange, entry_commission, context="Close position: "
+            )
     else:
         # Fallback: usa fee tier per entrata (costo atteso)
         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
@@ -938,6 +1026,27 @@ def _check_daily_loss() -> bool:
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     total_pnl = sum(t.get("pnl") or 0.0 for t in _execution_state["trade_history"] if t["timestamp"].startswith(now_str))
     return total_pnl <= -max_loss
+
+
+def _check_drawdown() -> bool:
+    """Return True if max drawdown from peak equity is exceeded."""
+    risk_cfg = _execution_state.get("risk_config", {})
+    max_dd_pct = float(risk_cfg.get("max_drawdown", 10.0))
+    trades = [t for t in _execution_state["trade_history"] if t.get("exit_price") is not None]
+    if not trades:
+        return False
+    base = float(_execution_state["session"].get("paper_balance") or
+                 _execution_state["session"].get("live_balance") or 10000.0)
+    equity = base
+    peak = base
+    for t in trades:
+        equity += (t.get("pnl") or 0.0)
+        if equity > peak:
+            peak = equity
+    if peak <= 0:
+        return False
+    dd_pct = (peak - equity) / peak * 100
+    return dd_pct >= max_dd_pct
 
 async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     """Create BinanceWSClient, connect to Binance, and broadcast candle/trade events
@@ -1171,13 +1280,9 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     # Retrieve the exchange adapter from the execution state (if live mode)
                     exchange = _execution_state.get("exchange")
                     if pos.entry_commission_asset == "BNB" and exchange:
-                        try:
-                            bnb_price = await exchange.get_ticker_price("BNBUSDC")
-                            entry_commission_usdc = entry_commission * bnb_price
-                            logger.debug(f"Position update: converted entry commission {entry_commission} BNB to {entry_commission_usdc:.4f} USDC @ {bnb_price}")
-                            entry_commission = entry_commission_usdc
-                        except Exception as e:
-                            logger.warning(f"Position update: failed to convert entry commission BNB to USDC: {e}")
+                        entry_commission = await _convert_bnb_commission_to_usdc(
+                            exchange, entry_commission, context="Position update: "
+                        )
                 else:
                     # Fallback: usa fee tier per entrata (costo atteso)
                     fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
@@ -1261,6 +1366,11 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 if not pm.has_open():
                     if _check_daily_loss():
                         logger.warning("Max daily loss exceeded. Blocking new mock trade.")
+                        continue
+
+                    if _check_drawdown():
+                        risk_cfg = _execution_state.get("risk_config", {})
+                        logger.warning(f"Max drawdown {risk_cfg.get('max_drawdown', 10)}% exceeded. Blocking new mock trade.")
                         continue
                         
                     quantity = Decimal(str(round(trade_value_usd / close_price, 6)))
@@ -1479,6 +1589,10 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     if decision and decision.execute:
                         pm = _execution_state["position_manager"]
                         
+                        # TASK-894/895: initialize signal_log_id before conditional branching
+                        # to ensure it's always bound when used for DB persistence below
+                        _signal_log_id = None
+                        
                         # ── FIX: If already in position, only allow CLOSE signals ──
                         # This prevents BUY/SELL spam while still allowing supervisor
                         # to update parameters and strategies in background.
@@ -1491,6 +1605,23 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                             )
                         else:
                             logger.info(f">>> DECISION APPROVED -> {decision.reason} | confidence={decision.confidence}")
+                            # TASK-894/895: log decisione execute su session_signal_log, cattura ID per collegamento
+                            _ms = execution_loop._last_market_score
+                            _signal_log_id = await asyncio.to_thread(
+                                log_signal_decision,
+                                session_id=session.get("db_session_id") or session.get("session_id") or "",
+                                symbol=event.symbol.upper(),
+                                decision_type="execute",
+                                decision_reason=decision.reason,
+                                regime=execution_loop._current_regime.regime if execution_loop._current_regime else "unknown",
+                                strategy_type=execution_loop._strategy.name if execution_loop._strategy else "unknown",
+                                tech_signal=decision.signal_type,
+                                tech_confidence=round(abs(decision.confidence), 3),
+                                intel_score=float(_ms.total) if _ms else None,
+                                intel_bias=_ms.bias if _ms else None,
+                                trend_direction=_ms.trend_direction if _ms else None,
+                                trend_value=float(_ms.trend_5m) if _ms and _ms.trend_5m is not None else None,
+                            )
                             # A signal was generated — broadcast it
                             await broadcast_scalping_event("signal", {
                                 "symbol": event.symbol.upper(),
@@ -1521,6 +1652,12 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
 
                             if _check_daily_loss():
                                 logger.warning("Max daily loss exceeded. Blocking new real trade.")
+                                continue
+
+                            if _check_drawdown():
+                                risk_cfg = _execution_state.get("risk_config", {})
+                                logger.warning(f"Max drawdown {risk_cfg.get('max_drawdown', 10)}% exceeded. Blocking new real trade.")
+                                await broadcast_scalping_event("error", {"code": "MAX_DRAWDOWN", "message": f"Max drawdown exceeded. Trading bloccato."})
                                 continue
 
                             # --- COMPILE SUPERVISOR CONTEXT ---
@@ -1670,7 +1807,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     await _save_open_position_to_db(
                                         pos_obj, session.get("db_session_id"),
                                         tp_price=tp_price, sl_price=sl_price,
-                                        supervisor_context=supervisor_context
+                                        supervisor_context=supervisor_context,
+                                        signal_log_id=_signal_log_id,
                                     )
 
                                     # Avvia UDS singleton post-OCO (TASK-827)
@@ -1704,7 +1842,25 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
 
                                     
                                 except Exception as live_e:
-                                    logger.error(f"Live trade failed: {live_e}")
+                                    # TASK-896: log body completo eccezione Binance
+                                    import ccxt
+                                    if isinstance(live_e, ccxt.BaseError):
+                                        error_detail = f"{type(live_e).__name__}: {live_e}"
+                                        if live_e.args and str(live_e) != str(live_e.args[0]):
+                                            error_detail += f" | args={live_e.args}"
+                                    else:
+                                        error_detail = f"{type(live_e).__name__}: {live_e}"
+                                    logger.error(f"Live trade failed: {error_detail}")
+                                    # TASK-894: log execution_error su session_signal_log (non-blocking)
+                                    asyncio.create_task(asyncio.to_thread(
+                                        log_execution_error,
+                                        session_id=session.get("db_session_id") or session.get("session_id") or "",
+                                        symbol=event.symbol.upper(),
+                                        error_message=error_detail,
+                                        regime=execution_loop._current_regime.regime if execution_loop._current_regime else "unknown",
+                                        strategy_type=execution_loop._strategy.name if execution_loop._strategy else "unknown",
+                                        tech_signal=side,
+                                    ))
                                     await broadcast_scalping_event("error", {
                                         "code": "LIVE_TRADE_ERROR",
                                         "message": f"Live trade failed: {live_e}",
@@ -1725,7 +1881,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     sig_p = supervisor_context.get("signal_price")
                                     if sig_p and float(sig_p) > 0:
                                         supervisor_context["slippage_pct"] = round(abs(float(event.close) - sig_p) / sig_p * 100, 4)
-                                await _save_open_position_to_db(pos_obj, session.get("db_session_id"), supervisor_context=supervisor_context)
+                                await _save_open_position_to_db(pos_obj, session.get("db_session_id"), supervisor_context=supervisor_context, signal_log_id=_signal_log_id)
                                 
                                 # Update paper balance to reflect Free Balance
                                 session["paper_balance"] -= float(_trade_val)
@@ -1750,10 +1906,50 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                 await _close_position_and_record(pm, float(candle.close), pos, reason=decision.reason or "signal")
                             else:
                                 logger.info(f">>> HOLD: existing {pos.side} position matches {side} signal")
+                                # TASK-894: log hold su session_signal_log (non-blocking)
+                                _ms = execution_loop._last_market_score
+                                asyncio.create_task(asyncio.to_thread(
+                                    log_hold_decision,
+                                    session_id=session.get("db_session_id") or session.get("session_id") or "",
+                                    symbol=event.symbol.upper(),
+                                    hold_reason=f"existing {pos.side} position matches {side} signal",
+                                    regime=execution_loop._current_regime.regime if execution_loop._current_regime else "unknown",
+                                    strategy_type=execution_loop._strategy.name if execution_loop._strategy else "unknown",
+                                    tech_signal=side,
+                                    intel_score=float(_ms.total) if _ms else None,
+                                    intel_bias=_ms.bias if _ms else None,
+                                    trend_direction=_ms.trend_direction if _ms else None,
+                                    trend_value=float(_ms.trend_5m) if _ms and _ms.trend_5m is not None else None,
+                                ))
 
                     else:
                         reason_str = decision.reason if decision else "decision=None"
                         logger.info(f">>> DECISION REJECTED: {reason_str}")
+                        # TASK-894: log rejected su session_signal_log (non-blocking)
+                        if decision and session.get("db_session_id"):
+                            _ms = execution_loop._last_market_score
+                            # Determina decision_type più specifico dal reason
+                            _dtype = "rejected_other"
+                            if decision.signal_type == "HOLD":
+                                _dtype = "hold_existing_position"
+                            elif decision.reason and "conflitto intelligence-tecnico" in decision.reason:
+                                _dtype = "block_conflict"
+                            elif decision.reason and "MEAN-REVERSION" in decision.reason:
+                                _dtype = "mean_reversion_override"
+                            asyncio.create_task(asyncio.to_thread(
+                                log_signal_decision,
+                                session_id=session.get("db_session_id") or "",
+                                symbol=event.symbol.upper(),
+                                decision_type=_dtype,
+                                decision_reason=decision.reason,
+                                regime=execution_loop._current_regime.regime if execution_loop._current_regime else "unknown",
+                                strategy_type=execution_loop._strategy.name if execution_loop._strategy else "unknown",
+                                tech_signal=decision.signal_type or None,
+                                intel_score=float(_ms.total) if _ms else None,
+                                intel_bias=_ms.bias if _ms else None,
+                                trend_direction=_ms.trend_direction if _ms else None,
+                                trend_value=float(_ms.trend_5m) if _ms and _ms.trend_5m is not None else None,
+                            ))
                 except Exception as e:
                     logger.warning(f"Execution loop processing error: {e}")
                     import traceback
@@ -1779,13 +1975,9 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         # Converti BNB to USDC se necessario
                         exchange = _execution_state.get("exchange")
                         if pos.entry_commission_asset == "BNB" and exchange:
-                            try:
-                                bnb_price = await exchange.get_ticker_price("BNBUSDC")
-                                entry_commission_usdc = entry_commission * bnb_price
-                                logger.debug(f"Position update (loop): converted entry commission {entry_commission} BNB to {entry_commission_usdc:.4f} USDC @ {bnb_price}")
-                                entry_commission = entry_commission_usdc
-                            except Exception as e:
-                                logger.warning(f"Position update (loop): failed to convert entry commission BNB to USDC: {e}")
+                            entry_commission = await _convert_bnb_commission_to_usdc(
+                                exchange, entry_commission, context="Position update (loop): "
+                            )
                     else:
                         # Fallback: usa fee tier per entrata (costo atteso)
                         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
@@ -1924,13 +2116,9 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     # Converti BNB to USDC se necessario
                     exchange = _execution_state.get("exchange")
                     if pos.entry_commission_asset == "BNB" and exchange:
-                        try:
-                            bnb_price = await exchange.get_ticker_price("BNBUSDC")
-                            entry_commission_usdc = entry_commission * bnb_price
-                            logger.debug(f"Trade processor: converted entry commission {entry_commission} BNB to {entry_commission_usdc:.4f} USDC @ {bnb_price}")
-                            entry_commission = entry_commission_usdc
-                        except Exception as e:
-                            logger.warning(f"Trade processor: failed to convert entry commission BNB to USDC: {e}")
+                        entry_commission = await _convert_bnb_commission_to_usdc(
+                            exchange, entry_commission, context="Trade processor: "
+                        )
                 else:
                     # Fallback: usa fee tier per entrata (costo atteso)
                     fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
@@ -2748,7 +2936,7 @@ async def control_session(control: Dict) -> Dict:
         # ── SESSION LOGGING: attach session_id to all logs + start capture ──
         SessionContextFilter.set_session_id(session["session_id"])
         session_log_handler = SessionLogHandler()
-        logging.getLogger().addHandler(session_log_handler)
+        session_log_handler.attach()  # aggancia root + forced logger
         _execution_state["session_log_handler"] = session_log_handler
         logger.info(f"Session log capture started for {session['session_id']}")
 
@@ -2843,9 +3031,9 @@ async def control_session(control: Dict) -> Dict:
                     logger.info(f"Session log content saved to DB for session {db_sid_for_log}")
             except Exception as log_e:
                 logger.warning(f"Failed to save log content to DB: {log_e}")
-        # Remove session log handler from root logger
+        # Remove session log handler from root + forced loggers
         if session_log_handler:
-            logging.getLogger().removeHandler(session_log_handler)
+            session_log_handler.detach()
         # Clear session_id from log context
         SessionContextFilter.set_session_id(None)
 
@@ -2924,7 +3112,12 @@ async def control_session(control: Dict) -> Dict:
             except Exception as e:
                 logger.warning(f"Failed to update session in DB: {e}")
 
-    return session.copy()
+    result = session.copy()
+    try:
+        result["signal_strength_threshold"] = get_scalping_config().signal_strength_threshold
+    except Exception:
+        result["signal_strength_threshold"] = None
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -2973,6 +3166,69 @@ async def download_session_logs(session_id: str) -> Response:
     except Exception as e:
         logger.warning(f"Failed to download session logs: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to download logs: {e}")
+
+
+@router.get("/session/{session_id}/logs/analysis")
+async def get_session_log_analysis(session_id: str) -> Dict:
+    """Restituisce l'analisi strutturata dei log di una sessione in formato JSON.
+
+    Utile per analisi programmatiche e report automatici.
+    Contiene conteggi e metriche estratte dai log raw.
+    """
+    try:
+        supabase = get_supabase()
+        resp = supabase.table("scalping_sessions") \
+            .select("log_content, symbol") \
+            .eq("id", session_id) \
+            .limit(1) \
+            .execute()
+
+        if not resp.data:
+            raise HTTPException(status_code=404, detail="Session not found.")
+
+        row = resp.data[0]
+        log_content = row.get("log_content")
+        if not log_content:
+            raise HTTPException(status_code=404, detail="Log non disponibili per questa sessione.")
+
+        # Parse log lines back into a temporary handler for analysis
+        from app.core.session_log_handler import SessionLogHandler
+
+        # Create a temp handler and replay the log content through it
+        temp_handler = SessionLogHandler()
+        for line in log_content.split("\n"):
+            if line.strip():
+                # Skip header/footer lines
+                if line.startswith("=") or line.startswith(" SESSION LOG DUMP") or \
+                   line.startswith(" Session ID") or line.startswith(" Symbol") or \
+                   line.startswith(" Entries") or line.startswith(" Generated") or \
+                   line.startswith(" SESSION ANALYSIS SUMMARY"):
+                    continue
+                temp_handler._buffer.append(line)
+
+        analysis = temp_handler.get_structured_analysis()
+
+        # Convert Counter objects to dicts for JSON serialization
+        def _clean(obj):
+            if isinstance(obj, dict):
+                return {k: _clean(v) for k, v in obj.items()}
+            elif hasattr(obj, 'most_common'):
+                return dict(obj)
+            elif isinstance(obj, list):
+                return [_clean(i) for i in obj]
+            return obj
+
+        return {
+            "session_id": session_id,
+            "symbol": row.get("symbol", "UNKNOWN"),
+            "analysis": _clean(analysis),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"Failed to analyze session logs: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to analyze logs: {e}")
 
 
 # ---------------------------------------------------------------------------

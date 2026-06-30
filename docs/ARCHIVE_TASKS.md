@@ -2490,3 +2490,53 @@ switchTab(tab: 'logs' | 'trades' | 'scalping'): void {
 
 ### TASK-900 ✅ — Fix drawdown check in produzione
 `router.py`: aggiunta `_check_drawdown()` con calcolo peak equity reale. Check in 2 punti (live + paper). Broadcast `MAX_DRAWDOWN` error al frontend (toast rosso 8s).
+
+---
+
+### TASK-907 — Fix Falso positivo `tasks_alive` e watchdog WS (2026-06-30) ✅
+
+**Status:** Complete ✅
+
+- [x] Non sostituire il `client` a caldo dentro un singolo task
+- [x] Il watchdog deve segnalare alla sessione di fare un restart completo della connessione WebSocket
+- [x] La logica di restart deve cancellare esplicitamente tutti i vecchi task, istanziare il nuovo client, e ri-spawnare tutti i task di ricezione
+
+**File:** `synthtrade/backend/app/scalping/router.py`
+
+---
+
+### TASK-910 — Arricchimento contesto in `supervisor_memory.market_context` (2026-06-30) ✅
+
+**Status:** Complete ✅
+
+- [x] Modificare la firma della funzione `_save_decision_to_memory` in `supervisor_scheduler.py` per accettare gli argomenti opzionali `snapshot`, `score`, `ta_patterns` e `vol_anomaly`
+- [x] Aggiornare le chiamate a questa funzione all'interno del metodo `_tick()`, passandole variabili che vengono già calcolate un attimo prima di chiamare il client AI
+- [x] Arricchire il dizionario `market_context` prima di inviarlo al database
+
+**File:** `synthtrade/backend/app/scalping/supervisor/supervisor_scheduler.py`
+
+---
+
+### TASK-908 — Fix troncamento log eccezioni CCXT in ExchangeOrderError (2026-06-30) ✅
+
+**Status:** Complete ✅
+
+- [x] Esteso `ExchangeOrderError` con `original_exception` e `original_details`
+- [x] Modificati tutti i punti di `raise ExchangeOrderError` in `exchange.py` per preservare dettagli originali
+- [x] Aggiornato `router.py` per estrarre `original_details` da `ExchangeOrderError`
+- [x] Sostituito controllo `isinstance(live_e, ccxt.BaseError)` con `isinstance(live_e, ExchangeOrderError)`
+
+**File:** `synthtrade/backend/app/execution/exchange.py`, `synthtrade/backend/app/scalping/router.py`
+
+---
+
+### TASK-909 — Isolamento chiamate AI sincrone per evitare blocco APScheduler (2026-06-30) ✅
+
+**Status:** Complete ✅
+
+- [x] Modificato `supervisor_client.py` per usare `asyncio.to_thread()` per le chiamate AI
+- [x] Creato wrapper sincrono con event loop separato per ogni chiamata AI
+- [x] Questo permette ad APScheduler di continuare a processare altri job durante le chiamate AI
+- [x] Aggiunto import `asyncio` per l'esecuzione in thread pool
+
+**File:** `synthtrade/backend/app/scalping/supervisor/supervisor_client.py`

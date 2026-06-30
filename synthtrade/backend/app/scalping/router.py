@@ -1257,6 +1257,13 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
         nonlocal _mock_candle_counter, _mock_last_price
         base_price = _SYMBOL_BASE_PRICES.get(symbol.upper(), 100.0)  # Fallback 100 for unknown symbols
         _mock_last_price = base_price
+        # Hoist defaults for SL/TP/fee calculations (used in if pos block AND open position block)
+        _risk_cfg_def = _execution_state.get("risk_config", {})
+        _mock_sl_cfg = float(_risk_cfg_def.get("stop_loss_pct", 0.3))
+        _mock_tp_cfg = float(_risk_cfg_def.get("take_profit_pct", 0.5))
+        _mock_ft = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+        _mock_ef = _mock_ft.get("taker", 0.001)
+        _mock_xf = _mock_ft.get("maker", 0.001)
         while _execution_state["session"]["status"] != "idle" and not client._stop_event.is_set():
             await asyncio.sleep(4.0)
             if _execution_state["session"]["status"] != "running":
@@ -1407,8 +1414,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         entry_price=Decimal(str(close_price)),
                         quantity=quantity,
                     )
-                    sl_price = round(float(pos_obj.entry_price) * (1 + _net_to_gross_pct(-sl_pct_cfg, _ef2, _xf2) / 100), 2) if side == "BUY" else round(float(pos_obj.entry_price) * (1 - _net_to_gross_pct(-sl_pct_cfg, _ef2, _xf2) / 100), 2)
-                    tp_price = round(float(pos_obj.entry_price) * (1 + _net_to_gross_pct(tp_pct_cfg, _ef2, _xf2) / 100), 2) if side == "BUY" else round(float(pos_obj.entry_price) * (1 - _net_to_gross_pct(tp_pct_cfg, _ef2, _xf2) / 100), 2)
+                    sl_price = round(float(pos_obj.entry_price) * (1 + _net_to_gross_pct(-_mock_sl_cfg, _mock_ef, _mock_xf) / 100), 2) if side == "BUY" else round(float(pos_obj.entry_price) * (1 - _net_to_gross_pct(-_mock_sl_cfg, _mock_ef, _mock_xf) / 100), 2)
+                    tp_price = round(float(pos_obj.entry_price) * (1 + _net_to_gross_pct(_mock_tp_cfg, _mock_ef, _mock_xf) / 100), 2) if side == "BUY" else round(float(pos_obj.entry_price) * (1 - _net_to_gross_pct(_mock_tp_cfg, _mock_ef, _mock_xf) / 100), 2)
                     await broadcast_scalping_event("position", {
                         "symbol": pos_obj.symbol,
                         "side": pos_obj.side,

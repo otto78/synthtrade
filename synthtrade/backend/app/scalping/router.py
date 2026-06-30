@@ -22,7 +22,7 @@ import uuid
 import math
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Dict, List, Optional, Any
+from typing import Callable, Dict, List, Optional, Any
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
@@ -130,6 +130,28 @@ def _throttled_warning(msg: str, key: str = "") -> None:
         logger.debug(f"[THROTTLED] {msg}")
 
 
+def _net_to_gross_pct(net_pct: float, entry_fee_rate: float, exit_fee_rate: float) -> float:
+    """Converte un target NETTO (%) nel movimento di prezzo LORDO (%) necessario
+    perché, dopo le due fee (entry + exit), il risultato netto coincida col target.
+
+    net_pct può essere positivo (TP) o negativo (SL) — la formula è la stessa
+    perché la fee si applica sempre a sfavore su entrambe le leg.
+
+    Esempi con fee entry=0.00095 taker, exit=0.001 maker:
+        _net_to_gross_pct(+0.5,  0.00095, 0.001) ->  +0.6963%  (TP allargato)
+        _net_to_gross_pct(-0.3,  0.00095, 0.001) ->  -0.1053%  (SL ristretto)
+
+    NOTA: exit_fee_rate usa "maker" per coerenza con la convenzione già adottata
+    in tutto il codebase (_on_order_update, _close_position_and_record, ecc.).
+    Lo SL su Binance OCO potrebbe eseguire come taker — non ancora verificato
+    sui dati reali. Se si osserva una discrepanza sistematica tra SL netto atteso
+    e osservato, rivedere questa assunzione e passare taker per exit_fee_rate sullo SL.
+    """
+    net = net_pct / 100
+    gross = (1 + net) / ((1 - entry_fee_rate) * (1 - exit_fee_rate)) - 1
+    return gross * 100
+
+
 async def _convert_bnb_commission_to_usdc(exchange, bnb_amount: float, context: str = "") -> float:
     """Convert BNB commission to USDC using exchange ticker price.
 
@@ -204,10 +226,13 @@ async def scalping_websocket(ws: WebSocket):
         entry_f = float(pos.entry_price)
         qty_f = float(pos.quantity)
         risk_cfg = _execution_state.get("risk_config", {})
-        sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3)) / 100
-        tp_pct = float(risk_cfg.get("take_profit_pct", 0.5)) / 100
-        sl_price = entry_f * (1 - sl_pct) if pos.side == "BUY" else entry_f * (1 + sl_pct)
-        tp_price = entry_f * (1 + tp_pct) if pos.side == "BUY" else entry_f * (1 - tp_pct)
+        sl_pct_cfg = float(risk_cfg.get("stop_loss_pct", 0.3))
+        tp_pct_cfg = float(risk_cfg.get("take_profit_pct", 0.5))
+        fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+        _ef = fee_tier.get("taker", 0.001)
+        _xf = fee_tier.get("maker", 0.001)
+        sl_price = entry_f * (1 + _net_to_gross_pct(-sl_pct_cfg, _ef, _xf) / 100) if pos.side == "BUY" else entry_f * (1 - _net_to_gross_pct(-sl_pct_cfg, _ef, _xf) / 100)
+        tp_price = entry_f * (1 + _net_to_gross_pct(tp_pct_cfg, _ef, _xf) / 100) if pos.side == "BUY" else entry_f * (1 - _net_to_gross_pct(tp_pct_cfg, _ef, _xf) / 100)
         
         # TASK-885: Calcola target netti TP/SL (fee tier round-trip)
         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
@@ -216,8 +241,8 @@ async def scalping_websocket(ws: WebSocket):
         fee_round_trip = (entry_fee_rate + exit_fee_rate) * 100  # converti in percentuale
         
         # Calcola percentuali nette (sottrai fee round-trip dai target lordi)
-        sl_pct_net = (sl_pct * 100) - fee_round_trip  # perdita netta è peggiore
-        tp_pct_net = (tp_pct * 100) - fee_round_trip  # guadagno netto è minore
+        sl_pct_net = (sl_pct_cfg * 100) - fee_round_trip  # perdita netta è peggiore
+        tp_pct_net = (tp_pct_cfg * 100) - fee_round_trip  # guadagno netto è minore
         
         try:
             await ws.send_json({
@@ -1300,10 +1325,12 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 
                 # Check SL/TP
                 risk_cfg = _execution_state.get("risk_config", {})
-                sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3)) / 100
-                tp_pct = float(risk_cfg.get("take_profit_pct", 0.5)) / 100
-                sl = entry_f * (1 - sl_pct) if pos.side == "BUY" else entry_f * (1 + sl_pct)
-                tp = entry_f * (1 + tp_pct) if pos.side == "BUY" else entry_f * (1 - tp_pct)
+                sl_pct_cfg = float(risk_cfg.get("stop_loss_pct", 0.3))
+                tp_pct_cfg = float(risk_cfg.get("take_profit_pct", 0.5))
+                _ft = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                _ef2, _xf2 = _ft.get("taker", 0.001), _ft.get("maker", 0.001)
+                sl = entry_f * (1 + _net_to_gross_pct(-sl_pct_cfg, _ef2, _xf2) / 100) if pos.side == "BUY" else entry_f * (1 - _net_to_gross_pct(-sl_pct_cfg, _ef2, _xf2) / 100)
+                tp = entry_f * (1 + _net_to_gross_pct(tp_pct_cfg, _ef2, _xf2) / 100) if pos.side == "BUY" else entry_f * (1 - _net_to_gross_pct(tp_pct_cfg, _ef2, _xf2) / 100)
                 
                 # TASK-885: Calcola target netti TP/SL (fee tier round-trip)
                 fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
@@ -1312,8 +1339,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 fee_round_trip = (entry_fee_rate + exit_fee_rate) * 100  # converti in percentuale
                 
                 # Calcola percentuali nette (sottrai fee round-trip dai target lordi)
-                sl_pct_net = (sl_pct * 100) - fee_round_trip  # perdita netta è peggiore
-                tp_pct_net = (tp_pct * 100) - fee_round_trip  # guadagno netto è minore
+                sl_pct_net = (sl_pct_cfg * 100) - fee_round_trip  # perdita netta è peggiore
+                tp_pct_net = (tp_pct_cfg * 100) - fee_round_trip  # guadagno netto è minore
                 
                 await broadcast_scalping_event("position_update", {
                     "symbol": pos.symbol,
@@ -1380,8 +1407,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         entry_price=Decimal(str(close_price)),
                         quantity=quantity,
                     )
-                    sl_price = round(float(pos_obj.entry_price) * (1 - sl_pct), 2) if side == "BUY" else round(float(pos_obj.entry_price) * (1 + sl_pct), 2)
-                    tp_price = round(float(pos_obj.entry_price) * (1 + tp_pct), 2) if side == "BUY" else round(float(pos_obj.entry_price) * (1 - tp_pct), 2)
+                    sl_price = round(float(pos_obj.entry_price) * (1 + _net_to_gross_pct(-sl_pct_cfg, _ef2, _xf2) / 100), 2) if side == "BUY" else round(float(pos_obj.entry_price) * (1 - _net_to_gross_pct(-sl_pct_cfg, _ef2, _xf2) / 100), 2)
+                    tp_price = round(float(pos_obj.entry_price) * (1 + _net_to_gross_pct(tp_pct_cfg, _ef2, _xf2) / 100), 2) if side == "BUY" else round(float(pos_obj.entry_price) * (1 - _net_to_gross_pct(tp_pct_cfg, _ef2, _xf2) / 100), 2)
                     await broadcast_scalping_event("position", {
                         "symbol": pos_obj.symbol,
                         "side": pos_obj.side,
@@ -1473,18 +1500,41 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     except Exception as rest_e:
                         logger.error(f">>> CANDLE_PROC WATCHDOG: REST reload failed: {rest_e}")
                     
-                    # Try to reconnect the Binance WS client
+                    # TASK-907: Full WS and tasks restart
                     try:
                         if not client._stop_event.is_set():
-                            logger.info(">>> CANDLE_PROC WATCHDOG: Restarting WS client...")
-                            asyncio.create_task(client.stop(), name="ws-stop-watchdog")
-                            await asyncio.sleep(2)
-                            if _execution_state["session"]["status"] == "running":
-                                new_client = BinanceWSClient(symbols=[symbol], testnet=is_testnet)
-                                _execution_state["ws_client"] = new_client
-                                await new_client.start()
-                                client = new_client
-                                logger.info(">>> CANDLE_PROC WATCHDOG: WS client restarted")
+                            logger.info(">>> CANDLE_PROC WATCHDOG: Triggering full WS restart...")
+                            
+                            async def _full_restart():
+                                try:
+                                    # Stop Vecchio Client (chiude le code)
+                                    logger.info(">>> RESTART_WS: Stopping old client...")
+                                    await client.stop()
+                                    
+                                    # Ferma Supervisor se presente
+                                    old_supervisor = _execution_state.get("supervisor_scheduler")
+                                    if old_supervisor:
+                                        old_supervisor.stop()
+                                    
+                                    # Cancella vecchi task (incluso me stesso alla fine)
+                                    logger.info(">>> RESTART_WS: Cancelling old tasks...")
+                                    for t in _execution_state.get("ws_tasks", []):
+                                        if t != asyncio.current_task():
+                                            t.cancel()
+                                    
+                                    await asyncio.sleep(2)
+                                    
+                                    if _execution_state["session"]["status"] == "running":
+                                        logger.info(">>> RESTART_WS: Calling _start_ws_broadcast(restore_mode=True)...")
+                                        await _start_ws_broadcast(symbol, restore_mode=True)
+                                        logger.info(">>> RESTART_WS: Full restart completed!")
+                                except Exception as inner_e:
+                                    logger.error(f">>> RESTART_WS: Failed: {inner_e}")
+                            
+                            asyncio.create_task(_full_restart(), name="ws-full-restart-watchdog")
+                            
+                            # Esci da questo `_candle_processor` così muore pulito, il nuovo prenderà il suo posto.
+                            break
                     except Exception as ws_e:
                         logger.error(f">>> CANDLE_PROC WATCHDOG: WS restart failed: {ws_e}")
 
@@ -1747,13 +1797,29 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     entry_commission_asset_real = market_res.get("commission_asset")
 
                                     # 4. Calculate Risk SL/TP with proper price precision
+                                    # I valori configurati (stop_loss_pct, take_profit_pct) rappresentano
+                                    # il risultato NETTO atteso dopo fee. Convertiamo nel movimento di
+                                    # prezzo LORDO necessario tramite _net_to_gross_pct.
                                     risk_cfg = _execution_state.get("risk_config", {})
-                                    sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3)) / 100
-                                    tp_pct = float(risk_cfg.get("take_profit_pct", 0.5)) / 100
+                                    sl_pct_net_cfg = float(risk_cfg.get("stop_loss_pct", 0.3))
+                                    tp_pct_net_cfg = float(risk_cfg.get("take_profit_pct", 0.5))
                                     price_prec = int(filters.get("pricePrecision", 2))
 
-                                    sl_price = round(exec_price * (1 - sl_pct), price_prec) if side == "BUY" else round(exec_price * (1 + sl_pct), price_prec)
-                                    tp_price = round(exec_price * (1 + tp_pct), price_prec) if side == "BUY" else round(exec_price * (1 - tp_pct), price_prec)
+                                    fee_tier_pricing = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                                    entry_fee_pricing = fee_tier_pricing.get("taker", 0.001)
+                                    exit_fee_pricing = fee_tier_pricing.get("maker", 0.001)
+
+                                    sl_gross_pct = _net_to_gross_pct(-sl_pct_net_cfg, entry_fee_pricing, exit_fee_pricing) / 100
+                                    tp_gross_pct = _net_to_gross_pct(tp_pct_net_cfg, entry_fee_pricing, exit_fee_pricing) / 100
+
+                                    sl_price = round(exec_price * (1 + sl_gross_pct), price_prec) if side == "BUY" else round(exec_price * (1 - sl_gross_pct), price_prec)
+                                    tp_price = round(exec_price * (1 + tp_gross_pct), price_prec) if side == "BUY" else round(exec_price * (1 - tp_gross_pct), price_prec)
+
+                                    logger.info(
+                                        f"[NET_PRICING] Target netti: TP={tp_pct_net_cfg}% SL={sl_pct_net_cfg}% | "
+                                        f"Lordi al prezzo: TP={tp_gross_pct*100:.4f}% SL={sl_gross_pct*100:.4f}% | "
+                                        f"fee entry={entry_fee_pricing} exit={exit_fee_pricing}"
+                                    )
 
                                     # 5. Place native OCO
                                     oco_res = None
@@ -1955,20 +2021,169 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     import traceback
                     logger.error(traceback.format_exc())
                 
-                # ── FIX-2026-06-05: Position update broadcast on every closed candle ──
-                # This ensures the position card updates in the frontend even in live mode
-                # where trade events may be sporadic. Broadcasts PnL, current price, SL/TP.
+                try:
+                    # ── FIX-2026-06-05: Position update broadcast on every closed candle ──
+                    # This ensures the position card updates in the frontend even in live mode
+                    # where trade events may be sporadic. Broadcasts PnL, current price, SL/TP.
+                    pm = _execution_state["position_manager"]
+                    pos = pm.get_open()
+                    if pos:
+                        current_price_f = float(event.close)
+                        entry_f = float(pos.entry_price)
+                        qty_f = float(pos.quantity)
+                        entry_val = entry_f * qty_f
+                        current_val = current_price_f * qty_f
+                        gross_pnl = (current_price_f - entry_f) * qty_f if pos.side == "BUY" else (entry_f - current_price_f) * qty_f
+                        
+                        # TASK-882: Usa fee tier per PnL non realizzato (Caso B)
+                        # Entry: commissione reale se disponibile da WebSocket, altrimenti fee tier
+                        if pos.entry_commission is not None and pos.entry_commission > 0:
+                            entry_commission = float(pos.entry_commission)
+                            # Converti BNB to USDC se necessario
+                            exchange = _execution_state.get("exchange")
+                            if pos.entry_commission_asset == "BNB" and exchange:
+                                entry_commission = await _convert_bnb_commission_to_usdc(
+                                    exchange, entry_commission, context="Position update (loop): "
+                                )
+                        else:
+                            # Fallback: usa fee tier per entrata (costo atteso)
+                            fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                            entry_fee_rate = fee_tier.get("taker", 0.001)  # market order = taker
+                            entry_commission = entry_val * entry_fee_rate
+                        
+                        # Exit: usa fee tier (costo di chiusura atteso al tier corrente)
+                        fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                        exit_fee_rate = fee_tier.get("maker", 0.001)  # OCO orders = maker
+                        exit_commission = current_val * exit_fee_rate
+                        
+                        total_fees = entry_commission + exit_commission
+                        pnl = gross_pnl - total_fees
+                        pnl_pct = (pnl / entry_val) * 100
+                        
+                        risk_cfg = _execution_state.get("risk_config", {})
+                        _sl_cfg = float(risk_cfg.get("stop_loss_pct", 0.3))
+                        _tp_cfg = float(risk_cfg.get("take_profit_pct", 0.5))
+                        _ft3 = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                        _ef3, _xf3 = _ft3.get("taker", 0.001), _ft3.get("maker", 0.001)
+                        sl_price = entry_f * (1 + _net_to_gross_pct(-_sl_cfg, _ef3, _xf3) / 100) if pos.side == "BUY" else entry_f * (1 - _net_to_gross_pct(-_sl_cfg, _ef3, _xf3) / 100)
+                        tp_price = entry_f * (1 + _net_to_gross_pct(_tp_cfg, _ef3, _xf3) / 100) if pos.side == "BUY" else entry_f * (1 - _net_to_gross_pct(_tp_cfg, _ef3, _xf3) / 100)
+                        
+                        # TASK-885: Calcola target netti TP/SL (fee tier round-trip)
+                        fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                        entry_fee_rate = fee_tier.get("taker", 0.001)  # market order = taker
+                        exit_fee_rate = fee_tier.get("maker", 0.001)  # OCO orders = maker
+                        fee_round_trip = (entry_fee_rate + exit_fee_rate) * 100  # converti in percentuale
+                        
+                        # Calcola percentuali nette (sottrai fee round-trip dai target lordi)
+                        sl_pct_net = (_sl_cfg) - fee_round_trip  # perdita netta è peggiore
+                        tp_pct_net = (_tp_cfg) - fee_round_trip  # guadagno netto è minore
+                        
+                        # Calculate progress percentage:
+                        # -100% = at SL, 0% = at entry, +100% = at TP
+                        if pos.side == "BUY":
+                            total_range = tp_price - sl_price
+                            current_offset = current_price_f - entry_f  # positive if above entry
+                        else:
+                            total_range = sl_price - tp_price
+                            current_offset = entry_f - current_price_f  # positive if below entry
+                        
+                        progress_pct = 0.0
+                        if total_range > 0:
+                            if pos.side == "BUY":
+                                # How far from entry towards TP or SL
+                                if current_price_f >= entry_f:
+                                    progress_pct = ((current_price_f - entry_f) / (tp_price - entry_f)) * 100
+                                else:
+                                    progress_pct = -((entry_f - current_price_f) / (entry_f - sl_price)) * 100
+                            else:
+                                if current_price_f <= entry_f:
+                                    progress_pct = ((entry_f - current_price_f) / (entry_f - tp_price)) * 100
+                                else:
+                                    progress_pct = -((current_price_f - entry_f) / (sl_price - entry_f)) * 100
+                        
+                        # Clamp to [-100, 100]
+                        progress_pct = max(-100.0, min(100.0, progress_pct))
+                        
+                        await broadcast_scalping_event("position_update", {
+                            "symbol": pos.symbol,
+                            "side": pos.side,
+                            "entry_price": entry_f,
+                            "current_price": round(current_price_f, 2),
+                            "quantity": qty_f,
+                            "trade_value_usd": round(qty_f * entry_f, 2),
+                            "pnl": round(pnl, 2),
+                            "pnl_pct": round(pnl_pct, 2),
+                            "stop_loss_price": round(sl_price, 2),
+                            "take_profit_price": round(tp_price, 2),
+                            "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
+                            "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
+                            "stop_loss_pct_net": round(sl_pct_net, 2),  # TASK-885
+                            "take_profit_pct_net": round(tp_pct_net, 2),  # TASK-885
+                            "progress_pct": round(progress_pct, 1),         # -100 to +100
+                            "sl_distance_pct": round(max(0, (entry_f - current_price_f) / (entry_f - sl_price) * 100) if pos.side == "BUY" and (entry_f - sl_price) > 0 else 0, 1),
+                            "tp_distance_pct": round(min(100, (current_price_f - entry_f) / (tp_price - entry_f) * 100) if pos.side == "BUY" and (tp_price - entry_f) > 0 else 0, 1),
+                        })
+                        logger.debug(f"Position update broadcast @ {current_price_f}: PnL={pnl:.2f} ({pnl_pct:.2f}%) progress={progress_pct:.1f}%")
+                except Exception as e:
+                    logger.error(f"Error in position broadcast: {e}")
+            else:
+                logger.debug(f">>> LIVE candle update (not closed yet): {event.symbol} close={event.close}")
+
+    async def _trade_processor():
+        """Consume trade_queue and broadcast + update PnL + feed CVD."""
+        _cvd = _execution_state.get("cvd_calculator")
+        while _execution_state["session"]["status"] != "idle" and not client._stop_event.is_set():
+            try:
+                event = await asyncio.wait_for(client.trade_queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                if _execution_state["session"]["status"] == "idle":
+                    break
+                continue
+
+            try:
+                guard = _execution_state.get("session_load_guard")
+                if guard and not guard.is_ready():
+                    guard.record_trade_attempt(event.symbol, "trade_processor")
+                    _sync_session_load_guard()
+                    continue
+
+                # Feed CVD calculator with real-time trade pressure
+                if _cvd is not None:
+                    try:
+                        _cvd.on_trade(event.price, event.quantity, event.is_buyer_maker)
+                    except Exception:
+                        pass  # Non-blocking
+
+                # Broadcast to frontend WS clients
+                await broadcast_scalping_event("trade", {
+                    "symbol": event.symbol,
+                    "price": event.price,
+                    "quantity": event.quantity,
+                    "is_buyer_maker": event.is_buyer_maker,
+                    "timestamp": datetime.fromtimestamp(event.timestamp / 1000, tz=timezone.utc).isoformat(),
+                })
+
+                # Update position PnL if there's an open position
                 pm = _execution_state["position_manager"]
                 pos = pm.get_open()
-                if pos:
-                    current_price_f = float(event.close)
-                    entry_f = float(pos.entry_price)
-                    qty_f = float(pos.quantity)
-                    entry_val = entry_f * qty_f
-                    current_val = current_price_f * qty_f
-                    gross_pnl = (current_price_f - entry_f) * qty_f if pos.side == "BUY" else (entry_f - current_price_f) * qty_f
+                if pos and pos.symbol.lower() == event.symbol.lower():
+                    entry = float(pos.entry_price)
+                    current = event.price
+                    qty = float(pos.quantity)
+                    entry_val = entry * qty
+                    current_val = current * qty
                     
-                    # TASK-882: Usa fee tier per PnL non realizzato (Caso B)
+                    risk_cfg = _execution_state.get("risk_config", {})
+                    _sl_cfg4 = float(risk_cfg.get("stop_loss_pct", 0.3))
+                    _tp_cfg4 = float(risk_cfg.get("take_profit_pct", 0.5))
+                    _ft4 = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                    _ef4, _xf4 = _ft4.get("taker", 0.001), _ft4.get("maker", 0.001)
+                    sl = entry * (1 + _net_to_gross_pct(-_sl_cfg4, _ef4, _xf4) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(-_sl_cfg4, _ef4, _xf4) / 100)
+                    tp = entry * (1 + _net_to_gross_pct(_tp_cfg4, _ef4, _xf4) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(_tp_cfg4, _ef4, _xf4) / 100)
+                    
+                    gross_pnl = (current - entry) * qty if pos.side == "BUY" else (entry - current) * qty
+                    
+                    # TASK-883: Usa fee tier per PnL non realizzato (Caso B)
                     # Entry: commissione reale se disponibile da WebSocket, altrimenti fee tier
                     if pos.entry_commission is not None and pos.entry_commission > 0:
                         entry_commission = float(pos.entry_commission)
@@ -1976,7 +2191,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         exchange = _execution_state.get("exchange")
                         if pos.entry_commission_asset == "BNB" and exchange:
                             entry_commission = await _convert_bnb_commission_to_usdc(
-                                exchange, entry_commission, context="Position update (loop): "
+                                exchange, entry_commission, context="Trade processor: "
                             )
                     else:
                         # Fallback: usa fee tier per entrata (costo atteso)
@@ -1992,175 +2207,36 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     total_fees = entry_commission + exit_commission
                     pnl = gross_pnl - total_fees
                     pnl_pct = (pnl / entry_val) * 100
-                    
-                    risk_cfg = _execution_state.get("risk_config", {})
-                    sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3)) / 100
-                    tp_pct = float(risk_cfg.get("take_profit_pct", 0.5)) / 100
-                    sl_price = entry_f * (1 - sl_pct) if pos.side == "BUY" else entry_f * (1 + sl_pct)
-                    tp_price = entry_f * (1 + tp_pct) if pos.side == "BUY" else entry_f * (1 - tp_pct)
-                    
-                    # TASK-885: Calcola target netti TP/SL (fee tier round-trip)
-                    fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-                    entry_fee_rate = fee_tier.get("taker", 0.001)  # market order = taker
-                    exit_fee_rate = fee_tier.get("maker", 0.001)  # OCO orders = maker
-                    fee_round_trip = (entry_fee_rate + exit_fee_rate) * 100  # converti in percentuale
-                    
-                    # Calcola percentuali nette (sottrai fee round-trip dai target lordi)
-                    sl_pct_net = (sl_pct * 100) - fee_round_trip  # perdita netta è peggiore
-                    tp_pct_net = (tp_pct * 100) - fee_round_trip  # guadagno netto è minore
-                    
-                    # Calculate progress percentage:
-                    # -100% = at SL, 0% = at entry, +100% = at TP
-                    if pos.side == "BUY":
-                        total_range = tp_price - sl_price
-                        current_offset = current_price_f - entry_f  # positive if above entry
-                    else:
-                        total_range = sl_price - tp_price
-                        current_offset = entry_f - current_price_f  # positive if below entry
-                    
-                    progress_pct = 0.0
-                    if total_range > 0:
-                        if pos.side == "BUY":
-                            # How far from entry towards TP or SL
-                            if current_price_f >= entry_f:
-                                progress_pct = ((current_price_f - entry_f) / (tp_price - entry_f)) * 100
-                            else:
-                                progress_pct = -((entry_f - current_price_f) / (entry_f - sl_price)) * 100
-                        else:
-                            if current_price_f <= entry_f:
-                                progress_pct = ((entry_f - current_price_f) / (entry_f - tp_price)) * 100
-                            else:
-                                progress_pct = -((current_price_f - entry_f) / (sl_price - entry_f)) * 100
-                    
-                    # Clamp to [-100, 100]
-                    progress_pct = max(-100.0, min(100.0, progress_pct))
-                    
                     await broadcast_scalping_event("position_update", {
                         "symbol": pos.symbol,
                         "side": pos.side,
-                        "entry_price": entry_f,
-                        "current_price": round(current_price_f, 2),
-                        "quantity": qty_f,
-                        "trade_value_usd": round(qty_f * entry_f, 2),
+                        "entry_price": entry,
+                        "current_price": current,
+                        "quantity": qty,
                         "pnl": round(pnl, 2),
                         "pnl_pct": round(pnl_pct, 2),
-                        "stop_loss_price": round(sl_price, 2),
-                        "take_profit_price": round(tp_price, 2),
+                        "stop_loss_price": round(sl, 2),
+                        "take_profit_price": round(tp, 2),
                         "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
                         "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
-                        "stop_loss_pct_net": round(sl_pct_net, 2),  # TASK-885
-                        "take_profit_pct_net": round(tp_pct_net, 2),  # TASK-885
-                        "progress_pct": round(progress_pct, 1),         # -100 to +100
-                        "sl_distance_pct": round(max(0, (entry_f - current_price_f) / (entry_f - sl_price) * 100) if pos.side == "BUY" and (entry_f - sl_price) > 0 else 0, 1),
-                        "tp_distance_pct": round(min(100, (current_price_f - entry_f) / (tp_price - entry_f) * 100) if pos.side == "BUY" and (tp_price - entry_f) > 0 else 0, 1),
                     })
-                    logger.debug(f"Position update broadcast @ {current_price_f}: PnL={pnl:.2f} ({pnl_pct:.2f}%) progress={progress_pct:.1f}%")
-            else:
-                logger.debug(f">>> LIVE candle update (not closed yet): {event.symbol} close={event.close}")
-
-    async def _trade_processor():
-        """Consume trade_queue and broadcast + update PnL + feed CVD."""
-        _cvd = _execution_state.get("cvd_calculator")
-        while _execution_state["session"]["status"] != "idle" and not client._stop_event.is_set():
-            try:
-                event = await asyncio.wait_for(client.trade_queue.get(), timeout=1.0)
-            except asyncio.TimeoutError:
-                if _execution_state["session"]["status"] == "idle":
-                    break
-                continue
-
-            guard = _execution_state.get("session_load_guard")
-            if guard and not guard.is_ready():
-                guard.record_trade_attempt(event.symbol, "trade_processor")
-                _sync_session_load_guard()
-                continue
-
-            # Feed CVD calculator with real-time trade pressure
-            if _cvd is not None:
-                try:
-                    _cvd.on_trade(event.price, event.quantity, event.is_buyer_maker)
-                except Exception:
-                    pass  # Non-blocking
-
-            # Broadcast to frontend WS clients
-            await broadcast_scalping_event("trade", {
-                "symbol": event.symbol,
-                "price": event.price,
-                "quantity": event.quantity,
-                "is_buyer_maker": event.is_buyer_maker,
-                "timestamp": datetime.fromtimestamp(event.timestamp / 1000, tz=timezone.utc).isoformat(),
-            })
-
-            # Update position PnL if there's an open position
-            pm = _execution_state["position_manager"]
-            pos = pm.get_open()
-            if pos and pos.symbol.lower() == event.symbol.lower():
-                entry = float(pos.entry_price)
-                current = event.price
-                qty = float(pos.quantity)
-                entry_val = entry * qty
-                current_val = current * qty
-                
-                risk_cfg = _execution_state.get("risk_config", {})
-                sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3)) / 100
-                tp_pct = float(risk_cfg.get("take_profit_pct", 0.5)) / 100
-                sl = entry * (1 - sl_pct) if pos.side == "BUY" else entry * (1 + sl_pct)
-                tp = entry * (1 + tp_pct) if pos.side == "BUY" else entry * (1 - tp_pct)
-                
-                gross_pnl = (current - entry) * qty if pos.side == "BUY" else (entry - current) * qty
-                
-                # TASK-883: Usa fee tier per PnL non realizzato (Caso B)
-                # Entry: commissione reale se disponibile da WebSocket, altrimenti fee tier
-                if pos.entry_commission is not None and pos.entry_commission > 0:
-                    entry_commission = float(pos.entry_commission)
-                    # Converti BNB to USDC se necessario
-                    exchange = _execution_state.get("exchange")
-                    if pos.entry_commission_asset == "BNB" and exchange:
-                        entry_commission = await _convert_bnb_commission_to_usdc(
-                            exchange, entry_commission, context="Trade processor: "
-                        )
-                else:
-                    # Fallback: usa fee tier per entrata (costo atteso)
-                    fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-                    entry_fee_rate = fee_tier.get("taker", 0.001)  # market order = taker
-                    entry_commission = entry_val * entry_fee_rate
-                
-                # Exit: usa fee tier (costo di chiusura atteso al tier corrente)
-                fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-                exit_fee_rate = fee_tier.get("maker", 0.001)  # OCO orders = maker
-                exit_commission = current_val * exit_fee_rate
-                
-                total_fees = entry_commission + exit_commission
-                pnl = gross_pnl - total_fees
-                pnl_pct = (pnl / entry_val) * 100
-                await broadcast_scalping_event("position_update", {
-                    "symbol": pos.symbol,
-                    "side": pos.side,
-                    "entry_price": entry,
-                    "current_price": current,
-                    "quantity": qty,
-                    "pnl": round(pnl, 2),
-                    "pnl_pct": round(pnl_pct, 2),
-                    "stop_loss_price": round(sl, 2),
-                    "take_profit_price": round(tp, 2),
-                    "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
-                    "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
-                })
-                
-                # Execute SL/TP Auto Close — TASK-855: solo in paper mode
-                # In live mode, SL/TP sono gestiti esclusivamente da OCO Binance via UDS (_on_order_update).
-                # Eseguire close software in live causerebbe doppia vendita (software + OCO).
-                hit_sl = (pos.side == "BUY" and current <= sl) or (pos.side == "SELL" and current >= sl)
-                hit_tp = (pos.side == "BUY" and current >= tp) or (pos.side == "SELL" and current <= tp)
-                _mode_trade = _execution_state["session"].get("mode", "paper")
-                if _mode_trade != "live":
-                    try:
-                        if hit_sl:
-                            await _close_position_and_record(pm, current, pos, reason="stop_loss")
-                        elif hit_tp:
-                            await _close_position_and_record(pm, current, pos, reason="take_profit")
-                    except Exception as auto_close_err:
-                        logger.error(f"Auto-close failed in _trade_processor: {auto_close_err}")
+                    
+                    # Execute SL/TP Auto Close — TASK-855: solo in paper mode
+                    # In live mode, SL/TP sono gestiti esclusivamente da OCO Binance via UDS (_on_order_update).
+                    # Eseguire close software in live causerebbe doppia vendita (software + OCO).
+                    hit_sl = (pos.side == "BUY" and current <= sl) or (pos.side == "SELL" and current >= sl)
+                    hit_tp = (pos.side == "BUY" and current >= tp) or (pos.side == "SELL" and current <= tp)
+                    _mode_trade = _execution_state["session"].get("mode", "paper")
+                    if _mode_trade != "live":
+                        try:
+                            if hit_sl:
+                                await _close_position_and_record(pm, current, pos, reason="stop_loss")
+                            elif hit_tp:
+                                await _close_position_and_record(pm, current, pos, reason="take_profit")
+                        except Exception as auto_close_err:
+                            logger.error(f"Auto-close failed in _trade_processor: {auto_close_err}")
+            except Exception as outer_trade_e:
+                logger.error(f"Error in _trade_processor body: {outer_trade_e}", exc_info=True)
 
 
     async def _intelligence_processor():
@@ -2935,10 +3011,60 @@ async def control_session(control: Dict) -> Dict:
         
         # ── SESSION LOGGING: attach session_id to all logs + start capture ──
         SessionContextFilter.set_session_id(session["session_id"])
-        session_log_handler = SessionLogHandler()
+        db_sid = session.get("db_session_id", "")
+        session_log_handler = SessionLogHandler(
+            session_id=session["session_id"],
+            db_session_id=db_sid,
+        )
+        session_log_handler.symbol = active_symbol
         session_log_handler.attach()  # aggancia root + forced logger
+        
+        # Soluzione 1: Configura callback per persistenza live su DB
+        _handler_logger = logger  # capture reference for closure
+        def _make_persist_callback(h: SessionLogHandler) -> Callable[[str], None]:
+            """Crea un callback sincrono che salva il contenuto su DB via asyncio thread."""
+            import functools
+            _db_sid = h.db_session_id
+            def _save_to_db(content: str) -> None:
+                if not _db_sid:
+                    return
+                try:
+                    from app.db.supabase_client import get_supabase
+                    supabase = get_supabase()
+                    supabase.table("scalping_sessions").update({
+                        "log_content": content,
+                    }).eq("id", _db_sid).execute()
+                except Exception as e:
+                    _handler_logger.warning(f"[LIVE_LOG] Failed to persist logs to DB: {e}")
+            return _save_to_db
+        
+        if db_sid:
+            session_log_handler.set_persist_callback(_make_persist_callback(session_log_handler))
+            logger.info(f"[LIVE_LOG] Persist callback configured for session {db_sid}")
+        
         _execution_state["session_log_handler"] = session_log_handler
         logger.info(f"Session log capture started for {session['session_id']}")
+        
+        # Soluzione 1: Avvia il task periodico di persistenza log (ogni 5 min)
+        _LOG_PERSIST_INTERVAL_SEC = 300  # 5 minuti
+        async def _periodic_log_persist():
+            """Task asincrono che salva i log su DB ogni 5 minuti.
+            
+            Se il backend crasha/riavvia, i log salvati fino all'ultimo persist
+            sono comunque recuperabili dal DB (non più persi completamente).
+            """
+            while session.get("status") == "running":
+                await asyncio.sleep(_LOG_PERSIST_INTERVAL_SEC)
+                handler = _execution_state.get("session_log_handler")
+                if handler and handler.log_count > 0:
+                    ok = handler.persist_now()
+                    if ok:
+                        _handler_logger.info(f"[LIVE_LOG] Periodic persist OK ({handler.log_count} entries)")
+                    else:
+                        _handler_logger.debug("[LIVE_LOG] Periodic persist skipped (no callback or empty)")
+        
+        _persist_task = asyncio.create_task(_periodic_log_persist(), name="log-persist-periodic")
+        _execution_state["log_persist_task"] = _persist_task
 
         logger.info(f"Session started: {session['session_id']} mode={session['mode']} symbol={active_symbol}")
 

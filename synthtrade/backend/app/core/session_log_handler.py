@@ -1,20 +1,24 @@
-"""SessionLogHandttura tutti i log (DEBUG+) di una sessione in memoriae li scrive su file .txt quando la sessione termina.
+"""SessionLogHandler — accumula tutti i log (DEBUG+) di una sessione in memoria.
 
-Problema root-cause risol forced logger in setup_logging() hanno propagate=False, quindi i loro messaggiNON arrivano al root logger dove SessionLogHandler è attaccato.
-Soluzione: attach() aggancia l'handler direttamente aitiliz
+Feature:
+- Accumulo in-memory con truncation automatico (max 50K entries)
+- Persistenza live su DB (periodic save ogni N secondi)
+- Salvataggio finale su DB allo stop della sessione
+- Analisi strutturata dei log all'output
+
+Uso:
     from app.core.session_log_handler import SessionLogHandler
     handler = SessionLogHandler()
     handler.attach()                                         # attach on session start
     handler.detach()                                         # detach on session stop
     content = handler.get_formatted_content(session_id, symbol)  # get text dump
-    filepath = handler.flush_to_file(session_id, symbol)     # write to file
 """
 import logging
 import os
 import re
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Callable
 
 
 # I logger che hanno propagate=False in setup_logging() — vanno agganciati direttamente
@@ -27,16 +31,106 @@ _FORCED_LOGGER_NAMES = [
 ]
 
 
+# Costanti di configurazione
+_MAX_BUFFER_ENTRIES = 50_000  # Soluzione 2: max righe nel buffer prima del truncation
+_TRUNCATE_KEEP_RATIO = 0.5    # Quando si tronca, tiene il 50% più recente (25K)
+
+
 class SessionLogHandler(logging.Handler):
     """Handler di logging in-memory che accumula i record di una sessione.
 
     Al flush, arricchisce il dump con sezioni strutturate per l'analisi.
+
+    Soluzione 1 — Persistenza live su DB:
+        Imposta `set_persist_callback()` con una funzione che salva il contenuto
+        formattato su DB. Il callback viene chiamato periodicamente da un task
+        asincrono esterno (gestito da router.py).
+
+    Soluzione 2 — Buffer truncation:
+        Se il buffer supera _MAX_BUFFER_ENTRIES (50K), vengono rimosse le entry
+        più vecchie mantenendo solo il _TRUNCATE_KEEP_RATIO (50%) più recente.
+        Un marker [--- TRUNCATED X entries ---] viene inserito per tracciare
+        la perdita di dati.
     """
 
-    def __init__(self, level: int = logging.DEBUG):
+    def __init__(self, level: int = logging.DEBUG, session_id: str = "", db_session_id: str = ""):
         super().__init__(level=level)
         self._buffer: list[str] = []
         self._raw_records: list[logging.LogRecord] = []
+        # Soluzione 1: callback per persistenza live su DB
+        self._persist_callback: Optional[Callable[[str], None]] = None
+        # Contatore truncation per marker nei log
+        self._truncated_count: int = 0
+        # Identificatori sessione per il callback di persistenza
+        self.session_id: str = session_id
+        self.db_session_id: str = db_session_id
+        self.symbol: str = "UNKNOWN"
+        # Timestamp ultimo persist riuscito
+        self._last_persist_at: Optional[datetime] = None
+
+    # ------------------------------------------------------------------
+    # Soluzione 1: Persistenza live su DB
+    # ------------------------------------------------------------------
+    def set_persist_callback(self, callback: Optional[Callable[[str], None]]) -> None:
+        """Imposta il callback per la persistenza live su DB.
+        
+        Il callback riceve il contenuto formattato del log come stringa.
+        Può essere una funzione sincrona (eseguita in un thread) o un wrapper
+        che pianifica un task asincrono.
+        """
+        self._persist_callback = callback
+
+    def persist_now(self, force: bool = False) -> bool:
+        """Salva i log accumulati su DB ora (se callback configurato).
+        
+        Args:
+            force: Se True, salva anche se il buffer è vuoto (utile allo stop).
+                   Se False, salva solo se il buffer contiene dati.
+        
+        Returns:
+            True se il callback è stato chiamato, False altrimenti.
+        """
+        if not self._persist_callback:
+            return False
+        if not force and not self._buffer:
+            return False
+        
+        content = self.get_formatted_content(self.session_id, self.symbol)
+        if not content:
+            return False
+        
+        try:
+            self._persist_callback(content)
+            self._last_persist_at = datetime.now(timezone.utc)
+            return True
+        except Exception:
+            return False
+
+    @property
+    def last_persist_at(self) -> Optional[datetime]:
+        return self._last_persist_at
+
+    def _maybe_truncate(self) -> None:
+        """Soluzione 2: tronca il buffer se supera _MAX_BUFFER_ENTRIES.
+        
+        Rimuove le entry più vecchie mantenendo _TRUNCATE_KEEP_RATIO (50%)
+        del buffer più recente. Inserisce un marker per tracciare la perdita.
+        """
+        if len(self._buffer) <= _MAX_BUFFER_ENTRIES:
+            return
+        
+        keep_count = int(_MAX_BUFFER_ENTRIES * _TRUNCATE_KEEP_RATIO)
+        removed_count = len(self._buffer) - keep_count
+        
+        # Tieni solo la parte più recente
+        self._buffer = self._buffer[-keep_count:]
+        self._raw_records = self._raw_records[-keep_count:]
+        
+        self._truncated_count += removed_count
+        
+        # Inserisci marker di truncation
+        marker = f"[--- TRUNCATED {removed_count} old entries (total truncated: {self._truncated_count}) ---]"
+        self._buffer.insert(0, marker)
 
     def emit(self, record: logging.LogRecord) -> None:
         """Accumula il record formattato nel buffer con timestamp.
@@ -45,6 +139,8 @@ class SessionLogHandler(logging.Handler):
         - Usa il format del record stesso (già formattato dall'handler principale)
         - Aggiunge solo timestamp + session_id se presente
         - NON usa self.format() per evitare dipendenza da SessionContextFilter
+        
+        Applica truncation automatico se il buffer supera 50K entries.
         """
         try:
             # Costruisci il timestamp dal record
@@ -62,6 +158,9 @@ class SessionLogHandler(logging.Handler):
 
             self._buffer.append(line)
             self._raw_records.append(record)
+            
+            # Soluzione 2: truncation automatico se il buffer cresce troppo
+            self._maybe_truncate()
         except Exception:
             self.handleError(record)
 
@@ -295,16 +394,17 @@ class SessionLogHandler(logging.Handler):
     # ------------------------------------------------------------------
     def get_formatted_content(
         self,
-        session_id: str,
-        symbol: str = "UNKNOWN",
+        session_id: str = "",
+        symbol: str = "",
     ) -> Optional[str]:
         """Restituisce il contenuto formattato dei log come stringa (senza scrivere su file).
 
         Include una sezione di analisi strutturata alla fine del dump.
+        Se session_id o symbol non forniti, usa quelli interni dell'handler.
 
         Args:
-            session_id: ID della sessione
-            symbol: Simbolo trading per arricchire l'header
+            session_id: ID della sessione (usa self.session_id se omesso)
+            symbol: Simbolo trading (usa self.symbol se omesso)
 
         Returns:
             Contenuto formattato del log, oppure None se buffer vuoto.
@@ -312,11 +412,13 @@ class SessionLogHandler(logging.Handler):
         if not self._buffer:
             return None
 
-        safe_symbol = symbol.replace("/", "_").upper()
+        sid = session_id or self.session_id
+        sym = symbol or self.symbol
+        safe_symbol = sym.replace("/", "_").upper()
         header = (
             f"{'=' * 72}\n"
             f" SESSION LOG DUMP\n"
-            f" Session ID : {session_id}\n"
+            f" Session ID : {sid}\n"
             f" Symbol     : {safe_symbol}\n"
             f" Entries    : {len(self._buffer)}\n"
             f" Generated  : {datetime.now(timezone.utc).isoformat()}\n"
@@ -349,7 +451,7 @@ class SessionLogHandler(logging.Handler):
         """
         return self._analyze()
 
-    def get_content(self, session_id: str, symbol: str = "UNKNOWN") -> Optional[str]:
+    def get_content(self, session_id: str = "", symbol: str = "") -> Optional[str]:
         """Alias per get_formatted_content.
 
         Deprecato: mantenuto per backward compatibilità, preferire get_formatted_content.
@@ -358,15 +460,15 @@ class SessionLogHandler(logging.Handler):
 
     def flush_to_file(
         self,
-        session_id: str,
-        symbol: str = "UNKNOWN",
+        session_id: str = "",
+        symbol: str = "",
         log_dir: str = "session_logs",
     ) -> Optional[str]:
         """Scrive i log accumulati su un file .txt.
 
         Args:
-            session_id: ID della sessione (es. "sess_a1b2c3d4")
-            symbol: Simbolo trading per arricchire il filename
+            session_id: ID della sessione (usa self.session_id se omesso)
+            symbol: Simbolo trading (usa self.symbol se omesso)
             log_dir: Directory di output (default: session_logs/)
 
         Returns:
@@ -375,13 +477,16 @@ class SessionLogHandler(logging.Handler):
         if not self._buffer:
             return None
 
+        sid = session_id or self.session_id
+        sym = symbol or self.symbol
+
         os.makedirs(log_dir, exist_ok=True)
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        safe_symbol = symbol.replace("/", "_").upper()
-        filename = f"session_{safe_symbol}_{session_id}_{timestamp}.txt"
+        safe_symbol = sym.replace("/", "_").upper()
+        filename = f"session_{safe_symbol}_{sid}_{timestamp}.txt"
         filepath = os.path.abspath(os.path.join(log_dir, filename))
 
-        content = self.get_formatted_content(session_id, symbol)
+        content = self.get_formatted_content(sid, sym)
         if content is None:
             return None
 

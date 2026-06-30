@@ -1915,12 +1915,15 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
 
                                     
                                 except Exception as live_e:
-                                    # TASK-896: log body completo eccezione Binance
-                                    import ccxt
-                                    if isinstance(live_e, ccxt.BaseError):
-                                        error_detail = f"{type(live_e).__name__}: {live_e}"
-                                        if live_e.args and str(live_e) != str(live_e.args[0]):
-                                            error_detail += f" | args={live_e.args}"
+                                    # TASK-908: log body completo eccezione Binance
+                                    from app.execution.exchange import ExchangeOrderError
+                                    if isinstance(live_e, ExchangeOrderError):
+                                        # TASK-908: extract preserved original details
+                                        error_detail = str(live_e)
+                                        if live_e.original_details:
+                                            error_detail = f"{error_detail} | Original: {live_e.original_details}"
+                                        if live_e.original_exception:
+                                            error_detail += f" | Exception: {type(live_e.original_exception).__name__}"
                                     else:
                                         error_detail = f"{type(live_e).__name__}: {live_e}"
                                     logger.error(f"Live trade failed: {error_detail}")
@@ -1936,7 +1939,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     ))
                                     await broadcast_scalping_event("error", {
                                         "code": "LIVE_TRADE_ERROR",
-                                        "message": f"Live trade failed: {live_e}",
+                                        "message": f"Live trade failed: {error_detail}",
                                     })
                                     continue
                             

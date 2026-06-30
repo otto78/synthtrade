@@ -9,7 +9,13 @@ logger = logging.getLogger(__name__)
 OrderSide = Literal["buy", "sell"]
 OrderType = Literal["limit", "market", "stop_loss_limit"]
 
-class ExchangeOrderError(Exception): pass
+class ExchangeOrderError(Exception):
+    """Exception wrapper for exchange order errors with original details."""
+    def __init__(self, message: str, original_exception: Optional[Exception] = None, original_details: Optional[str] = None):
+        super().__init__(message)
+        self.original_exception = original_exception
+        self.original_details = original_details
+
 class ExchangeAuthError(Exception): pass
 class ExchangeNetworkError(Exception): pass
 
@@ -76,7 +82,11 @@ class BinanceExchangeAdapter:
             free = balance.get("free", {})
             return {asset: float(amt) for asset, amt in free.items() if float(amt) > 0}
         except Exception as e:
-            raise ExchangeOrderError(f"Holdings fetch failed: {e}")
+            # TASK-908: preserve original error details
+            error_details = str(e)
+            if hasattr(e, 'args') and e.args:
+                error_details = str(e.args[0]) if len(e.args) > 0 else str(e)
+            raise ExchangeOrderError(f"Holdings fetch failed: {error_details}", original_exception=e, original_details=error_details) from e
 
     async def get_balance(self, asset: str = "USDT") -> float:
         try:
@@ -88,7 +98,11 @@ class BinanceExchangeAdapter:
         except ccxt.NetworkError as e:
             raise ExchangeNetworkError(f"Network error: {e}")
         except Exception as e:
-            raise ExchangeOrderError(str(e))
+            # TASK-908: preserve original CCXT error details
+            error_details = str(e)
+            if hasattr(e, 'args') and e.args:
+                error_details = str(e.args[0]) if len(e.args) > 0 else str(e)
+            raise ExchangeOrderError(f"Balance fetch failed: {error_details}", original_exception=e, original_details=error_details) from e
 
     async def _get_ccxt_symbol(self, symbol: str) -> str:
         """Cache-backed symbol resolver."""
@@ -246,9 +260,17 @@ class BinanceExchangeAdapter:
                 )
             return result
         except ccxt.InsufficientFunds as e:
-            raise ExchangeOrderError(f"Insufficient funds: {e}")
+            # TASK-908: preserve original CCXT error details
+            error_details = str(e)
+            if hasattr(e, 'args') and e.args:
+                error_details = str(e.args[0]) if len(e.args) > 0 else str(e)
+            raise ExchangeOrderError(f"Insufficient funds: {error_details}", original_exception=e, original_details=error_details) from e
         except Exception as e:
-            raise ExchangeOrderError(str(e))
+            # TASK-908: preserve original CCXT error details
+            error_details = str(e)
+            if hasattr(e, 'args') and e.args:
+                error_details = str(e.args[0]) if len(e.args) > 0 else str(e)
+            raise ExchangeOrderError(f"Market order failed: {error_details}", original_exception=e, original_details=error_details) from e
 
     async def close_position(self, symbol: str, side: OrderSide, quantity: float) -> Dict[str, Any]:
         # Per chiudere una posizione SELL (short), compriamo (BUY)
@@ -450,7 +472,11 @@ class BinanceExchangeAdapter:
                 "order_list_id": order_list_id,
             }
         except Exception as e:
-            raise ExchangeOrderError(f"Native OCO failed for {symbol}: {e}")
+            # TASK-908: preserve original error details
+            error_details = str(e)
+            if hasattr(e, 'args') and e.args:
+                error_details = str(e.args[0]) if len(e.args) > 0 else str(e)
+            raise ExchangeOrderError(f"Native OCO failed for {symbol}: {error_details}", original_exception=e, original_details=error_details) from e
 
     async def _get_available_base_balance(self, symbol: str) -> float:
         """Get the free (available) balance of the base asset for a symbol.

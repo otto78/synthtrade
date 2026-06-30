@@ -1,5 +1,6 @@
 """Supervisor Client - riutilizza cascata modelli per chiamate Claude."""
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -95,7 +96,10 @@ class SupervisorClient:
         ta_patterns: Optional[dict] = None,
         vol_anomaly: bool = False,
     ) -> SupervisorDecision:
-        """Ottieni decisione dal supervisor AI."""
+        """Ottieni decisione dal supervisor AI.
+
+        TASK-909: Run AI call in separate thread pool to avoid blocking APScheduler event loop.
+        """
         context = await build_scalping_context(
             symbol, snapshot, regime, score,
             session_id=session_id,
@@ -110,10 +114,22 @@ class SupervisorClient:
 Provide your decision:"""
 
         try:
-            response = await self._client.call_with_fallback(
-                system=_SUPERVISOR_SYSTEM_PROMPT,
-                user=user_prompt,
-            )
+            # TASK-909: Run the async AI call in a thread pool to avoid blocking the main event loop
+            # This allows APScheduler to continue processing other jobs during the AI call
+            def _sync_ai_wrapper():
+                """Sync wrapper that runs the async AI call in its own event loop."""
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    return loop.run_until_complete(self._client.call_with_fallback(
+                        system=_SUPERVISOR_SYSTEM_PROMPT,
+                        user=user_prompt,
+                    ))
+                finally:
+                    loop.close()
+
+            response = await asyncio.to_thread(_sync_ai_wrapper)
             return parse_supervisor_decision(response.content)
         except AllModelsUnavailableError as e:
             logger.error(f"All models unavailable for supervisor: {e}")

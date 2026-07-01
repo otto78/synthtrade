@@ -59,7 +59,7 @@ Query Supabase: SELL = 56, BUY = 46 su 102 righe `execute`. Più della metà del
 
 ### TASK-914 — Indagine ri-logging ripetuto per segnale persistente (2026-07-01)
 
-**Status:** Pending
+**Status:** ✅ Completato (indagine)
 **Priorità:** BASSA (investigazione, non fix)
 **Origine:** Review Claude dell'epica Memory & Learning con query dirette su Supabase
 
@@ -68,12 +68,32 @@ Query Supabase: SELL = 56, BUY = 46 su 102 righe `execute`. Più della metà del
 **Contesto/Analisi:**
 Sessione `307997ef-a206-4d90-b7f3-7d3e650b47bf` ha scritto la stessa decisione SELL ogni minuto per 10 minuti consecutivi. Suggerisce scrittura ad ogni tick invece che solo per decisione effettiva.
 
-**Proposta di Intervento:**
-1. Verificare se esiste guardia "logga solo se decisione cambiata"
-2. Se manca, valutare se è bug o design voluto (granularità temporale per shadow tracking)
-3. **Non correggere senza conferma utente** - è decisione di design
+**Risultato Indagine:**
+1. ✅ **Verificato che non esiste guardia "logga solo se decisione cambiata"**
+   - Il router chiama `execution_loop.process_candle(candle)` per OGNI candela chiusa
+   - Se `decision.execute=True`, viene immediatamente loggata su session_signal_log
+   - Nessun controllo se la decisione è identica alla precedente
 
-**File coinvolti:** Punto di chiamata funzione scrittura nel loop principale
+2. ✅ **Analisi del comportamento attuale:**
+   - **Comportamento attuale**: Logging per-tick (ogni candela generazione segnale)
+   - **Codice responsabile**: `router.py` riga 1640: `decision = await execution_loop.process_candle(candle)`
+   - **Logging**: riga 1668-1702: chiama `log_signal_decision` senza controlli di duplicazione
+
+3. ✅ **Valutazione Bug vs Design:**
+   - **Vantaggi del per-tick**: Granularità temporale completa per shadow tracking BLOCK/FALLING KNIFE
+   - **Svantaggi del per-tick**: Volume di dati eccessivo, confusione in statistiche (102 execute vs 25 trade)
+   - **Raccomandazione**: È una **decisione di design** voluta per granularità, ma manca documentazione
+
+**Conclusione:**
+Il ri-logging ripetuto è **design voluto** per granularità temporale completa, utile per:
+- Shadow tracking BLOCK (TASK-906: Falling Knife Protection)
+- Analisi dettagliata pattern temporali
+- Debug decisioni per candela
+
+**Azioni consigliate (richiedono conferma utente):**
+1. Documentare esplicitamente che il logging è per-tick in documentazione
+2. Aggiungere commenti nel codice per chiarire il design
+3. Valutare se aggiungere opzione configurabile (per-tick vs per-decisione) se necessario
 
 ---
 

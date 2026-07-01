@@ -99,7 +99,8 @@ Il ri-logging ripetuto è **design voluto** per granularità temporale completa,
 
 ### TASK-911 — Frontend: Caricamento decisioni sessione corrente in SupervisorLog (2026-07-01)
 
-**Status:** Pending
+**Status:** Done ✅  
+**Completato:** 2026-07-01
 **Priorità:** BASSA
 
 **Obiettivo:** Popolare la scheda SupervisorLog con le decisioni della sessione corrente quando si apre o si riavvia il backend, permettendo di vedere la storia della sessione invece di solo decisioni realtime.
@@ -107,16 +108,25 @@ Il ri-logging ripetuto è **design voluto** per granularità temporale completa,
 **Contesto:**
 Attualmente il SupervisorLog mostra solo decisioni in tempo reale via WebSocket. Quando si riavvia il backend con una sessione in corso, la scheda parte vuota e si popola solo con nuove decisioni. Le decisioni passate della sessione corrente sono nel database (`supervisor_memory`) ma non vengono caricate.
 
-**Proposta di Intervento:**
-- Aggiungere endpoint GET `/scalping/supervisor/history?session_id={session_id}` che recupera le decisioni di una sessione da `supervisor_memory`
-- Modificare `SupervisorLogComponent` per chiamare questo endpoint al OnInit se c'è una sessione attiva
-- Le decisioni caricate dalla sessione corrente si mostrano prima di quelle realtime
+**Implementazione:**
+1. ✅ Aggiunto endpoint GET `/scalping/supervisor/history?session_id={session_id}` in `router.py` che query `supervisor_memory` per session_id, ordina per `decided_at DESC`, normalizza i campi per il frontend
+2. ✅ Creato `SupervisorApiService` lato frontend con metodo `getHistory(sessionId)`
+3. ✅ Modificato `SupervisorLogComponent` per chiamare `_loadHistory()` al `OnInit` e su cambio sessione
+4. ✅ Aggiunti campi `was_applied` e `blocked_reason` a `SupervisorDecision` interface
+5. ✅ Aggiunto display `⛔ Blocked:` nel template per decisioni bloccate dal guard
+6. ✅ Aggiunto stato `loading` per UX durante il fetch storico
 
-**File da modificare:**
-- `synthtrade/backend/app/scalping/router.py` — nuovo endpoint
-- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/supervisor-log.component.ts` — caricamento storico
+**File creati/modificati:**
+- `synthtrade/backend/app/scalping/router.py` — nuovo endpoint GET `/supervisor/history`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/supervisor-api.service.ts` — nuovo service
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/supervisor-log.component.ts` — caricamento storico + display blocked
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/scalping-ws.service.ts` — nuovi campi `was_applied`, `blocked_reason`
 
----### TASK-906 — Trend Analysis: Prevenzione Falling Knife in Mean-Reversion (2026-06-30)
+**Verifica:** Aprire la dashboard con una sessione che ha decisioni supervisor in `supervisor_memory`. La scheda SupervisorLog deve mostrarle subito al caricamento. Le nuove decisioni via WS si accodano in cima.
+
+---
+
+### TASK-906 — Trend Analysis: Prevenzione Falling Knife in Mean-Reversion (2026-06-30)
 
 **Status:** Pending (in attesa del prossimo drop di mercato per raccogliere i dati reali)
 **Priorità:** ALTA

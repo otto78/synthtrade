@@ -189,7 +189,7 @@ class TestLogMeanReversionDecision:
             strategy_type="rsi_bollinger"
         )
         
-        assert result is True  # Restituisce bool per compatibilità
+        assert result == "test-id"  # Restituisce UUID (Optional[str])
 
 
 class TestLogHoldDecision:

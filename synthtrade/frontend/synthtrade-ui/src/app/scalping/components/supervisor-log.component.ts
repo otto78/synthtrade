@@ -1,11 +1,13 @@
 /**
  * Supervisor Log Component
- * Displays AI decisions log
+ * Displays AI decisions log — loads historical decisions on init + realtime via WS
  */
 
 import { Component, OnInit, ChangeDetectorRef, OnDestroy } from '@angular/core';
 import { DatePipe, DecimalPipe, NgClass, NgForOf, NgIf } from '@angular/common';
 import { ScalpingWsService, SupervisorDecision } from '../services/scalping-ws.service';
+import { SupervisorApiService } from '../services/supervisor-api.service';
+import { SessionApiService } from '../services/session-api.service';
 import { Subscription } from 'rxjs';
 
 @Component({
@@ -17,7 +19,8 @@ import { Subscription } from 'rxjs';
       <span class="panel-title">AI Supervisor Log</span>
       <div class="title-hr"></div>
 
-      <div *ngIf="!decisions.length" class="empty">No AI decisions yet</div>
+      <div *ngIf="loading" class="loading">Loading history...</div>
+      <div *ngIf="!loading && !decisions.length" class="empty">No AI decisions yet</div>
 
       <div class="decisions-list">
         <div class="decision-item" *ngFor="let dec of decisions">
@@ -30,6 +33,9 @@ import { Subscription } from 'rxjs';
              <span *ngIf="dec.new_strategy">Target: {{ dec.new_strategy }}</span>
           </div>
           <div class="confidence">Confidence: {{ dec.confidence * 100 | number:'1.0-0' }}%</div>
+          <div class="blocked" *ngIf="dec.was_applied === false && dec.blocked_reason">
+            ⛔ Blocked: {{ dec.blocked_reason }}
+          </div>
         </div>
       </div>
     </div>
@@ -39,6 +45,7 @@ import { Subscription } from 'rxjs';
     .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
     .title-hr { height: 1px; background: rgba(234,236,239,0.08); margin: 10px 0 12px 0; }
     .empty { color: var(--text-secondary); font-size: 12px; padding: 8px; }
+    .loading { color: var(--text-secondary); font-size: 12px; padding: 8px; font-style: italic; }
     .decisions-list { font-size: 12px; }
     .decision-item { padding: 10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; margin-bottom: 8px; }
     .header { display: flex; justify-content: space-between; margin-bottom: 6px; align-items: center; }
@@ -55,18 +62,26 @@ import { Subscription } from 'rxjs';
     .reason { font-size: 11px; color: var(--text-primary); margin-bottom: 6px; line-height: 1.4; }
     .details { font-size: 10px; color: var(--accent-primary); margin-bottom: 4px; font-weight: 600; }
     .confidence { font-size: 10px; color: var(--text-secondary); opacity: 0.8; }
+    .blocked { font-size: 10px; color: #ef5350; margin-top: 4px; font-style: italic; }
   `],
 })
 export class SupervisorLogComponent implements OnInit, OnDestroy {
   decisions: SupervisorDecision[] = [];
+  loading = false;
   private sub = new Subscription();
 
   constructor(
     private ws: ScalpingWsService,
+    private supervisorApi: SupervisorApiService,
+    private sessionApi: SessionApiService,
     private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
+    // TASK-911: Load historical decisions for the current session on init
+    this._loadHistory();
+
+    // Subscribe to realtime decisions via WebSocket
     this.sub.add(
       this.ws.supervisorDecision$.subscribe((decision: SupervisorDecision | null) => {
         if (!decision) return;
@@ -76,6 +91,40 @@ export class SupervisorLogComponent implements OnInit, OnDestroy {
         this.cdr.detectChanges();
       })
     );
+
+    // TASK-911: Reload history when session changes (e.g. new session started)
+    this.sub.add(
+      this.sessionApi.session$.subscribe((session) => {
+        if (session && session.session_id) {
+          this._loadHistory();
+        }
+      })
+    );
+  }
+
+  private _loadHistory(): void {
+    const session = this.sessionApi.getActiveSession();
+    const sessionId = session?.session_id || session?.db_session_id;
+    if (!sessionId) {
+      return;
+    }
+
+    this.loading = true;
+    this.supervisorApi.getHistory(sessionId).subscribe({
+      next: (history) => {
+        if (history && history.length > 0) {
+          console.log(`[SupervisorLog] Loaded ${history.length} historical decisions for session ${sessionId.slice(0, 8)}...`);
+          this.decisions = history.slice(0, 50);
+        }
+        this.loading = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.warn('[SupervisorLog] Failed to load history:', err);
+        this.loading = false;
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   ngOnDestroy(): void {

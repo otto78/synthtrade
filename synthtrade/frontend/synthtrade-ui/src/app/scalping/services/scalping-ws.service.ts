@@ -147,6 +147,10 @@ export interface SupervisorDecision {
   primary_signal?: string;
   decided_at?: string;
   timestamp?: string;
+  /** TASK-911: Whether the decision was actually applied (false = blocked by guard) */
+  was_applied?: boolean;
+  /** TASK-911: Reason why the decision was blocked (e.g. cooldown, resume guard) */
+  blocked_reason?: string;
 }
 
 export interface RiskBlockEvent {

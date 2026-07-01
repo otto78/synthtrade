@@ -118,7 +118,7 @@ def log_mean_reversion_decision(
     symbol: str,
     override_reason: str,
     **context_kwargs
-) -> bool:
+) -> Optional[str]:
     """Logga decisione MEAN-REVERSION (override mean-reversion).
     
     Args:
@@ -128,7 +128,7 @@ def log_mean_reversion_decision(
         **context_kwargs: Altri campi contesto
     
     Returns:
-        True se loggato con successo, False altrimenti
+        UUID della riga inserita se successo, None altrimenti (non-blocking)
     """
     result = log_signal_decision(
         session_id=session_id,
@@ -137,7 +137,7 @@ def log_mean_reversion_decision(
         decision_reason=f"MEAN-REVERSION override: {override_reason}",
         **context_kwargs
     )
-    return result is not None  # Convert UUID to bool
+    return result  # Passa UUID direttamente (Optional[str])
 
 
 def log_hold_decision(

@@ -1673,7 +1673,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     log_mean_reversion_decision,
                                     session_id=session.get("db_session_id") or session.get("session_id") or "",
                                     symbol=event.symbol.upper(),
-                                    override_reason=decision.reason,
+                                    override_reason=decision.reason or "",
                                     regime=execution_loop._current_regime.regime if execution_loop._current_regime else "unknown",
                                     strategy_type=execution_loop._strategy.name if execution_loop._strategy else "unknown",
                                     tech_signal=decision.signal_type,
@@ -3874,3 +3874,55 @@ async def get_opportunity_watchlist() -> List[str]:
     """Recupera la watchlist simboli."""
     scheduler = await _get_opportunity_scheduler()
     return scheduler.router.get_watchlist()
+
+
+# ---------------------------------------------------------------------------
+# TASK-911: Supervisor history endpoint
+# ---------------------------------------------------------------------------
+@router.get("/supervisor/history")
+async def get_supervisor_history(session_id: str, limit: int = 50) -> List[Dict]:
+    """Recupera le decisioni del supervisor per una sessione specifica.
+
+    Usato dal frontend per popolare la scheda SupervisorLog con lo storico
+    delle decisioni della sessione corrente al caricamento della pagina.
+    """
+    try:
+        supabase = get_supabase()
+
+        def _fetch():
+            resp = supabase.table("supervisor_memory") \
+                .select("*") \
+                .eq("session_id", session_id) \
+                .order("decided_at", desc=True) \
+                .limit(limit) \
+                .execute()
+            return resp.data if resp.data else []
+
+        records = await asyncio.to_thread(_fetch)
+
+        # Normalizza i campi per il frontend
+        result = []
+        for r in records:
+            entry = {
+                "action": r.get("action", "no_action"),
+                "reason": r.get("reason", ""),
+                "confidence": r.get("confidence", 0.0),
+                "timestamp": r.get("decided_at"),
+                "decided_at": r.get("decided_at"),
+                "market_bias": r.get("market_bias"),
+                "primary_signal": r.get("primary_signal"),
+                "new_strategy": r.get("new_strategy"),
+                "new_params": r.get("new_params"),
+                "was_applied": r.get("was_applied", True),
+                "blocked_reason": r.get("blocked_reason"),
+            }
+            result.append(entry)
+
+        logger.info(
+            f"GET /supervisor/history: {len(result)} records for session_id={session_id[:8]}..."
+        )
+        return result
+
+    except Exception as e:
+        logger.error(f"GET /supervisor/history error: {e}")
+        return []

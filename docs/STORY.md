@@ -666,6 +666,27 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ---
 
+### v1.3.8 — 2026-07-01
+
+**Milestone:** TASK-911 completato — Epica Memory & Learning chiusa
+
+**Completato:**
+- ✅ TASK-911: Nuovo endpoint GET `/scalping/supervisor/history?session_id={session_id}`
+- ✅ Nuovo frontend `SupervisorApiService` per fetch storico decisioni
+- ✅ `SupervisorLogComponent` ora carica lo storico al mount e su cambio sessione
+- ✅ Visualizzazione decisioni bloccate (`was_applied=False`, `blocked_reason`)
+- ✅ Epica Memory & Learning completamente implementata livelli 1-3 + frontend
+
+**File creati/modificati:**
+- `synthtrade/backend/app/scalping/router.py` — nuovo endpoint GET `/supervisor/history`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/supervisor-api.service.ts` — nuovo service
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/supervisor-log.component.ts` — caricamento storico + display blocked
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/scalping-ws.service.ts` — nuovi campi `was_applied`, `blocked_reason`
+
+**Verifica:** Aprire la dashboard con una sessione che ha decisioni supervisor in `supervisor_memory`. La scheda SupervisorLog mostra lo storico al caricamento. Le nuove decisioni via WS si accodano in cima.
+
+---
+
 ### v2.0.0-alpha.5 — 2026-05-27
 
 **Milestone:** Scalping Module - Fix Frontend UI (14 bug fix)

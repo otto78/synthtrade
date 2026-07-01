@@ -112,6 +112,7 @@ class BacktestEngine:
                     execute=True,
                     confidence=0.5,
                     reason="technical_only",
+                    is_mean_reversion_override=False
                 )
 
             if decision and decision.execute and position is None:

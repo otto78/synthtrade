@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from app.scalping.models.intelligence import SignalScore
+from app.core.signal_log_writer import log_mean_reversion_decision
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ class ExecutionDecision:
     signal_type: str = ""  # BUY/SELL/CLONE dal segnale tecnico originale
     ta_patterns: Optional[dict] = None
     vol_anomaly: bool = False
+    is_mean_reversion_override: bool = False  # TASK-912: flag per identificare mean-reversion override
 
 
 @dataclass(frozen=True)
@@ -133,7 +135,9 @@ class SignalAggregator:
                 execute=False,
                 reason="nessun segnale tecnico",
                 signal_type=technical.type,
-                ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
+                ta_patterns=ta_patterns,
+                vol_anomaly=vol_anomaly,
+                is_mean_reversion_override=False
             )
 
         # ── FIX-2026-06-12: CLOSE sempre permesso ──
@@ -146,7 +150,9 @@ class SignalAggregator:
                 confidence=min(technical.confidence, 1.0),
                 reason=f"close_signal: {technical.type}@{technical.confidence:.2f} (uscita sempre permessa)",
                 signal_type=technical.type,
-                ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
+                ta_patterns=ta_patterns,
+                vol_anomaly=vol_anomaly,
+                is_mean_reversion_override=False
             )
 
         # Conta tutti i collector che hanno risposto (non None)
@@ -252,16 +258,27 @@ class SignalAggregator:
                     execute=False,
                     reason=reason,
                     signal_type=technical.type,
-                    ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
+                    ta_patterns=ta_patterns,
+                    vol_anomaly=vol_anomaly,
+                    is_mean_reversion_override=False
                 )
 
         if bias == "bearish" and technical.type not in ("SELL", "CLOSE"):
             if technical.type == "BUY" and technical.source and any(
                 technical.source.startswith(s) for s in MEAN_REVERSION_STRATEGIES
             ):
-                logger.info(
-                    f"⚡ MEAN-REVERSION BUY permesso (source={technical.source}) "
-                    f"nonostante bias={bias}{trend_str} — chiusura range, non long direzionale"
+                # TASK-912: Log mean-reversion override correttamente su session_signal_log
+                override_reason = f"MEAN-REVERSION BUY permesso (source={technical.source}) nonostante bias={bias}{trend_str} — chiusura range, non long direzionale"
+                logger.info(f"⚡ {override_reason}")
+                # Passiamo l'override_reason nel decision object per il logging successivo
+                return ExecutionDecision(
+                    execute=True,
+                    confidence=technical.confidence,
+                    reason=override_reason,
+                    signal_type=technical.type,
+                    ta_patterns=ta_patterns,
+                    vol_anomaly=vol_anomaly,
+                    is_mean_reversion_override=True  # TASK-912: flag per identificare l'override
                 )
             else:
                 reason = f"conflitto intelligence-tecnico: bias={bias}, segnale={technical.type}{trend_str}"
@@ -270,7 +287,9 @@ class SignalAggregator:
                     execute=False,
                     reason=reason,
                     signal_type=technical.type,
-                    ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
+                    ta_patterns=ta_patterns,
+                    vol_anomaly=vol_anomaly,
+                    is_mean_reversion_override=False
                 )
 
         if bias == "neutral":
@@ -280,7 +299,9 @@ class SignalAggregator:
                 execute=False,
                 reason=reason,
                 signal_type=technical.type,
-                ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
+                ta_patterns=ta_patterns,
+                vol_anomaly=vol_anomaly,
+                is_mean_reversion_override=False
             )
 
         # ── Logica TA & Volume: Blocco Preventivo o Boost (per posizioni BUY) ──
@@ -294,7 +315,9 @@ class SignalAggregator:
                     execute=False,
                     reason=reason,
                     signal_type=technical.type,
-                    ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
+                    ta_patterns=ta_patterns,
+                    vol_anomaly=vol_anomaly,
+                    is_mean_reversion_override=False
                 )
             # Se abbiamo volumi molto alti e un sentiment rialzista dai pattern, spingiamo il confidence
             elif score_ta > 0:
@@ -321,7 +344,9 @@ class SignalAggregator:
                 execute=False,
                 reason=reason,
                 signal_type=technical.type,
-                ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
+                ta_patterns=ta_patterns,
+                vol_anomaly=vol_anomaly,
+                is_mean_reversion_override=False
             )
 
         # ── TRADE ESEGUITO ───────────────────────────────────────────────
@@ -340,5 +365,7 @@ class SignalAggregator:
             confidence=round(combined, 3),
             reason=reason_str,
             signal_type=technical.type,
-            ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
+            ta_patterns=ta_patterns,
+            vol_anomaly=vol_anomaly,
+            is_mean_reversion_override=False
         )

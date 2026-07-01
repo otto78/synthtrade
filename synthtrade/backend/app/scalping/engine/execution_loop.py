@@ -215,6 +215,7 @@ class ExecutionLoop:
                 execute=False,
                 reason="posizione aperta: nessun nuovo ingresso",
                 signal_type="HOLD",
+                is_mean_reversion_override=False
             )
 
         decision = self._signal_aggregator.should_execute(
@@ -239,6 +240,7 @@ class ExecutionLoop:
                         execute=False,
                         reason=f"Risk block: {risk_result.reason}",
                         confidence=0.0,
+                        is_mean_reversion_override=False
                     )
                     return decision
             except Exception as exc:

@@ -56,6 +56,7 @@ from app.core.signal_log_writer import (
     log_block_decision,
     log_hold_decision,
     log_execution_error,
+    log_mean_reversion_decision,
 )
 
 logger = logging.getLogger(__name__)
@@ -1663,22 +1664,41 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         else:
                             logger.info(f">>> DECISION APPROVED -> {decision.reason} | confidence={decision.confidence}")
                             # TASK-894/895: log decisione execute su session_signal_log, cattura ID per collegamento
+                            # TASK-912: usa il flag is_mean_reversion_override per decidere quale logging function chiamare
                             _ms = execution_loop._last_market_score
-                            _signal_log_id = await asyncio.to_thread(
-                                log_signal_decision,
-                                session_id=session.get("db_session_id") or session.get("session_id") or "",
-                                symbol=event.symbol.upper(),
-                                decision_type="execute",
-                                decision_reason=decision.reason,
-                                regime=execution_loop._current_regime.regime if execution_loop._current_regime else "unknown",
-                                strategy_type=execution_loop._strategy.name if execution_loop._strategy else "unknown",
-                                tech_signal=decision.signal_type,
-                                tech_confidence=round(abs(decision.confidence), 3),
-                                intel_score=float(_ms.total) if _ms else None,
-                                intel_bias=_ms.bias if _ms else None,
-                                trend_direction=_ms.trend_direction if _ms else None,
-                                trend_value=float(_ms.trend_5m) if _ms and _ms.trend_5m is not None else None,
-                            )
+                            if getattr(decision, 'is_mean_reversion_override', False):
+                                # TASK-912: Log mean-reversion override correttamente
+                                _signal_log_id = await asyncio.to_thread(
+                                    log_mean_reversion_decision,
+                                    session_id=session.get("db_session_id") or session.get("session_id") or "",
+                                    symbol=event.symbol.upper(),
+                                    override_reason=decision.reason,
+                                    regime=execution_loop._current_regime.regime if execution_loop._current_regime else "unknown",
+                                    strategy_type=execution_loop._strategy.name if execution_loop._strategy else "unknown",
+                                    tech_signal=decision.signal_type,
+                                    tech_confidence=round(abs(decision.confidence), 3),
+                                    intel_score=float(_ms.total) if _ms else None,
+                                    intel_bias=_ms.bias if _ms else None,
+                                    trend_direction=_ms.trend_direction if _ms else None,
+                                    trend_value=float(_ms.trend_5m) if _ms and _ms.trend_5m is not None else None,
+                                )
+                            else:
+                                # Logging normale per execute
+                                _signal_log_id = await asyncio.to_thread(
+                                    log_signal_decision,
+                                    session_id=session.get("db_session_id") or session.get("session_id") or "",
+                                    symbol=event.symbol.upper(),
+                                    decision_type="execute",
+                                    decision_reason=decision.reason,
+                                    regime=execution_loop._current_regime.regime if execution_loop._current_regime else "unknown",
+                                    strategy_type=execution_loop._strategy.name if execution_loop._strategy else "unknown",
+                                    tech_signal=decision.signal_type,
+                                    tech_confidence=round(abs(decision.confidence), 3),
+                                    intel_score=float(_ms.total) if _ms else None,
+                                    intel_bias=_ms.bias if _ms else None,
+                                    trend_direction=_ms.trend_direction if _ms else None,
+                                    trend_value=float(_ms.trend_5m) if _ms and _ms.trend_5m is not None else None,
+                                )
                             # A signal was generated — broadcast it
                             await broadcast_scalping_event("signal", {
                                 "symbol": event.symbol.upper(),

@@ -2,6 +2,77 @@
 
 ## Task Attivi
 
+### TASK-912 — Fix mapping `mean_reversion_override` in session_signal_log (2026-07-01)
+
+**Status:** ✅ Completato
+**Priorità:** MEDIA
+**Origine:** Review Claude dell'epica Memory & Learning con query dirette su Supabase
+
+**Obiettivo:** Correggere il mapping di `decision_type` per i casi di mean-reversion override. Attualmente tutti i casi di override sono loggati come `execute` invece di `mean_reversion_override`.
+
+**Contesto/Analisi:**
+Query Supabase ha rivelato 44 righe con pattern (rsi_bollinger + bearish + BUY) tutte con `decision_type = 'execute'` invece di `mean_reversion_override`. Il log testuale `⚡ MEAN-REVERSION BUY permesso (source=...) nonostante bias=bearish` viene emesso ma il mapping in DB non corrisponde.
+
+**Implementazione:**
+1. ✅ Aggiunto flag `is_mean_reversion_override` a `ExecutionDecision` in `signal_aggregator.py`
+2. ✅ Impostato flag a `True` nei casi di mean-reversion override (BUY/SELL con source mean-reversion)
+3. ✅ Importato `log_mean_reversion_decision` in `router.py`
+4. ✅ Modificato logging in `router.py` per usare `log_mean_reversion_decision` quando flag è True
+5. ✅ Aggiornato tutte le istanze di `ExecutionDecision` per includere il flag
+6. ✅ Aggiornato `execution_loop.py` e `backtest_engine.py` per compatibilità
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/engine/signal_aggregator.py` (+1 flag, +2 casi override)
+- `synthtrade/backend/app/scalping/router.py` (+import, +condizione logging)
+- `synthtrade/backend/app/scalping/engine/execution_loop.py` (+flag)
+- `synthtrade/backend/app/scalping/backtest/backtest_engine.py` (+flag)
+
+**Verifica:** Query su nuova sessione live deve mostrare `decision_type='mean_reversion_override'` per il pattern corretto.
+
+---
+
+### TASK-913 — Nuovo `decision_type='rejected_short_unsupported'` per SELL scartate (2026-07-01)
+
+**Status:** Pending
+**Priorità:** MEDIA
+**Origine:** Review Claude dell'epica Memory & Learning con query dirette su Supabase
+
+**Obiettivo:** Aggiungere un nuovo `decision_type` dedicato per i segnali SELL scartati (short non implementato). Attualmente sono loggati come `execute`.
+
+**Contesto/Analisi:**
+Query Supabase: SELL = 56, BUY = 46 su 102 righe `execute`. Più della metà delle righe `execute` sono segnali SELL che vengono scartati con log "Short selling non implementato". Inquina le statistiche di `session_signal_log`.
+
+**Proposta di Intervento:**
+1. Localizzare il punto dove si logga "Short selling non implementato — segnale SELL ignorato"
+2. Cambiare `decision_type` da `"execute"` a `"rejected_short_unsupported"`
+3. Migration per aggiungere nuovo valore al CHECK constraint
+
+**File coinvolti:** `execution_loop.py`/`signal_aggregator.py` + migration ALTER CONSTRAINT
+
+**Verifica:** Rapporto execute/trade deve ridursi da ~4:1 a ~1:1.
+
+---
+
+### TASK-914 — Indagine ri-logging ripetuto per segnale persistente (2026-07-01)
+
+**Status:** Pending
+**Priorità:** BASSA (investigazione, non fix)
+**Origine:** Review Claude dell'epica Memory & Learning con query dirette su Supabase
+
+**Obiettivo:** Investigare se il ri-logging ripetuto per tick è un bug o design voluto.
+
+**Contesto/Analisi:**
+Sessione `307997ef-a206-4d90-b7f3-7d3e650b47bf` ha scritto la stessa decisione SELL ogni minuto per 10 minuti consecutivi. Suggerisce scrittura ad ogni tick invece che solo per decisione effettiva.
+
+**Proposta di Intervento:**
+1. Verificare se esiste guardia "logga solo se decisione cambiata"
+2. Se manca, valutare se è bug o design voluto (granularità temporale per shadow tracking)
+3. **Non correggere senza conferma utente** - è decisione di design
+
+**File coinvolti:** Punto di chiamata funzione scrittura nel loop principale
+
+---
+
 ### TASK-911 — Frontend: Caricamento decisioni sessione corrente in SupervisorLog (2026-07-01)
 
 **Status:** Pending

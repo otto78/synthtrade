@@ -57,6 +57,7 @@ from app.core.signal_log_writer import (
     log_hold_decision,
     log_execution_error,
     log_mean_reversion_decision,
+    log_rejected_short_unsupported,
 )
 
 logger = logging.getLogger(__name__)
@@ -1725,6 +1726,21 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         if not pm.has_open():
                             if side == "SELL":
                                 logger.info("Short selling non implementato — segnale SELL ignorato (feature futura)")
+                                # TASK-913: Logga il rifiuto short con decision_type corretto
+                                _ms = execution_loop._last_market_score
+                                await asyncio.to_thread(
+                                    log_rejected_short_unsupported,
+                                    session_id=session.get("db_session_id") or session.get("session_id") or "",
+                                    symbol=event.symbol.upper(),
+                                    regime=execution_loop._current_regime.regime if execution_loop._current_regime else "unknown",
+                                    strategy_type=execution_loop._strategy.name if execution_loop._strategy else "unknown",
+                                    tech_signal=decision.signal_type,
+                                    tech_confidence=round(abs(decision.confidence), 3),
+                                    intel_score=float(_ms.total) if _ms else None,
+                                    intel_bias=_ms.bias if _ms else None,
+                                    trend_direction=_ms.trend_direction if _ms else None,
+                                    trend_value=float(_ms.trend_5m) if _ms and _ms.trend_5m is not None else None,
+                                )
                                 continue
 
                             if _check_daily_loss():

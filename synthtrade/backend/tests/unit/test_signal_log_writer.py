@@ -8,7 +8,8 @@ from app.core.signal_log_writer import (
     log_block_decision,
     log_mean_reversion_decision,
     log_hold_decision,
-    log_execution_error
+    log_execution_error,
+    log_rejected_short_unsupported
 )
 
 
@@ -16,7 +17,7 @@ from app.core.signal_log_writer import (
 def mock_supabase():
     """Mock client Supabase."""
     mock = Mock()
-    mock.table.return_value.insert.return_value.execute.return_value = None
+    mock.table.return_value.insert.return_value.execute.return_value.data = [{"id": "test-id"}]
     return mock
 
 
@@ -36,7 +37,7 @@ class TestLogSignalDecision:
             strategy_type="rsi_bollinger"
         )
         
-        assert result is True
+        assert result == "test-id"  # log_signal_decision restituisce UUID
         mock_supabase.table.assert_called_once_with("session_signal_log")
     
     @patch('app.core.signal_log_writer.get_supabase')
@@ -53,7 +54,7 @@ class TestLogSignalDecision:
             strategy_type="rsi_bollinger"
         )
         
-        assert result is True
+        assert result == "test-id"  # log_signal_decision restituisce UUID
     
     @patch('app.core.signal_log_writer.get_supabase')
     def test_log_signal_decision_error(self, mock_get_supabase):
@@ -68,7 +69,7 @@ class TestLogSignalDecision:
             strategy_type="rsi_bollinger"
         )
         
-        assert result is False  # non-blocking, ritorna False ma non crash
+        assert result is None  # non-blocking, ritorna None su errore
     
     @patch('app.core.signal_log_writer.get_supabase')
     def test_log_signal_decision_full_context(self, mock_get_supabase, mock_supabase):
@@ -89,10 +90,10 @@ class TestLogSignalDecision:
             trend_value=0.5
         )
         
-        assert result is True
+        assert result == "test-id"  # log_signal_decision restituisce UUID
     
     def test_log_signal_decision_missing_required(self):
-        """Test che manca campo obbligatorio ritorna False (non-blocking)."""
+        """Test che manca campo obbligatorio ritorna None (non-blocking)."""
         result = log_signal_decision(
             session_id="123",
             symbol="BTCUSDT",
@@ -100,7 +101,7 @@ class TestLogSignalDecision:
             # regime e strategy_type mancanti
         )
         
-        assert result is False  # non-blocking, ritorna False invece di crash
+        assert result is None  # non-blocking, ritorna None invece di crash
 
 
 class TestLogPipelineDecision:
@@ -119,7 +120,7 @@ class TestLogPipelineDecision:
             tradeable=True
         )
         
-        assert result is True
+        assert result is True  # Restituisce bool per compatibilità
     
     @patch('app.core.signal_log_writer.get_supabase')
     def test_log_pipeline_decision_rejected(self, mock_get_supabase, mock_supabase):
@@ -134,7 +135,7 @@ class TestLogPipelineDecision:
             tradeable=False
         )
         
-        assert result is True
+        assert result is True  # Restituisce bool per compatibilità
     
     @patch('app.core.signal_log_writer.get_supabase')
     def test_log_pipeline_decision_with_vol_anomaly(self, mock_get_supabase, mock_supabase):
@@ -150,7 +151,7 @@ class TestLogPipelineDecision:
             vol_anomaly=True
         )
         
-        assert result is True
+        assert result is True  # Restituisce bool per compatibilità
 
 
 class TestLogBlockDecision:
@@ -169,7 +170,7 @@ class TestLogBlockDecision:
             strategy_type="rsi_bollinger"
         )
         
-        assert result is True
+        assert result is True  # Restituisce bool per compatibilità
 
 
 class TestLogMeanReversionDecision:
@@ -188,7 +189,7 @@ class TestLogMeanReversionDecision:
             strategy_type="rsi_bollinger"
         )
         
-        assert result is True
+        assert result is True  # Restituisce bool per compatibilità
 
 
 class TestLogHoldDecision:
@@ -207,7 +208,7 @@ class TestLogHoldDecision:
             strategy_type="rsi_bollinger"
         )
         
-        assert result is True
+        assert result is True  # Restituisce bool per compatibilità
 
 
 class TestLogExecutionError:
@@ -226,4 +227,22 @@ class TestLogExecutionError:
             strategy_type="rsi_bollinger"
         )
         
-        assert result is True
+        assert result is True  # Restituisce bool per compatibilità
+
+
+class TestLogRejectedShortUnsupported:
+    """Test per log_rejected_short_unsupported."""
+    
+    @patch('app.core.signal_log_writer.get_supabase')
+    def test_log_rejected_short_unsupported(self, mock_get_supabase, mock_supabase):
+        """Test logging rifiuto short non supportato."""
+        mock_get_supabase.return_value = mock_supabase
+        
+        result = log_rejected_short_unsupported(
+            session_id="123",
+            symbol="BTCUSDT",
+            regime="ranging",
+            strategy_type="rsi_bollinger"
+        )
+        
+        assert result is True  # Restituisce bool per compatibilità  # Restituisce bool per compatibilità con altre funzioni

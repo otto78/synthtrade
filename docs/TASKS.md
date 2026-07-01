@@ -33,7 +33,7 @@ Query Supabase ha rivelato 44 righe con pattern (rsi_bollinger + bearish + BUY) 
 
 ### TASK-913 — Nuovo `decision_type='rejected_short_unsupported'` per SELL scartate (2026-07-01)
 
-**Status:** Pending
+**Status:** ✅ Completato
 **Priorità:** MEDIA
 **Origine:** Review Claude dell'epica Memory & Learning con query dirette su Supabase
 
@@ -42,14 +42,18 @@ Query Supabase ha rivelato 44 righe con pattern (rsi_bollinger + bearish + BUY) 
 **Contesto/Analisi:**
 Query Supabase: SELL = 56, BUY = 46 su 102 righe `execute`. Più della metà delle righe `execute` sono segnali SELL che vengono scartati con log "Short selling non implementato". Inquina le statistiche di `session_signal_log`.
 
-**Proposta di Intervento:**
-1. Localizzare il punto dove si logga "Short selling non implementato — segnale SELL ignorato"
-2. Cambiare `decision_type` da `"execute"` a `"rejected_short_unsupported"`
-3. Migration per aggiungere nuovo valore al CHECK constraint
+**Implementazione:**
+1. ✅ Aggiunta funzione `log_rejected_short_unsupported()` in `signal_log_writer.py`
+2. ✅ Importato nuova funzione in `router.py`
+3. ✅ Modificato router per chiamare `log_rejected_short_unsupported()` quando side == "SELL"
+4. ✅ Creata migration `20260701000000_add_rejected_short_unsupported.sql` per aggiornare CHECK constraint
 
-**File coinvolti:** `execution_loop.py`/`signal_aggregator.py` + migration ALTER CONSTRAINT
+**File modificati:**
+- `synthtrade/backend/app/core/signal_log_writer.py` (+nuova funzione)
+- `synthtrade/backend/app/scalping/router.py` (+import, +logging call)
+- `synthtrade/supabase/migrations/20260701000000_add_rejected_short_unsupported.sql` (nuova migration)
 
-**Verifica:** Rapporto execute/trade deve ridursi da ~4:1 a ~1:1.
+**Verifica:** Rapporto execute/trade deve ridursi da ~4:1 a ~1:1 dopo applicazione migration.
 
 ---
 

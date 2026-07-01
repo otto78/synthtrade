@@ -74,7 +74,7 @@ def log_pipeline_decision(
     decision_type = "execute" if tradeable else "rejected_other"
     decision_reason = f"PIPELINE: regime={regime} strategy={strategy_type} vol_anomaly={vol_anomaly} tradeable={tradeable}"
     
-    return log_signal_decision(
+    result = log_signal_decision(
         session_id=session_id,
         symbol=symbol,
         decision_type=decision_type,
@@ -83,6 +83,7 @@ def log_pipeline_decision(
         strategy_type=strategy_type,
         **context_kwargs
     )
+    return result is not None  # Convert UUID to bool
 
 
 def log_block_decision(
@@ -102,13 +103,14 @@ def log_block_decision(
     Returns:
         True se loggato con successo, False altrimenti
     """
-    return log_signal_decision(
+    result = log_signal_decision(
         session_id=session_id,
         symbol=symbol,
         decision_type="block_conflict",
         decision_reason=f"BLOCK: {block_reason}",
         **context_kwargs
     )
+    return result is not None  # Convert UUID to bool
 
 
 def log_mean_reversion_decision(
@@ -128,13 +130,14 @@ def log_mean_reversion_decision(
     Returns:
         True se loggato con successo, False altrimenti
     """
-    return log_signal_decision(
+    result = log_signal_decision(
         session_id=session_id,
         symbol=symbol,
         decision_type="mean_reversion_override",
         decision_reason=f"MEAN-REVERSION override: {override_reason}",
         **context_kwargs
     )
+    return result is not None  # Convert UUID to bool
 
 
 def log_hold_decision(
@@ -154,13 +157,14 @@ def log_hold_decision(
     Returns:
         True se loggato con successo, False altrimenti
     """
-    return log_signal_decision(
+    result = log_signal_decision(
         session_id=session_id,
         symbol=symbol,
         decision_type="hold_existing_position",
         decision_reason=f"HOLD: {hold_reason}",
         **context_kwargs
     )
+    return result is not None  # Convert UUID to bool
 
 
 def log_execution_error(
@@ -180,10 +184,39 @@ def log_execution_error(
     Returns:
         True se loggato con successo, False altrimenti
     """
-    return log_signal_decision(
+    result = log_signal_decision(
         session_id=session_id,
         symbol=symbol,
         decision_type="execution_error",
         decision_reason=f"EXECUTION ERROR: {error_message}",
         **context_kwargs
     )
+    return result is not None  # Convert UUID to bool
+
+
+def log_rejected_short_unsupported(
+    session_id: str,
+    symbol: str,
+    **context_kwargs
+) -> bool:
+    """Logga decisione REJECTED per short non supportato.
+    
+    Args:
+        session_id: ID della sessione
+        symbol: Simbolo trading
+        **context_kwargs: Altri campi contesto
+    
+    Returns:
+        True se loggato con successo, False altrimenti
+    """
+    try:
+        result = log_signal_decision(
+            session_id=session_id,
+            symbol=symbol,
+            decision_type="rejected_short_unsupported",
+            decision_reason="Short selling non implementato — segnale SELL ignorato (feature futura)",
+            **context_kwargs
+        )
+        return result is not None  # Convert UUID to bool
+    except Exception:
+        return False

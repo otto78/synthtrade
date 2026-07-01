@@ -30,6 +30,12 @@ Sei un supervisore AI esperto in trading scalping. Analizza i dati di intelligen
 - Se score è nel range [-5, +5] → rispondi no_action o update_threshold al massimo
   (segnale troppo debole per cambiare strategia)
 
+⚠️ REGOLA PERFORMANCE STORICA (TASK-902):
+- Se PERFORMANCE STORICA mostra win_rate < 35% per la combo (regime, strategia) corrente con n_trades >= 10 → considera fortemente change_strategy
+  (la combinazione storica ha sottoperformato significativamente, cambiare approccio)
+- Se PERFORMANCE STORICA mostra win_rate > 70% per la combo (regime, strategia) corrente con n_trades >= 10 → evita change_strategy
+  (la combinazione storica ha funzionato bene, mantenerla)
+
 ⚠️ REGOLA CRITICA — mapping regime/strategia obbligatorio:
 - regime=ranging  → puoi scegliere SOLO: rsi_bollinger, momentum_base, stoch_rsi_bb_squeeze
 - regime=trending_up o trending_down → puoi scegliere SOLO: ema_cross
@@ -236,5 +242,34 @@ Provide your decision:"""
             lines.append("")
             lines.append("=== DECISIONI PRECEDENTI (ultime 10) ===")
             lines.append(history)
+
+        # === PERFORMANCE STORICA (TASK-901/902) ===
+        hist_perf = context.get("historical_performance")
+        if hist_perf and hist_perf.get("total_historical_trades", 0) > 0:
+            lines.append("")
+            lines.append("=== PERFORMANCE STORICA (tutte le sessioni) ===")
+            
+            perf_data = hist_perf.get("historical_performance", {})
+            insufficient = []
+            
+            for combo, data in perf_data.items():
+                if data.get("insufficient_data"):
+                    insufficient.append(combo)
+                else:
+                    n_trades = data.get("n_trades", 0)
+                    win_rate = data.get("win_rate_pct", 0.0)
+                    avg_pnl = data.get("avg_pnl", 0.0)
+                    lines.append(f"{combo}: {n_trades} trade | win_rate={win_rate:.1f}% | avg_pnl={avg_pnl:.2f} USDC")
+            
+            if insufficient:
+                lines.append(f"[campione insufficiente: {', '.join(insufficient)}]")
+            
+            best = hist_perf.get("best_combination")
+            worst = hist_perf.get("worst_combination")
+            if best and worst:
+                lines.append(f"Migliore: {best} | Peggiore: {worst}")
+            
+            total = hist_perf.get("total_historical_trades", 0)
+            lines.append(f"Totale trade storici: {total}")
 
         return "\n".join(lines)

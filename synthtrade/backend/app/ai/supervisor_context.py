@@ -196,6 +196,14 @@ async def build_scalping_context(
                 history_lines.append(f"  {applied} [{decided}] {action}: {reason}")
             context["supervisor_history"] = "\n".join(history_lines)
 
+    # ── Historical performance (TASK-901/902) ───────────────────────────────
+    try:
+        from app.scalping.supervisor.historical_context import build_historical_context
+        historical_context = await build_historical_context()
+        context["historical_performance"] = historical_context
+    except Exception as e:
+        logger.warning(f"Failed to load historical context: {e}")
+
     return context
 
 

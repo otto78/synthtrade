@@ -11,15 +11,24 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 **Completato:**
 - ✅ Creata `docs/architecture/okx-migration-architecture.md` come fonte architetturale per il cutover OKX.
 - ✅ Creato `docs/plans/okx-migration-implementation-plan.md` con fasi operative e ordine task.
-- ✅ Aggiunta EPICA OKX in `docs/TASKS.md` con TASK-1100 -> TASK-1113.
+- ✅ Creato `docs/plans/okx-migration-task-breakdown.md` con subtasks, ownership, file, test e acceptance criteria per lavoro multi-agente.
+- ✅ Aggiunta EPICA OKX in `docs/TASKS.md` con TASK-1100 -> TASK-1116.
 - ✅ TASK-1000 WalletOrchestrator Binance marcato come superseded/sospeso: il modello OKX margin richiede ripianificazione dopo il cutover.
 - ✅ Aggiornato `docs/BACKLOG.md` con link a architettura e piano reali.
+- ✅ Integrati requisiti fee/net pricing, symbol discovery, default `OKB-EUR`, dashboard balance provider-neutral e audit collector Binance/Futures.
+- ✅ Avviato TASK-1100 con `scripts/test_okx_demo.py` in modalita' read-only: public time OKX OK, discovery Demo OK, auth privata bloccata da `50119 API key doesn't exist`.
+- ✅ Documentato report spike in `docs/analysis/okx-demo-spike-results.md` e JSON raw sanitizzato.
 
 **Decisioni chiave:**
 - OKX diventa provider operativo primario perche' Binance non e' piu' utilizzabile per trading in Italia.
 - La migrazione non sara' un porting 1:1: si introduce un layer exchange pluggable e si normalizzano adapter REST, market WS e order event stream.
 - Prima del codice live e' obbligatorio TASK-1100: spike OKX Demo Trading su auth, market order, TP/SL server-side e fill WS.
 - Lo short/margin viene rinviato: prima si ripristina il flusso long protetto da bracket server-side su OKX.
+- La parita' fee e' requisito bloccante: fee tier certificato, target netti TP/SL, log e PnL devono restare coerenti come nel flusso Binance attuale.
+- La lista coppie consentite va letta da OKX all'avvio; `OKB-EUR` e' default iniziale ma sempre validato runtime.
+- Ogni agente che prende un task OKX deve usare il breakdown dettagliato e lasciare handoff puntuale.
+- Primo run Demo: `OKB-EUR` e `BNB-USDC` non sono disponibili in Demo Trading; fallback EUR da discovery (`SOL-EUR`, `BTC-EUR`, `ETH-EUR`, ecc.).
+- TASK-1100 e' bloccato finche' la API key demo non viene riconosciuta da OKX private API.
 
 ### v1.3.9 — 2026-07-01
 

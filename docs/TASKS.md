@@ -8,13 +8,16 @@
 **Priorità:** CRITICA
 **Architettura:** `docs/architecture/okx-migration-architecture.md`
 **Piano:** `docs/plans/okx-migration-implementation-plan.md`
+**Breakdown dettagliato:** `docs/plans/okx-migration-task-breakdown.md`
 **Motivazione:** Binance non e' piu' utilizzabile per trading in Italia; OKX diventa il provider operativo primario.
 
 **Decisione chiave:** non portare Binance 1:1. Prima si introduce un layer exchange pluggable, poi si implementa OKX come adapter primario. Lo short/margin Binance viene sospeso: TASK-1000 resta storico/di riferimento, ma non e' piu' il prossimo task corretto.
 
+**Regola multi-agente:** prima di iniziare un TASK-1100..1116, leggere il breakdown dettagliato e aggiornare `docs/HANDOFF.md` con stato, payload verificati, test eseguiti e decisioni residue.
+
 ### TASK-1100 — OKX Demo Spike: auth, market order, exit bracket, WS fill
 
-**Status:** Pending
+**Status:** Blocked — private auth OKX Demo ritorna `50119 API key doesn't exist`
 **Priorità:** CRITICA
 **Dipendenze:** API key OKX Demo Trading create manualmente
 
@@ -24,13 +27,24 @@
 - Script isolato `scripts/test_okx_demo.py` o equivalente non agganciato al router.
 - Documento `docs/analysis/okx-demo-spike-results.md` con payload reali, limiti trovati e decisione finale su `attachAlgoOrds` vs `order-algo`.
 
+**Stato 2026-07-02:**
+- Creato `scripts/test_okx_demo.py`.
+- Run read-only completato senza ordini.
+- Public time OKX OK.
+- Instrument discovery Demo OK: 529 strumenti spot.
+- `OKB-EUR` e `BNB-USDC` non disponibili in Demo (`51001`), anche se verificati live/public in precedenza.
+- Private auth bloccata: `/api/v5/account/balance` ritorna HTTP 401 `50119 API key doesn't exist`.
+- Report: `docs/analysis/okx-demo-spike-results.md` e JSON raw `docs/analysis/okx-demo-spike-results.json`.
+
 **Verifica:**
 - REST auth OKX con key/secret/passphrase.
 - Header demo `x-simulated-trading: 1` confermato via ccxt o manuale.
 - Lettura strumenti e filtri per coppia target.
+- Confermare `OKB-EUR` in Demo Trading come default iniziale; se assente, documentare fallback.
+- Recupero fee tier maker/taker account/simbolo, con payload salvato.
 - Market order minimo in demo.
-- Exit bracket TP/SL server-side.
-- Fill ricevuto sul WS corretto.
+- Exit bracket TP/SL server-side con prezzi calcolati da target netti e fee tier.
+- Fill ricevuto sul WS corretto con commissione reale normalizzata.
 - Payload trade pubblico sufficiente per CVD.
 
 ### TASK-1101 — Config provider OKX e credenziali demo/live
@@ -57,7 +71,7 @@
 - nuovi modelli/protocolli exchange se opportuno
 - test unitari adapter/protocol
 
-**Obiettivo:** sostituire semantiche Binance-specifiche (`place_oco_order`, symbol compact-only, filtri Binance) con richieste di dominio SynthTrade: market order, close position, symbol rules, exit bracket.
+**Obiettivo:** sostituire semantiche Binance-specifiche (`place_oco_order`, symbol compact-only, filtri Binance) con richieste di dominio SynthTrade: market order, close position, symbol rules, exit bracket, fee tier certificato.
 
 ### TASK-1103 — OkxExchangeAdapter REST base
 
@@ -65,7 +79,7 @@
 **Priorità:** ALTA
 **Dipendenze:** TASK-1102
 
-**Obiettivo:** implementare balance, holdings, ticker, symbol rules, market order e fee tier per OKX via ccxt/nativo, usando Demo Trading in test manuale.
+**Obiettivo:** implementare balance, holdings, ticker, symbol rules, instrument discovery, market order e fee tier per OKX via ccxt/nativo, usando Demo Trading in test manuale.
 
 ### TASK-1104 — OKX Exit Bracket server-side
 
@@ -148,6 +162,55 @@
 **Dipendenze:** TASK-1112
 
 **Obiettivo:** rendere OKX provider primario, aggiornare setup operativo, checklist go-live e primo test live minimo solo dopo conferma manuale.
+
+### TASK-1114 — OKX fee tier e net pricing parity
+
+**Status:** Pending
+**Priorità:** CRITICA
+**Dipendenze:** TASK-1100, TASK-1103, TASK-1104
+
+**Obiettivo:** preservare su OKX la logica attuale di fee reali: recupero fee tier a inizio sessione, `fee_tier_certified`, calcolo TP/SL lordo da target netto, log `[NET_PRICING]`, PnL/trade log coerenti e commissioni reali da fill.
+
+**File coinvolti:**
+- `synthtrade/backend/app/scalping/router.py`
+- `synthtrade/backend/app/execution/exchange.py` o nuovo adapter OKX
+- `synthtrade/backend/app/scalping/engine/position_manager.py`
+- test unit/integration pricing
+
+**Verifica:** sessione Demo OKX con target netto configurato mostra prezzi bracket, log, position update e trade history coerenti con fee maker/taker OKX.
+
+### TASK-1115 — Dashboard balance provider-neutral
+
+**Status:** Pending
+**Priorità:** ALTA
+**Dipendenze:** TASK-1101, TASK-1103
+
+**Obiettivo:** sostituire `core/binance_balance.py` nel dashboard con un balance service provider-neutral capace di leggere OKX e convertire asset in EUR.
+
+**File coinvolti:**
+- `synthtrade/backend/app/api/dashboard.py`
+- `synthtrade/backend/app/core/binance_balance.py` o nuovo `exchange_balance.py`
+- `synthtrade/frontend/synthtrade-ui/src/app/pages/dashboard/dashboard.page.ts`
+
+**Verifica:** `/api/dashboard` restituisce saldo OKX reale, `exchange_provider`, breakdown asset in EUR, e la UI non mostra piu' "Saldo Binance" quando provider=OKX.
+
+### TASK-1116 — Audit collector Binance/Futures per migrazione OKX
+
+**Status:** Pending
+**Priorità:** ALTA
+**Dipendenze:** TASK-1105
+
+**Obiettivo:** identificare e gestire tutte le fonti Binance usate dai segnali e opportunity: funding rate, open interest, long/short ratio, CVD trade stream, Binance announcements, market data/backtest.
+
+**File coinvolti:**
+- `synthtrade/backend/app/scalping/intelligence/collectors/funding_rate.py`
+- `synthtrade/backend/app/scalping/intelligence/collectors/open_interest.py`
+- `synthtrade/backend/app/scalping/intelligence/collectors/long_short_ratio.py`
+- `synthtrade/backend/app/scalping/intelligence/collectors/cvd_calculator.py`
+- `synthtrade/backend/app/scalping/opportunity/pollers/binance_rss.py`
+- `synthtrade/backend/app/scalping/intelligence/signal_score_engine.py`
+
+**Verifica:** in sessione OKX nessun collector chiama Binance senza essere marcato come fonte esterna esplicita; collector non migrati degradano a `unavailable` e il punteggio viene ripesato.
 
 ### TASK-906 — Trend Analysis: Prevenzione Falling Knife in Mean-Reversion (2026-06-30)
 

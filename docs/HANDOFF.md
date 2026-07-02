@@ -25,9 +25,13 @@
    - File: `docs/plans/okx-migration-implementation-plan.md`
    - Fasi: spike demo, config/factory, protocollo exchange, adapter OKX, WS, order stream, router, DB, frontend, cutover.
 
+2b. **Creato breakdown dettagliato multi-agente**
+   - File: `docs/plans/okx-migration-task-breakdown.md`
+   - Contiene subtasks TASK-1100.A..1116.I, file coinvolti, test, acceptance criteria, rischi e checklist finale.
+
 3. **Aggiornati task loom**
    - Aggiunta EPICA OKX in `docs/TASKS.md`.
-   - Creati TASK-1100 -> TASK-1113.
+   - Creati TASK-1100 -> TASK-1116.
    - Primo task obbligatorio: TASK-1100 spike OKX Demo Trading.
    - TASK-1000 WalletOrchestrator Binance marcato come superseded/sospeso.
 
@@ -41,10 +45,16 @@
 - Binance resta legacy solo temporaneamente.
 - Non implementare lo short/margin prima del cutover OKX long-only.
 - Non toccare runtime live prima dello spike OKX Demo Trading.
+- Fee/net pricing e' requisito bloccante: recupero fee tier a inizio sessione, `fee_tier_certified`, TP/SL netti e PnL/log coerenti.
+- Symbol discovery obbligatoria: default `OKB-EUR`, ma validato dalla lista strumenti OKX all'avvio.
+- Dashboard balance e collector intelligence vanno migrati/auditati: oggi esistono chiamate Binance fuori dall'ordine execution.
+- Per assegnare lavoro a piu' agenti, usare `docs/plans/okx-migration-task-breakdown.md` come contratto operativo.
 
 **Prossimo step consigliato:**
-1. TASK-1100 — creare API key OKX Demo Trading e validare auth/order/bracket/WS in script isolato.
-2. Solo dopo TASK-1100, partire con TASK-1101 e TASK-1102.
+1. TASK-1100 — risolvere blocco private auth OKX Demo (`50119 API key doesn't exist`).
+2. Key UI verificata su OKX Trading demo; IP whitelist verificato da terminale (`77.32.127.105`). Restano da verificare copia completa API key/secret/passphrase, propagazione o rigenerazione key.
+3. Dopo auth OK, rieseguire `python scripts/test_okx_demo.py`, poi ordine demo minimo solo con flag esplicito.
+4. Solo dopo TASK-1100, partire con TASK-1101 e TASK-1102.
 
 ---
 

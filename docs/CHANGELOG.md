@@ -12,11 +12,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - **Architettura Migrazione OKX**: aggiunta `docs/architecture/okx-migration-architecture.md` come fonte definitiva per passare da Binance a OKX.
 - **Piano Implementazione OKX**: aggiunto `docs/plans/okx-migration-implementation-plan.md`.
-- **Task Loom OKX**: aggiunta EPICA OKX con TASK-1100 -> TASK-1113 in `docs/TASKS.md`.
+- **Breakdown Task OKX**: aggiunto `docs/plans/okx-migration-task-breakdown.md` per coordinare lavoro multi-agente.
+- **Task Loom OKX**: aggiunta EPICA OKX con TASK-1100 -> TASK-1116 in `docs/TASKS.md`.
+- **Requisiti OKX aggiuntivi**: fee tier/net pricing parity, symbol discovery con default `OKB-EUR`, dashboard balance provider-neutral e audit collector Binance/Futures.
+- **OKX Demo Spike Script**: aggiunto `scripts/test_okx_demo.py` per validazione read-only di auth, strumenti, balance, fee e ticker.
 
 ### Changed
 - **Short Selling Binance**: TASK-1000 WalletOrchestrator marcato come superseded/sospeso fino al completamento del cutover OKX.
 - **Backlog**: aggiornati link e stato della migrazione Binance -> OKX.
+- **TASK-1100 Status**: marcato blocked per private auth OKX Demo `50119 API key doesn't exist`; public discovery documentata.
 
 ## [1.3.5] — 2026-06-26
 

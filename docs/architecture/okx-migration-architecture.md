@@ -119,9 +119,50 @@ class SymbolRef:
 
 Questo evita parsing ad hoc in router e WS.
 
+### 4.1 Instrument Discovery e Default Operativo
+
+L'app non deve assumere che una coppia esista solo perche' e' configurata. All'avvio sessione e all'apertura della dashboard scalping va caricata la lista strumenti spot realmente permessi dall'exchange:
+
+```text
+OKX GET /api/v5/public/instruments?instType=SPOT
+```
+
+Regole:
+
+- filtrare `instType=SPOT` e `state=live`;
+- esporre al frontend solo coppie live;
+- usare `lotSz`, `minSz`, `tickSz`, `maxMktSz`, `maxMktAmt` per quantity/price rules;
+- se il simbolo richiesto non esiste o non e' live, bloccare start sessione con errore esplicito;
+- mantenere una cache breve in memoria, ma sempre refreshabile.
+
+Default di transizione: `OKB-EUR`, perche' e' una coppia OKX/EUR adatta al nuovo contesto operativo. Verifica fatta il 2026-07-02 sull'endpoint pubblico OKX:
+
+- `OKB-EUR`: `state=live`, `baseCcy=OKB`, `quoteCcy=EUR`, `lotSz=0.00001`, `minSz=0.01`, `tickSz=0.01`.
+- `BNB-USDC`: l'endpoint pubblico OKX lo indica `state=live` al 2026-07-02, ma non va comunque usato come default per la migrazione perche' il nuovo test iniziale sara' su `OKB-EUR` e la disponibilita' effettiva va sempre validata runtime.
+- Primo run Demo Trading 2026-07-02: con header demo, `OKB-EUR` e `BNB-USDC` ritornano `51001` non disponibili; la discovery Demo espone invece coppie EUR come `SOL-EUR`, `BTC-EUR`, `ETH-EUR`, `USDC-EUR`, `USDT-EUR`. Quindi il default deve essere environment-aware: live candidato `OKB-EUR`, demo fallback da lista EUR live.
+
+TASK-1100 deve confermare anche la disponibilita' in Demo Trading, non solo sulla lista pubblica live.
+
 ---
 
 ## 5. OKX Trading Model
+
+### 5.0 Fee Tier, Net Pricing e PnL
+
+Il comportamento attuale su Binance recupera il fee tier a inizio sessione (`get_trade_fee()`), salva `_execution_state["fee_tier"]` e usa `_net_to_gross_pct()` per trasformare target netti desiderati in prezzi TP/SL lordi. Questa logica e' obbligatoria anche su OKX.
+
+Requisiti:
+
+- `OkxExchangeAdapter.get_trade_fee(symbol)` deve recuperare fee maker/taker specifiche account/simbolo o fallire in modo certificabile.
+- `_execution_state["fee_tier_certified"]` deve rimanere anche con OKX.
+- Se il fee tier non e' certificato, UI/log devono segnalarlo e i calcoli usano fallback esplicito, non silenzioso.
+- Il market entry usa fee taker attesa.
+- L'exit bracket usa fee maker/taker attesa in base al tipo reale di ordine OKX validato nello spike; non assumere automaticamente maker.
+- I log `[NET_PRICING]`, position update, trade log, PnL realtime, close manuale e restore devono usare lo stesso fee model provider-neutral.
+- Le commissioni reali da fill OKX vanno normalizzate in `commission` e `commission_asset` come oggi per Binance.
+- La conversione commissioni deve diventare quote-aware: oggi esistono helper BNB->USDC; con `OKB-EUR` la quote e' EUR, quindi non bisogna lasciare conversioni hardcoded USDC/BNB.
+
+Definition of done specifica: su una sessione Demo OKX, i target configurati (es. TP netto +0.5%, SL netto -0.3%) devono produrre log, prezzi bracket, PnL e trade history coerenti con fee reali o fee tier certificato.
 
 ### 5.1 Spot Long
 
@@ -196,6 +237,23 @@ Per OKX:
 - canale pubblico candle 1m;
 - canale pubblico trades per CVD;
 - validare nello spike se il payload trade espone il lato taker necessario a `CVDCalculator`.
+
+---
+
+## 6b. Intelligence Collectors e Fonti Binance
+
+La migrazione non riguarda solo gli ordini. Alcuni collector che alimentano i segnali usano Binance o semantiche Binance Futures:
+
+| Componente | Stato attuale | Azione OKX |
+|---|---|---|
+| `FundingRateCollector` | Binance Futures `/fapi/v1/fundingRate` | verificare OKX funding rate oppure disabilitare per spot-only |
+| `OpenInterestCollector` | Binance Futures open interest | sostituire con OKX derivatives endpoint solo se simbolo/perp disponibile |
+| `LongShortRatioCollector` | Binance Futures long/short ratio | trovare equivalente OKX o segnare collector unavailable |
+| `CVDCalculator` | dipende dal trade stream Binance e `is_buyer_maker` | validare lato taker nel payload trades OKX |
+| `BinanceRSSPoller` | annunci Binance per opportunity | sostituire con OKX announcements o rinominare come source separata non-execution |
+| `market_data.py` / generator / backtest | `ccxt.binance` e data_source `binance_*` | usare provider factory e `exchange_provider` nei metadati |
+
+Regola: nessun collector deve continuare a chiamare Binance in una sessione OKX senza essere marcato come fonte esterna esplicita. Se una fonte non ha equivalente OKX, il collector deve degradare a `unavailable` e il `SignalScoreEngine` deve ricalcolare i pesi senza falsare il punteggio.
 
 ### 6.2 Order Event Stream
 
@@ -278,6 +336,20 @@ ADD COLUMN IF NOT EXISTS exchange_raw JSONB;
 
 Non rinominare subito le vecchie colonne Binance se esistono dati live storici. Aggiungere campi generici e mantenere compatibilita' in lettura.
 
+Per fee e pricing aggiungere, se non gia' presenti nello schema effettivo:
+
+```sql
+ALTER TABLE scalping_sessions
+ADD COLUMN IF NOT EXISTS fee_tier_certified BOOLEAN,
+ADD COLUMN IF NOT EXISTS fee_tier_raw JSONB;
+
+ALTER TABLE scalping_trades
+ADD COLUMN IF NOT EXISTS entry_fee_rate NUMERIC(12, 10),
+ADD COLUMN IF NOT EXISTS exit_fee_rate NUMERIC(12, 10),
+ADD COLUMN IF NOT EXISTS entry_commission_asset TEXT,
+ADD COLUMN IF NOT EXISTS exit_commission_asset TEXT;
+```
+
 ---
 
 ## 9. Frontend
@@ -293,6 +365,20 @@ Rinominare progressivamente:
 
 La UI non deve contenere assunzioni Binance; deve visualizzare `exchange_provider`, `trading_mode`, `exchange_demo`.
 
+La dashboard principale oggi chiama `get_total_balance_eur()` da `core/binance_balance.py`. Questo va sostituito con un servizio provider-neutral:
+
+```text
+ExchangeBalanceService.get_total_balance(target_ccy="EUR")
+```
+
+Requisiti:
+
+- usare `exchange.fetch_balance()` dell'adapter/factory corrente;
+- convertire ogni asset in EUR usando ticker OKX, preferendo coppie dirette `{ASSET}/EUR`, poi via stablecoin se necessario;
+- non includere logiche Binance `LD*` nel provider OKX;
+- esporre `exchange_provider` nel payload `/api/dashboard`;
+- aggiornare label frontend da "Saldo Binance" a "Saldo OKX" o "Saldo Exchange".
+
 ---
 
 ## 10. Spike Obbligatorio Prima dell'Implementazione
@@ -303,11 +389,13 @@ Prima di toccare il flusso live:
 2. verificare REST auth con passphrase e header demo;
 3. verificare `ccxt.okx` con `set_sandbox_mode(True)` e, se serve, header manuale;
 4. leggere strumenti e regole per `BNB/USDC` o coppia alternativa disponibile;
-5. piazzare market order minimo;
-6. piazzare exit bracket TP/SL;
-7. ascoltare fill su WS corretto;
-8. confermare payload trade pubblico per CVD;
-9. documentare payload reali in `docs/analysis/okx-demo-spike-results.md`.
+5. confermare `OKB-EUR` in Demo Trading e fallback se non disponibile;
+6. recuperare fee tier maker/taker e certificare il payload;
+7. piazzare market order minimo;
+8. piazzare exit bracket TP/SL con prezzi netti calcolati da fee tier;
+9. ascoltare fill su WS corretto con commissione reale;
+10. confermare payload trade pubblico per CVD;
+11. documentare payload reali in `docs/analysis/okx-demo-spike-results.md`.
 
 Se uno dei punti 5-7 fallisce, non si procede con il porting del router.
 
@@ -340,4 +428,3 @@ La migrazione e' completa quando:
 - frontend mostra provider OKX e strumenti OKX;
 - test unitari coprono adapter, parser WS, symbol mapping e failure bracket;
 - test integrazione con fake adapter coprono start -> entry -> bracket -> fill -> close.
-

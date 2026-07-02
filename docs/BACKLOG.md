@@ -13,8 +13,10 @@
 - **Analisi:** `docs/analysis/okx-api-reference-analysis.md`
 - **Architettura definitiva:** `docs/architecture/okx-migration-architecture.md`
 - **Piano implementazione:** `docs/plans/okx-migration-implementation-plan.md`
+- **Breakdown task multi-agente:** `docs/plans/okx-migration-task-breakdown.md`
 - **Stato:** Architettura e task loom definiti — primo step TASK-1100 spike Demo Trading
-- **Impatto:** Modifica strutturale dell'integrazione exchange (REST + WebSocket + autenticazione + OCO/TP-SL + margin)
+- **Impatto:** Modifica strutturale dell'integrazione exchange (REST + WebSocket + autenticazione + OCO/TP-SL + fee reali + symbol discovery + dashboard balance + collector intelligence)
+- **Default iniziale:** `OKB-EUR`, validato runtime dalla lista strumenti OKX; verificato `state=live` su endpoint pubblico OKX il 2026-07-02
 
 ### Short Selling (4 fasi)
 - **Analisi:** `docs/analysis/short-selling-analysis.md`
@@ -68,7 +70,7 @@ Vedi `docs/TASKS.md` sezione "🎯 Task da Investigare (da MASTER_RECAP.md)":
 docs/
 ├── (7 standard loom)          ← ARCHIVE_TASKS, BACKLOG, CHANGELOG, HANDOFF, STORY, TASKS, TDD_LOG
 ├── analysis/ (6 analisi)      ← analisi tematiche consolidate e reference API
-├── plans/ (1 piano)           ← piani implementativi attivi
+├── plans/ (2 piani)           ← piani implementativi attivi
 └── recap/ (9 cronologici)     ← MASTER_RECAP + 8 recap sessioni
 ```
 
@@ -99,7 +101,8 @@ docs/
 
 | File | Contenuto |
 |------|-----------|
-| `docs/plans/okx-migration-implementation-plan.md` | Piano operativo TASK-1100 -> TASK-1113 per migrazione OKX |
+| `docs/plans/okx-migration-implementation-plan.md` | Piano operativo TASK-1100 -> TASK-1116 per migrazione OKX |
+| `docs/plans/okx-migration-task-breakdown.md` | Breakdown dettagliato multi-agente TASK-1100 -> TASK-1116 |
 
 ### `docs/recap/` — Recap storici
 

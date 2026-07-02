@@ -1,0 +1,124 @@
+{
+  "generated_at": "2026-07-02T14:37:47.489843+00:00",
+  "task": "TASK-1100",
+  "results": [
+    {
+      "name": "credentials_present",
+      "ok": true,
+      "details": {
+        "api_key": "4fe5...b7d9",
+        "secret": "3AB1...A9F8",
+        "passphrase": "Synt...026!",
+        "env_file": "C:\\Users\\andrea.mazzarotto\\myJobs\\SynthTrade\\synthtrade\\backend\\.env"
+      }
+    },
+    {
+      "name": "instrument_OKB/EUR",
+      "ok": false,
+      "details": {
+        "inst_id": "OKB-EUR",
+        "http_status": 200,
+        "raw_code": "51001",
+        "raw_msg": "Instrument ID, Instrument ID code, or Spread ID doesn't exist.",
+        "rules": null
+      }
+    },
+    {
+      "name": "instrument_BNB/USDC",
+      "ok": false,
+      "details": {
+        "inst_id": "BNB-USDC",
+        "http_status": 200,
+        "raw_code": "51001",
+        "raw_msg": "Instrument ID, Instrument ID code, or Spread ID doesn't exist.",
+        "rules": null
+      }
+    },
+    {
+      "name": "instrument_discovery_summary",
+      "ok": true,
+      "details": {
+        "http_status": 200,
+        "total_spot": 529,
+        "live_eur_count": 16,
+        "live_eur_examples": [
+          "SOL-EUR",
+          "BCH-EUR",
+          "BTC-EUR",
+          "ETH-EUR",
+          "AAVE-EUR",
+          "AGIX-EUR",
+          "APT-EUR",
+          "ATOM-EUR",
+          "FET-EUR",
+          "GRASS-EUR",
+          "ICP-EUR",
+          "IMX-EUR",
+          "PUMP-EUR",
+          "USDC-EUR",
+          "USDT-EUR",
+          "XRP-EUR"
+        ]
+      }
+    },
+    {
+      "name": "public_time",
+      "ok": true,
+      "details": {
+        "raw": {
+          "code": "0",
+          "data": [
+            {
+              "ts": "1783003063961"
+            }
+          ],
+          "msg": "",
+          "_http_status": 200
+        }
+      }
+    },
+    {
+      "name": "private_balance",
+      "ok": false,
+      "details": {
+        "nonzero_assets": [],
+        "total_assets": 0,
+        "http_status": 401,
+        "raw_code": "50119",
+        "raw_msg": "API key doesn't exist",
+        "raw_text": null
+      }
+    },
+    {
+      "name": "fee_tier_OKB/EUR",
+      "ok": false,
+      "details": {
+        "maker": null,
+        "taker": null,
+        "raw": {
+          "msg": "API key doesn't exist",
+          "code": "50119",
+          "_http_status": 401
+        }
+      }
+    },
+    {
+      "name": "ticker_OKB/EUR",
+      "ok": false,
+      "details": {
+        "last": null,
+        "bid": null,
+        "ask": null,
+        "raw": {}
+      }
+    },
+    {
+      "name": "market_order_demo",
+      "ok": true,
+      "details": {
+        "skipped": true,
+        "reason": "read-only default; rerun with --place-market-order to test order placement"
+      }
+    }
+  ]
+}

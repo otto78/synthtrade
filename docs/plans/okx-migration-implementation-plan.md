@@ -2,7 +2,8 @@
 
 > Data: 2026-07-02  
 > Fonte architetturale: `docs/architecture/okx-migration-architecture.md`  
-> Stato: piano operativo per task loom TASK-1100 -> TASK-1113
+> Stato: piano operativo per task loom TASK-1100 -> TASK-1116
+> Breakdown operativo: `docs/plans/okx-migration-task-breakdown.md`
 
 ---
 
@@ -25,7 +26,8 @@ Deliverable:
 
 - `scripts/test_okx_demo.py` o script equivalente non integrato nel runtime;
 - `docs/analysis/okx-demo-spike-results.md` con payload reali e decisioni finali;
-- conferma su `x-simulated-trading`, passphrase, symbol rules, market order, exit bracket, WS fill.
+- conferma su `x-simulated-trading`, passphrase, symbol rules, fee tier, market order, exit bracket, WS fill.
+- verifica `OKB-EUR` in Demo Trading come default operativo iniziale.
 
 Blocco: senza questa fase non si procede con TASK-1102+.
 
@@ -56,13 +58,16 @@ Modifiche:
 - rinominare semanticamente `place_oco_order` -> `place_exit_bracket`;
 - implementare `OkxExchangeAdapter`;
 - mantenere `BinanceExchangeAdapter` come legacy adapter dietro lo stesso protocollo.
+- mantenere parita' funzionale per `get_trade_fee()` e `fee_tier_certified`.
 
 Test:
 
 - symbol mapping `BNBUSDC` <-> `BNB/USDC` <-> `BNB-USDC`;
+- default `OKB-EUR` e discovery strumenti live;
 - rounding OKX da market metadata;
 - failure bracket -> errore specifico;
 - commission extraction.
+- `_net_to_gross_pct()` usa maker/taker OKX e quote currency corretta.
 
 ---
 
@@ -137,6 +142,7 @@ Modifiche:
 
 - migration nuove colonne su `scalping_sessions` e `scalping_trades`;
 - persistenza `exchange_provider`, order id, bracket id, raw payload;
+- persistenza `fee_tier_certified`, fee raw e commission asset entry/exit;
 - query storiche backward-compatible.
 
 Test:
@@ -155,6 +161,7 @@ Modifiche:
 
 - `BinanceSymbolsService` -> `ExchangeSymbolsService`;
 - route strumenti generica;
+- default UI `OKB-EUR` se disponibile, altrimenti primo strumento EUR live configurato;
 - label provider nel topbar/dashboard;
 - badge DEMO/LIVE + provider;
 - testi "Saldo Binance" -> "Saldo OKX" quando provider OKX.
@@ -175,6 +182,8 @@ Checklist:
 
 - `EXCHANGE_PROVIDER=okx` default in `.env.example`;
 - Binance resta legacy ma non e' il default;
+- dashboard balance provider-neutral sostituisce `binance_balance.py`;
+- collector Binance/Futures auditati: sostituiti, disabilitati o marcati come fonte esterna;
 - documentazione setup OKX completata;
 - smoke test Demo Trading;
 - trade minimo live solo dopo conferma manuale;
@@ -198,4 +207,8 @@ Checklist:
 12. TASK-1111 — Tests e fake exchange integration
 13. TASK-1112 — Demo end-to-end validation
 14. TASK-1113 — Cutover OKX live readiness
+15. TASK-1114 — Fee/net pricing parity OKX
+16. TASK-1115 — Dashboard balance provider-neutral
+17. TASK-1116 — Intelligence collectors OKX audit
 
+Per dettagli esecutivi, ownership, subtasks, test e acceptance criteria usare `docs/plans/okx-migration-task-breakdown.md` come riferimento obbligatorio prima di iniziare ogni task.

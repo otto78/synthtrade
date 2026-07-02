@@ -7,6 +7,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.4.0] — 2026-07-02
+
+### Added
+- **Architettura Migrazione OKX**: aggiunta `docs/architecture/okx-migration-architecture.md` come fonte definitiva per passare da Binance a OKX.
+- **Piano Implementazione OKX**: aggiunto `docs/plans/okx-migration-implementation-plan.md`.
+- **Task Loom OKX**: aggiunta EPICA OKX con TASK-1100 -> TASK-1113 in `docs/TASKS.md`.
+
+### Changed
+- **Short Selling Binance**: TASK-1000 WalletOrchestrator marcato come superseded/sospeso fino al completamento del cutover OKX.
+- **Backlog**: aggiornati link e stato della migrazione Binance -> OKX.
+
 ## [1.3.5] — 2026-06-26
 
 ### Removed

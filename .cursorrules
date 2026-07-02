@@ -32,6 +32,22 @@ python loom/scripts/setup.py
 | "update loom" | `python loom/scripts/check_updates.py --update` |
 | "list plugins" | `python loom/scripts/plugins.py list` |
 | "add plugin from URL" | `python loom/scripts/plugins.py add --source <url>` |
+| "parse tasks" | `python loom/scripts/parse_tasks.py` |
+| "extract tasks" | `python loom/scripts/extract_tasks.py` |
+
+---
+
+## 📝 Documentation Update — MANDATORY
+
+Dopo aver completato QUALSIASI task o modifica, DEVI aggiornare TUTTI questi file:
+
+| File | Quando |
+|------|--------|
+| `docs/TASKS.md` | Prima di terminare — aggiorna stato task, note di completamento |
+| `docs/STORY.md` | Aggiungi entry con versione, modifiche, decisioni chiave |
+| `docs/HANDOFF.md` | A fine sessione — riepilogo per il prossimo agente |
+
+**Non terminare mai una sessione senza aggiornare questi tre file.**
 
 ---
 

@@ -4,6 +4,67 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.0 — 2026-07-02
+
+**Milestone:** Architettura definitiva migrazione Binance -> OKX
+
+**Completato:**
+- ✅ Creata `docs/architecture/okx-migration-architecture.md` come fonte architetturale per il cutover OKX.
+- ✅ Creato `docs/plans/okx-migration-implementation-plan.md` con fasi operative e ordine task.
+- ✅ Aggiunta EPICA OKX in `docs/TASKS.md` con TASK-1100 -> TASK-1113.
+- ✅ TASK-1000 WalletOrchestrator Binance marcato come superseded/sospeso: il modello OKX margin richiede ripianificazione dopo il cutover.
+- ✅ Aggiornato `docs/BACKLOG.md` con link a architettura e piano reali.
+
+**Decisioni chiave:**
+- OKX diventa provider operativo primario perche' Binance non e' piu' utilizzabile per trading in Italia.
+- La migrazione non sara' un porting 1:1: si introduce un layer exchange pluggable e si normalizzano adapter REST, market WS e order event stream.
+- Prima del codice live e' obbligatorio TASK-1100: spike OKX Demo Trading su auth, market order, TP/SL server-side e fill WS.
+- Lo short/margin viene rinviato: prima si ripristina il flusso long protetto da bracket server-side su OKX.
+
+### v1.3.9 — 2026-07-01
+
+**Milestone:** docs/ cleanup — rimossi file task ridondanti
+
+**Completato:**
+- ✅ **Eliminati 8 file di task ridondanti da `docs/`**:
+  - `TASK_813_ALL_ACTIONS_STATUS.md` — TASK-813 già in ARCHIVE_TASKS.md
+  - `TASK_813_COMPLETE_ANALYSIS.md` — TASK-813 già in ARCHIVE_TASKS.md
+  - `TASK_813_FINAL_SUMMARY.md` — TASK-813 già in ARCHIVE_TASKS.md
+  - `TASK_813_IMPLEMENTATION_COMPLETE.md` — TASK-813 già in ARCHIVE_TASKS.md
+  - `TASK_TP_SL_NET_PRICING.md` — TASK-905 ✅ già dettagliato in TASKS.md
+  - `TASK-907_bug_frontend_paused_reload.md` — TASK-907 Pending già in TASKS.md
+  - `SynthTrade_TASK_Fix_Signal_Log_Decision_Types.md` — TASK-912 ✅ già in TASKS.md
+  - `SynthTrade_Short_Selling_Architecture_1.md` — duplicato di SynthTrade_Short_Selling_Architecture.md
+- ✅ **Verificato** che tutti i contenuti fossero già presenti in TASKS.md o ARCHIVE_TASKS.md
+- ✅ **docs/ ora contiene solo**: documentazione standard loom (7 file), architettura/reference (8 file), recap sessioni (9 file), fix/summary (4 file) = 28 file .md
+
+---
+
+### v1.3.8 — 2026-07-01
+
+**Milestone:** Loom rules sync + docs/ cleanup
+
+**Completato:**
+- ✅ **Spostati script Python da `docs/` a `loom/scripts/`**: `extract_tasks.py`, `parse_tasks.py` spostati nella posizione corretta secondo il framework loom
+- ✅ **Rimosso `capital_allocator.py` da `docs/`**: era una vecchia versione duplicata (l'originale è in `synthtrade/backend/app/execution/capital_allocator.py`)
+- ✅ **Aggiornati tutti i config IDE**: `.clinerules/loom.md`, `.cursorrules`, `.windsurfrules`, `CLAUDE.md`, `.cursor/rules/loom.mdc`, `AGENTS.md`
+- ✅ **Aggiunta sezione "Documentation Update MANDATORY"** a tutti i config IDE
+- ✅ **Aggiunti comandi `parse tasks` e `extract tasks`** in tutti i config
+- ✅ **Verificato che `docs/` contenga solo file `.md`**
+
+**File modificati:**
+- `.clinerules/loom.md` — aggiunti comandi update/plugins/parse/extract + doc update section
+- `.cursorrules` — aggiunti parse/extract + doc update section
+- `.windsurfrules` — aggiunti parse/extract + doc update section
+- `CLAUDE.md` — aggiunti parse/extract + doc update section
+- `.cursor/rules/loom.mdc` — aggiunti parse/extract + doc update section
+- `AGENTS.md` — aggiunti parse/extract
+- `loom/scripts/extract_tasks.py` — copiato da docs/, aggiunto path resolution
+- `loom/scripts/parse_tasks.py` — copiato da docs/, aggiunto path resolution
+- Rimossi da `docs/`: `capital_allocator.py`, `extract_tasks.py`, `parse_tasks.py`
+
+---
+
 ### v1.3.7 — 2026-06-29
 
 **Milestone:** Fix Pylance + SessionLogHandler summary
@@ -317,6 +378,31 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - [ ] Error handling globale con eccezioni custom e handler FastAPI
 - [ ] scripts/deploy.sh + scripts/rollback.sh + scripts/smoke_test.sh
 - [ ] Checklist pre-go-live (CORS, RLS, no hardcoded secrets, bundle size)
+
+---
+
+## 📊 Stato dei Moduli Architetturali
+
+> Aggiornato al 2026-07-01. Fonte: `docs/MASTER_RECAP.md` (consolidamento 20-28/06/2026) + verifica su task completati.
+
+| Modulo | Stato | Note |
+|---|---|---|
+| **Execution Engine (L1)** | 🟢 Operativo, con bug noti | SL/TP/Max Daily Loss reali; regressione 27-28/06 in rollback |
+| **Risk Manager** | 🟡 Parziale | SL, TP, Max Daily Loss reali; Leverage e Max Drawdown decorativi (per design attuale) |
+| **Signal Intelligence Layer** | 🔴 30% funzionante | Solo Fear&Greed, Long/Short Ratio, Open Interest attivi; Funding Rate, CVD, Sentiment, Whale, On-Chain non funzionanti |
+| **Strategie tecniche** | 🟢 4+1 implementate | EMA Cross, Momentum Base, RSI+Bollinger, VWAP Reversion + stoch_rsi_bb_squeeze |
+| **Regime Detector** | 🔴 Inaffidabile | Misclassifica breakdown con volume come ranging — root cause di più sintomi |
+| **AI Supervisor** | 🟡 Operativo con limiti | Cooldown 20min e whitelist regime→strategia fixati; bias outcome_label noto |
+| **Short Selling** | 🔴 Zero implementazione | Architettura completa a 4 fasi pronta, nessun codice scritto |
+| **Fee/PnL transparency** | 🟡 Strutturalmente fixato | Fix principali applicati, verifica empirica end-to-end mancante |
+| **Trailing Stop Loss** | 🔴 Solo proposta | Nessun codice, nessuna decisione su collocazione |
+| **Market Structure (S/R)** | 🔴 Solo proposta | MarketStructureCollector non esiste ancora |
+| **Wallet Orchestrator** | 🔴 Solo snippet | Non scritto nel progetto reale |
+| **Frontend Angular** | 🟡 Funzionale con bug noto | Sync bug strategia selezionata/eseguita mai fixato |
+
+### Bug aperti noti
+
+Vedi `docs/TASKS.md` sezione "🎯 Task da Investigare (da MASTER_RECAP.md)" per 20 bug da verificare (TASK-INVEST-001 → 020).
 
 ---
 

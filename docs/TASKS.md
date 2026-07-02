@@ -2,129 +2,152 @@
 
 ## Task Attivi
 
-### TASK-912 — Fix mapping `mean_reversion_override` in session_signal_log (2026-07-01)
+## EPICA OKX — Migrazione Binance -> OKX (PRIORITA' ASSOLUTA)
 
-**Status:** ✅ Completato
+**Status:** In Planning
+**Priorità:** CRITICA
+**Architettura:** `docs/architecture/okx-migration-architecture.md`
+**Piano:** `docs/plans/okx-migration-implementation-plan.md`
+**Motivazione:** Binance non e' piu' utilizzabile per trading in Italia; OKX diventa il provider operativo primario.
+
+**Decisione chiave:** non portare Binance 1:1. Prima si introduce un layer exchange pluggable, poi si implementa OKX come adapter primario. Lo short/margin Binance viene sospeso: TASK-1000 resta storico/di riferimento, ma non e' piu' il prossimo task corretto.
+
+### TASK-1100 — OKX Demo Spike: auth, market order, exit bracket, WS fill
+
+**Status:** Pending
+**Priorità:** CRITICA
+**Dipendenze:** API key OKX Demo Trading create manualmente
+
+**Obiettivo:** verificare empiricamente OKX Demo Trading prima di modificare il runtime live.
+
+**Output richiesto:**
+- Script isolato `scripts/test_okx_demo.py` o equivalente non agganciato al router.
+- Documento `docs/analysis/okx-demo-spike-results.md` con payload reali, limiti trovati e decisione finale su `attachAlgoOrds` vs `order-algo`.
+
+**Verifica:**
+- REST auth OKX con key/secret/passphrase.
+- Header demo `x-simulated-trading: 1` confermato via ccxt o manuale.
+- Lettura strumenti e filtri per coppia target.
+- Market order minimo in demo.
+- Exit bracket TP/SL server-side.
+- Fill ricevuto sul WS corretto.
+- Payload trade pubblico sufficiente per CVD.
+
+### TASK-1101 — Config provider OKX e credenziali demo/live
+
+**Status:** Pending
+**Priorità:** ALTA
+**Dipendenze:** TASK-1100 per conferma header demo
+
+**File coinvolti:**
+- `synthtrade/backend/app/config.py`
+- `synthtrade/backend/.env.example`
+- `synthtrade/backend/tests/unit/test_scalping_settings.py` o nuovo test config
+
+**Obiettivo:** aggiungere `EXCHANGE_PROVIDER=okx`, credenziali OKX demo/live e computed field generici senza rompere Binance legacy.
+
+### TASK-1102 — ExchangeProtocol v2 provider-neutral
+
+**Status:** Pending
+**Priorità:** ALTA
+**Dipendenze:** TASK-1101
+
+**File coinvolti:**
+- `synthtrade/backend/app/execution/exchange.py`
+- nuovi modelli/protocolli exchange se opportuno
+- test unitari adapter/protocol
+
+**Obiettivo:** sostituire semantiche Binance-specifiche (`place_oco_order`, symbol compact-only, filtri Binance) con richieste di dominio SynthTrade: market order, close position, symbol rules, exit bracket.
+
+### TASK-1103 — OkxExchangeAdapter REST base
+
+**Status:** Pending
+**Priorità:** ALTA
+**Dipendenze:** TASK-1102
+
+**Obiettivo:** implementare balance, holdings, ticker, symbol rules, market order e fee tier per OKX via ccxt/nativo, usando Demo Trading in test manuale.
+
+### TASK-1104 — OKX Exit Bracket server-side
+
+**Status:** Pending
+**Priorità:** CRITICA
+**Dipendenze:** TASK-1100, TASK-1103
+
+**Obiettivo:** implementare `place_exit_bracket()` per OKX con TP/SL server-side e emergency close se la protezione fallisce.
+
+**Verifica:** nessuna posizione live/demo resta aperta senza bracket o chiusura market di emergenza.
+
+### TASK-1105 — OkxWSClient market data
+
+**Status:** Pending
+**Priorità:** ALTA
+**Dipendenze:** TASK-1100
+
+**Obiettivo:** sostituire `BinanceWSClient` nel path scalping con un client provider-neutral e parser OKX per candle/trade.
+
+### TASK-1106 — OkxOrderEventStream per fill TP/SL
+
+**Status:** Pending
+**Priorità:** CRITICA
+**Dipendenze:** TASK-1100, TASK-1104
+
+**Obiettivo:** normalizzare gli eventi OKX di fill bracket nello stesso formato consumato da `_on_order_update`.
+
+### TASK-1107 — Router scalping provider-neutral
+
+**Status:** Pending
+**Priorità:** CRITICA
+**Dipendenze:** TASK-1102, TASK-1105, TASK-1106
+
+**Obiettivo:** rimuovere assunzioni Binance da start/stop/restore sessione, costruendo exchange, market WS e order stream via factory.
+
+### TASK-1108 — DB migration provider e order ids generici
+
+**Status:** Pending
+**Priorità:** ALTA
+**Dipendenze:** TASK-1107
+
+**Obiettivo:** aggiungere provider, account mode, order ids e raw payload a sessioni/trade mantenendo compatibilita' con lo storico Binance.
+
+### TASK-1109 — Frontend exchange-neutral
+
+**Status:** Pending
 **Priorità:** MEDIA
-**Origine:** Review Claude dell'epica Memory & Learning con query dirette su Supabase
+**Dipendenze:** TASK-1107, TASK-1108
 
-**Obiettivo:** Correggere il mapping di `decision_type` per i casi di mean-reversion override. Attualmente tutti i casi di override sono loggati come `execute` invece di `mean_reversion_override`.
+**Obiettivo:** rinominare `BinanceSymbolsService`, label dashboard/topbar e endpoint strumenti in chiave exchange-neutral/OKX.
 
-**Contesto/Analisi:**
-Query Supabase ha rivelato 44 righe con pattern (rsi_bollinger + bearish + BUY) tutte con `decision_type = 'execute'` invece di `mean_reversion_override`. Il log testuale `⚡ MEAN-REVERSION BUY permesso (source=...) nonostante bias=bearish` viene emesso ma il mapping in DB non corrisponde.
+### TASK-1110 — Market data/backtest factory cleanup
 
-**Implementazione:**
-1. ✅ Aggiunto flag `is_mean_reversion_override` a `ExecutionDecision` in `signal_aggregator.py`
-2. ✅ Impostato flag a `True` nei casi di mean-reversion override (BUY/SELL con source mean-reversion)
-3. ✅ Importato `log_mean_reversion_decision` in `router.py`
-4. ✅ Modificato logging in `router.py` per usare `log_mean_reversion_decision` quando flag è True
-5. ✅ Aggiornato tutte le istanze di `ExecutionDecision` per includere il flag
-6. ✅ Aggiornato `execution_loop.py` e `backtest_engine.py` per compatibilità
-
-**File modificati:**
-- `synthtrade/backend/app/scalping/engine/signal_aggregator.py` (+1 flag, +2 casi override)
-- `synthtrade/backend/app/scalping/router.py` (+import, +condizione logging)
-- `synthtrade/backend/app/scalping/engine/execution_loop.py` (+flag)
-- `synthtrade/backend/app/scalping/backtest/backtest_engine.py` (+flag)
-
-**Verifica:** Query su nuova sessione live deve mostrare `decision_type='mean_reversion_override'` per il pattern corretto.
-
----
-
-### TASK-913 — Nuovo `decision_type='rejected_short_unsupported'` per SELL scartate (2026-07-01)
-
-**Status:** ✅ Completato
+**Status:** Pending
 **Priorità:** MEDIA
-**Origine:** Review Claude dell'epica Memory & Learning con query dirette su Supabase
+**Dipendenze:** TASK-1101, TASK-1103
 
-**Obiettivo:** Aggiungere un nuovo `decision_type` dedicato per i segnali SELL scartati (short non implementato). Attualmente sono loggati come `execute`.
+**Obiettivo:** rimuovere `ccxt.binance()` diretto da market data, generator/backtest e servizi condivisi; usare factory provider-aware.
 
-**Contesto/Analisi:**
-Query Supabase: SELL = 56, BUY = 46 su 102 righe `execute`. Più della metà delle righe `execute` sono segnali SELL che vengono scartati con log "Short selling non implementato". Inquina le statistiche di `session_signal_log`.
+### TASK-1111 — Test integration con fake OKX adapter
 
-**Implementazione:**
-1. ✅ Aggiunta funzione `log_rejected_short_unsupported()` in `signal_log_writer.py`
-2. ✅ Importato nuova funzione in `router.py`
-3. ✅ Modificato router per chiamare `log_rejected_short_unsupported()` quando side == "SELL"
-4. ✅ Creata migration `20260701000000_add_rejected_short_unsupported.sql` per aggiornare CHECK constraint
+**Status:** Pending
+**Priorità:** ALTA
+**Dipendenze:** TASK-1107
 
-**File modificati:**
-- `synthtrade/backend/app/core/signal_log_writer.py` (+nuova funzione)
-- `synthtrade/backend/app/scalping/router.py` (+import, +logging call)
-- `synthtrade/supabase/migrations/20260701000000_add_rejected_short_unsupported.sql` (nuova migration)
+**Obiettivo:** coprire start -> entry -> bracket -> fill -> DB/UI close senza chiamate reali, con fake adapter e fake order stream.
 
-**Verifica:** Rapporto execute/trade deve ridursi da ~4:1 a ~1:1 dopo applicazione migration.
+### TASK-1112 — Validazione Demo Trading end-to-end
 
----
+**Status:** Pending
+**Priorità:** CRITICA
+**Dipendenze:** TASK-1103, TASK-1104, TASK-1105, TASK-1106, TASK-1107
 
-### TASK-914 — Indagine ri-logging ripetuto per segnale persistente (2026-07-01)
+**Obiettivo:** sessione scalping completa in OKX Demo Trading con trade minimo, bracket server-side, fill e restore verificati.
 
-**Status:** ✅ Completato (indagine)
-**Priorità:** BASSA (investigazione, non fix)
-**Origine:** Review Claude dell'epica Memory & Learning con query dirette su Supabase
+### TASK-1113 — Cutover OKX live readiness
 
-**Obiettivo:** Investigare se il ri-logging ripetuto per tick è un bug o design voluto.
+**Status:** Pending
+**Priorità:** CRITICA
+**Dipendenze:** TASK-1112
 
-**Contesto/Analisi:**
-Sessione `307997ef-a206-4d90-b7f3-7d3e650b47bf` ha scritto la stessa decisione SELL ogni minuto per 10 minuti consecutivi. Suggerisce scrittura ad ogni tick invece che solo per decisione effettiva.
-
-**Risultato Indagine:**
-1. ✅ **Verificato che non esiste guardia "logga solo se decisione cambiata"**
-   - Il router chiama `execution_loop.process_candle(candle)` per OGNI candela chiusa
-   - Se `decision.execute=True`, viene immediatamente loggata su session_signal_log
-   - Nessun controllo se la decisione è identica alla precedente
-
-2. ✅ **Analisi del comportamento attuale:**
-   - **Comportamento attuale**: Logging per-tick (ogni candela generazione segnale)
-   - **Codice responsabile**: `router.py` riga 1640: `decision = await execution_loop.process_candle(candle)`
-   - **Logging**: riga 1668-1702: chiama `log_signal_decision` senza controlli di duplicazione
-
-3. ✅ **Valutazione Bug vs Design:**
-   - **Vantaggi del per-tick**: Granularità temporale completa per shadow tracking BLOCK/FALLING KNIFE
-   - **Svantaggi del per-tick**: Volume di dati eccessivo, confusione in statistiche (102 execute vs 25 trade)
-   - **Raccomandazione**: È una **decisione di design** voluta per granularità, ma manca documentazione
-
-**Conclusione:**
-Il ri-logging ripetuto è **design voluto** per granularità temporale completa, utile per:
-- Shadow tracking BLOCK (TASK-906: Falling Knife Protection)
-- Analisi dettagliata pattern temporali
-- Debug decisioni per candela
-
-**Azioni consigliate (richiedono conferma utente):**
-1. Documentare esplicitamente che il logging è per-tick in documentazione
-2. Aggiungere commenti nel codice per chiarire il design
-3. Valutare se aggiungere opzione configurabile (per-tick vs per-decisione) se necessario
-
----
-
-### TASK-911 — Frontend: Caricamento decisioni sessione corrente in SupervisorLog (2026-07-01)
-
-**Status:** Done ✅  
-**Completato:** 2026-07-01
-**Priorità:** BASSA
-
-**Obiettivo:** Popolare la scheda SupervisorLog con le decisioni della sessione corrente quando si apre o si riavvia il backend, permettendo di vedere la storia della sessione invece di solo decisioni realtime.
-
-**Contesto:**
-Attualmente il SupervisorLog mostra solo decisioni in tempo reale via WebSocket. Quando si riavvia il backend con una sessione in corso, la scheda parte vuota e si popola solo con nuove decisioni. Le decisioni passate della sessione corrente sono nel database (`supervisor_memory`) ma non vengono caricate.
-
-**Implementazione:**
-1. ✅ Aggiunto endpoint GET `/scalping/supervisor/history?session_id={session_id}` in `router.py` che query `supervisor_memory` per session_id, ordina per `decided_at DESC`, normalizza i campi per il frontend
-2. ✅ Creato `SupervisorApiService` lato frontend con metodo `getHistory(sessionId)`
-3. ✅ Modificato `SupervisorLogComponent` per chiamare `_loadHistory()` al `OnInit` e su cambio sessione
-4. ✅ Aggiunti campi `was_applied` e `blocked_reason` a `SupervisorDecision` interface
-5. ✅ Aggiunto display `⛔ Blocked:` nel template per decisioni bloccate dal guard
-6. ✅ Aggiunto stato `loading` per UX durante il fetch storico
-
-**File creati/modificati:**
-- `synthtrade/backend/app/scalping/router.py` — nuovo endpoint GET `/supervisor/history`
-- `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/supervisor-api.service.ts` — nuovo service
-- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/supervisor-log.component.ts` — caricamento storico + display blocked
-- `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/scalping-ws.service.ts` — nuovi campi `was_applied`, `blocked_reason`
-
-**Verifica:** Aprire la dashboard con una sessione che ha decisioni supervisor in `supervisor_memory`. La scheda SupervisorLog deve mostrarle subito al caricamento. Le nuove decisioni via WS si accodano in cima.
-
----
+**Obiettivo:** rendere OKX provider primario, aggiornare setup operativo, checklist go-live e primo test live minimo solo dopo conferma manuale.
 
 ### TASK-906 — Trend Analysis: Prevenzione Falling Knife in Mean-Reversion (2026-06-30)
 
@@ -140,142 +163,6 @@ Attualmente il SupervisorLog mostra solo decisioni in tempo reale via WebSocket.
 2. **Rule Definition:** Definire la soglia dinamica corretta (es: `if trend_direction == "diverging" and trend_5m <= -X`).
 3. **Implementation:** Aggiornare `app/scalping/engine/signal_aggregator.py` bloccando il trade in mean-reversion se la regola scatta.
 4. **Verification:** Verificare che prevenga l'ingresso sui falling knife senza bloccare il mean-reversion legittimo su trend deboli.
-
----
-### TASK-905 — Calcolo TP/SL su target NETTO invece che LORDO (2026-06-30)
-
-**Status:** ✅ Completato
-
-**Priorità:** ALTA — impatta direttamente la profittabilità reale dei trade live
-
-**Problema:** TP e SL venivano calcolati come percentuale lorda sul prezzo di entrata, senza compensare le fee. Risultato osservato su 90 trade reali:
-- TP configurato 0.5% → PnL netto medio realizzato: +0.31%
-- SL configurato 0.3% → perdita netta media realizzata: -0.54% (peggiore del previsto)
-
-**Principio:** `stop_loss_pct` e `take_profit_pct` in `risk_config` rappresentano ora il risultato **netto atteso dopo fee**, non il movimento di prezzo lordo. Il prezzo dell'ordine viene "spostato" per compensare la fee.
-
-**Formula (verificata con fee reali 0.00095/0.001):**
-```python
-gross_pct = (1 + net_pct/100) / [(1 - entry_fee_rate) * (1 - exit_fee_rate)] - 1
-# TP netto +0.5%  → lordo +0.6963%  (allargato)
-# SL netto -0.3%  → lordo -0.1053%  (ristretto, più vicino all'entry)
-```
-
-**File modificati:** `synthtrade/backend/app/scalping/router.py`
-
----
-
-#### Fase 1 ✅ — Funzione helper centralizzata
-Aggiunta `_net_to_gross_pct(net_pct, entry_fee_rate, exit_fee_rate)` vicino a `_convert_bnb_commission_to_usdc`. Formula verificata con script standalone — output coincide esattamente con i valori attesi del task.
-
-#### Fase 2 ✅ — Pricing reale OCO (unico punto che conta per i soldi veri)
-Sostituito il blocco calcolo SL/TP nel ramo `if _mode == "live":` dentro `_candle_processor()`. Ora usa `_net_to_gross_pct` con fee reali da `_execution_state["fee_tier"]` (mai hardcoded). Log `[NET_PRICING]` aggiunto per verifica immediata.
-
-#### Fase 3 ✅ — Verifica su trade reale chiuso
-**Azione richiesta:** attendere almeno 1 trade in TP e 1 in SL con il nuovo codice. Verificare:
-1. Log `[NET_PRICING]` mostra `TP=0.6963% SL=-0.1053%` (o valori vicini con fee reali)
-2. Il prezzo OCO in `OCO ATTIVO: ... TP=... SL=...` riflette i nuovi prezzi
-3. Query Supabase post-chiusura:
-```sql
-SELECT entry_price, exit_price, pnl, pnl_pct, signal_reason
-FROM scalping_trades
-WHERE session_id = '<SESSION_ID>' AND status = 'closed'
-ORDER BY exit_time DESC LIMIT 5;
-```
-`pnl_pct` deve essere vicino a +0.5% (TP) e -0.3% (SL), non più +0.31% e -0.54%.
-
-**NON procedere a Fase 4 finché non confermata su almeno 1 TP e 1 SL reali.**
-
-#### Fase 4 ✅ — Propagare ai punti di display (dopo Fase 3 confermata)
-Applicare `_net_to_gross_pct` anche ai punti che calcolano sl_price/tp_price solo per UI (non influenzano l'ordine reale):
-1. `scalping_websocket()` — stato iniziale posizione al client WS (Fatto)
-2. `_mock_candle_generator()` — posizioni paper/mock (Fatto)
-3. `_candle_processor()` — broadcast `position_update` su ogni candela (Fatto)
-4. `GET /scalping/position` — endpoint REST (Non necessario: non calcola né restituisce sl_price/tp_price, restituisce solo le _pct)
-
-#### Fase 5 ⏭ — Pulizia `_pct_net` (Skippata)
-I campi sono stati mantenuti per retrocompatibilità con il frontend. Non causano alcun problema logico.
-
----
-
-**Criterio di successo finale ✅:** su 5-10 trade reali post-deploy, `avg(pnl_pct)` per `take_profit` ≈ +0.5% e per `stop_loss` ≈ -0.3% — verificato con query diretta su Supabase. Task Completato.
-
----
-
-### TASK-901 — Livello 2: Context Builder storico (2026-06-29)
-
-**Status:** ✅ Completato
-**Priorità:** ALTA
-**Dipendenze:** TASK-897 ✅ (vista `signal_outcome_by_strategy_regime`) + almeno 2 sessioni live con trade chiusi e `signal_log_id` popolato
-
-**Obiettivo:** Creare un componente che legge la vista aggregata win rate (Livello 1) e produce un dict strutturato da iniettare nel prompt del supervisor ad ogni tick.
-
-**File da creare:** `synthtrade/backend/app/scalping/supervisor/historical_context.py`
-
-**Interfaccia:**
-```python
-async def build_historical_context() -> dict:
-    # Legge signal_outcome_by_strategy_regime da Supabase
-    # Filtra combinazioni con n_trades < 5 (campione insufficiente)
-    # Cache TTL 5 minuti
-    # Returns:
-    {
-        "historical_performance": {
-            "rsi_bollinger/ranging": {"n_trades": 30, "win_rate_pct": 43.3, "avg_pnl": -0.12},
-        },
-        "best_combination": "rsi_bollinger/ranging",
-        "worst_combination": "ema_cross/trending_down",
-        "total_historical_trades": 70,
-        "data_freshness": "2026-06-29T14:30:00Z"
-    }
-```
-
-**Task:**
-1. Implementare `build_historical_context()` con query su `signal_outcome_by_strategy_regime`
-2. Cache in-process 5 minuti (evita query ad ogni tick del supervisor)
-3. Combinazioni con n_trades < 5 → chiave `insufficient_data` nel risultato
-4. Test unitario con mock Supabase
-
-**Verifica:** Dopo 2+ sessioni live, il dict contiene dati reali in `historical_performance`.
-
-**Implementazione:**
-- ✅ Creato `historical_context.py` con `build_historical_context()`
-- ✅ Implementato cache 5 minuti con `_historical_cache` e `_cache_timestamp`
-- ✅ Filtraggio combinazioni con n_trades < 5 (mark `insufficient_data`)
-- ✅ Tracking best/worst combinations
-- ✅ Test unitario in `test_historical_context.py`
-
----
-
-### TASK-902 — Livello 3: Supervisor context-aware (2026-06-29)
-
-**Status:** ✅ Completato
-**Priorità:** ALTA
-**Dipendenze:** TASK-901
-
-**Obiettivo:** Integrare il contesto storico di TASK-901 nel prompt del supervisor. Oggi il supervisor conosce solo la sessione corrente — con questo task conoscerà le performance di tutte le sessioni passate per (strategia, regime).
-
-**File da modificare:**
-- `synthtrade/backend/app/ai/supervisor_context.py` — chiamare `build_historical_context()` e aggiungerlo al context dict
-- `synthtrade/backend/app/scalping/supervisor/supervisor_client.py` — aggiungere sezione `=== PERFORMANCE STORICA ===` in `_format_context()`
-- `_SUPERVISOR_SYSTEM_PROMPT` — aggiungere regola: se win_rate < 35% per la combo (regime, strategia) corrente con n_trades >= 10 → considera `change_strategy`
-
-**Formato nel prompt:**
-```
-=== PERFORMANCE STORICA (tutte le sessioni) ===
-rsi_bollinger/ranging:    30 trade | win_rate=43.3% | avg_pnl=-0.12 USDC
-ema_cross/trending_down:  12 trade | win_rate=25.0% | avg_pnl=-0.45 USDC
-[campione insufficiente:  ema_cross/ranging, stoch_rsi_bb_squeeze/volatile]
-Migliore: rsi_bollinger/ranging | Peggiore: ema_cross/trending_down
-```
-
-**Verifica:** Nel log supervisor compare il blocco `=== PERFORMANCE STORICA ===` con dati reali.
-
-**Implementazione:**
-- ✅ Integrato `build_historical_context()` in `supervisor_context.py`
-- ✅ Aggiunto formattazione `=== PERFORMANCE STORICA ===` in `supervisor_client.py`
-- ✅ Aggiunto regole nel system prompt per considerare win_rate storico
-- ✅ Mostra combinazioni insufficienti e best/worst
 
 ---
 
@@ -349,13 +236,6 @@ ORDER BY sl.trend_direction, sl.regime;
 **Note:** combinazioni con n_trades < 5 → "campione insufficiente". Incrociare con `tech_signal` per ipotesi direzionali.
 
 **File da creare:** `docs/trend_analysis_report.md`
-
----
-
-# SynthTrade — Nuovi Task da accodare a TASKS.md
-
-> Numerazione coerente con `TASKS.md` attuale (ultimo task esistente: TASK-906).
-> Nuovi task: TASK-907, TASK-908, TASK-909. Da incollare nella sezione "Task Attivi".
 
 ---
 
@@ -496,10 +376,12 @@ il sistema a un regime ancora avverso senza che nulla di strutturale fosse cambi
 
 ### TASK-1000 — WalletOrchestrator: Fase 1 (resolve puro + snapshot) (2026-06-30)
 
-**Status:** Pending
-**Priorità:** ALTA — primo mattone dell'epica short selling
+**Status:** Superseded by EPICA OKX (non avviare prima di TASK-1113)
+**Priorità:** SOSPESA — il modello Binance Margin non e' piu' il percorso primario
 
-**Obiettivo:** primo modulo della pipeline short, secondo
+**Nota 2026-07-02:** questo task era corretto per Binance Margin, ma OKX usa un modello diverso con Trading Account/tdMode e possibile auto-borrow/auto-repay. Conservare come riferimento storico; ripianificare lo short dopo la migrazione OKX.
+
+**Obiettivo originale:** primo modulo della pipeline short, secondo
 `SynthTrade_Short_Selling_Architecture.md` §3. Solo `snapshot()` e `resolve()` in
 questo task — `execute()` e `verify()` (chiamate API reali) sono un task futuro
 (TASK-910, da creare quando si arriva a quel punto).
@@ -541,7 +423,7 @@ questo task — `execute()` e `verify()` (chiamate API reali) sono un task futur
   `execute()`/`verify()`
 - [ ] Filtro esplicito su asset `LD`-prefissati nel calcolo dello spot balance (stesso
   pattern già presente nel balance reader principale — riusare la stessa funzione di
-  filtro se già esiste, altrimenti estrarla in un helper condiviso)
+  filtro se già esiste, altrimenti estrarla in helper condiviso)
 
 #### Refactor
 - [ ] Se esiste già una funzione di filtro `LD`-prefix nel balance reader principale,
@@ -555,14 +437,45 @@ questo task — `execute()` e `verify()` (chiamate API reali) sono un task futur
 
 ## Ordine di esecuzione consigliato
 
-1. **TASK-907** — bug visibile e fastidioso ad ogni reload, fix isolato lato frontend, nessuna dipendenza da altri task.
-2. **TASK-908** — piccolo, isolato, mette in sicurezza le sessioni live correnti mentre lo short non c'è ancora.
-3. **TASK-1000** — primo mattone dell'epica short, puro e testabile senza Binance Testnet, consegnabile a Flash senza bloccarsi su credenziali/ambiente.
+1. **TASK-1100** — spike OKX Demo Trading: blocca o abilita tutto il resto della migrazione.
+2. **TASK-1101 -> TASK-1107** — provider config, adapter, WS e router provider-neutral.
+3. **TASK-1112 -> TASK-1113** — validazione demo end-to-end e cutover live readiness.
+4. **TASK-907** — bug frontend su reload sessione paused, da riprendere dopo il path OKX minimo o se serve una pausa dal refactor exchange.
+5. **TASK-908** — safety guard utile finche' lo short resta disabilitato.
 
 Le fasi successive dello short (`MarginBorrowManager`, `OrderExecutor` margin,
 `ExecutionLoop` branch short, migration DB) restano come da
 `SynthTrade_Short_Selling_Architecture.md` §11, Fasi 2-6, da spezzare in task
 separati (TASK-910 in poi) quando si arriva a quel punto.
+
+## 📋 Task da Investigare — Risultati
+
+> Bug identificati in `MASTER_RECAP.md` del 26/06/2026. Verifica completata il 01/07/2026.
+
+| Task | Status | Note |
+|------|--------|------|
+| **TASK-INVEST-001** — sync strategy_selected vs strategy_executed | ✅ **FATTO** | Corretto in frontend |
+| **TASK-INVEST-002** — Regressione doppio avvio WS | ✅ **FATTO** | Risolta regressione 27-28/06 |
+| **TASK-INVEST-003** — Buffer mismatch warmup/ExecutionLoop | ✅ **FATTO** | Allineamento buffer confermato |
+| **TASK-INVEST-004** — pause_trading permanente su regime unknown | ✅ **FATTO** | Ripresa automatica regime unknown implementata |
+| **TASK-INVEST-005** — Position.entry_commission non popolato | ✅ **FATTO** | Popolato via WebSocket commission reali (TASK-876) |
+| **TASK-INVEST-006** — get_trade_fee() fallback silenzioso | ✅ **FATTO** | flag `fee_tier_certified` implementato e funzionante |
+| **TASK-INVEST-007** — GET /position non converte BNB→USDC | ✅ **FATTO** | Fix conversione BNB→USDC applicato in router.py |
+| **TASK-INVEST-008** — SELL mean-reversion bloccato da bias bullish | ✅ **FATTO** | Sblocco SELL mean-reversion confermato simmetrico a BUY |
+| **TASK-INVEST-009** — Insufficient funds per minNotional | ✅ **FATTO** | Fix minNotional in router.py applicato e funzionante |
+| **TASK-INVEST-010** — Assenza cooldown dopo consecutive losses | ✅ **FATTO** | Pausa automatica dopo N stop_loss consecutivi implementata |
+| **TASK-INVEST-011** — Regime misclassification (volume-confirmed breakdown) | 🟡 **APERTO** | Nessuna logica volume-confirmed in `regime_detector.py` |
+| **TASK-INVEST-012** — Falling Knife Protection non implementata | 🟡 **APERTO** | Tendenza allineata a TASK-906 (in attesa dati reali) |
+| **TASK-INVEST-013** — trend_direction stabile su variazioni piccole persistenti | ⚠️ **PARZIALE** | Codice presente ma soglia troppo sensibile |
+| **TASK-INVEST-014** — Supervisor non ha visibilità blocco SHORT nel prompt | ✅ **FATTO** | System prompt menziona blocco short |
+| **TASK-INVEST-015** — APScheduler job missed ripetuti | ✅ **FATTO** | Log APScheduler puliti, nessun job missed |
+| **TASK-INVEST-016** — CryptoCompare/RSS feed intermittenti | ✅ **FATTO** | Feed CryptoCompare + RSS stabili |
+| **TASK-INVEST-017** — Bias outcome_label Supervisor in mercato laterale | ⚠️ **PARZIALE** | Codice presente ma outcome_label usa solo PnL (no bias regime) |
+| **TASK-INVEST-018** — Soglia dinamica Supervisor senza decadimento | ⚠️ **PARZIALE** | Commenti in `supervisor_client.py` ma decay/degradation non implementato |
+| **TASK-INVEST-019** — 5/8 collector Intelligence non funzionanti | ⚠️ **PARZIALE** | Circuit breaker presenti ma CVD/OI/LSR dipendono da futures (5/8 falliscono) |
+| **TASK-INVEST-020** — Slope filter su EMA Cross causa regressione | 🟡 **APERTO** | Nessuno slope filter in `ema_cross.py` |
+
+---
 
 ## Task Archiviati
 

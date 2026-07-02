@@ -1,6 +1,12 @@
 import re
+import os
 
-with open('TASKS.md', 'r', encoding='utf-8') as f:
+# Resolve TASKS.md relative to project root
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
+TASKS_PATH = os.path.join(PROJECT_ROOT, "docs", "TASKS.md")
+
+with open(TASKS_PATH, 'r', encoding='utf-8') as f:
     lines = f.readlines()
 
 # Parse tasks

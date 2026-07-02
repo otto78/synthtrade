@@ -23,11 +23,31 @@ python loom/scripts/setup.py
 |-----------|-------------|
 | "start task TASK-001 'feature X'" | `python loom/scripts/task.py start TASK-001 "feature X"` |
 | "list tasks" | `python loom/scripts/task.py list` |
-| "complete task TASK-001" | `python loom/scripts/task.py complete TASK-001 "done"` |
+| "complete task TASK-001 'done'" | `python loom/scripts/task.py complete TASK-001 "done"` |
 | "start TDD task TASK-001 'feature X'" | `python loom/scripts/task_tdd.py start TASK-001 "feature X"` |
 | "run tests" | `python loom/scripts/task_tdd.py test` |
 | "sync configs" | `bash loom/scripts/sync-configs.sh` |
 | "update task status TASK-001 Done" | `python loom/execution/task_status.py --action set-status --task-id TASK-001 --status "Done"` |
+| "check for loom updates" | `python loom/scripts/check_updates.py` |
+| "update loom" | `python loom/scripts/check_updates.py --update` |
+| "list plugins" | `python loom/scripts/plugins.py list` |
+| "add plugin from URL" | `python loom/scripts/plugins.py add --source <url>` |
+| "parse tasks" | `python loom/scripts/parse_tasks.py` |
+| "extract tasks" | `python loom/scripts/extract_tasks.py` |
+
+---
+
+## 📝 Documentation Update — MANDATORY
+
+After completing ANY task or making changes, you MUST update ALL of these:
+
+| File | When |
+|------|------|
+| `docs/TASKS.md` | Before ending — update task status, add completion notes |
+| `docs/STORY.md` | Add entry with version, changes, key decisions |
+| `docs/HANDOFF.md` | At session end — summary for next agent |
+
+**Never end a session without updating these three files.**
 
 ---
 

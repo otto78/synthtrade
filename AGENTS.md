@@ -33,6 +33,8 @@ python loom/scripts/setup.py
 | "update loom" | `python loom/scripts/check_updates.py --update` |
 | "list plugins" | `python loom/scripts/plugins.py list` |
 | "add plugin from URL" | `python loom/scripts/plugins.py add --source <url>` |
+| "parse tasks" | `python loom/scripts/parse_tasks.py` |
+| "extract tasks" | `python loom/scripts/extract_tasks.py` |
 
 ---
 

@@ -36,11 +36,12 @@
 - ✅ **1100.E** — Market order: 10€ → 0.00022883 BTC @ 43700€, fee rebate OK
 - ✅ **1100.F** — Exit bracket: algoId `3709954518432436224` piazzato con successo, metodo `order-algo` confermato
 - ✅ **1100.H** — WS public trades: subscription OK, parser implementato, CVD mapping verificato
-- ❌ **1100.G** — WS private auth bloccato: `60032 API key doesn't exist` su demo endpoint
-  - REST demo funziona (code 0) con la stessa chiave → chiave valida
-  - WS private demo `wspap.okx.com/ws/v5/private` rifiuta con 60032
-  - WS EU live `wsaws.okx.com:8443` non raggiungibile dalla rete aziendale
-  - **Fix richiesto**: creare nuova API key dal portale Demo Trading OKX in modalità Demo (toggle in alto) → Profile → API → nuova key con permesso Trade. Aggiornare `.env` OKX_API_KEY/SECRET/PASSPHRASE
+- ❌ **1100.G** — WS private EU bloccato dalla rete aziendale
+  - Chiave EU (`eea.okx.com`) funziona solo su `wsaws.okx.com:8443` (EU WS)
+  - `wsaws.okx.com` → DNS fail dalla rete aziendale
+  - `wspap.okx.com` (demo) e `ws.okx.com` (global) → `60032` perché rifiutano chiavi EU
+  - REST `eea.okx.com` → OK (HTTP non bloccato, solo WS porta 8443)
+  - **Codice già corretto** — testare da casa o VPN su `wss://wsaws.okx.com:8443/ws/v5/private`
 
 **Decisione:**
 - **Bracket:** usare `/api/v5/trade/order-algo` standard (non `attachAlgoOrds`)

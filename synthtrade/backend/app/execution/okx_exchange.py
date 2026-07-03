@@ -78,7 +78,7 @@ class OkxExchangeAdapter:
             # Override base URL for EU accounts
             if base_url and "eea.okx.com" in base_url:
                 self.client.urls["api"] = {
-                    k: v.replace("www.okx.com", "eea.okx.com")
+                    k: v.replace("www.okx.com", "eea.okx.com") if v else v
                     for k, v in self.client.urls.get("api", {}).items()
                 }
 

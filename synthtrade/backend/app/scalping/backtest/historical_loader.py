@@ -134,10 +134,10 @@ class HistoricalLoader:
                 config["headers"] = {"x-simulated-trading": "1"}
 
             exchange = ccxt.okx(config)
-            # EU base URL
+            # EU base URL — skip None values to avoid NoneType.replace() crash
             if "eea.okx.com" in settings.OKX_BASE_URL:
                 exchange.urls["api"] = {
-                    k: v.replace("www.okx.com", "eea.okx.com")
+                    k: v.replace("www.okx.com", "eea.okx.com") if v else v
                     for k, v in exchange.urls.get("api", {}).items()
                 }
             if settings.exchange_demo:

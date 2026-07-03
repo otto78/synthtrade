@@ -637,12 +637,29 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
             # Usato per trade pre-TASK-825 che non hanno oco_order_list_id.
             # Arrotonda entry_price a 2 decimali per evitare mismatch floating-point.
             if not trade_id:
+                # Strategy 2a: session_id + entry_price + status (no entry_time string compare
+                # to avoid Supabase timestamptz normalization mismatch)
+                resp = supabase.table("scalping_trades") \
+                    .select("id, entry_time") \
+                    .eq("session_id", db_sid) \
+                    .eq("entry_price", entry_price_rounded) \
+                    .eq("status", "open") \
+                    .limit(1) \
+                    .execute()
+                if resp.data:
+                    trade_id = resp.data[0]["id"]
+
+            # Strategy 2b: if still not found, try with entry_time range ±2s
+            if not trade_id and entry_time_str and pos.entry_time:
+                from datetime import timedelta
+                t_low = (pos.entry_time - timedelta(seconds=2)).isoformat()
+                t_high = (pos.entry_time + timedelta(seconds=2)).isoformat()
                 resp = supabase.table("scalping_trades") \
                     .select("id") \
                     .eq("session_id", db_sid) \
-                    .eq("entry_price", entry_price_rounded) \
-                    .eq("entry_time", entry_time_str) \
                     .eq("status", "open") \
+                    .gte("entry_time", t_low) \
+                    .lte("entry_time", t_high) \
                     .limit(1) \
                     .execute()
                 if resp.data:

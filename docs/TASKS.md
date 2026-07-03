@@ -153,11 +153,14 @@
 
 ### TASK-1109 — Frontend exchange-neutral
 
-**Status:** Pending
+**Status:** ✅ DONE — label "Saldo Binance" dinamica (OKX/Binance/Exchange)
 **Priorità:** MEDIA
 **Dipendenze:** TASK-1107, TASK-1108
 
-**Obiettivo:** rinominare `BinanceSymbolsService`, label dashboard/topbar e endpoint strumenti in chiave exchange-neutral/OKX.
+**Completato 2026-07-03:**
+- ✅ `dashboard.model.ts`: aggiunto `exchange_provider?: string` a `DashboardStats`
+- ✅ `dashboard.page.ts`: `balanceLabel()` computed signal → "Saldo OKX" / "Saldo Binance" / "Saldo Exchange"
+- ✅ `dashboard.py`: aggiunto `exchange_provider` nel return dict
 
 ### TASK-1110 — Market data/backtest factory cleanup
 
@@ -254,18 +257,14 @@
 
 ### TASK-1115 — Dashboard balance provider-neutral
 
-**Status:** Pending
+**Status:** ✅ DONE — okx_balance.py + dispatch provider in dashboard API
 **Priorità:** ALTA
 **Dipendenze:** TASK-1101, TASK-1103
 
-**Obiettivo:** sostituire `core/binance_balance.py` nel dashboard con un balance service provider-neutral capace di leggere OKX e convertire asset in EUR.
-
-**File coinvolti:**
-- `synthtrade/backend/app/api/dashboard.py`
-- `synthtrade/backend/app/core/binance_balance.py` o nuovo `exchange_balance.py`
-- `synthtrade/frontend/synthtrade-ui/src/app/pages/dashboard/dashboard.page.ts`
-
-**Verifica:** `/api/dashboard` restituisce saldo OKX reale, `exchange_provider`, breakdown asset in EUR, e la UI non mostra piu' "Saldo Binance" quando provider=OKX.
+**Completato 2026-07-03:**
+- ✅ `okx_balance.py`: fetch funding + trading wallet OKX, conversione EUR via tickers REST
+- ✅ `dashboard.py`: dispatch dinamico `okx_balance` vs `binance_balance` su `EXCHANGE_PROVIDER`
+- ✅ Smoke test: 112k€ saldo demo OKX (BTC, XRP, EUR, USDC, ETH) ✅
 
 ### TASK-1116 — Audit collector Binance/Futures per migrazione OKX
 

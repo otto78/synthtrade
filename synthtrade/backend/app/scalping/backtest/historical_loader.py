@@ -134,14 +134,15 @@ class HistoricalLoader:
                 config["headers"] = {"x-simulated-trading": "1"}
 
             exchange = ccxt.okx(config)
-            # EU base URL — skip None values to avoid NoneType.replace() crash
+            # EU base URL override — must happen AFTER exchange init, BEFORE fetch
+            # Note: do NOT call set_sandbox_mode() — it clobbers urls["api"] and
+            # can crash on None values. OKX demo is controlled via the
+            # x-simulated-trading header already set in config["headers"] above.
             if "eea.okx.com" in settings.OKX_BASE_URL:
                 exchange.urls["api"] = {
-                    k: v.replace("www.okx.com", "eea.okx.com") if v else v
+                    k: v.replace("www.okx.com", "eea.okx.com") if isinstance(v, str) else v
                     for k, v in exchange.urls.get("api", {}).items()
                 }
-            if settings.exchange_demo:
-                exchange.set_sandbox_mode(True)
 
             try:
                 since = int(start.timestamp() * 1000) if start else None

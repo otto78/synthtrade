@@ -76,15 +76,17 @@ class OkxExchangeAdapter:
             self.client = ccxt.okx(config)
 
             # Override base URL for EU accounts
+            # Use isinstance guard to skip None values in urls["api"] dict
             if base_url and "eea.okx.com" in base_url:
                 self.client.urls["api"] = {
-                    k: v.replace("www.okx.com", "eea.okx.com") if v else v
+                    k: v.replace("www.okx.com", "eea.okx.com") if isinstance(v, str) else v
                     for k, v in self.client.urls.get("api", {}).items()
                 }
 
             if demo:
-                self.client.set_sandbox_mode(True)
-                # Keep header explicit — ccxt sandbox behavior varies across versions
+                # Do NOT call set_sandbox_mode() after EU URL override —
+                # it rebuilds urls["api"] from scratch and can crash on None values.
+                # OKX demo is fully controlled via the x-simulated-trading header.
                 self.client.headers = {
                     **getattr(self.client, "headers", {}),
                     "x-simulated-trading": "1",

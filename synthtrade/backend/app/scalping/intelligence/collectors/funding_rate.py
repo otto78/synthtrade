@@ -25,10 +25,19 @@ BINANCE_FUNDING_RATE_URL = "https://fapi.binance.com/fapi/v1/fundingRate"
 # Mappa simboli spot → futures perpetual per collector
 # I dati di funding rate esistono SOLO su USDT perpetual futures.
 # USDC spot è equivalente come sottostante (BNB), quindi usiamo USDT come proxy.
+# EUR symbols non hanno equivalente su Binance Futures → None = graceful skip.
 FUTURES_SYMBOL_MAP = {
     "BNBUSDC": "BNBUSDT",
     "BTCUSDC": "BTCUSDT",
     "ETHUSDC": "ETHUSDT",
+    "BTCEUR": None,
+    "BTC-EUR": None,
+    "ETHEUR": None,
+    "ETH-EUR": None,
+    "SOLEUR": None,
+    "SOL-EUR": None,
+    "XRPEUR": None,
+    "XRP-EUR": None,
 }
 
 
@@ -53,7 +62,14 @@ class FundingRateCollector:
         if not self._cb.is_available():
             return None
         futures_symbol = FUTURES_SYMBOL_MAP.get(symbol.upper(), symbol.upper())
-        
+
+        if futures_symbol is None:
+            logger.debug(
+                "FundingRateCollector: skipping %s — no Binance Futures equivalent (EUR pair)",
+                symbol,
+            )
+            return None
+
         for attempt in range(self._max_retries):
             try:
                 async with httpx.AsyncClient(timeout=self._timeout) as client:

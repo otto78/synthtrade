@@ -22,10 +22,19 @@ BINANCE_LS_URL = "https://fapi.binance.com/futures/data/globalLongShortAccountRa
 logger = logging.getLogger(__name__)
 
 # Mappa simboli spot → futures perpetual per collector
+# EUR symbols non hanno equivalente su Binance Futures → None = graceful skip.
 FUTURES_SYMBOL_MAP = {
     "BNBUSDC": "BNBUSDT",
     "BTCUSDC": "BTCUSDT",
     "ETHUSDC": "ETHUSDT",
+    "BTCEUR": None,
+    "BTC-EUR": None,
+    "ETHEUR": None,
+    "ETH-EUR": None,
+    "SOLEUR": None,
+    "SOL-EUR": None,
+    "XRPEUR": None,
+    "XRP-EUR": None,
 }
 
 
@@ -44,7 +53,14 @@ class LongShortRatioCollector:
 
         # Mappa USDC → USDT per i futures perpetual
         futures_symbol = FUTURES_SYMBOL_MAP.get(symbol.upper(), symbol.upper())
-        
+
+        if futures_symbol is None:
+            logger.debug(
+                "LongShortRatioCollector: skipping %s — no Binance Futures equivalent (EUR pair)",
+                symbol,
+            )
+            return None
+
         for attempt in range(self._max_retries):
             try:
                 async with httpx.AsyncClient(timeout=self._timeout) as client:

@@ -32,10 +32,18 @@ _ROLLING_WINDOW = 5
 # Mappa simboli spot → futures perpetual per collector
 # I dati OI esistono SOLO su USDT perpetual futures.
 # USDC spot è equivalente come sottostante, quindi usiamo USDT come proxy.
+# EUR symbols non hanno futures perpetual su Binance → graceful skip.
 FUTURES_SYMBOL_MAP = {
     "BNBUSDC": "BNBUSDT",
     "BTCUSDC": "BTCUSDT",
     "ETHUSDC": "ETHUSDT",
+    # EUR symbols: no Binance Futures equivalent → mapped to None = skip
+    "BTCEUR": None,
+    "BTC-EUR": None,
+    "ETHEUR": None,
+    "ETH-EUR": None,
+    "SOLEUR": None,
+    "SOL-EUR": None,
 }
 
 
@@ -52,7 +60,17 @@ class OpenInterestCollector:
     async def collect(self, symbol: str = "BTCUSDT") -> Optional[OpenInterest]:
         if not self._cb.is_available():
             return None
-        futures_symbol = FUTURES_SYMBOL_MAP.get(symbol.upper(), symbol.upper())
+
+        sym_upper = symbol.upper()
+        futures_symbol = FUTURES_SYMBOL_MAP.get(sym_upper, sym_upper)
+
+        # Graceful skip for symbols without Binance Futures equivalent (e.g. EUR pairs)
+        if futures_symbol is None:
+            logger.debug(
+                "OpenInterestCollector: skipping %s — no Binance Futures equivalent (EUR pair)",
+                symbol,
+            )
+            return None
         
         for attempt in range(self._max_retries):
             try:

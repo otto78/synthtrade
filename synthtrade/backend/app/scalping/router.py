@@ -1504,16 +1504,16 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     break
                 
                 # ── FIX-2026-06-05: Watchdog — check if data is stale ──
-                # If no candle received for > 3 minutes, the Binance WS may be stuck.
+                # If no candle received for > 3 minutes, the WS may be stuck.
                 # Force-reload historical candles via REST to keep the pipeline alive,
                 # and restart the WS client connection.
                 stale_seconds = (datetime.now(timezone.utc) - _last_event_time).total_seconds()
-                
+
                 # LOG every 30s when no data received (for visibility, not just at 3min)
                 if 30 <= stale_seconds < 35:
                     logger.info(
                         f"⏳ No WS candle data for {stale_seconds:.0f}s for {symbol} — "
-                        f"waiting for Binance WS to deliver candles..."
+                        f"waiting for market WS to deliver candles..."
                     )
                 elif 60 <= stale_seconds < 65:
                     logger.info(

@@ -117,6 +117,7 @@ async def get_dashboard(
         "total_active_pnl_pct": total_active_pnl_pct,
         "engine_status": "RUNNING",
         "trading_mode": settings.TRADING_MODE,
+        "exchange_provider": settings.EXCHANGE_PROVIDER.lower(),
     }
 
 

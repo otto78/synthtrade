@@ -22,6 +22,7 @@ export interface DashboardStats {
   closed_trades_count?: number;
   closed_trades_pnl?: number;
   total_active_pnl_pct?: number;
+  exchange_provider?: string;
 }
 
 export interface BalanceSnapshot {

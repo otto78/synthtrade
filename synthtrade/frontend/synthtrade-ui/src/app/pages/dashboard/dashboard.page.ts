@@ -20,7 +20,7 @@ import { StatCardComponent } from '../../shared/components/stat-card/stat-card.c
       <!-- KPI Cards -->
       <div class="stats-grid">
         <app-stat-card
-          label="Saldo Binance"
+          [label]="balanceLabel()"
           [value]="(balanceFormatted())"
           [loading]="loading()"
         />
@@ -392,6 +392,13 @@ export class DashboardPage implements OnInit, OnDestroy {
     const b = this.stats().balance_eur;
     if (b === 0 && !this.loading()) return '—';
     return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 }).format(b);
+  });
+
+  balanceLabel = computed(() => {
+    const provider = this.stats().exchange_provider?.toUpperCase();
+    if (provider === 'OKX') return 'Saldo OKX';
+    if (provider === 'BINANCE') return 'Saldo Binance';
+    return 'Saldo Exchange';
   });
 
   activeStrategiesStr = computed(() => String(this.stats().active_strategies_count ?? 0));

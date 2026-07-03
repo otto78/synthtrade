@@ -2700,7 +2700,7 @@ async def get_candles(symbol: str, limit: int = 100) -> List[Dict]:
                 }
                 for c in past_candles
             ]
-            logger.info(f"Returning {len(result)} candles from Binance REST for {symbol}")
+            logger.info(f"Returning {len(result)} candles from HistoricalLoader for {symbol}")
             return result
     except Exception as e:
         logger.warning(f"Binance REST fallback failed for {symbol}: {e}")

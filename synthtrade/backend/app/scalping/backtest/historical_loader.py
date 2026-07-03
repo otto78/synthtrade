@@ -246,7 +246,7 @@ class HistoricalLoader:
 
         if candles:
             logger.info(
-                "Returning %d candles from Binance REST for %s", len(candles), symbol
+                "Returning %d candles from Binance REST for %s (OKX unavailable for this symbol)", len(candles), symbol
             )
         return candles
 

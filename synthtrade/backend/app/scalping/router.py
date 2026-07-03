@@ -132,6 +132,15 @@ def _throttled_warning(msg: str, key: str = "") -> None:
         logger.debug(f"[THROTTLED] {msg}")
 
 
+def _is_valid_uuid(value: str) -> bool:
+    """Return True if value is a valid UUID string."""
+    import re
+    return bool(re.match(
+        r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+        str(value).lower()
+    ))
+
+
 def _net_to_gross_pct(net_pct: float, entry_fee_rate: float, exit_fee_rate: float) -> float:
     """Converte un target NETTO (%) nel movimento di prezzo LORDO (%) necessario
     perché, dopo le due fee (entry + exit), il risultato netto coincida col target.
@@ -3165,7 +3174,6 @@ async def control_session(control: Dict) -> Dict:
                     
                 # Start SupervisorScheduler
                 from app.scalping.supervisor.supervisor_scheduler import SupervisorScheduler
-                from app.config import settings
                 supervisor = SupervisorScheduler(symbol=active_symbol, interval_seconds=settings.scalping.SCALPING_SUPERVISOR_INTERVAL_SEC, score_engine=_execution_state.get("signal_engine"))
                 # Attach db_session_id (UUID) so the supervisor can log it to DB
                 _execution_state["loop"].session_id = session.get("db_session_id")
@@ -4017,16 +4025,27 @@ async def get_opportunity_watchlist() -> List[str]:
 async def get_supervisor_history(session_id: str, limit: int = 50) -> List[Dict]:
     """Recupera le decisioni del supervisor per una sessione specifica.
 
-    Usato dal frontend per popolare la scheda SupervisorLog con lo storico
-    delle decisioni della sessione corrente al caricamento della pagina.
+    Accetta sia il session_id interno (sess_XXXXXXXX) sia il db_session_id (UUID).
+    Se viene passato il session_id interno, viene tradotto al db_session_id via
+    _execution_state per evitare l'errore 22P02 sul DB.
     """
     try:
+        # Translate in-memory session_id -> db_session_id if needed
+        db_sid = session_id
+        cur = _execution_state.get("session", {})
+        if cur.get("session_id") == session_id and cur.get("db_session_id"):
+            db_sid = cur["db_session_id"]
+
+        if not db_sid or db_sid == session_id and not _is_valid_uuid(db_sid):
+            # No DB session yet (DB insert may have failed) — return empty list silently
+            return []
+
         supabase = get_supabase()
 
         def _fetch():
             resp = supabase.table("supervisor_memory") \
                 .select("*") \
-                .eq("session_id", session_id) \
+                .eq("session_id", db_sid) \
                 .order("decided_at", desc=True) \
                 .limit(limit) \
                 .execute()

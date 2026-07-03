@@ -29,6 +29,27 @@ logger = logging.getLogger(__name__)
 # OKX WS endpoints
 _WS_DEMO = "wss://wspap.okx.com/ws/v5/public?brokerId=9999"
 _WS_EU_LIVE = "wss://wsaws.okx.com:8443/ws/v5/public"
+
+
+def _normalize_okx_symbol(symbol: str) -> str:
+    """Normalize any symbol format to OKX instId (e.g. BTC-EUR).
+
+    Handles:
+      BTC-EUR   -> BTC-EUR  (noop)
+      BTC/EUR   -> BTC-EUR
+      BTCUSDT   -> BTC-USDT
+      BNBUSDC   -> BNB-USDC
+      BTCEUR    -> BTC-EUR
+    """
+    s = symbol.upper().replace("/", "-")
+    if "-" in s:
+        return s
+    # Try common quote assets longest-first to avoid false matches (e.g. USDC before USD)
+    for q in ("USDC", "USDT", "BUSD", "EUR", "USD", "BTC", "ETH", "BNB"):
+        if s.endswith(q) and len(s) > len(q):
+            base = s[: -len(q)]
+            return f"{base}-{q}"
+    return s
 _WS_LIVE = "wss://ws.okx.com:8443/ws/v5/public"
 
 _PING_INTERVAL = 25  # OKX requires ping every 30s; use 25 for safety
@@ -54,8 +75,9 @@ class OkxWSClient:
         eu: bool = True,
         reconnect_max_delay: float = 30.0,
     ):
-        # Accept both OKX format (BTC-EUR) and CCXT format (BTC/EUR)
-        self.symbols = [s.replace("/", "-").upper() for s in (symbols or ["BTC-EUR"])]
+        # Accept OKX format (BTC-EUR), CCXT format (BTC/EUR), or compact (BTCUSDT, BNBUSDC)
+        # Normalize all to OKX instId format: BTC-EUR, BNB-USDC, etc.
+        self.symbols = [_normalize_okx_symbol(s) for s in (symbols or ["BTC-EUR"])]
         self._demo = demo
         self._eu = eu
         self._reconnect_max_delay = reconnect_max_delay

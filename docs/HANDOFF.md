@@ -6,28 +6,49 @@
 
 ### Da: Kiro → prossima sessione
 
-**Data:** 2026-07-03 12:05
+**Data:** 2026-07-03 15:30
 
-**Contesto:** TASK-1111 Integration tests completato — 12/12 PASS.
+**Contesto:** TASK-1110 + TASK-1116 completati, 3 bug critici fixati in sessione, 12/12 test pass.
 
 ---
 
-### ✅ FASE COMPLETATA: TASK-1111 Integration Tests Fake OKX Adapter
+### ✅ FASE COMPLETATA: TASK-1110 + TASK-1116 + Bug fixes
 
-**Cosa è stato fatto:**
+**Commit pushati:**
 
-1. `fake_okx_adapter.py` — FakeOkxAdapter + FakeOrderStream
-   - Nessuna rete, implementa `ExchangeAdapterProtocol`
-   - Flag `bracket_fails`, `close_fails`, `market_order_fails`
-   - `fire_fill(event)` per triggerare eventi WS sintetici
+| Hash | Contenuto |
+|------|-----------|
+| `71e4562` | TASK-1110 HistoricalLoader OKX + TASK-1116 EUR collector graceful skip + watchdog log |
+| `52ac12d` | Fix paper mode session_stop usa entry_price non prezzo OKX reale (bug 54000% PnL) |
+| `67f414f` | Fix NoneType ccxt URL override + lookup trade chiusura robusto (session+price senza entry_time string eq) |
 
-2. `test_okx_integration.py` — 12 test, tutti PASS:
-   - 1111.A Happy path TP fill ✅
-   - 1111.B Bracket failure → emergency close ✅
-   - 1111.C Stop session → cancel bracket → market close ✅
-   - 1111.D Restore open → order stream restart → fill ✅
-   - 1111.E Restore closed → reconcile DB ✅
-   - 1111.F Fee/net pricing OKX ✅ (+ 3 extra test FakeAdapter)
+**Bug fixati:**
+
+1. **NoneType crash in `_load_from_okx`** — `exchange.urls["api"]` ha valori `None`; fix: `if v else v` nel dict comprehension. Stesso fix in `okx_exchange.py`.
+
+2. **PnL 54016% su session_stop paper** — `close_price` usava `candle_buffer.latest.close` (prezzo reale OKX ~54000€) per posizioni mock aperte a ~100€. Fix: in paper mode usa `pos.entry_price` salvo che il prezzo del buffer sia entro 9x.
+
+3. **"No open row found for close"** — Strategy 2 lookup usava `.eq("entry_time", entry_time_str)` — Supabase normalizza `timestamptz` diversamente dall'ISO string Python. Fix: Strategy 2a usa solo `session_id + entry_price + status`; Strategy 2b usa range `±2s`.
+
+**Stato sistema:**
+- ✅ OKX Demo WS connesso (`wspap.okx.com`) con `TRADING_MODE=test`
+- ✅ HistoricalLoader carica 100 candele OKX reali per BTC-EUR
+- ✅ Nessun errore 400 Binance Futures per EUR symbols
+- ✅ 12/12 integration tests pass
+
+---
+
+### ⏳ PROSSIMI TASK
+
+**TASK-1112** — Validazione Demo Trading end-to-end (PRIORITÀ CRITICA):
+- Eseguire sessione live=False, mode=test su OKX Demo
+- Verificare entry → bracket → fill → DB closed con ordini reali demo
+- Prerequisito: `TRADING_MODE=test` nel `.env`, `EXCHANGE_PROVIDER=okx`
+- WS private: `wss://wsaws.okx.com:8443/ws/v5/private` (TASK-1100.G)
+
+**TASK-1109** — Frontend label "Saldo Binance" → provider-neutral
+
+**TASK-1115** — Dashboard balance OKX
 
 3. **Bug fix in router.py:** fee OKX negative (`-0.0035`) ora wrapped con `abs()` prima di `_net_to_gross_pct` — senza fix i prezzi bracket TP/SL erano invertiti
 

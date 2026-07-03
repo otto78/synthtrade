@@ -156,11 +156,20 @@
 
 ### TASK-1110 — Market data/backtest factory cleanup
 
-**Status:** Pending
+**Status:** ✅ DONE — HistoricalLoader OKX via ccxt, Binance come fallback
 **Priorità:** MEDIA
 **Dipendenze:** TASK-1101, TASK-1103
 
 **Obiettivo:** rimuovere `ccxt.binance()` diretto da market data, generator/backtest e servizi condivisi; usare factory provider-aware.
+
+**Completato 2026-07-03:**
+- ✅ `_load_from_okx()` via ccxt async `fetch_ohlcv`, EU URL override con guard `if v`
+- ✅ `_load_from_binance()` come metodo separato
+- ✅ `load_ohlcv()` dispatch su `settings.EXCHANGE_PROVIDER`
+- ✅ Fallback a Binance solo per simboli non-EUR se OKX fallisce
+- ✅ Fix NoneType in ccxt URL dict comprehension (`if v else v`)
+
+**File:** `synthtrade/backend/app/scalping/backtest/historical_loader.py`
 
 ### TASK-1111 — Test integration con fake OKX adapter
 
@@ -235,21 +244,18 @@
 
 ### TASK-1116 — Audit collector Binance/Futures per migrazione OKX
 
-**Status:** Pending
+**Status:** ✅ DONE — EUR symbols graceful skip implementato su tutti i collector Binance Futures
 **Priorità:** ALTA
 **Dipendenze:** TASK-1105
 
 **Obiettivo:** identificare e gestire tutte le fonti Binance usate dai segnali e opportunity: funding rate, open interest, long/short ratio, CVD trade stream, Binance announcements, market data/backtest.
 
-**File coinvolti:**
-- `synthtrade/backend/app/scalping/intelligence/collectors/funding_rate.py`
-- `synthtrade/backend/app/scalping/intelligence/collectors/open_interest.py`
-- `synthtrade/backend/app/scalping/intelligence/collectors/long_short_ratio.py`
-- `synthtrade/backend/app/scalping/intelligence/collectors/cvd_calculator.py`
-- `synthtrade/backend/app/scalping/opportunity/pollers/binance_rss.py`
-- `synthtrade/backend/app/scalping/intelligence/signal_score_engine.py`
-
-**Verifica:** in sessione OKX nessun collector chiama Binance senza essere marcato come fonte esterna esplicita; collector non migrati degradano a `unavailable` e il punteggio viene ripesato.
+**Completato 2026-07-03:**
+- ✅ `open_interest.py`: EUR symbols → `None` in `FUTURES_SYMBOL_MAP` + `logger.debug` + `return None`
+- ✅ `funding_rate.py`: idem
+- ✅ `long_short_ratio.py`: idem
+- ✅ Nessun WARNING 400 Bad Request su BTC-EUR, ETH-EUR, SOL-EUR ecc.
+- ℹ️ CVD/RSI/announcements non toccati (già provider-neutral o Binance-optional)
 
 ### TASK-906 — Trend Analysis: Prevenzione Falling Knife in Mean-Reversion (2026-06-30)
 

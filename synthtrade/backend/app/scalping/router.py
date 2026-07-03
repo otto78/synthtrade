@@ -578,6 +578,13 @@ async def _save_open_position_to_db(pos, db_session_id: str,
                 "exit_time": None,
                 "tp_price": tp_price if tp_price else None,
                 "sl_price": sl_price if sl_price else None,
+                # TASK-1108: provider-neutral order ids
+                "exchange_provider": settings.EXCHANGE_PROVIDER.lower(),
+                "exchange_order_id": getattr(pos, 'entry_order_id', None),
+                "exchange_bracket_id": pos.oco_order_list_id,   # OKX: algoId; Binance: orderListId
+                "exchange_tp_order_id": pos.tp_order_id,
+                "exchange_sl_order_id": pos.sl_order_id,
+                # Legacy Binance columns (kept for backward compat)
                 "oco_order_list_id": pos.oco_order_list_id,
                 "sl_order_id": pos.sl_order_id,
                 "tp_order_id": pos.tp_order_id,
@@ -678,6 +685,12 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
                     "status": "closed",
                     "entry_time": pos.entry_time.isoformat(),
                     "exit_time": datetime.now(timezone.utc).isoformat(),
+                    # TASK-1108: provider-neutral fields
+                    "exchange_provider": settings.EXCHANGE_PROVIDER.lower(),
+                    "exchange_bracket_id": pos.oco_order_list_id,
+                    "exchange_tp_order_id": pos.tp_order_id,
+                    "exchange_sl_order_id": pos.sl_order_id,
+                    # Legacy
                     "oco_order_list_id": pos.oco_order_list_id,
                 }).execute()
         await asyncio.to_thread(_db_op)

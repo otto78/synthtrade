@@ -114,7 +114,12 @@ class HistoricalLoader:
         end: Optional[datetime],
         limit: int,
     ) -> List[Candle]:
-        """Fetch OHLCV from OKX via ccxt async."""
+        """Fetch OHLCV from OKX REST API directly (no ccxt — avoids URL override issues).
+
+        OKX endpoint: GET /api/v5/market/candles
+        Docs: https://www.okx.com/docs-v5/en/#order-book-trading-market-data-get-candlesticks
+        Returns bars newest-first; we reverse to get chronological order.
+        """
         if interval not in OKX_INTERVALS:
             logger.warning("HistoricalLoader: interval %s not supported for OKX", interval)
             return []
@@ -123,43 +128,40 @@ class HistoricalLoader:
         okx_interval = OKX_INTERVALS[interval]
 
         try:
-            import ccxt.async_support as ccxt
-
             from app.config import settings
-            config = {
-                "enableRateLimit": True,
-                "options": {"defaultType": "spot", "fetchMarkets": ["spot"]},
+
+            base = settings.OKX_BASE_URL.rstrip("/")  # e.g. https://eea.okx.com
+            url = f"{base}/api/v5/market/candles"
+
+            params: dict = {
+                "instId": okx_sym,
+                "bar": okx_interval,
+                "limit": str(min(limit, 300)),
             }
+            if start:
+                params["before"] = str(int(start.timestamp() * 1000))
+
+            headers: dict = {}
             if settings.exchange_demo:
-                config["headers"] = {"x-simulated-trading": "1"}
+                headers["x-simulated-trading"] = "1"
 
-            exchange = ccxt.okx(config)
-            # EU base URL override — must happen AFTER exchange init, BEFORE fetch
-            # Note: do NOT call set_sandbox_mode() — it clobbers urls["api"] and
-            # can crash on None values. OKX demo is controlled via the
-            # x-simulated-trading header already set in config["headers"] above.
-            if "eea.okx.com" in settings.OKX_BASE_URL:
-                exchange.urls["api"] = {
-                    k: v.replace("www.okx.com", "eea.okx.com") if isinstance(v, str) else v
-                    for k, v in exchange.urls.get("api", {}).items()
-                }
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, params=params, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
 
-            try:
-                since = int(start.timestamp() * 1000) if start else None
-                # ccxt fetch_ohlcv returns [[ts, o, h, l, c, vol], ...]
-                raw = await exchange.fetch_ohlcv(
-                    symbol=okx_sym,
-                    timeframe=okx_interval,
-                    since=since,
-                    limit=min(limit, 300),  # OKX max 300 per call
-                )
-            finally:
-                await exchange.close()
+            # OKX returns: {"code":"0","data":[[ts,o,h,l,c,vol,volCcy,volCcyQuote,confirm],...]}
+            # Bars are newest-first → reverse for chronological order
+            raw = data.get("data", [])
+            if data.get("code") != "0":
+                logger.error("OKX candles API error: %s", data.get("msg", data))
+                return []
 
             candles = []
-            for entry in raw:
+            for entry in reversed(raw):
                 try:
-                    ts = datetime.fromtimestamp(entry[0] / 1000, tz=timezone.utc)
+                    ts = datetime.fromtimestamp(int(entry[0]) / 1000, tz=timezone.utc)
                     if end and ts > end:
                         continue
                     candle = Candle(
@@ -180,7 +182,7 @@ class HistoricalLoader:
             if candles:
                 logger.info(
                     "HistoricalLoader: loaded %d candles from OKX for %s (%s)",
-                    len(candles), okx_sym, interval,
+                    len(candles), symbol, interval,
                 )
             return candles
 

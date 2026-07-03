@@ -7,18 +7,19 @@ import pytest
 from synthtrade.backend.app.config import Settings, settings
 
 def test_settings_default_values():
-    s = Settings(_env_file=None) 
+    s = Settings(_env_file=None, TRADING_MODE='test')  # type: ignore[call-arg]
     assert s.BINANCE_TESTNET is True
     assert s.APP_PASSWORD == "changeme"
     assert s.JWT_EXPIRE_MINUTES == 1440
     assert s.LOG_LEVEL == "INFO"
 
 def test_binance_base_url_logic():
-    s_testnet = Settings(BINANCE_TESTNET=True)
+    # BINANCE_TESTNET is now a computed_field derived from TRADING_MODE
+    s_testnet = Settings(TRADING_MODE='test')
     assert s_testnet.binance_base_url == "https://testnet.binance.vision"
-    assert s_testnet.binance_ws_base_url == "wss://testnet.binance.vision/ws"
+    assert s_testnet.binance_ws_base_url == "wss://stream.testnet.binance.vision/ws"
 
-    s_mainnet = Settings(BINANCE_TESTNET=False)
+    s_mainnet = Settings(TRADING_MODE='live')
     assert s_mainnet.binance_base_url == "https://api.binance.com"
     assert s_mainnet.binance_ws_base_url == "wss://stream.binance.com:9443/ws"
 
@@ -33,7 +34,7 @@ def test_ai_cascade_models_list():
 def test_settings_validation():
     from pydantic import ValidationError
     with pytest.raises(ValidationError):
-        Settings(AI_CASCADE_TIMEOUT="not-a-number")
+        Settings(AI_CASCADE_TIMEOUT="not-a-number")  # type: ignore[arg-type]
 
 def test_singleton_instance():
     assert isinstance(settings, Settings)

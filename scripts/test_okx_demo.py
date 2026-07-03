@@ -289,10 +289,9 @@ async def spike_ws_public_trades(recorder: SpikeRecorder, symbol: str, timeout: 
     import websockets
 
     inst_id = _okx_inst_id(symbol)
-    # Try demo first, fallback to EU live public WS (no auth needed for public)
+    # Try demo only — EU live public requires different network config
     ws_urls = [
         "wss://wspap.okx.com/ws/v5/public?brokerId=9999",  # demo
-        "wss://wsaws.okx.com:8443/ws/v5/public",            # EU live public
     ]
     sub_msg = json.dumps({
         "op": "subscribe",

@@ -13,53 +13,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from app.config import settings
+from app.execution.exchange_models import CandleEvent, TradeEvent, ConnectionStatusEvent  # noqa: F401 re-export
 
 logger = logging.getLogger(__name__)
 
 # Binance Testnet only supports single-stream /ws endpoint, not combined /stream
 # Live Binance supports both. Use single-stream connections for compatibility.
-
-
-# ──────────────────────────────────────────────
-# Data Classes Eventi
-# ──────────────────────────────────────────────
-
-
-@dataclass
-class CandleEvent:
-    """Evento generato alla chiusura/aggiornamento di una candela 1m."""
-    symbol: str
-    interval: str
-    open_time: int
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: float
-    is_closed: bool  # True = candela completata, False = aggiornamento live
-
-
-@dataclass
-class TradeEvent:
-    """Evento generato ad ogni trade eseguito (utile per CVD)."""
-    symbol: str
-    trade_id: int
-    price: float
-    quantity: float
-    is_buyer_maker: bool  # False = buy aggressivo, True = sell aggressivo
-    timestamp: int
-
-
-@dataclass
-class ConnectionStatusEvent:
-    """Evento generato quando lo stato della connessione cambia."""
-    symbol: str
-    connected: bool
-    error: Optional[str] = None
 
 
 # ──────────────────────────────────────────────
@@ -289,6 +251,7 @@ class BinanceWSClient:
                 close=float(k.get("c", 0)),
                 volume=float(k.get("v", 0)),
                 is_closed=k.get("x", False),
+                provider="binance",
             )
         except (TypeError, ValueError) as exc:
             logger.warning("Errore parsing kline per %s: %s", symbol, exc)
@@ -314,6 +277,7 @@ class BinanceWSClient:
                 quantity=float(qty_raw),
                 is_buyer_maker=msg.get("m", False),
                 timestamp=int(timestamp_raw) if timestamp_raw is not None else 0,
+                provider="binance",
             )
         except (TypeError, ValueError) as exc:
             logger.warning("Errore parsing trade per %s: %s", symbol, exc)
@@ -325,3 +289,8 @@ class BinanceWSClient:
         self.status_queue.put_nowait(event)
         if self._on_status:
             self._on_status(event)
+
+    @staticmethod
+    def _with_provider(event: ConnectionStatusEvent) -> ConnectionStatusEvent:
+        """Unused — provider is set at construction time."""
+        return event

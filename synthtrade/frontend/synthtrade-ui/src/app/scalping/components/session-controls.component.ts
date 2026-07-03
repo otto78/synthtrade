@@ -7,7 +7,7 @@ import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { NgIf, NgClass, NgFor, DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SessionApiService } from '../services/session-api.service';
-import { BinanceSymbolsService } from '../services/binance-symbols.service';
+import { ExchangeSymbolsService } from '../services/exchange-symbols.service';
 import { ScalpingSession } from '../models/session.model';
 import { ConfigService } from '../../core/services/config.service';
 
@@ -484,7 +484,7 @@ export class SessionControlsComponent implements OnInit {
 
   constructor(
     private sessionApi: SessionApiService,
-    private binanceSymbols: BinanceSymbolsService,
+    private exchangeSymbols: ExchangeSymbolsService,
     private configService: ConfigService,
     private cdr: ChangeDetectorRef
   ) {}
@@ -506,8 +506,8 @@ export class SessionControlsComponent implements OnInit {
     });
     this.sessionApi.getStatus().subscribe();
 
-    // Load all Binance symbols
-    this.binanceSymbols.getSymbols().subscribe((symbols) => {
+    // Load all exchange instruments (provider-neutral: OKX or Binance)
+    this.exchangeSymbols.getSymbols().subscribe((symbols) => {
       this.allSymbols = symbols;
       this.cdr.detectChanges();
     });
@@ -526,7 +526,7 @@ export class SessionControlsComponent implements OnInit {
     if (!this.symbolFilter) {
       return this.allSymbols.slice(0, 50);
     }
-    return this.binanceSymbols.filterSymbols(this.allSymbols, this.symbolFilter);
+    return this.exchangeSymbols.filterSymbols(this.allSymbols, this.symbolFilter);
   }
 
   selectSymbol(symbol: string): void {

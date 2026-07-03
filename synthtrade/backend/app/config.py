@@ -102,11 +102,28 @@ class Settings(BaseSettings):
     SUPABASE_ANON_KEY: str = ''
     SUPABASE_SERVICE_ROLE_KEY: str = ''
 
-    # Binance — Key per Testnet
+    # ── Exchange Provider ────────────────────────────────────────
+    # TASK-1101: provider-neutral exchange config
+    EXCHANGE_PROVIDER: str = 'okx'   # 'okx' | 'binance'
+
+    # OKX — Demo Trading (TRADING_MODE=test)
+    OKX_API_KEY: str = ''
+    OKX_SECRET_KEY: str = ''
+    OKX_PASSPHRASE: str = ''
+
+    # OKX — Live (TRADING_MODE=live)
+    OKX_API_KEY_LIVE: str = ''
+    OKX_SECRET_KEY_LIVE: str = ''
+    OKX_PASSPHRASE_LIVE: str = ''
+
+    # OKX — Base URL (EU accounts use eea.okx.com)
+    OKX_BASE_URL: str = 'https://eea.okx.com'
+
+    # Binance — Key per Testnet (legacy)
     BINANCE_API_KEY: str = ''
     BINANCE_SECRET_KEY: str = ''
 
-    # Binance — Key per LIVE (produzione)
+    # Binance — Key per LIVE (legacy)
     BINANCE_API_KEY_LIVE: str = ''
     BINANCE_SECRET_KEY_LIVE: str = ''
 
@@ -114,6 +131,42 @@ class Settings(BaseSettings):
     TRADING_MODE: str = 'test'       # 'test' | 'live'
     ALLOW_LIVE_MODE: bool = False    # Flag sicurezza
 
+    # ── Computed: provider-neutral ───────────────────────────────
+    @computed_field
+    @property
+    def exchange_api_key(self) -> str:
+        if self.EXCHANGE_PROVIDER == 'okx':
+            return self.OKX_API_KEY if self.TRADING_MODE == 'test' else self.OKX_API_KEY_LIVE
+        return self.BINANCE_API_KEY if self.TRADING_MODE == 'test' else self.BINANCE_API_KEY_LIVE
+
+    @computed_field
+    @property
+    def exchange_secret_key(self) -> str:
+        if self.EXCHANGE_PROVIDER == 'okx':
+            return self.OKX_SECRET_KEY if self.TRADING_MODE == 'test' else self.OKX_SECRET_KEY_LIVE
+        return self.BINANCE_SECRET_KEY if self.TRADING_MODE == 'test' else self.BINANCE_SECRET_KEY_LIVE
+
+    @computed_field
+    @property
+    def exchange_passphrase(self) -> str:
+        """OKX only. Empty string for Binance."""
+        if self.EXCHANGE_PROVIDER == 'okx':
+            return self.OKX_PASSPHRASE if self.TRADING_MODE == 'test' else self.OKX_PASSPHRASE_LIVE
+        return ''
+
+    @computed_field
+    @property
+    def exchange_demo(self) -> bool:
+        """True when provider is OKX and mode is test (Demo Trading)."""
+        return self.EXCHANGE_PROVIDER == 'okx' and self.TRADING_MODE == 'test'
+
+    @computed_field
+    @property
+    def exchange_display_name(self) -> str:
+        mode = 'DEMO' if self.exchange_demo else ('LIVE' if self.TRADING_MODE == 'live' else 'TEST')
+        return f"{self.EXCHANGE_PROVIDER.upper()} {mode}"
+
+    # ── Computed: Binance legacy (backward compat) ───────────────
     @computed_field
     @property
     def BINANCE_TESTNET(self) -> bool:

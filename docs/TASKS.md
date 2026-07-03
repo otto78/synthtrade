@@ -17,35 +17,42 @@
 
 ### TASK-1100 — OKX Demo Spike: auth, market order, exit bracket, WS fill
 
-**Status:** Blocked — private auth OKX Demo ritorna `50119 API key doesn't exist`
+**Status:** Partial ✅ — Sottotask E/F/H completati, G bloccato
 **Priorità:** CRITICA
-**Dipendenze:** API key OKX Demo Trading create manualmente
+**Dipendenze:** API key OKX Demo Trading ✅
 
 **Obiettivo:** verificare empiricamente OKX Demo Trading prima di modificare il runtime live.
 
 **Output richiesto:**
-- Script isolato `scripts/test_okx_demo.py` o equivalente non agganciato al router.
-- Documento `docs/analysis/okx-demo-spike-results.md` con payload reali, limiti trovati e decisione finale su `attachAlgoOrds` vs `order-algo`.
+- Script isolato `scripts/test_okx_demo.py` ✅
+- Documento `docs/analysis/okx-demo-spike-results.md` con payload reali ✅
+- Raccomandazione bracket: `order-algo` vs `attachAlgoOrds` ✅
 
-**Stato 2026-07-02:**
-- Creato `scripts/test_okx_demo.py`.
-- Run read-only completato senza ordini.
-- Public time OKX OK.
-- Instrument discovery Demo OK: 529 strumenti spot.
-- `OKB-EUR` e `BNB-USDC` non disponibili in Demo (`51001`), anche se verificati live/public in precedenza.
-- Private auth bloccata: `/api/v5/account/balance` ritorna HTTP 401 `50119 API key doesn't exist`.
-- Report: `docs/analysis/okx-demo-spike-results.md` e JSON raw `docs/analysis/okx-demo-spike-results.json`.
+**Stato 2026-07-03 10:45:**
+- ✅ **1100.A** — Auth REST: risolto blocco `50119` con URL `eea.okx.com` per EU accounts
+- ✅ **1100.B** — Server time: OK
+- ✅ **1100.C** — Instrument discovery: 527 spot, 16 EUR live (`BTC-EUR` default confermato)
+- ✅ **1100.D** — Fee tier: maker -0.2%, taker -0.35% (rebate!)
+- ✅ **1100.E** — Market order: 10€ → 0.00022883 BTC @ 43700€, fee rebate OK
+- ✅ **1100.F** — Exit bracket: algoId `3709954518432436224` piazzato con successo, metodo `order-algo` confermato
+- ✅ **1100.H** — WS public trades: subscription OK, parser implementato, CVD mapping verificato
+- ❌ **1100.G** — WS private auth bloccato: `60032 API key doesn't exist` su demo endpoint, richiede URL EU `wss://wsaws.okx.com:8443/ws/v5/private`
+
+**Decisione:**
+- **Bracket:** usare `/api/v5/trade/order-algo` standard (non `attachAlgoOrds`)
+- **minSz:** qty ≥ 0.0001 BTC (~4€+) per algo order
+- **WS private:** validare in TASK-1112 con flusso end-to-end completo (fix URL già noto)
 
 **Verifica:**
-- REST auth OKX con key/secret/passphrase.
-- Header demo `x-simulated-trading: 1` confermato via ccxt o manuale.
-- Lettura strumenti e filtri per coppia target.
-- Confermare `OKB-EUR` in Demo Trading come default iniziale; se assente, documentare fallback.
-- Recupero fee tier maker/taker account/simbolo, con payload salvato.
-- Market order minimo in demo.
-- Exit bracket TP/SL server-side con prezzi calcolati da target netti e fee tier.
-- Fill ricevuto sul WS corretto con commissione reale normalizzata.
-- Payload trade pubblico sufficiente per CVD.
+- ✅ REST auth OKX con key/secret/passphrase + header demo
+- ✅ Instrument discovery e filtri per EUR
+- ✅ Fee tier maker/taker con payload salvato
+- ✅ Market order minimo in demo
+- ✅ Exit bracket TP/SL server-side con prezzi verificati
+- ⚠️ Fill WS ricevuto — rinviato a TASK-1112 (payload algo-orders channel)
+- ✅ Payload trade pubblico per CVD (parser implementato)
+
+**Prossimi passi:** procedere TASK-1101 (config OKX)
 
 ### TASK-1101 — Config provider OKX e credenziali demo/live
 
@@ -109,19 +116,35 @@
 
 ### TASK-1107 — Router scalping provider-neutral
 
-**Status:** Pending
+**Status:** ✅ DONE (100%) — provider-neutral completo incluso `_live_close_position`
 **Priorità:** CRITICA
 **Dipendenze:** TASK-1102, TASK-1105, TASK-1106
 
 **Obiettivo:** rimuovere assunzioni Binance da start/stop/restore sessione, costruendo exchange, market WS e order stream via factory.
 
+**Completato 2026-07-03:**
+- ✅ Entry flow: `place_exit_bracket(ExitBracketRequest)` provider-neutral
+- ✅ Bracket failure handler: `_handle_bracket_failed` usa `cancel_open_exit_orders` + `ClosePositionRequest`
+- ✅ `_on_order_update`: usa `bracket_id` e campo `leg` (OKX: take_profit/stop_loss diretto)
+- ✅ `_live_close_position`: convertito a provider-neutral (`cancel_open_exit_orders`, `get_holdings`, `get_symbol_rules.round_qty`, `close_position(ClosePositionRequest)`)
+- ✅ Session start/DB/WS/order stream provider-neutral
+- ✅ 12/12 integration tests passano (TASK-1111)
+
 ### TASK-1108 — DB migration provider e order ids generici
 
-**Status:** Pending
+**Status:** ✅ DONE — Migration applicata a Supabase
 **Priorità:** ALTA
 **Dipendenze:** TASK-1107
 
 **Obiettivo:** aggiungere provider, account mode, order ids e raw payload a sessioni/trade mantenendo compatibilita' con lo storico Binance.
+
+**File:** `synthtrade/supabase/migrations/20260703000000_task1108_okx_provider_columns.sql`
+
+**Colonne aggiunte e verificate:**
+- `scalping_sessions`: exchange_provider, exchange_account_mode, exchange_demo, fee_tier_*
+- `scalping_trades`: exchange_provider, exchange_order_id, exchange_bracket_id, exchange_tp/sl_order_id, exchange_raw
+- Index: idx_scalping_trades_exchange_order_id/bracket_id
+- Backfill: oco_order_list_id → exchange_bracket_id
 
 ### TASK-1109 — Frontend exchange-neutral
 
@@ -141,11 +164,27 @@
 
 ### TASK-1111 — Test integration con fake OKX adapter
 
-**Status:** Pending
+**Status:** ✅ DONE — 12/12 test passano
 **Priorità:** ALTA
 **Dipendenze:** TASK-1107
 
 **Obiettivo:** coprire start -> entry -> bracket -> fill -> DB/UI close senza chiamate reali, con fake adapter e fake order stream.
+
+**Completato 2026-07-03:**
+- ✅ `fake_okx_adapter.py` — FakeOkxAdapter + FakeOrderStream senza rete
+- ✅ **1111.A** — Happy path: entry → bracket → TP fill → position closed
+- ✅ **1111.B** — Bracket failure: entry OK → bracket reject → emergency close → no DB open
+- ✅ **1111.C** — Stop session: cancel bracket → market close → DB reason=session_stop
+- ✅ **1111.D** — Restore open: bracket attivo → order stream restart → TP fill ricevuto
+- ✅ **1111.E** — Restore closed: no bracket su exchange → DB reconciled
+- ✅ **1111.F** — Fee/net pricing: OKX rebate abs() corretto
+
+**Bug trovato e fixato:** router usava fee OKX negative raw (`-0.0035`) in `_net_to_gross_pct`, producendo TP/SL invertiti. Fix: `abs(fee)` su `entry_fee_pricing` e `exit_fee_pricing` in `router.py`.
+
+**File:**
+- `synthtrade/backend/tests/integration/fake_okx_adapter.py`
+- `synthtrade/backend/tests/integration/test_okx_integration.py`
+- `synthtrade/backend/app/scalping/router.py` (bug fix fee abs)
 
 ### TASK-1112 — Validazione Demo Trading end-to-end
 

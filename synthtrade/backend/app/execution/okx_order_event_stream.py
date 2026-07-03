@@ -1,0 +1,351 @@
+"""
+TASK-1106: OkxOrderEventStream — OKX private WebSocket order event stream.
+
+Connects to OKX private WS, subscribes to orders and algo-orders channels,
+normalizes fill events to the same dict contract as UserDataStreamManager:
+
+    {
+        "provider":          "okx",
+        "symbol":            "BTC-EUR",          # OKX instId format
+        "side":              "BUY" | "SELL",
+        "order_id":          str,
+        "bracket_id":        str | None,         # algoId if algo order
+        "order_list_id":     str,                # bracket_id or "-1"
+        "status":            "filled" | "expired" | "cancelled",
+        "fill_price":        float,
+        "commission":        float,
+        "commission_asset":  str | None,
+        "leg":               "take_profit" | "stop_loss" | "market" | "algo",
+    }
+
+OKX WS private endpoints:
+  Demo:    wss://wspap.okx.com/ws/v5/private?brokerId=9999
+  EU Live: wss://wsaws.okx.com:8443/ws/v5/private
+
+Login: sign(timestamp + "GET" + "/users/self/verify", secret) with HMAC-SHA256.
+
+Channels:
+  orders      -> normal spot orders (market/limit)
+  algo-orders -> TP/SL bracket orders (order-algo)
+
+TASK-1100.G (WS fill spike) still pending — payload mapping marked UNVERIFIED
+where OKX demo confirmation is missing.
+"""
+from __future__ import annotations
+
+import asyncio
+import base64
+import hashlib
+import hmac
+import json
+import logging
+import time
+from typing import Callable, Optional
+
+logger = logging.getLogger(__name__)
+
+_WS_DEMO = "wss://wspap.okx.com/ws/v5/private?brokerId=9999"
+_WS_EU_LIVE = "wss://wsaws.okx.com:8443/ws/v5/private"
+_WS_LIVE = "wss://ws.okx.com:8443/ws/v5/private"
+
+_PING_INTERVAL = 25
+_RECONNECT_DELAY = 5
+
+
+class OkxOrderEventStream:
+    """
+    OKX private WebSocket order event stream.
+
+    Implements the same lifecycle interface as UserDataStreamManager:
+        await stream.start(on_order_update, on_reconnect_sync)
+        await stream.stop()
+
+    Emits normalized order update dicts to on_order_update.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        secret: str,
+        passphrase: str,
+        demo: bool = True,
+        eu: bool = True,
+    ):
+        self._api_key = api_key
+        self._secret = secret
+        self._passphrase = passphrase
+        self._demo = demo
+
+        if demo:
+            self._ws_url = _WS_DEMO
+        elif eu:
+            self._ws_url = _WS_EU_LIVE
+        else:
+            self._ws_url = _WS_LIVE
+
+        self._running = False
+        self._on_order_update: Optional[Callable] = None
+        self._on_reconnect_sync: Optional[Callable] = None
+        self._listen_task: Optional[asyncio.Task] = None
+
+    # ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    async def start(
+        self,
+        on_order_update: Callable,
+        on_reconnect_sync: Optional[Callable] = None,
+    ) -> None:
+        if self._running:
+            logger.warning("OkxOrderEventStream already running")
+            return
+        self._on_order_update = on_order_update
+        self._on_reconnect_sync = on_reconnect_sync
+        self._running = True
+        self._listen_task = asyncio.create_task(
+            self._listen_loop(), name="okx-order-stream"
+        )
+        logger.info("OkxOrderEventStream started (demo=%s)", self._demo)
+
+    async def stop(self) -> None:
+        self._running = False
+        if self._listen_task and not self._listen_task.done():
+            self._listen_task.cancel()
+            try:
+                await self._listen_task
+            except asyncio.CancelledError:
+                pass
+        self._listen_task = None
+        logger.info("OkxOrderEventStream stopped")
+
+    # ── Auth ──────────────────────────────────────────────────────────────────
+
+    def _build_login_msg(self) -> dict:
+        """
+        OKX WS login: sign(timestamp + "GET" + "/users/self/verify") with HMAC-SHA256,
+        then base64-encode.
+        """
+        ts = str(int(time.time()))
+        prehash = ts + "GET" + "/users/self/verify"
+        sig = base64.b64encode(
+            hmac.new(
+                self._secret.encode("utf-8"),
+                prehash.encode("utf-8"),
+                hashlib.sha256,
+            ).digest()
+        ).decode("utf-8")
+        return {
+            "op": "login",
+            "args": [{
+                "apiKey": self._api_key,
+                "passphrase": self._passphrase,
+                "timestamp": ts,
+                "sign": sig,
+            }],
+        }
+
+    # ── Connection loop ───────────────────────────────────────────────────────
+
+    async def _listen_loop(self) -> None:
+        import websockets
+
+        while self._running:
+            try:
+                async with websockets.connect(self._ws_url, ping_interval=None) as ws:
+                    # Login
+                    await ws.send(json.dumps(self._build_login_msg()))
+                    resp_raw = await asyncio.wait_for(ws.recv(), timeout=10)
+                    resp = json.loads(resp_raw)
+                    if resp.get("event") != "login" or resp.get("code") != "0":
+                        logger.error("OKX WS login failed: %s", resp)
+                        raise ConnectionError(f"OKX WS login failed: {resp}")
+                    logger.info("OKX order stream: logged in")
+
+                    # Subscribe
+                    await ws.send(json.dumps({
+                        "op": "subscribe",
+                        "args": [
+                            {"channel": "orders", "instType": "SPOT"},
+                            {"channel": "algo-orders", "instType": "SPOT"},
+                        ],
+                    }))
+
+                    ping_task = asyncio.create_task(self._ping_loop(ws))
+                    try:
+                        async for raw in ws:
+                            if self._stop_requested():
+                                break
+                            text = raw.decode() if isinstance(raw, bytes) else raw
+                            if text == "pong":
+                                continue
+                            await self._dispatch(text)
+                    finally:
+                        ping_task.cancel()
+                        await asyncio.gather(ping_task, return_exceptions=True)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                if not self._running:
+                    break
+                logger.warning("OKX order stream disconnected (%s). Reconnect in %ds...",
+                               exc, _RECONNECT_DELAY)
+                await asyncio.sleep(_RECONNECT_DELAY)
+
+                if self._on_reconnect_sync:
+                    try:
+                        await self._on_reconnect_sync()
+                    except Exception as sync_e:
+                        logger.warning("OKX order stream reconnect sync failed: %s", sync_e)
+
+    def _stop_requested(self) -> bool:
+        return not self._running
+
+    async def _ping_loop(self, ws) -> None:
+        while True:
+            await asyncio.sleep(_PING_INTERVAL)
+            try:
+                await ws.send("ping")
+            except Exception:
+                break
+
+    # ── Dispatch ──────────────────────────────────────────────────────────────
+
+    async def _dispatch(self, raw: str) -> None:
+        try:
+            msg = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("OKX order stream: invalid JSON: %s", raw[:100])
+            return
+
+        event_type = msg.get("event")
+        if event_type in ("subscribe", "error"):
+            logger.debug("OKX order stream event: %s", msg)
+            return
+
+        channel = msg.get("arg", {}).get("channel", "")
+        data = msg.get("data", [])
+
+        if channel == "orders":
+            for item in data:
+                normalized = self._normalize_order(item)
+                if normalized:
+                    await self._emit(normalized)
+        elif channel == "algo-orders":
+            for item in data:
+                normalized = self._normalize_algo_order(item)
+                if normalized:
+                    await self._emit(normalized)
+
+    async def _emit(self, event: dict) -> None:
+        if self._on_order_update:
+            try:
+                await self._on_order_update(event)
+            except Exception as e:
+                logger.error("OKX order stream handler error: %s", e)
+
+    # ── Normalizers ───────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _normalize_order(item: dict) -> Optional[dict]:
+        """
+        Normalize OKX orders channel payload to router contract.
+
+        OKX order states: live, partially_filled, filled, cancelled, mmp_canceled
+        We emit only: filled, cancelled (mapped to "expired" for compat).
+
+        UNVERIFIED: field names confirmed from OKX docs, not yet from live Demo payload.
+        """
+        state = item.get("state", "")
+        if state not in ("filled", "cancelled"):
+            return None
+
+        inst_id = item.get("instId", "")
+        side = item.get("side", "").upper()
+        order_id = str(item.get("ordId", ""))
+        # avgPx: average fill price; fillPx: last fill price
+        fill_price = float(item.get("avgPx") or item.get("fillPx") or 0)
+        # fee is negative on OKX (rebate); fillFee is the last fill fee
+        fee_raw = float(item.get("fee") or item.get("fillFee") or 0)
+        commission = abs(fee_raw)
+        commission_asset = item.get("feeCcy") or item.get("fillFeeCcy")
+
+        status = "filled" if state == "filled" else "expired"
+
+        return {
+            "provider": "okx",
+            "symbol": inst_id,
+            "side": side,
+            "order_id": order_id,
+            "bracket_id": None,
+            "order_list_id": "-1",
+            "status": status,
+            "fill_price": fill_price,
+            "commission": commission,
+            "commission_asset": commission_asset,
+            "leg": "market",
+        }
+
+    @staticmethod
+    def _normalize_algo_order(item: dict) -> Optional[dict]:
+        """
+        Normalize OKX algo-orders channel payload (TP/SL bracket).
+
+        OKX algo states: live, pause, partially_effective, effective, canceled, order_failed
+        We emit on: effective (filled), canceled.
+
+        algoClOrdId / algoId: bracket identifier
+        tpOrdId / slOrdId: individual leg order IDs (UNVERIFIED: may not be in WS payload)
+
+        UNVERIFIED: full payload structure pending TASK-1100.G Demo spike.
+        """
+        state = item.get("state", "")
+        if state not in ("effective", "canceled", "order_failed"):
+            return None
+
+        inst_id = item.get("instId", "")
+        side = item.get("side", "").upper()
+        algo_id = str(item.get("algoId", ""))
+        order_id = str(item.get("ordId") or algo_id)
+
+        fill_price = float(item.get("avgPx") or item.get("fillPx") or 0)
+        fee_raw = float(item.get("fee") or item.get("fillFee") or 0)
+        commission = abs(fee_raw)
+        commission_asset = item.get("feeCcy") or item.get("fillFeeCcy")
+
+        status = "filled" if state == "effective" else "expired"
+
+        # Determine leg from order type
+        ord_type = item.get("ordType", "")
+        if "tp" in ord_type.lower():
+            leg = "take_profit"
+        elif "sl" in ord_type.lower():
+            leg = "stop_loss"
+        else:
+            leg = "algo"
+
+        return {
+            "provider": "okx",
+            "symbol": inst_id,
+            "side": side,
+            "order_id": order_id,
+            "bracket_id": algo_id,
+            "order_list_id": algo_id,  # used by router to match bracket
+            "status": status,
+            "fill_price": fill_price,
+            "commission": commission,
+            "commission_asset": commission_asset,
+            "leg": leg,
+        }
+
+    # ── Factory ───────────────────────────────────────────────────────────────
+
+    @classmethod
+    def from_settings(cls) -> "OkxOrderEventStream":
+        from app.config import settings
+        return cls(
+            api_key=settings.exchange_api_key,
+            secret=settings.exchange_secret_key,
+            passphrase=settings.exchange_passphrase,
+            demo=settings.exchange_demo,
+            eu=True,
+        )

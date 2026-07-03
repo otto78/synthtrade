@@ -38,6 +38,8 @@ class BinanceExchangeAdapter:
     TASK-877: Aggiunto get_trade_fee() per recupero fee tier account
     """
     def __init__(self, api_key: str, secret: str, testnet: bool = True, client=None):
+        self.provider = "binance"
+        self.trading_mode = "test" if testnet else "live"
         if client:
             self.client = client
         else:

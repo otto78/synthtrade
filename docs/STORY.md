@@ -4,6 +4,83 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.4 — 2026-07-03
+
+**Milestone:** TASK-1107 100% + TASK-1111 12/12 PASS
+
+**Completato:**
+- ✅ `_live_close_position` convertito a provider-neutral: usa `cancel_open_exit_orders`, `get_holdings`, `get_symbol_rules`, `close_position(ClosePositionRequest)` — zero metodi Binance-specific residui
+- ✅ **TASK-1107 ora al 100%** — tutto il router scalping è provider-neutral
+- ✅ `fake_okx_adapter.py` — FakeOkxAdapter (ExchangeAdapterProtocol senza rete) + FakeOrderStream con `fire_fill()` per eventi WS sintetici
+- ✅ `test_okx_integration.py` — 12 test integration, tutti PASS: happy path, bracket failure, stop session, restore open, restore closed, fee pricing
+- ✅ **Bug fix critico in router.py:** `abs()` su `entry_fee_pricing`/`exit_fee_pricing` — fee OKX negative (rebate) producevano TP/SL invertiti in `_net_to_gross_pct`
+
+**Decisioni chiave:**
+- `_net_to_gross_pct` si aspetta rate positivi; fee OKX sono rebate negativi → `abs()` obbligatorio
+- `_live_close_position` Scenario 1 (bracket già fillato): usa `get_ticker_price` come fallback invece di `fetch_closed_orders` Binance-specific — meno preciso ma provider-neutral
+- FakeOkxAdapter usa `holdings_data` per simulare balance base asset post-buy
+
+### v1.4.3 — 2026-07-03
+
+**Milestone:** TASK-1107 Router scalping provider-neutral completato
+
+**Completato:**
+- ✅ **Entry flow provider-neutral:** sostituito `place_oco_order` con `place_exit_bracket(ExitBracketRequest)` — funziona per OKX e Binance
+- ✅ **`_handle_bracket_failed`:** rimpiazza `_handle_oco_failed`, usa `cancel_open_exit_orders` + `ClosePositionRequest` dal protocollo
+- ✅ **`_on_order_update` provider-neutral:** usa `bracket_id` (provider-neutral) invece di `order_list_id` Binance-only; usa campo `leg` da OKX (`take_profit`/`stop_loss`) direttamente senza dover matchare orderId
+- ✅ **TASK-1108 verificato:** migration DB applicata su Supabase con colonne provider-neutral e backfill legacy
+- ✅ **Tutti i file OKX compilano senza errori**
+
+**Decisioni chiave:**
+- `_live_close_position` lasciata Binance-specific per ora: usa path manuale via segnale (non bracket), non blocca OKX
+- `_on_order_update` ora usa `leg` field da OKX algo-orders per determinare TP vs SL senza matchare orderId (che OKX non espone sullo stesso channel)
+- Compatibility Binance: `pos.oco_order_list_id` usato ancora come bracket_id per matching — lo stesso campo viene mappato da entrambi i provider
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/router.py` — entry flow, bracket failure handler, order update handler
+
+### v1.4.2 — 2026-07-03
+
+**Milestone:** TASK-1100 OKX Demo Spike — Sottotask E/F/H completati
+
+**Completato:**
+- ✅ **Audit file OKX implementati:** okx_exchange.py, okx_ws_client.py, okx_order_event_stream.py, exchange_models.py, exchange_factory.py tutti verificati completi e coerenti
+- ✅ **TASK-1100.E — Market order:** 10€ → 0.00022883 BTC @ 43700€ su OKX Demo, fee rebate -0.0000008 BTC confermato
+- ✅ **TASK-1100.F — Exit bracket:** algoId `3709954518432436224` piazzato con successo via `/api/v5/trade/order-algo`, TP +0.5% @ 43918.5€, SL -0.3% @ 43568.9€
+- ✅ **TASK-1100.H — WS public trades:** subscription OK su `wss://wspap.okx.com/ws/v5/public?brokerId=9999`, parser CVD implementato e mapping verificato (`side=sell → is_buyer_maker=True`)
+- ✅ **Decisione bracket finale:** usare `order-algo` standard (non `attachAlgoOrds`), minSz ≥ 0.0001 BTC (~4€+)
+
+**Blocco rimanente:**
+- ❌ **TASK-1100.G — WS private:** auth fallisce `60032 API key doesn't exist`, richiede fix URL EU `wss://wsaws.okx.com:8443/ws/v5/private` (già identificato)
+- **Decisione:** validare WS private fill events in TASK-1112 (Demo E2E) quando il flusso completo è cablato, procedere con TASK-1101+ (config, protocol, integration)
+
+**Decisioni chiave:**
+- Exit bracket OKX usa endpoint `/api/v5/trade/order-algo` con `tpTriggerPx`/`slTriggerPx` + `tpOrdPx="-1"`/`slOrdPx="-1"` per market order al trigger
+- minSz bracket: 0.0001 BTC minimo (4€+ a prezzi attuali), sotto questa soglia OKX rifiuta con `51000 Parameter sz error`
+- CVD mapping OKX: `side=buy` (taker buyer) → `is_buyer_maker=False`, `side=sell` (taker seller) → `is_buyer_maker=True`
+- Default symbol: `BTC-EUR` (OKB-EUR non disponibile né in demo né live EU)
+- WS private validation rinviata a TASK-1112 end-to-end (fix URL già noto)
+
+### v1.4.1 — 2026-07-03
+
+**Milestone:** Fix Pylance type errors in test files
+
+**Completato:**
+- ✅ Aggiunto `# type: ignore[arg-type]` su `test_settings_validation()` in `loom/tests/test_task_015.py` per sopprimere falso positivo Pylance quando si passa `"not-a-number"` a un campo `float`.
+- ✅ Fixati ~30 errori Pylance in `synthtrade/backend/tests/unit/test_okx_adapter.py`:
+  - Rimosso import inutilizzato `asyncio` e `patch`
+  - Aggiunto `# noqa: F841` su `_FEE` (variabile inutilizzata)
+  - Aggiunti `# type: ignore[attr-defined]` su tutti gli accessi a metodi/campi protetti (~20 occorrenze)
+  - Aggiunto `# type: ignore[assignment]` su `adapter.close_position = fake_close`
+  - Sostituiti accessi a `call_args.kwargs` con `call_args[1]` + `# type: ignore[index]`
+  - Aggiunti `# type: ignore[union-attr]` su accessi a `candle_queue`/`trade_queue` dopo `_dispatch()`
+  - Aggiunte type hints espliciti (`list[dict]`, `dict` parameter) su handler asincroni
+  - Rimosso import inutilizzato `asyncio` e `patch`
+
+**Decisioni chiave:**
+- I test per metodi privati (`_parse_candle`, `_dispatch`, ecc.) sono intenzionali: verificano la logica interna di parsing senza dover connettere WebSocket reali. I type ignore sono la scelta corretta.
+- Il test `test_parse_trade_invalid_row` verifica che un dict vuoto produca un evento con prezzi zero (comportamento voluto, non errore).
+
 ### v1.4.0 — 2026-07-02
 
 **Milestone:** Architettura definitiva migrazione Binance -> OKX

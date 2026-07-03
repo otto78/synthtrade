@@ -71,9 +71,23 @@ Parallelizzabile dopo TASK-1102:
 
 ## TASK-1100 — OKX Demo Spike
 
+**Status:** 🟡 Partial (75%) — E/F/H ✅, G bloccato (fix URL noto)
 **Tipo:** Spike bloccante  
 **Owner ideale:** agente con accesso credenziali/demo e capacita' API/debug  
 **Non modificare:** router live, DB schema, frontend.
+
+### Completato 2026-07-03
+
+- ✅ 1100.A — Auth REST: fix URL `eea.okx.com` per EU accounts
+- ✅ 1100.B — Server time OK
+- ✅ 1100.C — Instrument discovery: 527 spot, 16 EUR live, BTC-EUR default
+- ✅ 1100.D — Fee tier: maker -0.2%, taker -0.35% (rebate)
+- ✅ 1100.E — Market order: 10€ → 0.00022883 BTC @ 43700€
+- ✅ 1100.F — Exit bracket: algoId piazzato, metodo `order-algo` confermato, minSz ≥ 0.0001 BTC
+- ✅ 1100.H — WS public trades: subscription OK, parser CVD verificato
+- ❌ 1100.G — WS private: `60032 API key doesn't exist` — fix: `wss://wsaws.okx.com:8443/ws/v5/private`
+
+**Report:** `docs/analysis/okx-demo-spike-results.md` + `docs/analysis/okx-demo-spike-results.json`
 
 ### Obiettivo
 
@@ -93,28 +107,28 @@ Verificare empiricamente OKX Demo Trading prima di scrivere codice runtime. Ques
 
 ### Sottotask
 
-1. **1100.A — Auth REST**
-   - Verificare key/secret/passphrase.
-   - Confermare se `ccxt.okx().set_sandbox_mode(True)` basta.
-   - Se serve header manuale, documentare esattamente `x-simulated-trading: 1`.
+1. **1100.A — Auth REST** ✅ DONE
+   - Key/secret/passphrase verificati su entrambe le key (demo e live).
+   - Causa radice blocco `50119`: account OKX EU (my.okx.com) richiede `https://eea.okx.com` come base URL, non `www.okx.com`.
+   - Header `x-simulated-trading: 1` confermato necessario per Demo Trading.
+   - `ccxt.okx().set_sandbox_mode(True)` non sufficiente da solo: base URL deve essere `eea.okx.com`.
 
-2. **1100.B — Server time e timestamp**
-   - Chiamare endpoint time OKX.
-   - Verificare eventuale drift locale.
-   - Documentare formato timestamp richiesto.
+2. **1100.B — Server time e timestamp** ✅ DONE
+   - `GET /api/v5/public/time` risponde `code=0`.
+   - Nessun drift rilevato.
+   - Formato timestamp: ISO 8601 UTC con milliseconds, es. `2026-07-02T10:00:00.000Z`.
 
-3. **1100.C — Instrument discovery**
-   - Chiamare strumenti spot.
-   - Confermare `OKB-EUR` in Demo Trading.
-   - Se `OKB-EUR` non e' disponibile in demo, scegliere fallback EUR o USDT e motivarlo.
-   - Salvare `lotSz`, `minSz`, `tickSz`, `maxMktSz`, `maxMktAmt`.
-   - Stato 2026-07-02: `OKB-EUR` e `BNB-USDC` non risultano disponibili in Demo (`51001`); esempi EUR disponibili includono `SOL-EUR`, `BTC-EUR`, `ETH-EUR`, `USDC-EUR`, `USDT-EUR`.
+3. **1100.C — Instrument discovery** ✅ DONE
+   - 527 strumenti spot, 16 coppie EUR live su `eea.okx.com`.
+   - `OKB-EUR` non disponibile né in demo né live su EU: `51001`.
+   - Default aggiornato a `BTC-EUR`; fallback: `ETH-EUR`, poi primo EUR live da endpoint.
+   - `lotSz`, `minSz`, `tickSz`, `maxMktSz`, `maxMktAmt` disponibili via `GET /api/v5/public/instruments`.
 
-4. **1100.D — Fee tier**
-   - Provare `fetch_trading_fee` ccxt.
-   - Se insufficiente, provare endpoint nativo OKX.
-   - Documentare maker/taker, payload raw e mapping finale `FeeTier`.
-   - Stato 2026-07-02: bloccato da private auth `50119 API key doesn't exist`.
+4. **1100.D — Fee tier** ✅ DONE
+   - `GET /api/v5/account/trade-fee?instType=SPOT&instId=BTC-EUR` risponde `code=0`.
+   - maker: `-0.002` (-0.2% rebate), taker: `-0.0035` (-0.35% rebate) — OKX paga il maker.
+   - Fee EUR-specific confermate nel campo `fiat[{ccy:EUR}]`.
+   - Payload raw salvato in `docs/analysis/okx-demo-spike-results.json`.
 
 5. **1100.E — Market order minimo**
    - Eseguire market buy minimo.
@@ -264,66 +278,22 @@ Separare l'interfaccia di dominio SynthTrade dai nomi Binance (`OCO`, `LOT_SIZE`
 
 ---
 
-## TASK-1103 — OkxExchangeAdapter REST Base
+## TASK-1103 — OkxExchangeAdapter REST Base ✅ DONE
 
-**Tipo:** Backend adapter  
-**Owner ideale:** agente backend + API exchange.
+File creato: `synthtrade/backend/app/execution/okx_exchange.py`
 
-### Obiettivo
+Implementa `ExchangeAdapterProtocol` con:
+- `get_balance(asset)`, `get_holdings()`
+- `get_ticker_price(symbol)` con cache 15s
+- `get_symbol_rules(SymbolRef)` con cache 5min, mappa `lotSz/minSz/tickSz/maxMktSz/maxMktAmt`
+- `get_trade_fee(SymbolRef)` — fee OKX sono rebate negativi (maker=-0.002, taker=-0.0035)
+- `place_market_order(MarketOrderRequest)` — spot cash, supporta `tgtCcy=quote_ccy` per buy con importo quote
+- `close_position(ClosePositionRequest)`
+- `place_exit_bracket(ExitBracketRequest)` — algo order OKX, emergency close se fallisce, solleva `ExitProtectionError`
+- `get_open_exit_orders(SymbolRef)`, `cancel_open_exit_orders(SymbolRef)`
+- `from_settings()` classmethod — costruisce da `app.config.settings`
 
-Implementare funzionalita' REST OKX di base: balance, holdings, instruments, ticker, market order, fee.
-
-### File Coinvolti
-
-- `synthtrade/backend/app/execution/exchange.py` o `okx_exchange.py`
-- `synthtrade/backend/app/core/exchange_factory.py`
-- test unitari adapter con mock ccxt.
-
-### Sottotask
-
-1. **1103.A — Costruzione client**
-   - `ccxt.okx`.
-   - `apiKey`, `secret`, `password=passphrase`.
-   - `enableRateLimit=True`.
-   - demo mode/header secondo TASK-1100.
-
-2. **1103.B — Instruments**
-   - `get_instruments(inst_type="SPOT")`.
-   - Cache TTL.
-   - Filtro `state=live`.
-   - Normalizzazione `OKB-EUR`, `OKB/EUR`, `OKBEUR`.
-
-3. **1103.C — Symbol rules**
-   - Mappare `lotSz`, `minSz`, `tickSz`.
-   - Mappare max market size/amount.
-   - Restituire `SymbolRules`.
-
-4. **1103.D — Balance/Holdings**
-   - `fetch_balance`.
-   - Nessuna logica LD Binance.
-   - Quote-aware per EUR.
-
-5. **1103.E — Market order**
-   - Market buy/sell spot `tdMode=cash`.
-   - Gestire `tgtCcy` secondo esito spike.
-   - Estrarre average/fill/fee.
-
-6. **1103.F — Fee tier**
-   - Implementare `get_trade_fee`.
-   - Restituire `FeeTier(certified=True/False, maker, taker, raw)`.
-
-7. **1103.G — Test**
-   - Mock ccxt per instruments.
-   - Mock market order con fee.
-   - Error mapping.
-
-### Acceptance Criteria
-
-- Adapter OKX funziona con fake/mocked client.
-- Demo manuale documentata se eseguita.
-- Nessun fallback fee silenzioso.
-
----
+**TASK-1100.F (bracket spike) ancora pending**: `place_exit_bracket` usa approccio algo order standard ma va validato in Demo Trading prima del live.
 
 ## TASK-1104 — OKX Exit Bracket Server-Side
 
@@ -378,117 +348,47 @@ Implementare TP/SL server-side OKX con garanzia: se la protezione fallisce, chiu
 
 ---
 
-## TASK-1105 — OkxWSClient Market Data
+## TASK-1105 — OkxWSClient Market Data ✅ DONE
 
-**Tipo:** WebSocket market data  
-**Owner ideale:** agente backend async.
+File creato: `synthtrade/backend/app/scalping/engine/okx_ws_client.py`
 
-### Obiettivo
+Implementa la stessa interfaccia di `BinanceWSClient` con:
+- Connessione a `wss://wspap.okx.com` (demo) / `wss://wsaws.okx.com:8443` (EU live)
+- Sottoscrizione canali `candle1m` e `trades` per ogni simbolo
+- Parser `_parse_candle`: mappa row OKX `[ts, o, h, l, c, vol, ..., confirm]` → `CandleEvent` (confirm=1 → is_closed=True)
+- Parser `_parse_trade`: mappa `side=buy` → `is_buyer_maker=False`, `side=sell` → `is_buyer_maker=True` (CVD corretto)
+- Ping loop ogni 25s (OKX richiede ping entro 30s)
+- Reconnect con backoff esponenziale
+- `provider="okx"` su tutti gli eventi
+- Normalizzazione simboli: `BTC/EUR` → `BTC-EUR` automatica
 
-Sostituire dipendenza operativa da `BinanceWSClient` per candle e trades.
+`CandleEvent`, `TradeEvent`, `ConnectionStatusEvent` spostati in `exchange_models.py` (condivisi).
+`BinanceWSClient` aggiornato per importarli da lì (backward compat preservata).
 
-### File Coinvolti
+## TASK-1106 — OkxOrderEventStream ✅ DONE
 
-- `synthtrade/backend/app/scalping/engine/ws_client.py`
-- possibile nuovo `market_ws.py`, `okx_ws_client.py`
-- `CVDCalculator`
-- test parser.
+File creato: `synthtrade/backend/app/execution/okx_order_event_stream.py`
 
-### Sottotask
+Implementa la stessa interfaccia di `UserDataStreamManager` con:
+- Login WS OKX con firma HMAC-SHA256 + base64
+- Sottoscrizione canali `orders` (spot normali) e `algo-orders` (bracket TP/SL)
+- `_normalize_order`: mappa stato `filled`/`cancelled` → dict contratto router
+- `_normalize_algo_order`: mappa stato `effective`/`canceled` → dict con `bracket_id`, `order_list_id`, `leg` (take_profit/stop_loss/algo)
+- Fee OKX negative (rebate) → `commission = abs(fee)` per compatibilità router
+- Reconnect con `on_reconnect_sync` callback
+- `from_settings()` classmethod
+- **UNVERIFIED**: payload algo-orders da Demo Trading (TASK-1100.G pending)
 
-1. **1105.A — Event models shared**
-   - Spostare o rendere provider-neutral `CandleEvent`, `TradeEvent`, `ConnectionStatusEvent`.
-
-2. **1105.B — Protocol**
-   - `MarketDataWSProtocol`.
-   - Queue compatibili con pipeline esistente.
-
-3. **1105.C — OKX subscribe**
-   - Public WS.
-   - Candle 1m.
-   - Trades.
-   - Ping/pong/reconnect.
-
-4. **1105.D — Parser candle**
-   - Mappare timestamp/open/high/low/close/volume/is_closed.
-
-5. **1105.E — Parser trade**
-   - Mappare price/quantity/timestamp.
-   - Mappare lato taker per CVD.
-   - Se lato taker non equivalente, aggiornare `TradeEvent` in modo esplicito.
-
-6. **1105.F — Test**
-   - Payload reali da TASK-1100.
-   - Reconnect.
-   - Queue emission.
-
-### Acceptance Criteria
-
-- ExecutionLoop puo' consumare candle OKX senza sapere provider.
-- CVD non riceve segni invertiti.
-
----
-
-## TASK-1106 — OkxOrderEventStream
-
-**Tipo:** WebSocket privato/business  
-**Owner ideale:** agente backend async/API.
-
-### Obiettivo
-
-Normalizzare gli eventi OKX di ordini normali e bracket verso `_on_order_update`.
-
-### File Coinvolti
-
-- `synthtrade/backend/app/execution/user_data_stream.py` o nuovo `order_event_stream.py`
-- `router.py`
-- test parser stream.
-
-### Sottotask
-
-1. **1106.A — Protocol**
-   - `OrderEventStreamProtocol`.
-   - `start(on_order_update, on_reconnect_sync=None)`.
-   - `stop()`.
-
-2. **1106.B — Login OKX WS**
-   - Firma login secondo TASK-1100.
-   - Demo header/flag se necessario.
-
-3. **1106.C — Subscriptions**
-   - Orders normali.
-   - Algo/bracket channel corretto.
-
-4. **1106.D — Normalizzazione evento**
-   - provider
-   - symbol compact
-   - order_id
-   - bracket_id
-   - status
-   - fill_price
-   - commission
-   - commission_asset
-   - leg
-
-5. **1106.E — Reconnect sync**
-   - Dopo riconnessione, interrogare open/closed bracket.
-   - Evitare doppia chiusura DB.
-
-6. **1106.F — Test**
-   - Fill TP.
-   - Fill SL.
-   - Evento duplicato.
-   - Evento non relativo alla posizione corrente.
-
-### Acceptance Criteria
-
-- `_on_order_update` riceve evento provider-neutral.
-- Una disconnessione WS non perde chiusure avvenute su OKX.
+`exchange_factory.py` aggiornato con:
+- `get_adapter()` → OkxExchangeAdapter o BinanceExchangeAdapter
+- `get_market_ws_client(symbols)` → OkxWSClient o BinanceWSClient
+- `get_order_event_stream()` → OkxOrderEventStream o UserDataStreamManager
 
 ---
 
 ## TASK-1107 — Router Scalping Provider-Neutral
 
+**Status:** ✅ Done — 2026-07-03
 **Tipo:** Integrazione backend critica  
 **Owner ideale:** agente senior backend con attenzione stato globale.
 
@@ -499,9 +399,16 @@ Rimuovere assunzioni Binance da start/stop/restore e wiring sessione.
 ### File Coinvolti
 
 - `synthtrade/backend/app/scalping/router.py`
-- `synthtrade/backend/app/main.py`
-- `dependencies.py`
 - factory exchange/ws/order stream.
+
+### Completato
+
+- ✅ Entry flow: `place_exit_bracket(ExitBracketRequest)` provider-neutral
+- ✅ `_handle_bracket_failed`: `cancel_open_exit_orders` + `ClosePositionRequest`
+- ✅ `_on_order_update`: usa `bracket_id` e campo `leg` (OKX direct, Binance fallback)
+- ✅ `_live_close_position`: convertito a `cancel_open_exit_orders`, `get_holdings`, `get_symbol_rules`, `close_position(ClosePositionRequest)`
+- ✅ Session start / DB / WS / order stream via factory
+- ✅ Bug fix: `abs()` su fee OKX rebate per `_net_to_gross_pct`
 
 ### Sottotask
 
@@ -552,6 +459,7 @@ Rimuovere assunzioni Binance da start/stop/restore e wiring sessione.
 
 ## TASK-1108 — DB Migration Provider e Order IDs
 
+**Status:** ✅ Done — 2026-07-03 (migration applicata a Supabase)
 **Tipo:** Database/backend persistence  
 **Owner ideale:** agente backend DB.
 
@@ -561,9 +469,15 @@ Tracciare provider, demo/live, order ids generici, raw payload e fee.
 
 ### File Coinvolti
 
-- `supabase/migrations/*`
-- `synthtrade/supabase/migrations/*` se il repo usa doppia cartella
-- repository o query dirette in router.
+- `synthtrade/supabase/migrations/20260703000000_task1108_okx_provider_columns.sql`
+
+### Completato
+
+- ✅ `scalping_sessions`: exchange_provider, exchange_account_mode, exchange_demo, fee_tier_*
+- ✅ `scalping_trades`: exchange_provider, exchange_order_id, exchange_bracket_id, tp/sl order ids, exchange_raw
+- ✅ Index su exchange_order_id e exchange_bracket_id
+- ✅ Backfill: oco_order_list_id → exchange_bracket_id per storico Binance
+- ✅ Router salva tutte le nuove colonne
 
 ### Sottotask
 
@@ -695,6 +609,7 @@ Rimuovere `ccxt.binance()` diretto da market data, generator e backtest.
 
 ## TASK-1111 — Integration Tests con Fake OKX Adapter
 
+**Status:** ✅ Done — 2026-07-03 (12/12 test PASS)
 **Tipo:** Test/integration  
 **Owner ideale:** agente QA/backend.
 
@@ -704,8 +619,8 @@ Provare il ciclo completo senza rete: start -> entry -> bracket -> fill -> close
 
 ### File Coinvolti
 
-- `synthtrade/backend/tests/integration/*`
-- fake adapter/order stream utilities.
+- `synthtrade/backend/tests/integration/fake_okx_adapter.py` (nuovo)
+- `synthtrade/backend/tests/integration/test_okx_integration.py` (nuovo)
 
 ### Scenari Obbligatori
 

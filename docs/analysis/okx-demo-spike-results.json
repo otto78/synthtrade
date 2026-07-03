@@ -1,37 +1,36 @@
 {
-  "generated_at": "2026-07-02T14:37:47.489843+00:00",
+  "generated_at": "2026-07-03T08:50:08.935418+00:00",
   "task": "TASK-1100",
   "results": [
     {
       "name": "credentials_present",
       "ok": true,
       "details": {
-        "api_key": "4fe5...b7d9",
-        "secret": "3AB1...A9F8",
+        "api_key": "c938...137a",
+        "secret": "D441...8B43",
         "passphrase": "Synt...026!",
         "env_file": "C:\\Users\\andrea.mazzarotto\\myJobs\\SynthTrade\\synthtrade\\backend\\.env"
       }
     },
     {
-      "name": "instrument_OKB/EUR",
-      "ok": false,
+      "name": "instrument_SOL/EUR",
+      "ok": true,
       "details": {
-        "inst_id": "OKB-EUR",
+        "inst_id": "SOL-EUR",
         "http_status": 200,
-        "raw_code": "51001",
-        "raw_msg": "Instrument ID, Instrument ID code, or Spread ID doesn't exist.",
-        "rules": null
-      }
-    },
-    {
-      "name": "instrument_BNB/USDC",
-      "ok": false,
-      "details": {
-        "inst_id": "BNB-USDC",
-        "http_status": 200,
-        "raw_code": "51001",
-        "raw_msg": "Instrument ID, Instrument ID code, or Spread ID doesn't exist.",
-        "rules": null
+        "raw_code": "0",
+        "raw_msg": "",
+        "rules": {
+          "instId": "SOL-EUR",
+          "baseCcy": "SOL",
+          "quoteCcy": "EUR",
+          "state": "live",
+          "lotSz": "0.00001",
+          "minSz": "0.01",
+          "tickSz": "0.1",
+          "maxMktSz": "1000000",
+          "maxMktAmt": "71000"
+        }
       }
     },
     {
@@ -39,7 +38,7 @@
       "ok": true,
       "details": {
         "http_status": 200,
-        "total_spot": 529,
+        "total_spot": 527,
         "live_eur_count": 16,
         "live_eur_examples": [
           "SOL-EUR",
@@ -69,7 +68,7 @@
           "code": "0",
           "data": [
             {
-              "ts": "1783003063961"
+              "ts": "1783068599625"
             }
           ],
           "msg": "",
@@ -79,45 +78,164 @@
     },
     {
       "name": "private_balance",
-      "ok": false,
+      "ok": true,
       "details": {
-        "nonzero_assets": [],
-        "total_assets": 0,
-        "http_status": 401,
-        "raw_code": "50119",
-        "raw_msg": "API key doesn't exist",
+        "nonzero_assets": [
+          {
+            "ccy": "BTC",
+            "cashBal": "1.00047885811",
+            "availBal": "1.00002119811",
+            "eq": "1.00047885811"
+          },
+          {
+            "ccy": "XRP",
+            "cashBal": "50000",
+            "availBal": "50000",
+            "eq": "50000"
+          },
+          {
+            "ccy": "EUR",
+            "cashBal": "4579.000402",
+            "availBal": "4579.000402",
+            "eq": "4579.000402"
+          },
+          {
+            "ccy": "USD",
+            "cashBal": "5000",
+            "availBal": "5000",
+            "eq": "5000"
+          },
+          {
+            "ccy": "USDC",
+            "cashBal": "5000",
+            "availBal": "5000",
+            "eq": "5000"
+          },
+          {
+            "ccy": "ETH",
+            "cashBal": "1",
+            "availBal": "1",
+            "eq": "1"
+          }
+        ],
+        "total_assets": 6,
+        "http_status": 200,
+        "raw_code": "0",
+        "raw_msg": "",
         "raw_text": null
       }
     },
     {
-      "name": "fee_tier_OKB/EUR",
-      "ok": false,
+      "name": "fee_tier_SOL/EUR",
+      "ok": true,
       "details": {
-        "maker": null,
-        "taker": null,
+        "maker": "-0.002",
+        "taker": "-0.0035",
         "raw": {
-          "msg": "API key doesn't exist",
-          "code": "50119",
-          "_http_status": 401
+          "code": "0",
+          "data": [
+            {
+              "category": "1",
+              "delivery": "",
+              "exercise": "",
+              "feeGroup": [
+                {
+                  "elpMaker": "-0.002",
+                  "groupId": "12",
+                  "maker": "-0.002",
+                  "taker": "-0.0035"
+                }
+              ],
+              "fiat": [
+                {
+                  "ccy": "EUR",
+                  "maker": "-0.002",
+                  "taker": "-0.0035"
+                }
+              ],
+              "instType": "SPOT",
+              "level": "Lv1",
+              "maker": "-0.002",
+              "makerU": "",
+              "makerUSDC": "",
+              "ruleType": "normal",
+              "settle": "",
+              "taker": "-0.0035",
+              "takerU": "",
+              "takerUSDC": "",
+              "ts": "1783068601576"
+            }
+          ],
+          "msg": "",
+          "_http_status": 200
         }
       }
     },
     {
-      "name": "ticker_OKB/EUR",
-      "ok": false,
+      "name": "ticker_SOL/EUR",
+      "ok": true,
       "details": {
-        "last": null,
-        "bid": null,
-        "ask": null,
-        "raw": {}
+        "last": "76.1",
+        "bid": "76.1",
+        "ask": "78",
+        "raw": {
+          "instType": "SPOT",
+          "instId": "SOL-EUR",
+          "last": "76.1",
+          "lastSz": "0.27321",
+          "askPx": "78",
+          "askSz": "0.90014",
+          "bidPx": "76.1",
+          "bidSz": "9.72679",
+          "open24h": "85.5",
+          "high24h": "85.5",
+          "low24h": "76.1",
+          "volCcy24h": "5987.347323",
+          "vol24h": "71.72036",
+          "ts": "1783068601109",
+          "sodUtc0": "85.4",
+          "sodUtc8": "85.5"
+        }
       }
     },
     {
-      "name": "market_order_demo",
+      "name": "1100E_market_order_demo",
       "ok": true,
       "details": {
         "skipped": true,
-        "reason": "read-only default; rerun with --place-market-order to test order placement"
+        "reason": "read-only default; rerun with --place-market-order"
+      }
+    },
+    {
+      "name": "1100F_exit_bracket_demo",
+      "ok": true,
+      "details": {
+        "skipped": true,
+        "reason": "requires --place-market-order --place-bracket"
+      }
+    },
+    {
+      "name": "1100G_ws_private_login",
+      "ok": true,
+      "details": {
+        "skipped": true,
+        "reason": "rerun with --test-ws-private"
+      }
+    },
+    {
+      "name": "1100H_ws_public_trades",
+      "ok": false,
+      "details": {
+        "inst_id": "SOL-EUR",
+        "url_used": "wss://wspap.okx.com/ws/v5/public?brokerId=9999",
+        "subscribed": true,
+        "trades_received": 0,
+        "buy_side_count": 0,
+        "sell_side_count": 0,
+        "required_fields_present": false,
+        "cvd_mapping": "side=buy -> is_buyer_maker=False (aggressive buy); side=sell -> is_buyer_maker=True",
+        "sample_trades": [],
+        "note": "side field is TAKER side on OKX"
       }
     }
   ]

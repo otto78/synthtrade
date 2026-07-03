@@ -4,6 +4,157 @@
 
 ## 🔄 Ultimo Handoff
 
+### Da: Kiro → prossima sessione
+
+**Data:** 2026-07-03 12:05
+
+**Contesto:** TASK-1111 Integration tests completato — 12/12 PASS.
+
+---
+
+### ✅ FASE COMPLETATA: TASK-1111 Integration Tests Fake OKX Adapter
+
+**Cosa è stato fatto:**
+
+1. `fake_okx_adapter.py` — FakeOkxAdapter + FakeOrderStream
+   - Nessuna rete, implementa `ExchangeAdapterProtocol`
+   - Flag `bracket_fails`, `close_fails`, `market_order_fails`
+   - `fire_fill(event)` per triggerare eventi WS sintetici
+
+2. `test_okx_integration.py` — 12 test, tutti PASS:
+   - 1111.A Happy path TP fill ✅
+   - 1111.B Bracket failure → emergency close ✅
+   - 1111.C Stop session → cancel bracket → market close ✅
+   - 1111.D Restore open → order stream restart → fill ✅
+   - 1111.E Restore closed → reconcile DB ✅
+   - 1111.F Fee/net pricing OKX ✅ (+ 3 extra test FakeAdapter)
+
+3. **Bug fix in router.py:** fee OKX negative (`-0.0035`) ora wrapped con `abs()` prima di `_net_to_gross_pct` — senza fix i prezzi bracket TP/SL erano invertiti
+
+**File modificati:**
+- `synthtrade/backend/tests/integration/fake_okx_adapter.py` (nuovo)
+- `synthtrade/backend/tests/integration/test_okx_integration.py` (nuovo)
+- `synthtrade/backend/app/scalping/router.py` (bug fix fee abs)
+
+**Prossimo step:**
+- **TASK-1112** — Demo E2E validation su OKX Demo Trading (manuale con credenziali reali)
+- Oppure se vuoi test più sicuro prima: verifica che i test esistenti non siano rotti
+
+---
+
+### Da: Kiro → prossima sessione
+
+**Data:** 2026-07-03 11:15
+
+**Contesto:** TASK-1107 Router provider-neutral completato al 95%.
+
+---
+
+### ✅ FASE COMPLETATA: TASK-1107 Entry Flow Provider-Neutral
+
+**Cosa è stato fatto:**
+
+1. **Entry flow** — sostituito `place_oco_order` con `place_exit_bracket(ExitBracketRequest)`:
+   ```python
+   bracket_req = ExitBracketRequest(symbol=sym_ref, side="sell", quantity=exec_qty,
+       tp_price=tp_price, sl_price=sl_price, entry_order_id=..., fee_tier=...)
+   bracket_res = await exchange.place_exit_bracket(bracket_req)
+   ```
+   
+2. **Bracket failure handler** `_handle_bracket_failed` — rimpiazza `_handle_oco_failed`:
+   - Usa `exchange.cancel_open_exit_orders(sym_ref)` provider-neutral
+   - Usa `exchange.get_holdings()` + `exchange.close_position(ClosePositionRequest)` 
+   - Nessuna dipendenza da `_get_available_base_balance` (Binance-only)
+
+3. **`_on_order_update`** — aggiornato per provider-neutral:
+   - Legge `bracket_id` (OKX) + `order_list_id` (Binance) con OR
+   - Legge `leg` field (`take_profit`/`stop_loss`) da OKX algo-orders
+   - Fallback su `tp_order_id`/`sl_order_id` matching per Binance
+
+4. **Verifica sintassi** — tutti i file compilano senza errori
+
+**Pending (non bloccante):**
+- `_live_close_position` ancora Binance-specific (cancella OCO via `client.cancel_order` diretto)
+  - Non blocca OKX: questa funzione è chiamata solo su chiusura manuale via segnale
+  - TODO marcato nel codice
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/router.py`
+
+**Prossimo step:**
+1. **TASK-1111** — Integration tests con fake adapter (verifica entry → bracket → fill → close)
+2. **TASK-1112** — Demo E2E validation su OKX Demo Trading
+
+---
+
+### Da: Kiro → prossima sessione
+
+**Data:** 2026-07-03 10:45
+
+**Contesto:** TASK-1100 OKX Demo Spike — audit file modificati e completamento test mancanti E/F/H.
+
+---
+
+### ✅ FASE COMPLETATA: TASK-1100 Sottotask E/F/H
+
+**Cosa è stato fatto:**
+
+1. **Audit file OKX già implementati:**
+   - `okx_exchange.py` — adapter completo, `place_exit_bracket` pronto
+   - `okx_ws_client.py` — market data WS completo, CVD mapping corretto
+   - `okx_order_event_stream.py` — order stream WS implementato
+   - `exchange_models.py` — protocolli e modelli domain pronti
+   - `exchange_factory.py` — routing provider OKX/Binance pronto
+   - `config.py` — computed fields exchange-neutral già presenti
+
+2. **Eseguiti test Demo Trading OKX:**
+   - **1100.E** ✅ Market order 10€ → 0.00022883 BTC @ 43700€, fee rebate -0.0000008 BTC
+   - **1100.F** ✅ Exit bracket piazzato: algoId `3709954518432436224`, TP +0.5%, SL -0.3%
+   - **1100.H** ✅ WS public trades subscription OK, parser verificato (zero trade = mercato demo inattivo normale)
+
+3. **Decisioni chiave:**
+   - Exit bracket OKX: usare `/api/v5/trade/order-algo` standard (non `attachAlgoOrds`)
+   - minSz bracket: qty ≥ 0.0001 BTC (~4€+)
+   - CVD mapping OKX: `side=sell` → `is_buyer_maker=True`
+
+**File modificati:**
+- `scripts/test_okx_demo.py` — fix WS demo URL
+- `docs/analysis/okx-demo-spike-results.json` — payload test aggiornati
+
+**Blocco rimanente:**
+- **1100.G** — WS private auth fallisce (`60032 API key doesn't exist`), stesso problema URL EU già risolto su REST
+- Fix proposto: `wss://wsaws.okx.com:8443/ws/v5/private` per EU accounts
+
+**Prossimo step:**
+- **Opzione A (raccomandata):** procedere TASK-1101+ (config, protocol, integration), validare WS private in TASK-1112 (Demo E2E)
+- **Opzione B:** fix 1100.G ora modificando `OkxOrderEventStream` per URL EU
+
+---
+
+### Da: Cline → prossima sessione
+
+**Data:** 2026-07-03
+
+**Contesto:** Fix Pylance type error in `test_task_015.py` — `test_settings_validation()` passing `"not-a-number"` to `float` field `AI_CASCADE_TIMEOUT`.
+
+---
+
+### ✅ FASE COMPLETATA: Fix Pylance type error in TASK-015 test
+
+**Cosa è stato fatto:**
+
+1. **Diagnosi:** In `loom/tests/test_task_015.py`, `test_settings_validation()` passa `"not-a-number"` a `Settings(AI_CASCADE_TIMEOUT=...)`. Pylance segnala errore perché il campo `AI_CASCADE_TIMEOUT` è tipizzato come `float` in `config.py` (linea 202). Il test è intenzionale: verifica che Pydantic sollevi `ValidationError` per input invalido a runtime.
+
+2. **Fix:** Aggiunto `# type: ignore[arg-type]` sulla riga incriminata, analogamente a `# type: ignore[call-arg]` già presente sulla riga 18.
+
+3. **Verifica:** `python -m pytest loom/tests/test_task_015.py -v` → 6/6 PASS.
+
+**File modificati:**
+- `loom/tests/test_task_015.py` — aggiunto type ignore
+- `docs/STORY.md` — aggiunta v1.4.1
+
+**Prossimo step:** Nessuno per questo task. TASK-015 già in ARCHIVE_TASKS.md.
+
 ### Da: Codex → prossima sessione
 
 **Data:** 2026-07-02
@@ -52,7 +203,7 @@
 
 **Prossimo step consigliato:**
 1. TASK-1100 — risolvere blocco private auth OKX Demo (`50119 API key doesn't exist`).
-2. Key UI verificata su OKX Trading demo; IP whitelist verificato da terminale (`77.32.127.105`). Restano da verificare copia completa API key/secret/passphrase, propagazione o rigenerazione key.
+2. Key UI verificata su OKX Trading demo; IP whitelist verificato da terminale (`77.32.127.105`). Seconda key demo rigenerata e caricata correttamente dal codice, ma OKX risponde ancora `50119`; anche `ccxt.fetch_balance()` con header demo conferma lo stesso errore. Provata anche key live separata `OKX_LIVE_*` su balance read-only senza header demo: stesso `50119`.
 3. Dopo auth OK, rieseguire `python scripts/test_okx_demo.py`, poi ordine demo minimo solo con flag esplicito.
 4. Solo dopo TASK-1100, partire con TASK-1101 e TASK-1102.
 

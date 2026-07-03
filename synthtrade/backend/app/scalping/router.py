@@ -434,118 +434,100 @@ async def _refresh_session_balance():
 
 async def _live_close_position(exchange, pos, qty: float) -> float:
     """Execute live close on exchange: cancel open orders + market sell (with retry).
-    
+
+    TASK-1107: Provider-neutral implementation.
+    Uses ExchangeAdapterProtocol methods only — works for OKX and Binance.
+
     Returns the actual execution price on success.
     Raises Exception if close fails after all retries.
-    
-    FIX-2026-06-11: Properly handles 3 scenarios:
-    1. OCO already executed → balance < minQty → fetch fill price from closed orders
-    2. Balance check fails → fallback to original qty parameter
-    3. Balance >= minQty → use actual balance, round to stepSize, market close
-    """
-    # 1. Cancel any open orders (OCO / Stop Loss) before attempting close
-    try:
-        open_orders = await exchange.get_open_orders(pos.symbol)
-        if open_orders:
-            ccxt_symbol = await exchange._get_ccxt_symbol(pos.symbol)
-            for o in open_orders:
-                try:
-                    await exchange.client.cancel_order(o["id"], ccxt_symbol)
-                except Exception:
-                    pass
-            logger.info(f"Cancelled {len(open_orders)} open orders for {pos.symbol}")
-    except Exception as order_e:
-        logger.warning(f"Could not cancel open orders (non-blocking): {order_e}")
 
-    # 2. Get actual available balance (after fees deducted by Binance on entry)
-    #    to determine if the position is still held or already closed by OCO.
+    Scenarios handled:
+    1. Bracket already executed → no base balance → use current ticker price
+    2. Balance check fails → fallback to original qty parameter
+    3. Balance >= min_sz → use actual balance, round to lot_sz, market close
+    """
+    from app.execution.exchange_models import ClosePositionRequest, SymbolRef
+
+    # Parse symbol to SymbolRef (provider-neutral)
+    sym_str = pos.symbol.upper()
     try:
-        actual_qty = await exchange._get_available_base_balance(pos.symbol)
-        filters = await exchange.get_symbol_filters(pos.symbol)
-        min_qty = float(filters.get("minQty", 0.001))
+        sym_ref = SymbolRef.from_okx(sym_str) if "-" in sym_str else SymbolRef.from_compact(sym_str)
+    except Exception:
+        sym_ref = SymbolRef.from_compact(sym_str)
+
+    base_asset = sym_ref.base
+
+    # 1. Cancel any open exit orders (bracket TP/SL) before attempting close
+    try:
+        await exchange.cancel_open_exit_orders(sym_ref)
+        logger.info(f"Cancelled open exit orders for {sym_str}")
+    except Exception as order_e:
+        logger.warning(f"Could not cancel open exit orders (non-blocking): {order_e}")
+
+    # 2. Get actual available balance to determine if bracket already filled
+    try:
+        holdings = await exchange.get_holdings()
+        actual_qty = holdings.get(base_asset, 0.0)
+        rules = await exchange.get_symbol_rules(sym_ref)
+        min_qty = rules.min_sz
 
         if actual_qty < min_qty:
-            # ── SCENARIO 1: OCO già eseguito da Binance ──
-            # Binance ha già venduto (TP o SL), è rimasta solo polvere < minQty.
-            # 
-            # FIX-2026-06-11: CRITICO — Non usare entry_price come fallback!
-            # Se il balance è < minQty, significa che l'OCO ha già eseguito
-            # la vendita. Dobbiamo recuperare il VERO prezzo di fill dallo
-            # storico ordini di Binance, NON usare entry_price (che crea
-            # un falso trade entry=exit con PnL=0).
-            logger.info(f"Balance {actual_qty} is below minQty {min_qty}. Position already closed by exchange (OCO).")
-            close_price_to_use = None  # forced to be found, no fallback
-            
-            # Try to get actual fill price from closed orders history
+            # ── SCENARIO 1: Bracket already executed ──
+            # Exchange already sold (TP or SL filled). Only dust remains.
+            # Recover fill price from current ticker as best approximation.
+            logger.info(
+                f"Balance {actual_qty} {base_asset} < minSz {min_qty}. "
+                f"Position already closed by exchange bracket."
+            )
             try:
-                filled_orders = await exchange.client.fetch_closed_orders(
-                    await exchange._get_ccxt_symbol(pos.symbol),
-                    limit=20  # increased from 10 to find the right order
-                )
-                if filled_orders:
-                    # Sort by most recent first
-                    filled_orders.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
-                    for fo in filled_orders:
-                        # Match: status=closed, side opposite to position (sell for BUY), 
-                        # price near entry (within 5% range)
-                        if fo.get("status") == "closed" and fo.get("side", "").upper() != pos.side.upper():
-                            fill_price = float(fo.get("price", 0) or fo.get("average", 0))
-                            if fill_price > 0:
-                                # Validate: the exit price should be within 5% of entry
-                                entry_f = float(pos.entry_price)
-                                price_ratio = abs(fill_price - entry_f) / entry_f
-                                if price_ratio < 0.05:  # within 5% is a valid SL/TP
-                                    close_price_to_use = fill_price
-                                    logger.info(f"Found actual OCO fill price: {fill_price} (ratio={price_ratio:.4f})")
-                                    break
-                                else:
-                                    logger.debug(f"Skipping order fill {fill_price}: ratio {price_ratio:.4f} > 0.05 (wrong order)")
-            except Exception as hist_e:
-                logger.warning(f"Could not fetch filled orders history: {hist_e}")
-            
-            # Ultimate fallback: if we still don't have a price, use current market
-            if close_price_to_use is None:
-                try:
-                    ticker = await exchange.client.fetch_ticker(
-                        await exchange._get_ccxt_symbol(pos.symbol)
-                    )
-                    close_price_to_use = float(ticker.get("last", ticker.get("close", 0)))
-                    if close_price_to_use > 0:
-                        logger.info(f"Using current market price as fallback: {close_price_to_use}")
-                except Exception as ticker_e:
-                    logger.warning(f"Ticker fetch failed, using entry with warning: {ticker_e}")
-                    close_price_to_use = float(pos.entry_price)
-            
-            return close_price_to_use
+                close_price_to_use = await exchange.get_ticker_price(sym_ref.okx)
+                if close_price_to_use > 0:
+                    logger.info(f"Using current ticker price as fill approximation: {close_price_to_use}")
+                    return close_price_to_use
+            except Exception as ticker_e:
+                logger.warning(f"Ticker fetch failed, falling back to entry price: {ticker_e}")
+            return float(pos.entry_price)
 
-        # ── SCENARIO 3: Posizione ancora aperta, balance >= minQty ──
+        # ── SCENARIO 3: Position still open, balance >= min_sz ──
         qty = actual_qty
-        logger.info(f"Using actual balance for {pos.symbol} close: {qty}")
+        logger.info(f"Using actual balance for {sym_str} close: {qty}")
 
     except Exception as bal_err:
-        # ── SCENARIO 2: Balance check fallito → usa qty originale ──
-        # `qty` mantiene il valore del parametro passato alla funzione.
-        logger.warning(f"Balance check failed (fallback to original qty param {qty}): {bal_err}")
+        # ── SCENARIO 2: Balance check failed → use original qty parameter ──
+        logger.warning(f"Balance check failed (fallback to original qty {qty}): {bal_err}")
 
-    # 3. Execute Market Close — retry up to 3 times with delay
+    # 3. Round qty to lot_sz precision
+    try:
+        rules = await exchange.get_symbol_rules(sym_ref)
+        qty = rules.round_qty(qty)
+        if qty <= 0:
+            logger.warning(f"Rounded qty=0 for {sym_str}, using original")
+            qty = float(pos.quantity)
+    except Exception as round_e:
+        logger.warning(f"Could not get symbol rules for rounding ({round_e}), using raw qty")
+
+    # 4. Execute Market Close — retry up to 3 times with delay
     opp_side = "sell" if pos.side.upper() == "BUY" else "buy"
-    market_res = None
+    close_res = None
     for attempt in range(3):
         try:
-            # Round qty to stepSize BEFORE placing order to avoid Binance precision errors
-            qty_rounded = await exchange._round_qty(pos.symbol, qty)
-            market_res = await exchange.place_market_order(pos.symbol, opp_side, qty_rounded)
+            close_req = ClosePositionRequest(
+                symbol=sym_ref,
+                side=pos.side.upper(),  # side of the POSITION (not the close order)
+                quantity=qty,
+            )
+            close_res = await exchange.close_position(close_req)
             break
         except Exception as retry_e:
-            logger.warning(f"Market close attempt {attempt + 1}/3 failed for {pos.symbol}: {retry_e}")
+            logger.warning(f"Market close attempt {attempt + 1}/3 failed for {sym_str}: {retry_e}")
             if attempt < 2:
                 await asyncio.sleep(0.5)
 
-    if market_res is None:
-        raise RuntimeError(f"Failed to close live position for {pos.symbol} after 3 attempts")
+    if close_res is None:
+        raise RuntimeError(f"Failed to close live position for {sym_str} after 3 attempts")
 
-    close_price = float(market_res.get("price") or pos.entry_price)
-    logger.info(f"LIVE Market Close executed @ {close_price}")
+    close_price = float(close_res.average_price or pos.entry_price)
+    logger.info(f"LIVE Market Close executed @ {close_price} [{settings.EXCHANGE_PROVIDER.upper()}]")
     return close_price
 
 
@@ -711,29 +693,37 @@ async def _on_order_update(event: dict):
     """
     symbol = event.get("symbol")
     order_id = event.get("order_id")
-    order_list_id = event.get("order_list_id")
+    # provider-neutral: OKX uses bracket_id/order_list_id, Binance uses order_list_id
+    order_list_id = event.get("bracket_id") or event.get("order_list_id")
+    leg = event.get("leg")  # "take_profit" | "stop_loss" | "market" | "algo" (OKX)
     status = event.get("status")   # "filled" / "expired"
     fill_price = event.get("fill_price", 0.0)
 
     pos = _execution_state["position_manager"].get_open()
-    # ⚠️ Se la posizione è già chiusa o non è la nostra OCO → exit silenzioso
+    # ⚠️ Se la posizione è già chiusa o non è il nostro bracket → exit silenzioso
     if not pos:
         return
     if pos.oco_order_list_id and order_list_id != pos.oco_order_list_id:
-        logger.debug(f"[UDS] event orderListId={order_list_id} != pos.oco_order_list_id={pos.oco_order_list_id} — skip")
+        logger.debug(f"[ORDER_STREAM] event bracket_id={order_list_id} != pos.bracket_id={pos.oco_order_list_id} — skip")
         return
 
     if status == "filled":
-        # Determina se è TP o SL in base all'orderId
-        if order_id and pos.tp_order_id and order_id == pos.tp_order_id:
+        # Determina se è TP o SL:
+        # 1. Da campo leg (OKX algo-orders lo fornisce direttamente)
+        # 2. Da orderId matching (Binance legacy)
+        if leg == "take_profit":
+            reason = "take_profit"
+        elif leg == "stop_loss":
+            reason = "stop_loss"
+        elif order_id and pos.tp_order_id and order_id == pos.tp_order_id:
             reason = "take_profit"
         elif order_id and pos.sl_order_id and order_id == pos.sl_order_id:
             reason = "stop_loss"
         else:
-            reason = "oco_filled"
+            reason = "bracket_filled"
 
         if fill_price <= 0:
-            logger.warning(f"[UDS] FILLED event with fill_price=0 for {symbol} orderId={order_id} — skip close")
+            logger.warning(f"[ORDER_STREAM] FILLED event with fill_price=0 for {symbol} orderId={order_id} — skip close")
             return
 
         # TASK-878: Calcola PnL con commissioni reali
@@ -969,48 +959,55 @@ async def _start_uds_if_needed():
         logger.warning("[ORDER_STREAM] Avvio fallito (non-fatal): %s", uds_e)
 
 
-async def _handle_oco_failed(exchange, symbol: str):
-    """Gestione Caso B — OCO fallito (TASK-828).
+async def _handle_bracket_failed(exchange, symbol: str):
+    """Gestione Caso B — Exit bracket fallito (TASK-828 / TASK-1107 provider-neutral).
 
-    1. Cancella ordini orfani aperti su Binance.
-    2. Market sell con qty reale post-fee da _get_available_base_balance().
+    1. Cancella ordini orfani aperti (provider-neutral: cancel_open_exit_orders).
+    2. Market sell con qty reale post-fee da adapter balance.
     3. Broadcast error a UI.
     4. Nessun salvataggio DB (posizione non è mai stata valida).
     """
-    # 1. Cancella ordini orfani
+    # 1. Cancella ordini orfani (provider-neutral)
     try:
-        open_orders = await exchange.get_open_orders(symbol)
-        if open_orders:
-            ccxt_symbol = await exchange._get_ccxt_symbol(symbol)
-            for order in open_orders:
-                try:
-                    await exchange.client.cancel_order(order["id"], ccxt_symbol)
-                except Exception as ce:
-                    logger.warning(f"[OCO_FAILED] cancel_order failed: {ce}")
-            logger.info(f"[OCO_FAILED] Cancellati {len(open_orders)} ordini orfani per {symbol}")
+        from app.execution.exchange_models import SymbolRef
+        sym_ref = SymbolRef.from_okx(symbol) if "-" in symbol else SymbolRef.from_compact(symbol)
+        await exchange.cancel_open_exit_orders(sym_ref)
+        logger.info(f"[BRACKET_FAILED] Cancelled open exit orders for {symbol}")
     except Exception as e:
-        logger.warning(f"[OCO_FAILED] get_open_orders failed (non-blocking): {e}")
+        logger.warning(f"[BRACKET_FAILED] cancel_open_exit_orders failed (non-blocking): {e}")
 
-    # 2. Market sell con qty reale post-fee
+    # 2. Market sell con qty reale post-fee (provider-neutral)
     try:
-        actual_qty = await exchange._get_available_base_balance(symbol)
+        # Get holdings directly from adapter (works for OKX and Binance)
+        holdings = await exchange.get_holdings()
+        from app.execution.exchange_models import SymbolRef
+        sym_ref = SymbolRef.from_okx(symbol) if "-" in symbol else SymbolRef.from_compact(symbol)
+        base_asset = sym_ref.base
+        actual_qty = holdings.get(base_asset, 0.0)
+        
         if actual_qty > 0:
-            filters = await exchange.get_symbol_filters(symbol)
-            min_qty = float(filters.get("minQty", 0.0))
+            sym_rules = await exchange.get_symbol_rules(sym_ref)
+            min_qty = sym_rules.min_sz
             if actual_qty >= min_qty:
-                await exchange.place_market_order(symbol, "sell", actual_qty)
-                logger.info(f"[OCO_FAILED] Market sell emergenza eseguito: {actual_qty} {symbol}")
+                from app.execution.exchange_models import ClosePositionRequest
+                close_req = ClosePositionRequest(
+                    symbol=sym_ref,
+                    side="BUY",  # side is position side, close is opposite
+                    quantity=actual_qty,
+                )
+                await exchange.close_position(close_req)
+                logger.info(f"[BRACKET_FAILED] Emergency market sell executed: {actual_qty} {base_asset}")
             else:
-                logger.warning(f"[OCO_FAILED] qty={actual_qty} < minQty={min_qty} per {symbol} — impossibile vendere")
+                logger.warning(f"[BRACKET_FAILED] qty={actual_qty} < minQty={min_qty} for {symbol} — impossible to sell")
         else:
-            logger.error(f"[OCO_FAILED] Balance={actual_qty} per {symbol} — nessun asset da vendere")
+            logger.error(f"[BRACKET_FAILED] Balance={actual_qty} for {base_asset} — no asset to sell")
     except Exception as e:
-        logger.error(f"[OCO_FAILED] Market sell emergenza fallito per {symbol}: {e}")
+        logger.error(f"[BRACKET_FAILED] Emergency market sell failed for {symbol}: {e}")
 
     # 3. Broadcast error a UI
     await broadcast_scalping_event("error", {
-        "code": "OCO_FAILED",
-        "message": f"OCO fallito per {symbol}. Trade chiuso con market sell, nessun asset bloccato.",
+        "code": "BRACKET_FAILED",
+        "message": f"Exit bracket failed for {symbol}. Trade closed with emergency market sell, no assets locked.",
     })
 
 
@@ -1886,8 +1883,11 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     price_prec = int(filters.get("pricePrecision", 2))
 
                                     fee_tier_pricing = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-                                    entry_fee_pricing = fee_tier_pricing.get("taker", 0.001)
-                                    exit_fee_pricing = fee_tier_pricing.get("maker", 0.001)
+                                    # TASK-1114: OKX fees are negative rebates (e.g. maker=-0.002).
+                                    # _net_to_gross_pct expects positive rates — use abs() so the
+                                    # formula correctly accounts for the fee magnitude regardless of sign.
+                                    entry_fee_pricing = abs(fee_tier_pricing.get("taker", 0.001))
+                                    exit_fee_pricing = abs(fee_tier_pricing.get("maker", 0.001))
 
                                     sl_gross_pct = _net_to_gross_pct(-sl_pct_net_cfg, entry_fee_pricing, exit_fee_pricing) / 100
                                     tp_gross_pct = _net_to_gross_pct(tp_pct_net_cfg, entry_fee_pricing, exit_fee_pricing) / 100
@@ -1901,31 +1901,47 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                         f"fee entry={entry_fee_pricing} exit={exit_fee_pricing}"
                                     )
 
-                                    # 5. Place native OCO
-                                    oco_res = None
-                                    oco_failed = False
+                                    # 5. Place exit bracket (TASK-1107: provider-neutral)
+                                    bracket_res = None
+                                    bracket_failed = False
                                     try:
-                                        oco_res = await exchange.place_oco_order(
-                                            symbol=event.symbol.upper(),
+                                        from app.execution.exchange_models import ExitBracketRequest, SymbolRef, FeeTier
+                                        
+                                        # Parse symbol to SymbolRef
+                                        sym_str = event.symbol.upper()
+                                        sym_ref = SymbolRef.from_okx(sym_str) if "-" in sym_str else SymbolRef.from_compact(sym_str)
+                                        
+                                        # Build fee tier object for bracket request
+                                        fee_tier_obj = FeeTier(
+                                            maker=exit_fee_pricing,
+                                            taker=entry_fee_pricing,
+                                            certified=_execution_state.get("fee_tier_certified", False),
+                                            source="execution_state",
+                                        )
+                                        
+                                        bracket_req = ExitBracketRequest(
+                                            symbol=sym_ref,
                                             side="sell" if side == "BUY" else "buy",
                                             quantity=exec_qty,
-                                            price=tp_price,
-                                            stop_price=sl_price,
-                                            take_profit_price=tp_price
+                                            tp_price=tp_price,
+                                            sl_price=sl_price,
+                                            entry_order_id=market_res.get("order_id"),
+                                            fee_tier=fee_tier_obj,
                                         )
-                                    except Exception as oco_e:
-                                        logger.error(f"OCO placement FAILED for {event.symbol}: {oco_e}")
-                                        oco_failed = True
+                                        bracket_res = await exchange.place_exit_bracket(bracket_req)
+                                    except Exception as bracket_e:
+                                        logger.error(f"Exit bracket placement FAILED for {event.symbol}: {bracket_e}")
+                                        bracket_failed = True
 
-                                    if oco_failed or not oco_res:
-                                        # ── CASO B: OCO FALLITO ──
+                                    if bracket_failed or not bracket_res:
+                                        # ── CASO B: BRACKET FALLITO ──
                                         # Market sell di emergenza con qty reale post-fee
-                                        logger.error(f"OCO_FLOW CASO B: OCO fallito per {event.symbol} — eseguo market sell emergenza")
-                                        await _handle_oco_failed(exchange, event.symbol.upper())
+                                        logger.error(f"BRACKET_FLOW CASO B: bracket fallito per {event.symbol} — eseguo market sell emergenza")
+                                        await _handle_bracket_failed(exchange, event.symbol.upper())
                                         continue  # Nessun salvataggio DB, nessuna apertura posizione
 
-                                    # ── CASO A: OCO RIUSCITO ──
-                                    # 3b. Register position AFTER OCO confermato (TASK-827)
+                                    # ── CASO A: BRACKET RIUSCITO ──
+                                    # 3b. Register position AFTER bracket confermato (TASK-827 / TASK-1107)
                                     # TASK-886: propaga la commissione reale dell'entry sulla Position
                                     pos_obj = pm.open_position(
                                         symbol=event.symbol.upper(),
@@ -1936,13 +1952,14 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                         entry_commission_asset=entry_commission_asset_real,
                                     )
 
-                                    # Salva OCO IDs sul position object
-                                    pos_obj.oco_id = oco_res.get("order_id")
-                                    pos_obj.sl_id = oco_res.get("stop_loss_id")
-                                    pos_obj.tp_id = oco_res.get("take_profit_id")
-                                    pos_obj.oco_order_list_id = str(oco_res.get("order_list_id", ""))
-                                    pos_obj.sl_order_id = str(oco_res.get("stop_loss_id", ""))
-                                    pos_obj.tp_order_id = str(oco_res.get("take_profit_id", ""))
+                                    # Salva bracket IDs sul position object (provider-neutral)
+                                    pos_obj.oco_order_list_id = str(bracket_res.bracket_id or "")
+                                    pos_obj.sl_order_id = str(bracket_res.sl_order_id or "")
+                                    pos_obj.tp_order_id = str(bracket_res.tp_order_id or "")
+                                    # Legacy fields for backward compat
+                                    pos_obj.oco_id = bracket_res.bracket_id
+                                    pos_obj.sl_id = bracket_res.sl_order_id
+                                    pos_obj.tp_id = bracket_res.tp_order_id
 
                                     # Persist open position to DB con tp/sl price e OCO IDs (TASK-825)
                                     if supervisor_context:
@@ -1964,7 +1981,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     await _refresh_session_balance()
 
                                     logger.info(
-                                        f"\033[92m🎯 OCO ATTIVO: {side} {event.symbol.upper()} @ {exec_price} | TP={tp_price:.2f} | SL={sl_price:.2f}\033[0m"
+                                        f"\033[92m🎯 EXIT BRACKET ATTIVO: {side} {event.symbol.upper()} @ {exec_price} | TP={tp_price:.2f} | SL={sl_price:.2f} | provider={settings.EXCHANGE_PROVIDER.upper()}\033[0m"
                                     )
 
                                     await broadcast_scalping_event("position", {
@@ -2433,6 +2450,73 @@ async def binance_exchange_info():
         logger.error(f"Failed to proxy Binance exchangeInfo: {e}")
         raise HTTPException(status_code=502, detail=f"Binance API unreachable: {e}")
 
+
+
+
+@router.get("/exchange/instruments")
+async def exchange_instruments():
+    """TASK-1109: Provider-neutral instruments endpoint.
+    OKX: returns live spot pairs via /api/v5/public/instruments.
+    Binance: proxies Binance exchangeInfo.
+    """
+    provider = settings.EXCHANGE_PROVIDER.lower()
+
+    if provider == "okx":
+        import httpx
+        base_url = settings.OKX_BASE_URL.rstrip("/")
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    f"{base_url}/api/v5/public/instruments",
+                    params={"instType": "SPOT"},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            raw = data.get("data", [])
+            instruments = [
+                {
+                    "symbol": item["instId"],
+                    "base": item["baseCcy"],
+                    "quote": item["quoteCcy"],
+                    "status": item.get("state", "live"),
+                    "provider": "okx",
+                }
+                for item in raw
+                if item.get("state") == "live"
+            ]
+            instruments.sort(key=lambda x: (x["quote"] != "EUR", x["symbol"]))
+            eur_pairs = [i["symbol"] for i in instruments if i["quote"] == "EUR"]
+            default_symbol = "BTC-EUR" if "BTC-EUR" in eur_pairs else (eur_pairs[0] if eur_pairs else "BTC-EUR")
+            return {
+                "provider": "okx",
+                "demo": settings.exchange_demo,
+                "default_symbol": default_symbol,
+                "instruments": instruments,
+            }
+        except Exception as e:
+            logger.error(f"Failed to fetch OKX instruments: {e}")
+            raise HTTPException(status_code=502, detail=f"OKX API unreachable: {e}")
+    else:
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get("https://api.binance.com/api/v3/exchangeInfo")
+                resp.raise_for_status()
+                data = resp.json()
+            allowed_quotes = {"USDT", "USDC", "FDUSD", "EUR"}
+            instruments = [
+                {"symbol": s["symbol"], "base": s["baseAsset"], "quote": s["quoteAsset"], "status": s["status"], "provider": "binance"}
+                for s in data.get("symbols", [])
+                if s.get("quoteAsset") in allowed_quotes and s.get("status") == "TRADING"
+            ]
+            instruments.sort(key=lambda x: x["symbol"])
+            eur_pairs = [i["symbol"] for i in instruments if i["quote"] == "EUR"]
+            usdc_pairs = [i["symbol"] for i in instruments if i["quote"] == "USDC"]
+            default_symbol = eur_pairs[0] if eur_pairs else (usdc_pairs[0] if usdc_pairs else "BTCUSDC")
+            return {"provider": "binance", "demo": False, "default_symbol": default_symbol, "instruments": instruments}
+        except Exception as e:
+            logger.error(f"Failed to proxy Binance exchangeInfo: {e}")
+            raise HTTPException(status_code=502, detail=f"Binance API unreachable: {e}")
 
 @router.get("/sessions")
 async def list_scalping_sessions(limit: int = 50, offset: int = 0) -> List[Dict]:
@@ -3059,6 +3143,13 @@ async def control_session(control: Dict) -> Dict:
                         "started_at": session["started_at"],
                         "strategy": session.get("strategy", "scalping_v2"),
                         "trade_value": session.get("trade_value", 100.0),
+                        # TASK-1108: provider-neutral fields
+                        "exchange_provider": settings.EXCHANGE_PROVIDER.lower(),
+                        "exchange_account_mode": settings.TRADING_MODE,
+                        "exchange_demo": settings.exchange_demo,
+                        "fee_tier_certified": _execution_state.get("fee_tier_certified"),
+                        "fee_tier_maker": (_execution_state.get("fee_tier") or {}).get("maker"),
+                        "fee_tier_taker": (_execution_state.get("fee_tier") or {}).get("taker"),
                     }).execute()
                     if db_resp.data:
                         session["db_session_id"] = db_resp.data[0]["id"]

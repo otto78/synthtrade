@@ -391,7 +391,7 @@ def _get_spot_balances_from_info(ccxt_balance: Dict[str, Any]) -> Dict[str, floa
 
 
 async def _refresh_session_balance():
-    """Refresh session live_balance from exchange (Spot wallet only)."""
+    """Refresh session live_balance from exchange (TASK-1107: provider-neutral)."""
     session = _execution_state["session"]
     if session["mode"] == "live" and _execution_state.get("exchange"):
         max_retries = 3
@@ -400,14 +400,18 @@ async def _refresh_session_balance():
         for attempt in range(1, max_retries + 1):
             try:
                 adapter = _execution_state["exchange"]
-                symbol = session.get("symbol", "BTCUSDT")
-                filters = await adapter.get_symbol_filters(symbol)
-                quote = filters.get("quoteAsset", "USDT")
+                symbol = session.get("symbol", "BTC-EUR")
 
-                ccxt_balance = await adapter.client.fetch_balance()
-                spot_balances = _get_spot_balances_from_info(ccxt_balance)
-                normalized_balances = _normalize_binance_total_balance(spot_balances)
-                bal = _select_preferred_quote_balance(normalized_balances, quote)
+                # Derive quote asset from symbol (provider-neutral)
+                from app.execution.exchange_models import SymbolRef
+                try:
+                    sym_ref = SymbolRef.from_okx(symbol) if "-" in symbol else SymbolRef.from_compact(symbol)
+                    quote = sym_ref.quote
+                except Exception:
+                    quote = "EUR"
+
+                # TASK-1107: use protocol method — works for OKX and Binance
+                bal = await adapter.get_balance(quote)
 
                 if bal is None or bal <= 0:
                     logger.warning(
@@ -724,24 +728,36 @@ async def _on_order_update(event: dict):
         qty_f = float(pos.quantity)
         gross_pnl = (fill_price - entry_f) * qty_f if pos.side == "BUY" else (entry_f - fill_price) * qty_f
         
-        # Commissione di uscita reale dal WebSocket (TASK-876)
+        # Commissione di uscita reale dal WebSocket (TASK-876 / TASK-1107)
         exit_commission = event.get("commission", 0.0)
         exit_commission_asset = event.get("commission_asset")
         
-        # Se la commissione non è in USDC, convertila usando il prezzo corrente
-        if exit_commission_asset and exit_commission_asset != "USDC" and exit_commission > 0:
+        # OKX: fee is already in quote currency (EUR) or may be in native token.
+        # Binance: fee may be in BNB. Generic conversion: try get_ticker_price if not quote.
+        session_symbol = _execution_state["session"].get("symbol", "")
+        from app.execution.exchange_models import SymbolRef
+        try:
+            sym_ref = SymbolRef.from_okx(session_symbol) if "-" in session_symbol else SymbolRef.from_compact(session_symbol)
+            quote_asset = sym_ref.quote
+        except Exception:
+            quote_asset = "EUR"
+        
+        if exit_commission_asset and exit_commission_asset != quote_asset and exit_commission > 0:
             try:
-                from app.execution.exchange import BinanceExchangeAdapter
                 exchange = _execution_state.get("exchange")
                 if exchange:
-                    # Ottieni prezzo BNB/USDC per conversione
-                    if exit_commission_asset == "BNB":
-                        bnb_price = await exchange.get_ticker_price("BNBUSDC")
-                        exit_commission_usdc = exit_commission * bnb_price
-                        logger.debug(f"Converted {exit_commission} {exit_commission_asset} to {exit_commission_usdc:.4f} USDC @ {bnb_price}")
-                        exit_commission = exit_commission_usdc
+                    # Try to convert commission asset to quote via ticker
+                    ticker_sym = f"{exit_commission_asset}/{quote_asset}"  # e.g. OKB/EUR or BNB/USDT
+                    asset_price = await exchange.get_ticker_price(ticker_sym)
+                    converted = exit_commission * asset_price
+                    logger.debug(
+                        "Converted commission %s %s to %.4f %s @ %.4f",
+                        exit_commission, exit_commission_asset, converted, quote_asset, asset_price,
+                    )
+                    exit_commission = converted
             except Exception as e:
-                logger.warning(f"Failed to convert commission {exit_commission_asset} to USDC: {e}")
+                logger.warning("Failed to convert commission %s %s to %s: %s",
+                               exit_commission, exit_commission_asset, quote_asset, e)
         
         # Commissione di entrata: usa fee tier se non disponibile da WebSocket
         # (Nota: l'ordine market di entrata non passa attraverso UDS, quindi non abbiamo
@@ -906,31 +922,38 @@ async def _on_uds_reconnect_sync():
 
 
 async def _start_uds_if_needed():
-    """Avvia UDS singleton se non già attivo (TASK-827).
+    """Avvia order event stream singleton se non già attivo (TASK-827 / TASK-1107).
 
-    Deve essere chiamato dopo OCO confermato (Caso A).
+    TASK-1107: provider-neutral — uses build_order_stream() factory.
+    Per OKX: OkxOrderEventStream (orders + algo-orders WS).
+    Per Binance: UserDataStreamManager (legacy).
+
+    Deve essere chiamato dopo bracket confermato.
     Passa sia on_order_update che on_reconnect_sync al manager.
     """
     if _execution_state.get("user_data_stream"):
         return  # Già attivo — singleton check
 
     session = _execution_state["session"]
-    if session.get("mode") != "live":
-        return  # UDS solo in live
+    # OKX Demo needs order stream even in test mode (bracket fills come via WS)
+    # Binance: only in live mode
+    provider = settings.EXCHANGE_PROVIDER.lower()
+    if provider == "binance" and session.get("mode") != "live":
+        return  # Binance UDS solo in live
 
     try:
-        from app.execution.user_data_stream import UserDataStreamManager
-        live_api_key = settings.BINANCE_API_KEY_LIVE or settings.BINANCE_API_KEY
-        live_api_secret = settings.BINANCE_SECRET_KEY_LIVE or settings.BINANCE_SECRET_KEY
-        uds = UserDataStreamManager(live_api_key, live_api_secret, testnet=False)
-        await uds.start(
+        from app.execution.exchange_factory import build_order_stream
+        order_stream = build_order_stream()
+        if order_stream is None:
+            return  # Paper mode, no stream needed
+        await order_stream.start(
             on_order_update=_on_order_update,
             on_reconnect_sync=_on_uds_reconnect_sync,
         )
-        _execution_state["user_data_stream"] = uds
-        logger.info("\033[96m📡 UDS SOCKET ATTIVO: avviato post-OCO confermato\033[0m")
+        _execution_state["user_data_stream"] = order_stream
+        logger.info("\033[96m📡 ORDER STREAM ATTIVO: avviato post-bracket confermato [%s]\033[0m", provider)
     except Exception as uds_e:
-        logger.warning(f"[UDS] Avvio fallito (non-fatal): {uds_e}")
+        logger.warning("[ORDER_STREAM] Avvio fallito (non-fatal): %s", uds_e)
 
 
 async def _handle_oco_failed(exchange, symbol: str):
@@ -1222,8 +1245,9 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     except Exception as warmup_err:
         logger.error(f"Could not warm up candle buffer with historical data: {warmup_err}", exc_info=True)
 
-    # Now start the BinanceWS client (after warmup so handshake is not blocked)
-    client = BinanceWSClient(symbols=[symbol], testnet=is_testnet)
+    # TASK-1107: provider-neutral WS client via factory (OKX or Binance)
+    from app.execution.exchange_factory import build_ws_client
+    client = build_ws_client(symbols=[symbol])
     _execution_state["ws_client"] = client
     await client.start()
 
@@ -2882,38 +2906,44 @@ async def control_session(control: Dict) -> Dict:
         active_symbol = control.get("symbol", session.get("symbol", "BTCUSDT"))
 
         # ── LIVE MODE: verify balance BEFORE setting session state ────────────
+        # TASK-1107: provider-neutral — build adapter via factory (OKX or Binance).
         # Prevent stale state when balance check fails (HTTPException would leave
         # a dirty session in memory, confusing the frontend on reconnect).
         if control.get("mode", session.get("mode", "paper")) == "live":
-            api_key = settings.BINANCE_API_KEY_LIVE or settings.BINANCE_API_KEY
-            api_secret = settings.BINANCE_SECRET_KEY_LIVE or settings.BINANCE_SECRET_KEY
-            if not api_key or not api_secret:
+            if not settings.exchange_api_key or not settings.exchange_secret_key:
                 raise HTTPException(status_code=400, detail="Mancano le API Key nel file .env per la modalità Live.")
-            adapter = BinanceExchangeAdapter(api_key, api_secret, testnet=False)
+
+            # TASK-1107: use factory — returns OkxExchangeAdapter or BinanceExchangeAdapter
+            from app.execution.exchange_factory import build_exchange_adapter
+            adapter = build_exchange_adapter()
 
             try:
-                filters = await adapter.get_symbol_filters(active_symbol)
-                quote_asset = filters.get("quoteAsset", "USDT")
-                ccxt_balance = await adapter.client.fetch_balance()
-                spot_balances = _get_spot_balances_from_info(ccxt_balance)
-                normalized_balances = _normalize_binance_total_balance(spot_balances)
-                selected_balance = _select_preferred_quote_balance(normalized_balances, quote_asset)
+                # Get quote asset from symbol (e.g. BTC-EUR -> EUR, BTCUSDT -> USDT)
+                from app.execution.exchange_models import SymbolRef
+                try:
+                    sym_ref = SymbolRef.from_okx(active_symbol) if "-" in active_symbol else SymbolRef.from_compact(active_symbol)
+                    quote_asset = sym_ref.quote
+                except Exception:
+                    quote_asset = "EUR"  # fallback for OKX default
+
+                available_balance = await adapter.get_balance(quote_asset)
                 trade_val = float(control.get("trade_value", session.get("trade_value", 10.0)))
 
-                if selected_balance is not None and selected_balance > 0 and selected_balance >= trade_val:
+                if available_balance is not None and available_balance > 0 and available_balance >= trade_val:
                     _execution_state["exchange"] = adapter
-                    session["live_balance"] = selected_balance
-                    session["paper_balance"] = selected_balance
-                    logger.info(f"✓ \033[96m\033[1mStarting balance: {selected_balance} {quote_asset}\033[0m")
-                    
-                    # TASK-877: Recupera fee tier account all'avvio sessione
-                    # TASK-886: marca esplicitamente se il fee tier è certificato (da Binance)
-                    # o un fallback non verificato, così lo stato sessione lo riflette onestamente.
+                    session["live_balance"] = available_balance
+                    session["paper_balance"] = available_balance
+                    logger.info(f"✓ \033[96m\033[1mStarting balance: {available_balance} {quote_asset} [{settings.EXCHANGE_PROVIDER.upper()}]\033[0m")
+
+                    # TASK-877/1114: Recupera fee tier account all'avvio sessione
+                    # OKX returns negative fees (rebates): maker=-0.002 means -0.2% rebate.
                     try:
-                        fee_tier = await adapter.get_trade_fee(active_symbol)
+                        sym_ref_for_fee = SymbolRef.from_okx(active_symbol) if "-" in active_symbol else SymbolRef.from_compact(active_symbol)
+                        fee_tier_obj = await adapter.get_trade_fee(sym_ref_for_fee)
+                        fee_tier = {"maker": fee_tier_obj.maker, "taker": fee_tier_obj.taker}
                         _execution_state["fee_tier"] = fee_tier
-                        _execution_state["fee_tier_certified"] = True
-                        logger.info(f"✓ Fee tier salvato: maker={fee_tier['maker']}, taker={fee_tier['taker']}")
+                        _execution_state["fee_tier_certified"] = fee_tier_obj.certified
+                        logger.info(f"✓ Fee tier [{settings.EXCHANGE_PROVIDER}]: maker={fee_tier_obj.maker}, taker={fee_tier_obj.taker} certified={fee_tier_obj.certified}")
                     except Exception as e:
                         logger.error(f"Impossibile recuperare fee tier reale: {e} — uso default 0.001 NON CERTIFICATO")
                         _execution_state["fee_tier"] = {"maker": 0.001, "taker": 0.001}

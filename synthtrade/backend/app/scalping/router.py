@@ -1476,6 +1476,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         entry_price=Decimal(str(close_price)),
                         quantity=quantity,
                     )
+                    # Persist open position to DB (same as live path) so close lookup finds it
+                    await _save_open_position_to_db(pos_obj, _execution_state["session"].get("db_session_id"))
                     sl_price = round(float(pos_obj.entry_price) * (1 + _net_to_gross_pct(-_mock_sl_cfg, _mock_ef, _mock_xf) / 100), 2) if side == "BUY" else round(float(pos_obj.entry_price) * (1 - _net_to_gross_pct(-_mock_sl_cfg, _mock_ef, _mock_xf) / 100), 2)
                     tp_price = round(float(pos_obj.entry_price) * (1 + _net_to_gross_pct(_mock_tp_cfg, _mock_ef, _mock_xf) / 100), 2) if side == "BUY" else round(float(pos_obj.entry_price) * (1 - _net_to_gross_pct(_mock_tp_cfg, _mock_ef, _mock_xf) / 100), 2)
                     await broadcast_scalping_event("position", {

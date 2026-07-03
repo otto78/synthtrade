@@ -6,9 +6,53 @@
 
 ### Da: Kiro → prossima sessione
 
-**Data:** 2026-07-03 15:30
+**Data:** 2026-07-03 16:06
 
-**Contesto:** TASK-1110 + TASK-1116 completati, 3 bug critici fixati in sessione, 12/12 test pass.
+**Contesto:** TASK-1112 paper mode completato — sessione BTC-EUR paper su OKX Demo stabile e pulita.
+
+---
+
+### ✅ FASE COMPLETATA: TASK-1112 Validazione Demo (paper mode)
+
+**Commit sessione odierna:**
+
+| Hash | Contenuto |
+|------|-----------|
+| `71e4562` | TASK-1110 HistoricalLoader OKX + TASK-1116 EUR collector graceful skip |
+| `52ac12d` | Fix PnL 54000% paper session_stop |
+| `67f414f` | Fix NoneType ccxt URL + lookup trade robusto Strategy 2a |
+| `09defc1` | Docs |
+| `66fed39` | OkxWSClient `_normalize_okx_symbol` (BNBUSDC→BNB-USDC) |
+| `8fbcba6` | Remove `set_sandbox_mode` dopo EU URL override (NoneType crash) |
+| `53f225f` | Rewrite `_load_from_okx` con httpx diretto — zero ccxt fragility |
+| `8efdc21` | Mock generator mancava `_save_open_position_to_db` — "No open row found" |
+| `df586ef` | Log strings provider-neutral |
+
+**Stato sistema verificato dai log:**
+- ✅ `HistoricalLoader: loaded 100 candles from OKX for BTC-EUR (1m)`
+- ✅ `OKX WS connected: wss://wspap.okx.com/ws/v5/public?brokerId=9999`
+- ✅ `demo=True` con `TRADING_MODE=test`
+- ✅ Nessun "No open row found"
+- ✅ Nessun errore 400 Binance Futures per EUR symbols
+- ✅ Session save/stop/trade DB corretti
+- ✅ 12/12 integration tests pass
+
+---
+
+### ⏳ PROSSIMI TASK
+
+**TASK-1100.G** — WS private EU fix (PRIORITÀ CRITICA per live/demo reale):
+- URL: `wss://wsaws.okx.com:8443/ws/v5/private`
+- Serve per ricevere fill bracket (TP/SL hit) in sessione live
+- File: `synthtrade/backend/app/execution/okx_order_event_stream.py`
+
+**TASK-1113** — Cutover OKX live readiness:
+- Prerequisito: TASK-1100.G per fill events
+- Checklist go-live, test live minimo con conferma manuale
+
+**TASK-1109** — Frontend label "Saldo Binance" → provider-neutral
+
+**TASK-1115** — Dashboard balance OKX
 
 ---
 

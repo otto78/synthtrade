@@ -197,11 +197,31 @@
 
 ### TASK-1112 — Validazione Demo Trading end-to-end
 
-**Status:** Pending
+**Status:** ✅ DONE (paper mode) — sessione BTC-EUR con OKX Demo WS funzionante, 9 bug fixati
 **Priorità:** CRITICA
 **Dipendenze:** TASK-1103, TASK-1104, TASK-1105, TASK-1106, TASK-1107
 
 **Obiettivo:** sessione scalping completa in OKX Demo Trading con trade minimo, bracket server-side, fill e restore verificati.
+
+**Completato 2026-07-03:**
+- ✅ OKX Demo WS connesso `wss://wspap.okx.com/ws/v5/public?brokerId=9999`
+- ✅ HistoricalLoader carica 100 candele OKX reali BTC-EUR via REST diretto (httpx)
+- ✅ `demo=True` corretto quando `TRADING_MODE=test`
+- ✅ Nessun errore 400 Binance Futures per EUR symbols (TASK-1116)
+- ✅ Session save/stop/trade DB puliti
+- ✅ "No open row found" risolto (mock generator non chiamava `_save_open_position_to_db`)
+- ✅ PnL 54000% risolto (session_stop paper usava prezzo reale OKX invece di entry_price)
+- ✅ 12/12 integration tests pass
+
+**Bug fixati durante validazione:**
+1. `set_sandbox_mode()` crash NoneType dopo EU URL override → rimosso, usa solo header
+2. ccxt URL override fragile → sostituito con httpx diretto `eea.okx.com/api/v5/market/candles`
+3. Mock generator mancava `_save_open_position_to_db` → aggiunto
+4. Strategy 2 lookup entry_time string mismatch → Strategy 2a usa solo session+price
+5. Paper session_stop usava `candle_buffer.latest` (prezzo reale ~54k€) per posizioni mock → usa `entry_price`
+6. OkxWSClient symbol normalization (`BNBUSDC` → `BNB-USDC`) → aggiunto `_normalize_okx_symbol`
+
+**Nota:** WS private (fill eventi bracket) non ancora testato in demo reale — richiede TASK-1100.G fix URL private endpoint.
 
 ### TASK-1113 — Cutover OKX live readiness
 

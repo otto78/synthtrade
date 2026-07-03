@@ -3266,15 +3266,25 @@ async def control_session(control: Dict) -> Dict:
         pos = pm.get_open()
         if pos:
             close_price: float = float(pos.entry_price)
-            # Use latest candle price if available for more accurate close
+            _mode_stop = _execution_state["session"].get("mode", "paper")
+            exchange_stop = _execution_state.get("exchange")
+
+            # Use latest candle price if available for more accurate close.
+            # PAPER MODE: only use candle price if it's from the mock generator
+            # (to avoid using real OKX prices for mock positions opened at ~100€).
+            # LIVE MODE: always use latest candle.
             loop = _execution_state.get("loop")
             if loop and hasattr(loop, "_candle_buffer") and getattr(loop, "_candle_buffer", None):
                 latest = loop._candle_buffer.latest
                 if latest:
-                    close_price = float(latest.close)
-
-            _mode_stop = _execution_state["session"].get("mode", "paper")
-            exchange_stop = _execution_state.get("exchange")
+                    latest_price = float(latest.close)
+                    if _mode_stop == "live":
+                        close_price = latest_price
+                    else:
+                        # Paper: only use candle price if it's close to entry (within 10x)
+                        # This avoids mixing real market prices with mock positions
+                        if latest_price > 0 and abs(latest_price - float(pos.entry_price)) / float(pos.entry_price) < 9.0:
+                            close_price = latest_price
 
             if _mode_stop == "live" and exchange_stop:
                 # TASK-829: cancella OCO e attendi conferma prima di market sell

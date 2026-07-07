@@ -352,7 +352,7 @@ class OkxWSClient:
                                 ts = int(row[0])
                                 if ts > _last_candle_ts:
                                     _last_candle_ts = ts
-                                    is_closed = (row[8] == "1") if len(row) > 8 else True
+                                    is_closed = True  # Force closed for pipeline processing
                                     event = CandleEvent(
                                         symbol=sym,
                                         interval="1m",

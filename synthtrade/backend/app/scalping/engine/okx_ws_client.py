@@ -27,7 +27,9 @@ from app.execution.exchange_models import CandleEvent, TradeEvent, ConnectionSta
 logger = logging.getLogger(__name__)
 
 # OKX WS endpoints
-_WS_DEMO = "wss://wspap.okx.com/ws/v5/public?brokerId=9999"
+# brokerId=9999 is ONLY for private WS (orders/algo). Public WS must NOT have brokerId.
+# Ref: TASK-1100.G — brokerId on public WS causes subscription to hang.
+_WS_DEMO = "wss://wspap.okx.com/ws/v5/public"
 _WS_BUSINESS_DEMO = "wss://wspap.okx.com/ws/v5/business?brokerId=9999"
 
 _WS_EU_LIVE = "wss://wsaws.okx.com:8443/ws/v5/public"
@@ -138,15 +140,19 @@ class OkxWSClient:
     async def start(self) -> None:
         self._stop_event.clear()
         
-        # BUGFIX: candle1m channel is available on public WS, not business WS.
-        # Business WS is for spread trading only. Subscribe both trades and
-        # candle1m on the public WS endpoint.
-        # Ref: https://www.okx.com/docs-v5/en/#websocket-api-public-channel
+        # Start WS connection for trades (candles via REST fallback if WS fails)
         task_public = asyncio.create_task(
-            self._run_connection(self._ws_url, "candle1m+trades"),
-            name="okx-ws-public",
+            self._run_connection(self._ws_url, "trades"),
+            name="okx-ws-trades",
         )
         self._tasks.append(task_public)
+        
+        # Start REST candle poller as fallback (WS candle1m often idle in demo)
+        task_candle_poller = asyncio.create_task(
+            self._rest_candle_poller(),
+            name="okx-rest-candles",
+        )
+        self._tasks.append(task_candle_poller)
         
         logger.info("OkxWSClient started for %d symbols: %s", len(self.symbols), self.symbols)
 
@@ -309,6 +315,59 @@ class OkxWSClient:
         except (TypeError, ValueError) as exc:
             logger.warning("OKX trade parse error for %s: %s", inst_id, exc)
             return None
+
+    # ── REST candle poller (fallback quando WS non invia dati) ─────────────
+
+    async def _rest_candle_poller(self) -> None:
+        """Poll OKX REST API every ~55s for the latest closed candle.
+        
+        Used as fallback when WS candle1m subscription doesn't deliver data
+        (common in OKX demo environment).
+        """
+        import httpx
+        from app.config import settings
+        
+        # Track last candle timestamp to avoid duplicates
+        _last_candle_ts = 0
+        
+        while not self._stop_event.is_set():
+            try:
+                for sym in self.symbols:
+                    url = f"{settings.OKX_BASE_URL.rstrip('/')}/api/v5/market/candles?instId={sym}&bar=1m&limit=2"
+                    async with httpx.AsyncClient(timeout=10) as client:
+                        resp = await client.get(url)
+                        resp.raise_for_status()
+                        data = resp.json()
+                        if data.get("code") == "0" and data.get("data"):
+                            rows = data["data"]
+                            # rows[0] = current incomplete candle, rows[1] = last closed
+                            for row in rows:
+                                ts = int(row[0])
+                                if ts > _last_candle_ts:
+                                    _last_candle_ts = ts
+                                    event = CandleEvent(
+                                        symbol=sym,
+                                        interval="1m",
+                                        open_time=ts,
+                                        open=float(row[1]),
+                                        high=float(row[2]),
+                                        low=float(row[3]),
+                                        close=float(row[4]),
+                                        volume=float(row[5]),
+                                        is_closed=(row[8] == "1") if len(row) > 8 else True,
+                                        provider="okx",
+                                    )
+                                    self.candle_queue.put_nowait(event)
+                                    if self._on_candle:
+                                        self._on_candle(event)
+            except Exception as e:
+                logger.debug("OKX REST candle poller error (non-fatal): %s", e)
+            
+            # Sleep ~55s, check stop every 5s
+            for _ in range(11):
+                if self._stop_event.is_set():
+                    return
+                await asyncio.sleep(5)
 
     # ── Helper ────────────────────────────────────────────────────────────────
 

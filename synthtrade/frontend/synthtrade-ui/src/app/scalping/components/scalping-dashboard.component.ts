@@ -73,7 +73,7 @@ interface ErrorToast {
              - Non vengono letti dal Supervisor AI
              - Non entrano nel SignalAggregator
              - Le notizie non sono symbol-specific (es. una notizia su BONK non
-               dice nulla sul comportamento di BNBUSDC)
+               dice nulla sul comportamento di BTCEUR)
              - I segnali whale/sentiment rilevanti sono già coperti dai collector
                intelligence (WhaleCollector, SentimentCollector)
 

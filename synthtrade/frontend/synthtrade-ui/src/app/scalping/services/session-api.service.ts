@@ -13,7 +13,7 @@ export class SessionApiService {
   session$ = this.sessionSubject.asObservable();
 
   /** Preview symbol: updated when user selects a symbol (even before session start) */
-  private previewSymbolSubject = new BehaviorSubject<string>('BNBUSDC');
+  private previewSymbolSubject = new BehaviorSubject<string>('BTCEUR');
   previewSymbol$ = this.previewSymbolSubject.asObservable();
 
   constructor(private http: HttpClient) {}

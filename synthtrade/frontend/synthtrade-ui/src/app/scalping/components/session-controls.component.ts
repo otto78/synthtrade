@@ -455,7 +455,7 @@ import { ConfigService } from '../../core/services/config.service';
 export class SessionControlsComponent implements OnInit {
   session: ScalpingSession | null = null;
   sessionId: string | null = null;
-  selectedSymbol = 'BNBUSDC';
+  selectedSymbol = 'BTCEUR';
   selectedStrategy = 'momentum_base';
   
   /** Trade value: restore from localStorage or default 100 */

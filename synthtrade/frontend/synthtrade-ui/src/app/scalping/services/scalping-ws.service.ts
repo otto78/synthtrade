@@ -284,6 +284,7 @@ export class ScalpingWsService implements OnDestroy {
         this.riskBlock$.next(event.payload as RiskBlockEvent);
         break;
       case 'trade_closed':
+        this.position$.next(null);
         this.tradeClosed$.next(event.payload as TradeClosedEvent);
         break;
       case 'intelligence':

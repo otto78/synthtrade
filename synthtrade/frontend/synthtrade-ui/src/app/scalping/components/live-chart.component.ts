@@ -90,7 +90,7 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('chartContainer', { static: true })
   chartContainer!: ElementRef<HTMLDivElement>;
 
-  currentSymbol = 'BNBUSDC';
+  currentSymbol = 'BTC-EUR';
   lastPrice = 0;
   loading = false;
 
@@ -119,7 +119,7 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
       map(([session, preview]) =>
         (session?.status !== 'idle' && session?.symbol
           ? session.symbol
-          : preview || 'BNBUSDC'
+          : preview || 'BTC-EUR'
         ).toUpperCase()
       ),
       distinctUntilChanged(),

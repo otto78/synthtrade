@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-03T08:50:08.935418+00:00",
+  "generated_at": "2026-07-07T08:08:49.104651+00:00",
   "task": "TASK-1100",
   "results": [
     {
@@ -13,23 +13,44 @@
       }
     },
     {
-      "name": "instrument_SOL/EUR",
+      "name": "instrument_BTC/EUR",
       "ok": true,
       "details": {
-        "inst_id": "SOL-EUR",
+        "inst_id": "BTC-EUR",
         "http_status": 200,
         "raw_code": "0",
         "raw_msg": "",
         "rules": {
-          "instId": "SOL-EUR",
-          "baseCcy": "SOL",
+          "instId": "BTC-EUR",
+          "baseCcy": "BTC",
           "quoteCcy": "EUR",
           "state": "live",
-          "lotSz": "0.00001",
-          "minSz": "0.01",
+          "lotSz": "0.00000001",
+          "minSz": "0.00001",
           "tickSz": "0.1",
           "maxMktSz": "1000000",
-          "maxMktAmt": "71000"
+          "maxMktAmt": "1000000"
+        }
+      }
+    },
+    {
+      "name": "instrument_ETH/EUR",
+      "ok": true,
+      "details": {
+        "inst_id": "ETH-EUR",
+        "http_status": 200,
+        "raw_code": "0",
+        "raw_msg": "",
+        "rules": {
+          "instId": "ETH-EUR",
+          "baseCcy": "ETH",
+          "quoteCcy": "EUR",
+          "state": "live",
+          "lotSz": "0.0000001",
+          "minSz": "0.0001",
+          "tickSz": "0.1",
+          "maxMktSz": "1000000",
+          "maxMktAmt": "640000"
         }
       }
     },
@@ -38,7 +59,7 @@
       "ok": true,
       "details": {
         "http_status": 200,
-        "total_spot": 527,
+        "total_spot": 526,
         "live_eur_count": 16,
         "live_eur_examples": [
           "SOL-EUR",
@@ -68,7 +89,7 @@
           "code": "0",
           "data": [
             {
-              "ts": "1783068599625"
+              "ts": "1783411726094"
             }
           ],
           "msg": "",
@@ -84,7 +105,7 @@
           {
             "ccy": "BTC",
             "cashBal": "1.00047885811",
-            "availBal": "1.00002119811",
+            "availBal": "1.00047885811",
             "eq": "1.00047885811"
           },
           {
@@ -126,7 +147,7 @@
       }
     },
     {
-      "name": "fee_tier_SOL/EUR",
+      "name": "fee_tier_BTC/EUR",
       "ok": true,
       "details": {
         "maker": "-0.002",
@@ -163,7 +184,7 @@
               "taker": "-0.0035",
               "takerU": "",
               "takerUSDC": "",
-              "ts": "1783068601576"
+              "ts": "1783411727137"
             }
           ],
           "msg": "",
@@ -172,29 +193,29 @@
       }
     },
     {
-      "name": "ticker_SOL/EUR",
+      "name": "ticker_BTC/EUR",
       "ok": true,
       "details": {
-        "last": "76.1",
-        "bid": "76.1",
-        "ask": "78",
+        "last": "55151.5",
+        "bid": "55158.1",
+        "ask": "55164.2",
         "raw": {
           "instType": "SPOT",
-          "instId": "SOL-EUR",
-          "last": "76.1",
-          "lastSz": "0.27321",
-          "askPx": "78",
-          "askSz": "0.90014",
-          "bidPx": "76.1",
-          "bidSz": "9.72679",
-          "open24h": "85.5",
-          "high24h": "85.5",
-          "low24h": "76.1",
-          "volCcy24h": "5987.347323",
-          "vol24h": "71.72036",
-          "ts": "1783068601109",
-          "sodUtc0": "85.4",
-          "sodUtc8": "85.5"
+          "instId": "BTC-EUR",
+          "last": "55151.5",
+          "lastSz": "0.00000001",
+          "askPx": "55164.2",
+          "askSz": "0.00010071",
+          "bidPx": "55158.1",
+          "bidSz": "0.00010071",
+          "open24h": "55292.7",
+          "high24h": "56500.2",
+          "low24h": "53428.5",
+          "volCcy24h": "2367773.946603611",
+          "vol24h": "42.53327285",
+          "ts": "1783411727358",
+          "sodUtc0": "55971.2",
+          "sodUtc8": "55613.9"
         }
       }
     },
@@ -216,26 +237,20 @@
     },
     {
       "name": "1100G_ws_private_login",
-      "ok": true,
+      "ok": false,
       "details": {
-        "skipped": true,
-        "reason": "rerun with --test-ws-private"
+        "event": "error",
+        "code": "60032",
+        "msg": "API key doesn't exist",
+        "url": "wss://wspap.okx.com/ws/v5/private?brokerId=9999"
       }
     },
     {
       "name": "1100H_ws_public_trades",
-      "ok": false,
+      "ok": true,
       "details": {
-        "inst_id": "SOL-EUR",
-        "url_used": "wss://wspap.okx.com/ws/v5/public?brokerId=9999",
-        "subscribed": true,
-        "trades_received": 0,
-        "buy_side_count": 0,
-        "sell_side_count": 0,
-        "required_fields_present": false,
-        "cvd_mapping": "side=buy -> is_buyer_maker=False (aggressive buy); side=sell -> is_buyer_maker=True",
-        "sample_trades": [],
-        "note": "side field is TAKER side on OKX"
+        "skipped": true,
+        "reason": "rerun with --test-ws-public"
       }
     }
   ]

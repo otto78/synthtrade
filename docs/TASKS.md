@@ -36,9 +36,15 @@
 - ✅ **1100.E** — Market order: 10€ → 0.00022883 BTC @ 43700€, fee rebate OK
 - ✅ **1100.F** — Exit bracket: algoId `3709954518432436224` piazzato con successo, metodo `order-algo` confermato
 - ✅ **1100.H** — WS public trades: subscription OK, parser implementato, CVD mapping verificato
-- ✅ **1100.G** — WS private EU bloccato dalla rete aziendale / policy OKX
-  - Chiave EU (`eea.okx.com`) su `wsaws.okx.com:8443`, `wspap.okx.com`, e `ws.okx.com` → errore `60032` (API key doesn't exist) a causa di limitazioni dell'infrastruttura EEA.
-  - Implementato **REST polling fallback** (2s) su `orders-history` e `orders-algo-history` per intercettare i fill (TP/SL). Perfetto per trade di minuti/ore.
+- ✅ **1100.G** — WS private EEA bloccato (errore 60032) → REST polling fallback
+  - **Problema**: OKX non fornisce WebSocket private per account EEA (`eea.okx.com`). Tutti gli endpoint WS private danno 60032. Limitazione OKX confermata da nautilus_trader #4250, hummingbot #7447, freqtrade #11044.
+  - **Soluzione**: Fallback automatico REST polling in `OkxOrderEventStream._start_polling()`:
+    - WS tenta login → 60032 → passa a REST polling ogni 2 secondi
+    - Endpoint: `orders-pending` (in-flight), `orders-history` (recenti), `orders-algo-pending` (bracket)
+    - Seed iniziale per non riemettere ordini già visti
+    - Stessa interfaccia `start(on_order_update)` → trasparente per il router
+  - **Testati**: orders-history (3 ordini, code 0), orders-pending (code 0), orders-algo-pending (code 0)
+  - La REST su `eea.okx.com` funziona perfettamente — solo WS private sono inaccessibili per account EEA
 
 **Decisione:**
 - **Bracket:** usare `/api/v5/trade/order-algo` standard (non `attachAlgoOrds`)

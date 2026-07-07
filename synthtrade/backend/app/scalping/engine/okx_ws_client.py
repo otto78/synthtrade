@@ -28,7 +28,10 @@ logger = logging.getLogger(__name__)
 
 # OKX WS endpoints
 _WS_DEMO = "wss://wspap.okx.com/ws/v5/public?brokerId=9999"
+_WS_BUSINESS_DEMO = "wss://wspap.okx.com/ws/v5/business?brokerId=9999"
+
 _WS_EU_LIVE = "wss://wsaws.okx.com:8443/ws/v5/public"
+_WS_BUSINESS_EU_LIVE = "wss://wsaws.okx.com:8443/ws/v5/business"
 
 
 def _normalize_okx_symbol(symbol: str) -> str:
@@ -51,6 +54,7 @@ def _normalize_okx_symbol(symbol: str) -> str:
             return f"{base}-{q}"
     return s
 _WS_LIVE = "wss://ws.okx.com:8443/ws/v5/public"
+_WS_BUSINESS_LIVE = "wss://ws.okx.com:8443/ws/v5/business"
 
 _PING_INTERVAL = 25  # OKX requires ping every 30s; use 25 for safety
 
@@ -84,10 +88,13 @@ class OkxWSClient:
 
         if demo:
             self._ws_url = _WS_DEMO
+            self._ws_business_url = _WS_BUSINESS_DEMO
         elif eu:
             self._ws_url = _WS_EU_LIVE
+            self._ws_business_url = _WS_BUSINESS_EU_LIVE
         else:
             self._ws_url = _WS_LIVE
+            self._ws_business_url = _WS_BUSINESS_LIVE
 
         self.candle_queue: asyncio.Queue[CandleEvent] = asyncio.Queue()
         self.trade_queue: asyncio.Queue[TradeEvent] = asyncio.Queue()
@@ -130,12 +137,21 @@ class OkxWSClient:
 
     async def start(self) -> None:
         self._stop_event.clear()
-        # One connection per symbol group (OKX supports multiple subscriptions per WS)
-        task = asyncio.create_task(
-            self._run_connection(),
-            name="okx-ws-market-data",
+        
+        # 1. Start public connection (for trades)
+        task_public = asyncio.create_task(
+            self._run_connection(self._ws_url, "trades"),
+            name="okx-ws-public-trades",
         )
-        self._tasks.append(task)
+        self._tasks.append(task_public)
+        
+        # 2. Start business connection (for candles)
+        task_business = asyncio.create_task(
+            self._run_connection(self._ws_business_url, "candle1m"),
+            name="okx-ws-business-candles",
+        )
+        self._tasks.append(task_business)
+        
         logger.info("OkxWSClient started for %d symbols: %s", len(self.symbols), self.symbols)
 
     async def stop(self) -> None:
@@ -148,21 +164,23 @@ class OkxWSClient:
 
     # ── Connection loop ───────────────────────────────────────────────────────
 
-    async def _run_connection(self) -> None:
+    async def _run_connection(self, url: str, channel: str) -> None:
         import websockets
 
         delay = 1.0
         while not self._stop_event.is_set():
             try:
-                async with websockets.connect(self._ws_url, ping_interval=None) as ws:
-                    logger.info("OKX WS connected: %s", self._ws_url)
+                async with websockets.connect(url, ping_interval=None) as ws:
+                    logger.info("OKX WS connected: %s (channel: %s)", url, channel)
                     delay = 1.0
 
-                    await self._subscribe(ws)
+                    await self._subscribe(ws, channel)
 
-                    # Emit connected status for all symbols
-                    for sym in self.symbols:
-                        self._emit_status(ConnectionStatusEvent(sym, connected=True, provider="okx"))
+                    # Emit connected status for all symbols only from the trades connection
+                    # to avoid double events.
+                    if channel == "trades":
+                        for sym in self.symbols:
+                            self._emit_status(ConnectionStatusEvent(sym, connected=True, provider="okx"))
 
                     ping_task = asyncio.create_task(self._ping_loop(ws))
                     try:
@@ -178,20 +196,20 @@ class OkxWSClient:
             except asyncio.CancelledError:
                 break
             except Exception as exc:
-                for sym in self.symbols:
-                    self._emit_status(ConnectionStatusEvent(sym, connected=False, error=str(exc), provider="okx"))
+                if channel == "trades":
+                    for sym in self.symbols:
+                        self._emit_status(ConnectionStatusEvent(sym, connected=False, error=str(exc), provider="okx"))
                 if self._stop_event.is_set():
                     break
-                logger.warning("OKX WS disconnected (%s). Reconnect in %.1fs...", exc, delay)
+                logger.warning("OKX WS disconnected (%s) on %s. Reconnect in %.1fs...", exc, url, delay)
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, self._reconnect_max_delay)
 
-    async def _subscribe(self, ws) -> None:
-        """Send subscription messages for candle1m and trades channels."""
+    async def _subscribe(self, ws, channel: str) -> None:
+        """Send subscription message for the specific channel."""
         args = []
         for sym in self.symbols:
-            args.append({"channel": "candle1m", "instId": sym})
-            args.append({"channel": "trades", "instId": sym})
+            args.append({"channel": channel, "instId": sym})
         msg = json.dumps({"op": "subscribe", "args": args})
         await ws.send(msg)
         logger.debug("OKX WS subscribed: %s", args)

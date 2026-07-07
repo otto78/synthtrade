@@ -347,29 +347,31 @@ class OkxWSClient:
                         resp.raise_for_status()
                         data = resp.json()
                         if data.get("code") == "0" and data.get("data"):
+                            # OKX returns newest-first: [0]=current live, [1]=last closed
+                            # Always use row[1] (the last COMPLETED candle) to avoid
+                            # flat candles (O=H=L=C, V=0) from the current incomplete candle.
                             rows = data["data"]
-                            for row in rows:
-                                ts = int(row[0])
-                                if ts > _last_candle_ts:
-                                    _last_candle_ts = ts
-                                    is_closed = True  # Force closed for pipeline processing
-                                    event = CandleEvent(
-                                        symbol=sym,
-                                        interval="1m",
-                                        open_time=ts,
-                                        open=float(row[1]),
-                                        high=float(row[2]),
-                                        low=float(row[3]),
-                                        close=float(row[4]),
-                                        volume=float(row[5]),
-                                        is_closed=is_closed,
-                                        provider="okx",
-                                    )
-                                    self.candle_queue.put_nowait(event)
-                                    if self._on_candle:
-                                        self._on_candle(event)
-                                    logger.info("OKX REST candle: %s O=%s H=%s L=%s C=%s V=%s closed=%s",
-                                                 sym, row[1], row[2], row[3], row[4], row[5], is_closed)
+                            closed_row = rows[1] if len(rows) > 1 else rows[0]
+                            ts = int(closed_row[0])
+                            if ts > _last_candle_ts:
+                                _last_candle_ts = ts
+                                event = CandleEvent(
+                                    symbol=sym,
+                                    interval="1m",
+                                    open_time=ts,
+                                    open=float(closed_row[1]),
+                                    high=float(closed_row[2]),
+                                    low=float(closed_row[3]),
+                                    close=float(closed_row[4]),
+                                    volume=float(closed_row[5]),
+                                    is_closed=True,
+                                    provider="okx",
+                                )
+                                self.candle_queue.put_nowait(event)
+                                if self._on_candle:
+                                    self._on_candle(event)
+                                logger.info("OKX REST candle: %s O=%s H=%s L=%s C=%s V=%s",
+                                             sym, closed_row[1], closed_row[2], closed_row[3], closed_row[4], closed_row[5])
             except Exception as e:
                 logger.error("OKX REST candle poller error: %s", e)
             

@@ -1290,8 +1290,6 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     if guard:
         guard.complete_phase("pipeline_phase")
 
-                    if pos.side != side:
-                        await _close_position_and_record(pm, close_price, pos, reason="reverse_signal")
 
     # Pull events from BinanceWSClient queues and broadcast to scalping WS clients
     async def _candle_processor():

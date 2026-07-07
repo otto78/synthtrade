@@ -327,24 +327,29 @@ class OkxWSClient:
         import httpx
         from app.config import settings
         
-        # Track last candle timestamp to avoid duplicates
+        logger.info("OKX REST candle poller started (interval: ~55s)")
+        
         _last_candle_ts = 0
+        base = settings.OKX_BASE_URL.rstrip("/")
+        headers = {}
+        if settings.exchange_demo:
+            headers["x-simulated-trading"] = "1"
         
         while not self._stop_event.is_set():
             try:
                 for sym in self.symbols:
-                    url = f"{settings.OKX_BASE_URL.rstrip('/')}/api/v5/market/candles?instId={sym}&bar=1m&limit=2"
+                    params = {"instId": sym, "bar": "1m", "limit": "2"}
                     async with httpx.AsyncClient(timeout=10) as client:
-                        resp = await client.get(url)
+                        resp = await client.get(f"{base}/api/v5/market/candles", params=params, headers=headers)
                         resp.raise_for_status()
                         data = resp.json()
                         if data.get("code") == "0" and data.get("data"):
                             rows = data["data"]
-                            # rows[0] = current incomplete candle, rows[1] = last closed
                             for row in rows:
                                 ts = int(row[0])
                                 if ts > _last_candle_ts:
                                     _last_candle_ts = ts
+                                    is_closed = (row[8] == "1") if len(row) > 8 else True
                                     event = CandleEvent(
                                         symbol=sym,
                                         interval="1m",
@@ -354,14 +359,16 @@ class OkxWSClient:
                                         low=float(row[3]),
                                         close=float(row[4]),
                                         volume=float(row[5]),
-                                        is_closed=(row[8] == "1") if len(row) > 8 else True,
+                                        is_closed=is_closed,
                                         provider="okx",
                                     )
                                     self.candle_queue.put_nowait(event)
                                     if self._on_candle:
                                         self._on_candle(event)
+                                    logger.info("OKX REST candle: %s O=%s H=%s L=%s C=%s V=%s closed=%s",
+                                                 sym, row[1], row[2], row[3], row[4], row[5], is_closed)
             except Exception as e:
-                logger.debug("OKX REST candle poller error (non-fatal): %s", e)
+                logger.error("OKX REST candle poller error: %s", e)
             
             # Sleep ~55s, check stop every 5s
             for _ in range(11):

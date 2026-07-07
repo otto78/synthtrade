@@ -173,18 +173,29 @@ class SignalAggregator:
                 f"bias={active_biases if active_biases else 'none'})"
             )
 
-            # Se i collector attivi sono tutti concordi → NON bypassare
+            # Se i collector attivi sono tutti concordi → blocca SOLO se lo score
+            # e' debole (sotto la soglia reale). Se lo score e' forte anche con
+            # pochi collector, lascia passare per la valutazione soglia normale.
+            # BUGFIX: prima bloccava sempre se concordi, anche con score=19.6
+            soglia_reale = get_scalping_config().signal_strength_threshold
             if only_one_bias and abs(market_score.total) >= 5.0:
-                logger.warning(
-                    f"{RED}🔴 BLOCK: {symbol} |score|={market_score.signal_strength:.1f} < threshold "
-                    f"(collector concordi, bypass bloccato: {bypass_reason}){RESET}"
-                )
-                return ExecutionDecision(
-                    execute=False,
-                    reason=f"collector concordi ({list(active_biases)[0]}), score={market_score.total:.1f}",
-                    signal_type=technical.type,
-                    ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
-                )
+                if abs(market_score.total) < soglia_reale:
+                    logger.warning(
+                        f"{RED}🔴 BLOCK: {symbol} |score|={market_score.signal_strength:.1f} < threshold "
+                        f"(collector concordi, bypass bloccato: {bypass_reason}){RESET}"
+                    )
+                    return ExecutionDecision(
+                        execute=False,
+                        reason=f"collector concordi ({list(active_biases)[0]}), score={market_score.total:.1f}",
+                        signal_type=technical.type,
+                        ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
+                    )
+                else:
+                    # Score forte nonostante pochi collector → passa alla soglia normale
+                    logger.info(
+                        f"{YELLOW}📋 {symbol}: {num_collectors_responded} collector concordi MA score={market_score.total:.1f} "
+                        f">= soglia {soglia_reale} — bypass blocco, valutazione soglia normale{RESET}"
+                    )
 
             # Collector discordi o pochi dati → bypass intelligence (usa solo tecnico)
             if technical.confidence >= min_confidence:

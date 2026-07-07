@@ -187,6 +187,12 @@ class OkxOrderEventStream:
             except Exception as exc:
                 if not self._running:
                     break
+                
+                if "60032" in str(exc):
+                    logger.warning("OKX WS private not available for this account (60032). Switching to REST polling fallback.")
+                    await self._start_polling()
+                    break
+
                 logger.warning("OKX order stream disconnected (%s). Reconnect in %ds...",
                                exc, _RECONNECT_DELAY)
                 await asyncio.sleep(_RECONNECT_DELAY)
@@ -196,6 +202,88 @@ class OkxOrderEventStream:
                         await self._on_reconnect_sync()
                     except Exception as sync_e:
                         logger.warning("OKX order stream reconnect sync failed: %s", sync_e)
+
+    async def _start_polling(self) -> None:
+        """Fallback polling loop using REST API."""
+        logger.info("OKX order stream: starting REST polling fallback (2s interval)")
+        first_run = True
+        seen_orders = set()
+        seen_algos = set()
+        
+        while self._running:
+            try:
+                # 1. Fetch normal orders history
+                resp = await self._rest_request("GET", "/api/v5/trade/orders-history", params={"instType": "SPOT"})
+                for item in resp.get("data", []):
+                    ord_id = item.get("ordId")
+                    if ord_id and ord_id not in seen_orders:
+                        seen_orders.add(ord_id)
+                        if not first_run:
+                            norm = self._normalize_order(item)
+                            if norm:
+                                await self._emit(norm)
+                
+                # 2. Fetch algo orders history
+                resp_algo = await self._rest_request(
+                    "GET", 
+                    "/api/v5/trade/orders-algo-history", 
+                    params={"instType": "SPOT", "state": "effective,canceled,order_failed"}
+                )
+                for item in resp_algo.get("data", []):
+                    algo_id = item.get("algoId")
+                    if algo_id and algo_id not in seen_algos:
+                        seen_algos.add(algo_id)
+                        if not first_run:
+                            norm = self._normalize_algo_order(item)
+                            if norm:
+                                await self._emit(norm)
+                
+                first_run = False
+            except Exception as e:
+                logger.error("OKX REST polling error: %s", e)
+            
+            # Sleep in chunks to allow fast shutdown
+            for _ in range(10):
+                if not self._running:
+                    break
+                await asyncio.sleep(0.2)
+
+    async def _rest_request(self, method: str, request_path: str, params: dict = None) -> dict:
+        import httpx
+        import urllib.parse
+        from datetime import datetime, timezone
+        from app.config import settings
+
+        if params:
+            query = urllib.parse.urlencode(params)
+            request_path = f"{request_path}?{query}"
+
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        prehash = ts + method.upper() + request_path
+        sig = base64.b64encode(
+            hmac.new(
+                self._secret.encode("utf-8"),
+                prehash.encode("utf-8"),
+                hashlib.sha256,
+            ).digest()
+        ).decode("utf-8")
+
+        headers = {
+            "OK-ACCESS-KEY": self._api_key,
+            "OK-ACCESS-SIGN": sig,
+            "OK-ACCESS-TIMESTAMP": ts,
+            "OK-ACCESS-PASSPHRASE": self._passphrase,
+            "Content-Type": "application/json"
+        }
+        if self._demo:
+            headers["x-simulated-trading"] = "1"
+
+        base_url = settings.OKX_BASE_URL.rstrip("/")
+        
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.request(method, base_url + request_path, headers=headers)
+            resp.raise_for_status()
+            return resp.json()
 
     def _stop_requested(self) -> bool:
         return not self._running

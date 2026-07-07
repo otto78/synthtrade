@@ -9,6 +9,7 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 **Milestone:** TASK-1107 100% + TASK-1111 12/12 PASS
 
 **Completato:**
+- ✅ **TASK-1100.G — WS private EU workaround:** A causa di limitazioni di policy OKX per account EEA (errore `60032` su websocket private), implementato fallback via REST polling (2s) in `OkxOrderEventStream` intercettando `/api/v5/trade/orders-history` e `orders-algo-history` per i fill TP/SL. Valido e performante per operazioni di scalping che durano minuti/ore con ordini condizionali on-exchange.
 - ✅ `_live_close_position` convertito a provider-neutral: usa `cancel_open_exit_orders`, `get_holdings`, `get_symbol_rules`, `close_position(ClosePositionRequest)` — zero metodi Binance-specific residui
 - ✅ **TASK-1107 ora al 100%** — tutto il router scalping è provider-neutral
 - ✅ `fake_okx_adapter.py` — FakeOkxAdapter (ExchangeAdapterProtocol senza rete) + FakeOrderStream con `fire_fill()` per eventi WS sintetici

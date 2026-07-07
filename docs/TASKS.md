@@ -36,12 +36,9 @@
 - ✅ **1100.E** — Market order: 10€ → 0.00022883 BTC @ 43700€, fee rebate OK
 - ✅ **1100.F** — Exit bracket: algoId `3709954518432436224` piazzato con successo, metodo `order-algo` confermato
 - ✅ **1100.H** — WS public trades: subscription OK, parser implementato, CVD mapping verificato
-- ❌ **1100.G** — WS private EU bloccato dalla rete aziendale
-  - Chiave EU (`eea.okx.com`) funziona solo su `wsaws.okx.com:8443` (EU WS)
-  - `wsaws.okx.com` → DNS fail dalla rete aziendale
-  - `wspap.okx.com` (demo) e `ws.okx.com` (global) → `60032` perché rifiutano chiavi EU
-  - REST `eea.okx.com` → OK (HTTP non bloccato, solo WS porta 8443)
-  - **Codice già corretto** — testare da casa o VPN su `wss://wsaws.okx.com:8443/ws/v5/private`
+- ✅ **1100.G** — WS private EU bloccato dalla rete aziendale / policy OKX
+  - Chiave EU (`eea.okx.com`) su `wsaws.okx.com:8443`, `wspap.okx.com`, e `ws.okx.com` → errore `60032` (API key doesn't exist) a causa di limitazioni dell'infrastruttura EEA.
+  - Implementato **REST polling fallback** (2s) su `orders-history` e `orders-algo-history` per intercettare i fill (TP/SL). Perfetto per trade di minuti/ore.
 
 **Decisione:**
 - **Bracket:** usare `/api/v5/trade/order-algo` standard (non `attachAlgoOrds`)

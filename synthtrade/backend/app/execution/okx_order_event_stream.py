@@ -206,39 +206,66 @@ class OkxOrderEventStream:
     async def _start_polling(self) -> None:
         """Fallback polling loop using REST API."""
         logger.info("OKX order stream: starting REST polling fallback (2s interval)")
-        first_run = True
         seen_orders = set()
         seen_algos = set()
         
+        # Seed con ordini storici esistenti (non emetterli)
+        try:
+            resp = await self._rest_request("GET", "/api/v5/trade/orders-history", params={"instType": "SPOT"})
+            for item in resp.get("data", []):
+                oid = item.get("ordId")
+                if oid:
+                    seen_orders.add(oid)
+            logger.info("OKX REST polling: seeded %d historical orders", len(seen_orders))
+        except Exception as e:
+            logger.warning("OKX REST polling: seed orders failed: %s", e)
+        
+        try:
+            resp = await self._rest_request("GET", "/api/v5/trade/orders-algo-pending", params={"instType": "SPOT", "ordType": "oco"})
+            for item in resp.get("data", []):
+                aid = item.get("algoId")
+                if aid:
+                    seen_algos.add(aid)
+            logger.info("OKX REST polling: seeded %d historical algo orders", len(seen_algos))
+        except Exception as e:
+            logger.warning("OKX REST polling: seed algo failed: %s", e)
+        
         while self._running:
             try:
-                # 1. Fetch normal orders history
-                resp = await self._rest_request("GET", "/api/v5/trade/orders-history", params={"instType": "SPOT"})
-                for item in resp.get("data", []):
+                # 1. Fetch pending (in-flight) orders — catches fills in real-time
+                resp_pend = await self._rest_request("GET", "/api/v5/trade/orders-pending", params={"instType": "SPOT"})
+                for item in resp_pend.get("data", []):
                     ord_id = item.get("ordId")
                     if ord_id and ord_id not in seen_orders:
                         seen_orders.add(ord_id)
-                        if not first_run:
-                            norm = self._normalize_order(item)
-                            if norm:
-                                await self._emit(norm)
+                        norm = self._normalize_order(item)
+                        if norm:
+                            await self._emit(norm)
                 
-                # 2. Fetch algo orders history
+                # 2. Fetch recently completed orders (filled/cancelled)
+                resp_hist = await self._rest_request("GET", "/api/v5/trade/orders-history", params={"instType": "SPOT"})
+                for item in resp_hist.get("data", []):
+                    ord_id = item.get("ordId")
+                    if ord_id and ord_id not in seen_orders:
+                        seen_orders.add(ord_id)
+                        norm = self._normalize_order(item)
+                        if norm:
+                            await self._emit(norm)
+                
+                # 3. Fetch algo orders pending/active
                 resp_algo = await self._rest_request(
                     "GET", 
-                    "/api/v5/trade/orders-algo-history", 
-                    params={"instType": "SPOT", "state": "effective,canceled,order_failed"}
+                    "/api/v5/trade/orders-algo-pending", 
+                    params={"instType": "SPOT", "ordType": "oco"}
                 )
                 for item in resp_algo.get("data", []):
                     algo_id = item.get("algoId")
                     if algo_id and algo_id not in seen_algos:
                         seen_algos.add(algo_id)
-                        if not first_run:
-                            norm = self._normalize_algo_order(item)
-                            if norm:
-                                await self._emit(norm)
+                        norm = self._normalize_algo_order(item)
+                        if norm:
+                            await self._emit(norm)
                 
-                first_run = False
             except Exception as e:
                 logger.error("OKX REST polling error: %s", e)
             

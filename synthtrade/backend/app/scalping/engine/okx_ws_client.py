@@ -26,6 +26,10 @@ from app.execution.exchange_models import CandleEvent, TradeEvent, ConnectionSta
 
 logger = logging.getLogger(__name__)
 
+# OKX REST base URL for public endpoints (market data, candles, tickers)
+# eea.okx.com is for authenticated REST only; public data must use www.okx.com
+_OKX_PUBLIC_REST = "https://www.okx.com"
+
 # OKX WS endpoints
 # brokerId=9999 is ONLY for private WS (orders/algo). Public WS must NOT have brokerId.
 # Ref: TASK-1100.G — brokerId on public WS causes subscription to hang.
@@ -327,20 +331,19 @@ class OkxWSClient:
         import httpx
         from app.config import settings
         
-        logger.info("OKX REST candle poller started (interval: ~55s)")
+        logger.info("OKX REST candle poller started (interval: ~55s) — using %s", _OKX_PUBLIC_REST)
         
         _last_candle_ts = 0
-        base = settings.OKX_BASE_URL.rstrip("/")
-        headers = {}
-        if settings.exchange_demo:
-            headers["x-simulated-trading"] = "1"
+        # Use www.okx.com (public REST) for market data candles.
+        # eea.okx.com is for authenticated REST only and does not serve public candles.
+        base = _OKX_PUBLIC_REST
         
         while not self._stop_event.is_set():
             try:
                 for sym in self.symbols:
                     params = {"instId": sym, "bar": "1m", "limit": "2"}
                     async with httpx.AsyncClient(timeout=10) as client:
-                        resp = await client.get(f"{base}/api/v5/market/candles", params=params, headers=headers)
+                        resp = await client.get(f"{base}/api/v5/market/candles", params=params)
                         resp.raise_for_status()
                         data = resp.json()
                         if data.get("code") == "0" and data.get("data"):

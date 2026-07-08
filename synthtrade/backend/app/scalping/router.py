@@ -1698,7 +1698,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     tp_price = round(exec_price * (1 + tp_gross_pct), price_prec) if side == "BUY" else round(exec_price * (1 - tp_gross_pct), price_prec)
 
                                     logger.info(
-                                         f"[NET_PRICING] provider={settings.EXCHANGE_PROVIDER} symbol={event.symbol} maker={_xf} taker={_ef} certified={_execution_state.get('fee_tier_certified', False)} | "
+                                         f"[NET_PRICING] provider={settings.EXCHANGE_PROVIDER} symbol={event.symbol} maker={exit_fee_pricing} taker={entry_fee_pricing} certified={_execution_state.get('fee_tier_certified', False)} | "
                                         f"Target netti: TP={tp_pct_net_cfg}% SL={sl_pct_net_cfg}% | "
                                         f"Lordi al prezzo: TP={tp_gross_pct*100:.4f}% SL={sl_gross_pct*100:.4f}% | "
                                         f"fee entry={entry_fee_pricing} exit={exit_fee_pricing}"

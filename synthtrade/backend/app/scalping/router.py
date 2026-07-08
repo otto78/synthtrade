@@ -1203,21 +1203,10 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 if hasattr(c, "timestamp") and hasattr(c, "open"):
                     candle_buffer.add(c)
                     loaded_count += 1
-            # Broadcast tutte le candele per caricare il grafico frontend completo
-            if loaded_count > 0:
-                for c in past_candles:
-                    await broadcast_scalping_event("candle", {
-                        "symbol": symbol,
-                        "open": float(c.open),
-                        "high": float(c.high),
-                        "low": float(c.low),
-                        "close": float(c.close),
-                        "volume": float(c.volume),
-                        "timestamp": c.timestamp.isoformat() if hasattr(c.timestamp, 'isoformat') else str(c.timestamp),
-                    })
+            # Non broadcastare le candele storiche via WS - il frontend usa HTTP /candles/{symbol}
             logger.info(
                 f"Successfully loaded {loaded_count} historical candles for {symbol} "
-                f"(WS broadcast: all {loaded_count} candles for complete chart). "
+                f"(available via HTTP /candles/{symbol}). "
                 f"Buffer size: {len(candle_buffer)}, ready: {candle_buffer.is_ready(50)}"
             )
             
@@ -2430,38 +2419,13 @@ async def get_trade_history(session_id: Optional[str] = None, limit: int = 50) -
 async def get_candles(symbol: str, limit: int = 100) -> List[Dict]:
     """Get candle history for a symbol.
 
-    1. Tries the ExecutionLoop's candle buffer first (fast, already loaded).
-    2. Falls back to Binance REST API if buffer is empty (e.g. warmup still in progress).
+    Always uses HistoricalLoader to fetch fresh candles from OKX/Binance.
+    This ensures the frontend always gets complete historical data
+    even if the session hasn't started yet or buffer is empty.
 
     Used by the frontend to load historical candles when a session starts.
     """
-    # Strategy 1: try the in-memory candle buffer
-    loop = _execution_state.get("loop")
-    if loop and hasattr(loop, "_candle_buffer"):
-        try:
-            candles = loop._candle_buffer.get()
-            if candles:
-                result = []
-                for c in candles:
-                    if c.symbol.upper() != symbol.upper():
-                        continue
-                    result.append({
-                        "symbol": symbol,
-                        "open": float(c.open),
-                        "high": float(c.high),
-                        "low": float(c.low),
-                        "close": float(c.close),
-                        "volume": float(c.volume),
-                        "timestamp": c.timestamp.isoformat(),
-                    })
-                if result:
-                    result = result[-limit:]
-                    logger.info(f"Returning {len(result)} candles from buffer for {symbol}")
-                    return result
-        except Exception as e:
-            logger.warning(f"Buffer read failed for {symbol}: {e}")
-
-    # Strategy 2: fallback to Binance REST API
+    # Always fetch fresh candles from HistoricalLoader (OKX/Binance)
     try:
         from app.scalping.backtest.historical_loader import HistoricalLoader
         loader = HistoricalLoader()
@@ -2481,6 +2445,8 @@ async def get_candles(symbol: str, limit: int = 100) -> List[Dict]:
             ]
             logger.info(f"Returning {len(result)} candles from HistoricalLoader for {symbol}")
             return result
+    except Exception as e:
+        logger.warning(f"HistoricalLoader fetch failed for {symbol}: {e}")
     except Exception as e:
         logger.warning(f"Binance REST fallback failed for {symbol}: {e}")
 

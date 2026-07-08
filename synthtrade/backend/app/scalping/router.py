@@ -1203,21 +1203,21 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 if hasattr(c, "timestamp") and hasattr(c, "open"):
                     candle_buffer.add(c)
                     loaded_count += 1
-            # Broadcast solo l'ultima candela: il buffer è già popolato, evita 100 WS sequenziali
+            # Broadcast tutte le candele per caricare il grafico frontend completo
             if loaded_count > 0:
-                last = past_candles[loaded_count - 1]
-                await broadcast_scalping_event("candle", {
-                    "symbol": symbol,
-                    "open": float(last.open),
-                    "high": float(last.high),
-                    "low": float(last.low),
-                    "close": float(last.close),
-                    "volume": float(last.volume),
-                    "timestamp": last.timestamp.isoformat() if hasattr(last.timestamp, 'isoformat') else str(last.timestamp),
-                })
+                for c in past_candles:
+                    await broadcast_scalping_event("candle", {
+                        "symbol": symbol,
+                        "open": float(c.open),
+                        "high": float(c.high),
+                        "low": float(c.low),
+                        "close": float(c.close),
+                        "volume": float(c.volume),
+                        "timestamp": c.timestamp.isoformat() if hasattr(c.timestamp, 'isoformat') else str(c.timestamp),
+                    })
             logger.info(
                 f"Successfully loaded {loaded_count} historical candles for {symbol} "
-                f"(WS broadcast: last candle only). "
+                f"(WS broadcast: all {loaded_count} candles for complete chart). "
                 f"Buffer size: {len(candle_buffer)}, ready: {candle_buffer.is_ready(50)}"
             )
             
@@ -2258,10 +2258,14 @@ async def binance_exchange_info():
 
 @router.get("/exchange/instruments")
 async def exchange_instruments():
-    """TASK-1109: Provider-neutral instruments endpoint.
-    OKX: returns live spot pairs via /api/v5/public/instruments.
-    Binance: proxies Binance exchangeInfo.
-    """
+    """TASK-1109: Provider-neutral instruments endpoint.
+
+    OKX: returns live spot pairs via /api/v5/public/instruments.
+
+    Binance: proxies Binance exchangeInfo.
+
+    """
+
     provider = settings.EXCHANGE_PROVIDER.lower()
 
     if provider == "okx":
@@ -2850,7 +2854,7 @@ async def control_session(control: Dict) -> Dict:
                         _execution_state["fee_tier_certified"] = False
                 else:
                     error_msg = (
-                        f"Nessun saldo Spot disponibile per {quote_asset} (trovato: {selected_balance}). "
+                        f"Nessun saldo Spot disponibile per {quote_asset} (trovato: {available_balance}). "
                         f"I fondi potrebbero essere in Simple Earn. Spostali su Spot e riprova."
                     )
                     logger.error(f"\033[91m✗ LIVE START BLOCKED: {error_msg}\033[0m")

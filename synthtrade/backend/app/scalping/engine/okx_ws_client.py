@@ -109,6 +109,9 @@ class OkxWSClient:
         self._on_candle: Optional[Callable[[CandleEvent], None]] = None
         self._on_trade: Optional[Callable[[TradeEvent], None]] = None
         self._on_status: Optional[Callable[[ConnectionStatusEvent], None]] = None
+        
+        # Track WS activity for REST poller fallback logic
+        self._ws_candle_received = False
 
         self._tasks: list[asyncio.Task] = []
         self._stop_event = asyncio.Event()
@@ -144,21 +147,28 @@ class OkxWSClient:
     async def start(self) -> None:
         self._stop_event.clear()
         
-        # Start WS connection for trades (candles via REST fallback if WS fails)
-        task_public = asyncio.create_task(
+        # Start WS connection for candles (primary real-time data source)
+        task_candles = asyncio.create_task(
+            self._run_connection(self._ws_url, "candle1m"),
+            name="okx-ws-candles",
+        )
+        self._tasks.append(task_candles)
+        
+        # Start WS connection for trades (CVD calculation)
+        task_trades = asyncio.create_task(
             self._run_connection(self._ws_url, "trades"),
             name="okx-ws-trades",
         )
-        self._tasks.append(task_public)
+        self._tasks.append(task_trades)
         
-        # Start REST candle poller as fallback (WS candle1m often idle in demo)
+        # Start REST candle poller as fallback (only if WS fails)
         task_candle_poller = asyncio.create_task(
             self._rest_candle_poller(),
-            name="okx-rest-candles",
+            name="okx-rest-candles-fallback",
         )
         self._tasks.append(task_candle_poller)
         
-        logger.info("OkxWSClient started for %d symbols: %s", len(self.symbols), self.symbols)
+        logger.info("OkxWSClient started for %d symbols: %s (WS candles primary, REST fallback)", len(self.symbols), self.symbols)
 
     async def stop(self) -> None:
         self._stop_event.set()
@@ -254,6 +264,7 @@ class OkxWSClient:
         data = msg.get("data", [])
 
         if channel == "candle1m":
+            self._ws_candle_received = True  # Mark WS as active
             for row in data:
                 event = self._parse_candle(row, inst_id)
                 if event:
@@ -326,7 +337,7 @@ class OkxWSClient:
         """Poll OKX REST API every ~55s for the latest closed candle.
         
         Used as fallback when WS candle1m subscription doesn't deliver data
-        (common in OKX demo environment).
+        (common in OKX demo environment). Disables itself if WS delivers data.
         """
         import httpx
         from app.config import settings
@@ -334,44 +345,62 @@ class OkxWSClient:
         logger.info("OKX REST candle poller started (interval: ~55s) — using %s", _OKX_PUBLIC_REST)
         
         _last_candle_ts = 0
+        _ws_active = False
+        _check_counter = 0
         # Use www.okx.com (public REST) for market data candles.
         # eea.okx.com is for authenticated REST only and does not serve public candles.
         base = _OKX_PUBLIC_REST
         
         while not self._stop_event.is_set():
             try:
-                for sym in self.symbols:
-                    params = {"instId": sym, "bar": "1m", "limit": "2"}
-                    async with httpx.AsyncClient(timeout=10) as client:
-                        resp = await client.get(f"{base}/api/v5/market/candles", params=params)
-                        resp.raise_for_status()
-                        data = resp.json()
-                        if data.get("code") == "0" and data.get("data"):
-                            # OKX returns newest-first: [0]=current live, [1]=last closed
-                            # Always use row[1] (the last COMPLETED candle) to avoid
-                            # flat candles (O=H=L=C, V=0) from the current incomplete candle.
-                            rows = data["data"]
-                            closed_row = rows[1] if len(rows) > 1 else rows[0]
-                            ts = int(closed_row[0])
-                            if ts > _last_candle_ts:
-                                _last_candle_ts = ts
-                                event = CandleEvent(
-                                    symbol=sym,
-                                    interval="1m",
-                                    open_time=ts,
-                                    open=float(closed_row[1]),
-                                    high=float(closed_row[2]),
-                                    low=float(closed_row[3]),
-                                    close=float(closed_row[4]),
-                                    volume=float(closed_row[5]),
-                                    is_closed=True,
-                                    provider="okx",
-                                )
-                                self.candle_queue.put_nowait(event)
-                                if self._on_candle:
-                                    self._on_candle(event)
-                                logger.info("OKX REST candle: %s O=%s H=%s L=%s C=%s V=%s",
-                                             sym, closed_row[1], closed_row[2], closed_row[3], closed_row[4], closed_row[5])
+                        # Check if WS is delivering data (using the flag set in _dispatch)
+                _check_counter += 1
+                if _check_counter % 10 == 0:  # Every ~50s
+                    if self._ws_candle_received:
+                        if not _ws_active:
+                            logger.info("OKX WS candles active, disabling REST poller")
+                            _ws_active = True
+                    else:
+                        if _ws_active:
+                            logger.warning("OKX WS candles stopped, re-enabling REST poller")
+                            _ws_active = False
+                    # Reset flag for next check
+                    self._ws_candle_received = False
+                
+                # Only poll if WS is not active
+                if not _ws_active:
+                    for sym in self.symbols:
+                        params = {"instId": sym, "bar": "1m", "limit": "2"}
+                        async with httpx.AsyncClient(timeout=10) as client:
+                            resp = await client.get(f"{base}/api/v5/market/candles", params=params)
+                            resp.raise_for_status()
+                            data = resp.json()
+                            if data.get("code") == "0" and data.get("data"):
+                                # OKX returns newest-first: [0]=current live, [1]=last closed
+                                # Always use row[1] (the last COMPLETED candle) to avoid
+                                # flat candles (O=H=L=C, V=0) from the current incomplete candle.
+                                rows = data["data"]
+                                closed_row = rows[1] if len(rows) > 1 else rows[0]
+                                ts = int(closed_row[0])
+                                if ts > _last_candle_ts:
+                                    _last_candle_ts = ts
+                                    event = CandleEvent(
+                                        symbol=sym,
+                                        interval="1m",
+                                        open_time=ts,
+                                        open=float(closed_row[1]),
+                                        high=float(closed_row[2]),
+                                        low=float(closed_row[3]),
+                                        close=float(closed_row[4]),
+                                        volume=float(closed_row[5]),
+                                        is_closed=True,
+                                        provider="okx",
+                                    )
+                                    self.candle_queue.put_nowait(event)
+                                    if self._on_candle:
+                                        self._on_candle(event)
+                                    logger.info("OKX REST candle: %s O=%s H=%s L=%s C=%s V=%s",
+                                                 sym, closed_row[1], closed_row[2], closed_row[3], closed_row[4], closed_row[5])
             except Exception as e:
                 logger.error("OKX REST candle poller error: %s", e)
             

@@ -71,7 +71,7 @@ docs/
 ├── (7 standard loom)          ← ARCHIVE_TASKS, BACKLOG, CHANGELOG, HANDOFF, STORY, TASKS, TDD_LOG
 ├── analysis/ (6 analisi)      ← analisi tematiche consolidate e reference API
 ├── plans/ (2 piani)           ← piani implementativi attivi
-└── recap/ (9 cronologici)     ← MASTER_RECAP + 8 recap sessioni
+└── recap/ (10 cronologici)     ← MASTER_RECAP + 9 recap sessioni
 ```
 
 ### `docs/analysis/` — Analisi tematiche
@@ -117,6 +117,7 @@ docs/
 | `docs/recap/2026-06-29_logging-decisionale.md` | Piano implementazione logging decisionale (5 fasi) |
 | `docs/recap/2026-07-01_epica-memory-learning.md` | Epica Memory & Learning completata |
 | `docs/recap/2026-07-01_review-memory-learning.md` | Review superset con query Supabase |
+| `docs/recap/2026-07-08_okx-ws-realtime-fix.md` | Fix WebSocket OKX real-time: DNS, business WS, symbol normalization frontend |
 
 ---
 

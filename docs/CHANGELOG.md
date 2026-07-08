@@ -1,9 +1,23 @@
-no sempre una divresificazion# Changelog — SynthTrade
+# Changelog — SynthTrade
 
 All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [1.4.5] — 2026-07-08
+
+### Fixed
+- **OKX real-time chart end-to-end:** risolto il grafico live che rimaneva fermo nonostante il backend OKX ricevesse dati realtime via WebSocket.
+- **okx_ws_client.py:** market data (candele/trade) usa sempre endpoint live, indipendentemente dal flag `demo` della sessione. Canale `candle1m` spostato su WS business (`wss://ws.okx.com:8443/ws/v5/business`), `trades` resta su WS public. Rimosso EU-specific public WS logic che causava DNS loop su `wsaws.okx.com`.
+- **router.py:** corretto percorso di ritorno in `/candles/{symbol}` per gestire il caso `past_candles` vuoto senza eccezioni.
+- **live-chart.component.ts:** aggiunta normalizzazione simbolo (`_normalizeSymbol`) prima del confronto nel subscriber `candle$`, risolvendo il mismatch `BTCEUR` (stato sessione) vs `BTC-EUR` (instId OKX) che scartava silenziosamente ogni evento candela real-time.
+
+### Changed
+- **Documentation:** aggiornati `docs/STORY.md` e `docs/HANDOFF.md` con progresso TASK-1100.G Chart fix v1-v4.
+- **Documentation:** aggiunto `docs/recap/2026-07-08_okx-ws-realtime-fix.md` con dettaglio completo delle 4 diagnosi e fixes applicati.
 
 ---
 

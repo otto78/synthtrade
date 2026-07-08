@@ -38,39 +38,23 @@
 - ✅ **1100.H** — WS public trades: subscription OK, parser implementato, CVD mapping verificato
 - ✅ **1100.G** — WS private EEA bloccato (errore 60032) → REST polling fallback
 
-**Stato 2026-07-08 (Fix grafico OKX):**
-- ✅ **1100.G (Chart fix v1)** — Implementato WS candle1m subscription come primary source
-- ✅ **1100.G (Chart fix v1)** — Broadcast completo 100 candele storiche al frontend
-- ✅ **1100.G (Chart fix v1)** — REST poller ora fallback intelligente, si disabilita quando WS attivo
-- ✅ **1100.G (Chart fix v1)** — Corretti errori di variabili in router.py e okx_ws_client.py
-- ✅ **1100.G (Chart fix v2)** — Rimosso broadcast WS non necessario (frontend usa HTTP)
-- ✅ **1100.G (Chart fix v2)** — HTTP /candles/{symbol} ora usa sempre HistoricalLoader come primary
-- ✅ **1100.G (Chart fix v2)** — Assicurato caricamento dati storici completi via HTTP
-- ✅ **1100.G (Chart fix v3)** — Sostituito demo network con live network per dati di mercato (migliore liquidità)
-  - **Problema**: OKX non fornisce WebSocket private per account EEA (`eea.okx.com`). Tutti gli endpoint WS private danno 60032. Limitazione OKX confermata da nautilus_trader #4250, hummingbot #7447, freqtrade #11044.
-  - **Soluzione**: Fallback automatico REST polling in `OkxOrderEventStream._start_polling()`:
-    - WS tenta login → 60032 → passa a REST polling ogni 2 secondi
-    - Endpoint: `orders-pending` (in-flight), `orders-history` (recenti), `orders-algo-pending` (bracket)
-    - Seed iniziale per non riemettere ordini già visti
-    - Stessa interfaccia `start(on_order_update)` → trasparente per il router
-  - **Testati**: orders-history (3 ordini, code 0), orders-pending (code 0), orders-algo-pending (code 0)
-  - La REST su `eea.okx.com` funziona perfettamente — solo WS private sono inaccessibili per account EEA
+**Stato 2026-07-08 (Fix grafico OKX end-to-end):**
+- ✅ **1100.G (Frontend: symbol normalization)** — Aggiunto `_normalizeSymbol()` in `live-chart.component.ts` per risolvere mismatch `BTCEUR` (stato sessione) vs `BTC-EUR` (instId OKX nei payload WS). Senza questo fix il subscriber scartava silenziosamente ogni candela real-time in arrivo dal backend.
+- ✅ **1100.G (Backend: WS business pubblico)** — Spostato canale `candle1m` su WS business (`wss://ws.okx.com:8443/ws/v5/business`), `trades` resta su WS public. OKX ha spostato `candleX` dal public al business in una revisione API.
+- ✅ **1100.G (Backend: market data sempre live)** — Rimosso branch EU-specific per WS pubblico (causava DNS loop su `wsaws.okx.com`). Market data usa SEMPRE endpoint live, indipendentemente da `demo` trading execution.
+- ✅ **1100.G (Backend: router.py)** — Corretto percorso di ritorno in `GET /candles/{symbol}` per gestire il caso `past_candles` vuoto senza blocchi.
+- ✅ **1100.G (Backend: type guard)** — Aggiunto guard difensivo `if current_url is None: current_url = url` in `_run_connection()` per eliminare warning Pylance.
+- ⚠️ **Aperti:** Pylance warning su backup URL logic (proposto rimozione completa, non bloccante); audit altri componenti Angular per stesso mismatch simbolo.
 
 **Decisione:**
-- **Bracket:** usare `/api/v5/trade/order-algo` standard (non `attachAlgoOrds`)
-- **minSz:** qty ≥ 0.0001 BTC (~4€+) per algo order
-- **WS private:** validare in TASK-1112 con flusso end-to-end completo (fix URL già noto)
+- Demo mode influenza solo trading execution, MAI market data
+- Candele OKX → WS business; Trade → WS public
+- Simboli: normalizzare rimuovendo `-` e `/` prima di confrontare
 
 **Verifica:**
-- ✅ REST auth OKX con key/secret/passphrase + header demo
-- ✅ Instrument discovery e filtri per EUR
-- ✅ Fee tier maker/taker con payload salvato
-- ✅ Market order minimo in demo
-- ✅ Exit bracket TP/SL server-side con prezzi verificati
-- ⚠️ Fill WS ricevuto — rinviato a TASK-1112 (payload algo-orders channel)
-- ✅ Payload trade pubblico per CVD (parser implementato)
-
-**Prossimi passi:** procedere TASK-1101 (config OKX)
+- ✅ Backend riceve candele/trade OKX realtime confermato da log `>>> PROCESSING closed candle` senza riga REST corrispondente
+- ✅ Frontend grafico si aggiorna in tempo reale dopo normalizzazione simbolo
+- ✅ Codice Python compila senza errori
 
 ### TASK-1101 — Config provider OKX e credenziali demo/live
 

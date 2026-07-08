@@ -1317,16 +1317,12 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 # and restart the WS client connection.
                 stale_seconds = (datetime.now(timezone.utc) - _last_event_time).total_seconds()
 
-                # LOG every 30s when no data received (for visibility, not just at 3min)
+                # LOG every 30s when no data received (reduced level: candles arrive via REST poller
+                # every ~55s, so this is expected and not an error)
                 if 30 <= stale_seconds < 35:
-                    logger.info(
-                        f"⏳ No WS candle data for {stale_seconds:.0f}s for {symbol} — "
-                        f"waiting for market WS to deliver candles..."
-                    )
-                elif 60 <= stale_seconds < 65:
-                    logger.info(
-                        f"⏳ No WS candle data for {stale_seconds:.0f}s for {symbol} — "
-                        f"still waiting..."
+                    logger.debug(
+                        f"No WS candle data for {stale_seconds:.0f}s for {symbol} — "
+                        f"candles arriving via REST poller every ~55s"
                     )
                 
                 if stale_seconds > 180:  # 3 minutes

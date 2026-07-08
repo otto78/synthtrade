@@ -20,6 +20,7 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - ✅ **TASK-1100.G (Chart fix v2)** — Assicurato caricamento dati storici completi via HTTP
 - ✅ **TASK-1100.G (Chart fix v3)** — Sostituito demo network con live network per dati di mercato
 - ✅ **TASK-1100.G (Chart fix v3)** — OKX live network ha liquidità normale, demo network aveva candele piatte
+- ✅ **TASK-1100.G (Chart fix v4)** — Aggiunto URL WS backup per problemi DNS e migliorata gestione connessione
 
 **Decisioni chiave:**
 - Il frontend usa HTTP per dati storici e WS solo per aggiornamenti real-time
@@ -28,6 +29,7 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - Broadcast WS di candele storiche era non necessario e causava problemi
 - Demo network OKX ha bassa liquidità → usare sempre live network per dati di mercato
 - Demo mode deve essere solo per trading execution, non per market data
+- Fallback automatico WS backup quando primary URL fallisce per DNS
 
 **File modificati:**
 - `synthtrade/backend/app/scalping/router.py` — WS primary, REST fallback, HTTP endpoint fix

@@ -97,16 +97,13 @@ class OkxWSClient:
         self._eu = eu
         self._reconnect_max_delay = reconnect_max_delay
 
-        # Always use live market data (candles, trades) for better liquidity
-        # Demo mode is only for trading execution, not for market data
-        if eu:
-            self._ws_url = _WS_EU_LIVE_PRIMARY
-            self._ws_url_backup = _WS_EU_LIVE_BACKUP
-            self._ws_business_url = _WS_BUSINESS_EU_LIVE
-        else:
-            self._ws_url = _WS_LIVE
-            self._ws_url_backup = None
-            self._ws_business_url = _WS_BUSINESS_LIVE
+        # Market data (candele/trade) usa SEMPRE gli endpoint live, indipendentemente
+        # da demo/live trading — il network demo OKX ha liquidità troppo bassa e non
+        # spinge candele/trade in tempo reale. `demo` qui non deve influenzare la
+        # scelta dell'URL del WS pubblico; riguarda solo l'esecuzione ordini altrove.
+        self._ws_url = _WS_LIVE              # wss://ws.okx.com:8443/ws/v5/public
+        self._ws_url_backup = None
+        self._ws_business_url = _WS_BUSINESS_LIVE
 
         self.candle_queue: asyncio.Queue[CandleEvent] = asyncio.Queue()
         self.trade_queue: asyncio.Queue[TradeEvent] = asyncio.Queue()
@@ -153,21 +150,20 @@ class OkxWSClient:
     async def start(self) -> None:
         self._stop_event.clear()
         
-        # Start WS connection for candles (primary real-time data source)
+        # Candele: canale business (OKX ha spostato candleX su business WS)
         task_candles = asyncio.create_task(
-            self._run_connection(self._ws_url, "candle1m"),
+            self._run_connection(self._ws_business_url, "candle1m"),
             name="okx-ws-candles",
         )
         self._tasks.append(task_candles)
         
-        # Start WS connection for trades (CVD calculation)
+        # Trade: resta su public
         task_trades = asyncio.create_task(
             self._run_connection(self._ws_url, "trades"),
             name="okx-ws-trades",
         )
         self._tasks.append(task_trades)
         
-        # Start REST candle poller as fallback (only if WS fails)
         task_candle_poller = asyncio.create_task(
             self._rest_candle_poller(),
             name="okx-rest-candles-fallback",
@@ -193,6 +189,8 @@ class OkxWSClient:
         use_backup = False
         while not self._stop_event.is_set():
             current_url = self._ws_url_backup if use_backup else url
+            if current_url is None:
+                current_url = url  # guard difensivo: non dovrebbe mai accadere
             
             try:
                 async with websockets.connect(current_url, ping_interval=None) as ws:

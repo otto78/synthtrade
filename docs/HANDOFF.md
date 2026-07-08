@@ -45,6 +45,12 @@
    - Sempre usa live WS URLs per market data (non demo)
    - Demo mode ora solo per trading execution, non per market data
 
+6. **okx_ws_client.py (v4):**
+   - Aggiunto URL WS backup per problemi DNS (wspap.okx.com come fallback)
+   - Fallback automatico a backup URL quando primary fallisce con DNS error
+   - REST poller rimane come fallback finale
+   - Ridotto warning spam di connessione
+
 **File modificati:**
 - `synthtrade/backend/app/scalping/router.py`
 - `synthtrade/backend/app/scalping/engine/okx_ws_client.py`
@@ -52,7 +58,8 @@
 **Commit:**
 - `c7e1840` - fix: OKX chart display - broadcast full historical candles and enable WS candle subscription
 - `514630a` - fix: OKX chart display - remove unnecessary WS broadcast and ensure HTTP endpoint always loads historical candles
-- `6f297eb` - fix: Use live OKX market data instead of demo network for better liquidity
+- `327724a` - fix: Use live OKX market data instead of demo network for better liquidity
+- `86de737` - fix: Add WS fallback URLs for OKX to handle DNS connectivity issues
 
 **Stato sistema:**
 - ✅ Codice Python compila senza errori

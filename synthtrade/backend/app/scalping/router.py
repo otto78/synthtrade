@@ -2415,39 +2415,32 @@ async def get_trade_history(session_id: Optional[str] = None, limit: int = 50) -
     return result
 
 
-@router.get("/candles/{symbol}")
-async def get_candles(symbol: str, limit: int = 100) -> List[Dict]:
-    """Get candle history for a symbol.
-
-    Always uses HistoricalLoader to fetch fresh candles from OKX/Binance.
-    This ensures the frontend always gets complete historical data
-    even if the session hasn't started yet or buffer is empty.
-
-    Used by the frontend to load historical candles when a session starts.
-    """
-    # Always fetch fresh candles from HistoricalLoader (OKX/Binance)
-    try:
-        from app.scalping.backtest.historical_loader import HistoricalLoader
-        loader = HistoricalLoader()
-        past_candles = await loader.load_ohlcv(symbol.upper(), interval="1m", limit=limit)
-        if past_candles:
-            result = [
-                {
-                    "symbol": symbol,
-                    "open": float(c.open),
-                    "high": float(c.high),
-                    "low": float(c.low),
-                    "close": float(c.close),
-                    "volume": float(c.volume),
-                    "timestamp": c.timestamp.isoformat(),
-                }
-                for c in past_candles
-            ]
-            logger.info(f"Returning {len(result)} candles from HistoricalLoader for {symbol}")
-            return result
-    except Exception as e:
-        logger.warning(f"HistoricalLoader fetch failed for {symbol}: {e}")
-        return []
+    @router.get("/candles/{symbol}")
+    async def get_candles(symbol: str, limit: int = 100) -> List[Dict]:
+        """Get candle history for a symbol. ..."""
+        try:
+            from app.scalping.backtest.historical_loader import HistoricalLoader
+            loader = HistoricalLoader()
+            past_candles = await loader.load_ohlcv(symbol.upper(), interval="1m", limit=limit)
+            if past_candles:
+                result = [
+                    {
+                        "symbol": symbol,
+                        "open": float(c.open),
+                        "high": float(c.high),
+                        "low": float(c.low),
+                        "close": float(c.close),
+                        "volume": float(c.volume),
+                        "timestamp": c.timestamp.isoformat(),
+                    }
+                    for c in past_candles
+                ]
+                logger.info(f"Returning {len(result)} candles from HistoricalLoader for {symbol}")
+                return result
+            return []  # <-- ADD THIS: handles the empty/falsy past_candles case
+        except Exception as e:
+            logger.warning(f"HistoricalLoader fetch failed for {symbol}: {e}")
+            return []
 
 
 async def _stop_ws_broadcast():

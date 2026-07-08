@@ -36,8 +36,13 @@ _OKX_PUBLIC_REST = "https://www.okx.com"
 _WS_DEMO = "wss://wspap.okx.com/ws/v5/public"
 _WS_BUSINESS_DEMO = "wss://wspap.okx.com/ws/v5/business?brokerId=9999"
 
-_WS_EU_LIVE = "wss://wsaws.okx.com:8443/ws/v5/public"
+# Multiple fallback URLs for better connectivity
+_WS_EU_LIVE_PRIMARY = "wss://wsaws.okx.com:8443/ws/v5/public"
+_WS_EU_LIVE_BACKUP = "wss://wspap.okx.com/ws/v5/public"  # Demo URL works for public data too
 _WS_BUSINESS_EU_LIVE = "wss://wsaws.okx.com:8443/ws/v5/business"
+
+_WS_LIVE = "wss://ws.okx.com:8443/ws/v5/public"
+_WS_BUSINESS_LIVE = "wss://ws.okx.com:8443/ws/v5/business"
 
 
 def _normalize_okx_symbol(symbol: str) -> str:
@@ -95,10 +100,12 @@ class OkxWSClient:
         # Always use live market data (candles, trades) for better liquidity
         # Demo mode is only for trading execution, not for market data
         if eu:
-            self._ws_url = _WS_EU_LIVE
+            self._ws_url = _WS_EU_LIVE_PRIMARY
+            self._ws_url_backup = _WS_EU_LIVE_BACKUP
             self._ws_business_url = _WS_BUSINESS_EU_LIVE
         else:
             self._ws_url = _WS_LIVE
+            self._ws_url_backup = None
             self._ws_business_url = _WS_BUSINESS_LIVE
 
         self.candle_queue: asyncio.Queue[CandleEvent] = asyncio.Queue()
@@ -183,11 +190,15 @@ class OkxWSClient:
         import websockets
 
         delay = 1.0
+        use_backup = False
         while not self._stop_event.is_set():
+            current_url = self._ws_url_backup if use_backup else url
+            
             try:
-                async with websockets.connect(url, ping_interval=None) as ws:
-                    logger.info("OKX WS connected: %s (channel: %s)", url, channel)
+                async with websockets.connect(current_url, ping_interval=None) as ws:
+                    logger.info("OKX WS connected: %s (channel: %s)", current_url, channel)
                     delay = 1.0
+                    use_backup = False  # Reset backup flag on successful connection
 
                     await self._subscribe(ws, channel)
 
@@ -214,9 +225,16 @@ class OkxWSClient:
                     self._emit_status(ConnectionStatusEvent(sym, connected=False, error=str(exc), provider="okx"))
                 if self._stop_event.is_set():
                     break
-                logger.warning("OKX WS disconnected (%s) on %s. Reconnect in %.1fs...", exc, url, delay)
-                await asyncio.sleep(delay)
-                delay = min(delay * 2, self._reconnect_max_delay)
+                
+                # Try backup URL if available and primary failed
+                if not use_backup and self._ws_url_backup and "getaddrinfo" in str(exc):
+                    logger.info("OKX WS primary URL failed, trying backup: %s", self._ws_url_backup)
+                    use_backup = True
+                    delay = 1.0
+                else:
+                    logger.warning("OKX WS disconnected (%s) on %s. Reconnect in %.1fs...", exc, current_url, delay)
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2, self._reconnect_max_delay)
 
     async def _subscribe(self, ws, channel: str) -> None:
         """Send subscription message for the specific channel(s).

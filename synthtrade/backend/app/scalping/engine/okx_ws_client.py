@@ -92,10 +92,9 @@ class OkxWSClient:
         self._eu = eu
         self._reconnect_max_delay = reconnect_max_delay
 
-        if demo:
-            self._ws_url = _WS_DEMO
-            self._ws_business_url = _WS_BUSINESS_DEMO
-        elif eu:
+        # Always use live market data (candles, trades) for better liquidity
+        # Demo mode is only for trading execution, not for market data
+        if eu:
             self._ws_url = _WS_EU_LIVE
             self._ws_business_url = _WS_BUSINESS_EU_LIVE
         else:

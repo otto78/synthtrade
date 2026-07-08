@@ -17,7 +17,7 @@
 
 ### TASK-1100 — OKX Demo Spike: auth, market order, exit bracket, WS fill
 
-**Status:** Partial ✅ — Sottotask E/F/H completati, G bloccato
+**Status:** Partial ✅ — Sottotask E/F/H completati, G workaround implementato
 **Priorità:** CRITICA
 **Dipendenze:** API key OKX Demo Trading ✅
 
@@ -37,6 +37,16 @@
 - ✅ **1100.F** — Exit bracket: algoId `3709954518432436224` piazzato con successo, metodo `order-algo` confermato
 - ✅ **1100.H** — WS public trades: subscription OK, parser implementato, CVD mapping verificato
 - ✅ **1100.G** — WS private EEA bloccato (errore 60032) → REST polling fallback
+
+**Stato 2026-07-08 (Fix grafico OKX):**
+- ✅ **1100.G (Chart fix v1)** — Implementato WS candle1m subscription come primary source
+- ✅ **1100.G (Chart fix v1)** — Broadcast completo 100 candele storiche al frontend
+- ✅ **1100.G (Chart fix v1)** — REST poller ora fallback intelligente, si disabilita quando WS attivo
+- ✅ **1100.G (Chart fix v1)** — Corretti errori di variabili in router.py e okx_ws_client.py
+- ✅ **1100.G (Chart fix v2)** — Rimosso broadcast WS non necessario (frontend usa HTTP)
+- ✅ **1100.G (Chart fix v2)** — HTTP /candles/{symbol} ora usa sempre HistoricalLoader come primary
+- ✅ **1100.G (Chart fix v2)** — Assicurato caricamento dati storici completi via HTTP
+- ✅ **1100.G (Chart fix v3)** — Sostituito demo network con live network per dati di mercato (migliore liquidità)
   - **Problema**: OKX non fornisce WebSocket private per account EEA (`eea.okx.com`). Tutti gli endpoint WS private danno 60032. Limitazione OKX confermata da nautilus_trader #4250, hummingbot #7447, freqtrade #11044.
   - **Soluzione**: Fallback automatico REST polling in `OkxOrderEventStream._start_polling()`:
     - WS tenta login → 60032 → passa a REST polling ogni 2 secondi

@@ -142,8 +142,10 @@ class HistoricalLoader:
                 params["before"] = str(int(start.timestamp() * 1000))
 
             headers: dict = {}
-            if settings.exchange_demo:
-                headers["x-simulated-trading"] = "1"
+            # Always use live market data for historical candles (better liquidity)
+            # Demo mode is only for trading execution, not for market data
+            # if settings.exchange_demo:
+            #     headers["x-simulated-trading"] = "1"
 
             import httpx
             async with httpx.AsyncClient(timeout=10.0) as client:

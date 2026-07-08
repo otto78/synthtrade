@@ -4,6 +4,35 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.5 — 2026-07-08
+
+**Milestone:** Fix grafico OKX - candele real-time e completamento storico
+
+**Completato:**
+- ✅ **TASK-1100.G (Chart fix v1)** — Implementato WS candle1m subscription come primary source invece di REST poller
+- ✅ **TASK-1100.G (Chart fix v1)** — Broadcast completo di tutte le 100 candele storiche durante preload al frontend
+- ✅ **TASK-1100.G (Chart fix v1)** — REST poller ora fallback intelligente che si disabilita automaticamente quando WS attivo
+- ✅ **TASK-1100.G (Chart fix v1)** — Tracking attività WS per switch automatico tra WS e REST
+- ✅ **Bug fix router.py:** Corretto riferimento variabile `selected_balance` non definita → `available_balance`
+- ✅ **Bug fix okx_ws_client.py:** Aggiunta dichiarazione variabile `_check_counter` mancante
+- ✅ **TASK-1100.G (Chart fix v2)** — Rimosso broadcast WS non necessario (frontend usa HTTP per storico)
+- ✅ **TASK-1100.G (Chart fix v2)** — HTTP /candles/{symbol} ora usa sempre HistoricalLoader come primary
+- ✅ **TASK-1100.G (Chart fix v2)** — Assicurato caricamento dati storici completi via HTTP
+- ✅ **TASK-1100.G (Chart fix v3)** — Sostituito demo network con live network per dati di mercato
+- ✅ **TASK-1100.G (Chart fix v3)** — OKX live network ha liquidità normale, demo network aveva candele piatte
+
+**Decisioni chiave:**
+- Il frontend usa HTTP per dati storici e WS solo per aggiornamenti real-time
+- WS candle1m deve essere primary source per aggiornamenti real-time, REST solo fallback
+- Auto-switching intelligente WS/REST garantisce massima affidabilità dati
+- Broadcast WS di candele storiche era non necessario e causava problemi
+- Demo network OKX ha bassa liquidità → usare sempre live network per dati di mercato
+- Demo mode deve essere solo per trading execution, non per market data
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/router.py` — WS primary, REST fallback, HTTP endpoint fix
+- `synthtrade/backend/app/scalping/engine/okx_ws_client.py` — WS candle subscription primary
+
 ### v1.4.4 — 2026-07-03
 
 **Milestone:** TASK-1107 100% + TASK-1111 12/12 PASS

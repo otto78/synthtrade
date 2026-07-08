@@ -2447,10 +2447,7 @@ async def get_candles(symbol: str, limit: int = 100) -> List[Dict]:
             return result
     except Exception as e:
         logger.warning(f"HistoricalLoader fetch failed for {symbol}: {e}")
-    except Exception as e:
-        logger.warning(f"Binance REST fallback failed for {symbol}: {e}")
-
-    return []
+        return []
 
 
 async def _stop_ws_broadcast():

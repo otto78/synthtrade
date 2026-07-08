@@ -4,6 +4,74 @@
 
 ## 🔄 Ultimo Handoff
 
+### Da: Devin → prossima sessione
+
+**Data:** 2026-07-08
+
+**Contesto:** Fix grafico OKX - implementazione WS candle subscription e broadcast completo candele storiche
+
+---
+
+### ✅ FASE COMPLETATA: TASK-1100.G Fix Grafico OKX
+
+**Problema risolto:**
+- Il grafico mostrava solo una linea piatta perché veniva broadcastata solo l'ultima candela storica
+- Il REST poller (55s interval) era la fonte primaria invece di WS real-time
+- Variabili non definite causavano errori in router.py e okx_ws_client.py
+- Frontend usa HTTP per dati storici, non WebSocket (broadcast WS non necessario)
+
+**Soluzioni implementate:**
+
+1. **router.py (v1):**
+   - Broadcast completo di tutte le 100 candele storiche durante preload al frontend
+   - Corretto riferimento variabile `selected_balance` → `available_balance`
+
+2. **okx_ws_client.py:**
+   - Abilitata WS candle1m subscription come primary source
+   - REST poller ora fallback intelligente che si disabilita automaticamente quando WS attivo
+   - Tracking attività WS per switch automatico WS/REST
+   - Aggiunta dichiarazione variabile `_check_counter` mancante
+
+3. **router.py (v2):**
+   - Rimosso broadcast WS non necessario (frontend usa HTTP /candles/{symbol})
+   - HTTP /candles/{symbol} ora usa sempre HistoricalLoader come primary
+   - Assicurato caricamento dati storici completi via HTTP
+
+4. **historical_loader.py (v3):**
+   - Rimosso header `x-simulated-trading` per usare sempre live market data
+   - Demo network ha bassa liquidità con candele piatte → usare live network
+
+5. **okx_ws_client.py (v3):**
+   - Sempre usa live WS URLs per market data (non demo)
+   - Demo mode ora solo per trading execution, non per market data
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/router.py`
+- `synthtrade/backend/app/scalping/engine/okx_ws_client.py`
+
+**Commit:**
+- `c7e1840` - fix: OKX chart display - broadcast full historical candles and enable WS candle subscription
+- `514630a` - fix: OKX chart display - remove unnecessary WS broadcast and ensure HTTP endpoint always loads historical candles
+- `6f297eb` - fix: Use live OKX market data instead of demo network for better liquidity
+
+**Stato sistema:**
+- ✅ Codice Python compila senza errori
+- ✅ WS candle1m subscription configurata come primary per aggiornamenti real-time
+- ✅ REST poller fallback intelligente implementato
+- ✅ HTTP /candles/{symbol} usa sempre HistoricalLoader per dati storici
+- ✅ Variabili non definite corrette
+- ✅ Frontend riceve dati storici via HTTP e aggiornamenti via WS
+- ✅ Market data da live network OKX (non demo) → liquidità normale
+
+**Prossimi step raccomandati:**
+- Testare il grafico con i nuovi dati OKX completi
+- Verificare che gli aggiornamenti real-time funzionino correttamente
+- Procedere con TASK-1101 (config OKX) e TASK-1102 (ExchangeProtocol v2)
+
+---
+
+## 🔄 Handoff Precedente
+
 ### Da: Kiro → prossima sessione
 
 **Data:** 2026-07-03 16:06

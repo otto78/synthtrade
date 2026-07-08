@@ -7,6 +7,7 @@
 
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { NgIf, UpperCasePipe, DecimalPipe } from '@angular/common';
+import { SymbolUtils } from '../utils/symbol-utils';
 import { Subscription } from 'rxjs';
 import { IntelligenceApiService } from '../services/intelligence-api.service';
 import { MarketIntelSnapshot } from '../models/intelligence.model';
@@ -197,7 +198,7 @@ export class MarketIntelPanelComponent implements OnInit, OnDestroy {
       this.ws.intelligence$.subscribe((data: IntelligenceEvent | null) => {
         if (!data) return;
         // If WS event has a symbol and it's ours — update
-        if (data.symbol && data.symbol.toUpperCase() !== this.symbol.toUpperCase()) {
+        if (data.symbol && !SymbolUtils.equals(data.symbol, this.symbol)) {
           return; // skip events for other symbols
         }
         if (data.signal_score !== undefined) {

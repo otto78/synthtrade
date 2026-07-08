@@ -26,6 +26,7 @@ import {
 } from 'lightweight-charts';
 import { ScalpingWsService } from '../services/scalping-ws.service';
 import { SessionApiService } from '../services/session-api.service';
+import { SymbolUtils } from '../utils/symbol-utils';
 import { NgIf, DecimalPipe } from '@angular/common';
 import {
   Subject,
@@ -101,10 +102,6 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
 
   /** Emette il simbolo corrente → triggera il reload delle candele */
   private symbolTrigger$ = new Subject<string>();
-
-  private _normalizeSymbol(s: string): string {
-    return s.toUpperCase().replace(/[-/]/g, '');
-  }
 
   private readonly API_BASE = '/api/scalping';
 
@@ -236,7 +233,7 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
         .pipe(filter((c): c is NonNullable<typeof c> => c !== null))
         .subscribe((candle) => {
           if (!this.candleSeries || !this.chart) return;
-          if (this._normalizeSymbol(candle.symbol) !== this._normalizeSymbol(this.currentSymbol)) return;
+          if (!SymbolUtils.equals(candle.symbol, this.currentSymbol)) return;
 
           try {
             const ts = Math.floor(

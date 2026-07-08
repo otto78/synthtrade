@@ -4,11 +4,38 @@
 
 ## 🔄 Ultimo Handoff
 
-### Da: Devin → prossima sessione
+### Da: Cline → prossima sessione
 
-**Data:** 2026-07-08
+**Data:** 2026-07-08 14:53
 
-**Contesto:** Fix grafico OKX - implementazione WS candle subscription e broadcast completo candele storiche
+**Contesto:** Sessione paper BTCEUR completa (2h53m, 6 trade, PnL -0.94) + TASK-1113 completato
+
+---
+
+### ✅ FASE COMPLETATA: TASK-1113 — Cutover OKX Live Readiness
+
+**Completato:**
+- ✅ **1113.A — Default config**: `.env.example` già OKX default, `TRADING_MODE=test`, Binance legacy documentato
+- ✅ **1113.B — Safety gates**: `ALLOW_LIVE_MODE=false`, `SCALPING_FORCE_PAPER=true`, trade value minimo consigliato
+- ✅ **1113.C — Smoke tests**: Health check OK (`{"status":"ok"}`), Instruments OKX caricati (16 EUR pairs), endpoint `/candles/btceur` funzionante
+- ✅ **1113.D — Runbook**: Creato `docs/analysis/okx-live-runbook.md` con setup API key, safety gates, smoke test checklist, emergency stop procedure, go-live checklist e rischi
+- ✅ **1113.E — Decisione go-live**: Documentata in runbook §7. Primo trade live minimo (20€) richiede conferma manuale esplicita
+
+### 📊 Stato Epica OKX (aggiornato)
+
+| Task | Stato |
+|------|-------|
+| TASK-1100 | Partial (G bloccato WS privato EU) |
+| TASK-1101-1103 | ✅ DONE |
+| TASK-1104 | Pending |
+| TASK-1105-1112 | ✅ DONE |
+| TASK-1113 | ✅ DONE |
+| TASK-1114 | ✅ DONE |
+| TASK-1115-1116 | ✅ DONE |
+| **TASK-1117** | **✅ DONE (questo)** |
+| TASK-1118 | Pending |
+
+**Prossimo task consigliato:** TASK-1118 (audit symbol normalization frontend) o TASK-1104 (OKX Exit Bracket server-side)
 
 ---
 

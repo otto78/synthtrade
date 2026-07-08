@@ -4,6 +4,29 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.6 — 2026-07-08
+
+**Milestone:** TASK-1113 Cutover OKX live readiness + TASK-1114 Fee tier parity completati
+
+**Completato:**
+- ✅ TASK-1113: Cutover OKX live readiness (config, safety gates, smoke tests, runbook)
+- ✅ TASK-1114: OKX fee tier e net pricing parity (FeeTier model, log [NET_PRICING] arricchito, abs() rebate, quote-aware commission conversion)
+
+**Completato:**
+- ✅ **1113.A — Default config**: `.env.example` già configurato con `EXCHANGE_PROVIDER=okx`, `TRADING_MODE=test`. Binance legacy documentato come fallback.
+- ✅ **1113.B — Safety gates**: `ALLOW_LIVE_MODE=false`, `TRADING_MODE=test`, `SCALPING_FORCE_PAPER=true` attivi. Trade value minimo consigliato nel runbook.
+- ✅ **1113.C — Smoke tests**: Health check OK (`{"status":"ok"}`), Instruments OKX caricati (16 EUR pairs), endpoint `/candles/btceur` funzionante.
+- ✅ **1113.D — Runbook**: Creato `docs/analysis/okx-live-runbook.md` con setup API key, safety gates, smoke test checklist, emergency stop procedure, go-live checklist e rischi.
+- ✅ **1113.E — Decisione go-live**: Documentata nel runbook §7. Primo trade live (20€) richiede conferma manuale esplicita.
+
+**Decisioni chiave:**
+- OKX è default operativo — confermato da sessioni paper di luglio con dati reali
+- Live trading non può partire accidentalmente (safety gates molteplici)
+- Prima del go-live live reale, serve validazione bracket in demo (TASK-1100.G pendente)
+
+**File creati:**
+- `docs/analysis/okx-live-runbook.md` — runbook operativo completo
+
 ### v1.4.5 — 2026-07-08
 
 **Milestone:** Fix grafico OKX - candele real-time e completamento storico

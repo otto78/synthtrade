@@ -85,7 +85,7 @@ Parallelizzabile dopo TASK-1102:
 - ✅ 1100.E — Market order: 10€ → 0.00022883 BTC @ 43700€
 - ✅ 1100.F — Exit bracket: algoId piazzato, metodo `order-algo` confermato, minSz ≥ 0.0001 BTC
 - ✅ 1100.H — WS public trades: subscription OK, parser CVD verificato
-- ❌ 1100.G — WS private: `60032 API key doesn't exist` — fix: `wss://wsaws.okx.com:8443/ws/v5/private`
+- ❌ 1100.G — WS private: `60032 API key doesn't exist` — workaround: REST polling fallback (TASK-1100.G rimane bloccato per WS privato; i fix del 2026-07-08 riguardano market data pubblica → TASK-1105)
 
 **Report:** `docs/analysis/okx-demo-spike-results.md` + `docs/analysis/okx-demo-spike-results.json`
 
@@ -353,17 +353,24 @@ Implementare TP/SL server-side OKX con garanzia: se la protezione fallisce, chiu
 File creato: `synthtrade/backend/app/scalping/engine/okx_ws_client.py`
 
 Implementa la stessa interfaccia di `BinanceWSClient` con:
-- Connessione a `wss://wspap.okx.com` (demo) / `wss://wsaws.okx.com:8443` (EU live)
-- Sottoscrizione canali `candle1m` e `trades` per ogni simbolo
+- Connessione a `wss://wspap.okx.com` (demo) / `wss://ws.okx.com:8443` (live)
+- Sottoscrizione canali `candle1m` su WS **business** e `trades` su WS **public**
 - Parser `_parse_candle`: mappa row OKX `[ts, o, h, l, c, vol, ..., confirm]` → `CandleEvent` (confirm=1 → is_closed=True)
 - Parser `_parse_trade`: mappa `side=buy` → `is_buyer_maker=False`, `side=sell` → `is_buyer_maker=True` (CVD corretto)
 - Ping loop ogni 25s (OKX richiede ping entro 30s)
 - Reconnect con backoff esponenziale
 - `provider="okx"` su tutti gli eventi
 - Normalizzazione simboli: `BTC/EUR` → `BTC-EUR` automatica
+- Market data sempre su endpoint live, indipendentemente da `demo` trading execution
 
 `CandleEvent`, `TradeEvent`, `ConnectionStatusEvent` spostati in `exchange_models.py` (condivisi).
 `BinanceWSClient` aggiornato per importarli da lì (backward compat preservata).
+
+**Fix 2026-07-08:**
+- ✅ Rimosso `wsaws.okx.com` (DNS non risolvibile)
+- ✅ Separato canale `candle1m` su WS business da `trades` su WS public (revisione API OKX)
+- ✅ Rimosso branch EU-specific per WS pubblico
+- ✅ Frontend: `_normalizeSymbol()` aggiunto per evitare silenzioso scarto candele real-time (`BTCEUR` vs `BTC-EUR`)
 
 ## TASK-1106 — OkxOrderEventStream ✅ DONE
 

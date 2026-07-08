@@ -84,11 +84,21 @@
 
 ### TASK-1103 — OkxExchangeAdapter REST base
 
-**Status:** Pending
+**Status:** ✅ DONE — implementato 2026-07-03
 **Priorità:** ALTA
 **Dipendenze:** TASK-1102
 
 **Obiettivo:** implementare balance, holdings, ticker, symbol rules, instrument discovery, market order e fee tier per OKX via ccxt/nativo, usando Demo Trading in test manuale.
+
+**Completato 2026-07-03:**
+- ✅ `synthtrade/backend/app/execution/okx_exchange.py` implementa `ExchangeAdapterProtocol`
+- ✅ `get_balance(asset)`, `get_holdings()`, `get_ticker_price(symbol)` con cache 15s
+- ✅ `get_symbol_rules(SymbolRef)` con cache 5min (lotSz/minSz/tickSz/maxMktSz/maxMktAmt)
+- ✅ `get_trade_fee(SymbolRef)` — fee OKX sono rebate negativi (maker=-0.002, taker=-0.0035)
+- ✅ `place_market_order(MarketOrderRequest)` — spot cash, supporta `tgtCcy=quote_ccy`
+- ✅ `close_position(ClosePositionRequest)`, `place_exit_bracket(ExitBracketRequest)`
+- ✅ `get_open_exit_orders()`, `cancel_open_exit_orders()`
+- ✅ `from_settings()` classmethod costruisce da `app.config.settings`
 
 ### TASK-1104 — OKX Exit Bracket server-side
 
@@ -102,19 +112,40 @@
 
 ### TASK-1105 — OkxWSClient market data
 
-**Status:** Pending
+**Status:** ✅ DONE — completato 2026-07-08 con fix end-to-end grafico live
 **Priorità:** ALTA
 **Dipendenze:** TASK-1100
 
 **Obiettivo:** sostituire `BinanceWSClient` nel path scalping con un client provider-neutral e parser OKX per candle/trade.
 
+**Completato 2026-07-08:**
+- ✅ Market data (candele/trade) sempre su endpoint live, non condizionato da `demo`
+- ✅ Canale `candle1m` spostato su WS business (`wss://ws.okx.com:8443/ws/v5/business`), `trades` resta su WS public
+- ✅ Rimosso logica EU-specific per WS pubblico (causava DNS loop su `wsaws.okx.com`)
+- ✅ Frontend `_normalizeSymbol()` aggiunto per risolvere mismatch `BTCEUR` vs `BTC-EUR`
+- ✅ `router.py`: corretto return path in `GET /candles/{symbol}` per `past_candles` vuoto
+
+**File:**
+- `synthtrade/backend/app/scalping/engine/okx_ws_client.py`
+- `synthtrade/backend/app/scalping/router.py`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/live-chart.component.ts`
+
 ### TASK-1106 — OkxOrderEventStream per fill TP/SL
 
-**Status:** Pending
+**Status:** ✅ DONE — implementato 2026-07-03
 **Priorità:** CRITICA
 **Dipendenze:** TASK-1100, TASK-1104
 
 **Obiettivo:** normalizzare gli eventi OKX di fill bracket nello stesso formato consumato da `_on_order_update`.
+
+**Completato 2026-07-03:**
+- ✅ `synthtrade/backend/app/execution/okx_order_event_stream.py` implementa stessa interfaccia di `UserDataStreamManager`
+- ✅ Login WS OKX con firma HMAC-SHA256 + base64
+- ✅ Sottoscrizione canali `orders` e `algo-orders`
+- ✅ `_normalize_order` e `_normalize_algo_order` mappano stati OKX → dict contratto router
+- ✅ Fee OKX negative (rebate) → `commission = abs(fee)` per compatibilità router
+- ✅ `from_settings()` classmethod
+- ✅ `exchange_factory.py` aggiornato con `get_order_event_stream()` provider-aware
 
 ### TASK-1107 — Router scalping provider-neutral
 
@@ -277,6 +308,49 @@
 - ✅ `long_short_ratio.py`: idem
 - ✅ Nessun WARNING 400 Bad Request su BTC-EUR, ETH-EUR, SOL-EUR ecc.
 - ℹ️ CVD/RSI/announcements non toccati (già provider-neutral o Binance-optional)
+
+### TASK-1117 — Fix DB constraint `session_signal_log_decision_type_check`
+
+**Status:** Pending
+**Priorità:** MEDIA
+**Dipendenze:** TASK-1100
+
+**Problema:** nel log compare `decision_type='rejected_short_unsupported'`, valore non incluso nel CHECK constraint della tabella `session_signal_log` (che ammette solo `execute`, `block_conflict`, `mean_reversion_override`, `hold_existing_position`, `rejected_other`). Coerente con il gap noto sullo short selling (nessuna implementazione ancora), ma comporta la perdita silenziosa di questi log specifici.
+
+**Obiettivo:** aggiungere `rejected_short_unsupported` (o valore equivalente) al CHECK constraint, oppure mappare esplicitamente su `rejected_other` nel writer finché lo short non è implementato.
+
+**File coinvolti:**
+- `synthtrade/supabase/migrations/` — migration aggiunta nuovo valore al constraint
+- `synthtrade/backend/app/scalping/engine/` — writer del `decision_type`
+
+**Task:**
+1. **1117.A — Audit writer:** verificare dove viene scritto `rejected_short_unsupported`
+2. **1117.B — Migration:** aggiungere `rejected_short_unsupported` al CHECK constraint in modo idempotente
+3. **1117.C — Verifica:** confermare che insert con nuovo valore non produca più violazioni
+
+### TASK-1118 — Audit symbol normalization in frontend Angular
+
+**Status:** Pending
+**Priorità:** MEDIA
+**Dipendenze:** TASK-1105
+
+**Problema:** il mismatch simbolo `BTCEUR` (stato sessione) vs `BTC-EUR` (instId OKX) causava scarto silenzioso di ogni candela real-time nel `LiveChartComponent`. Lo stesso tipo di mismatch potrebbe presentarsi in altri componenti Angular che consumano il WS scalping.
+
+**Obiettivo:** auditare tutti i componenti che confrontano simboli provenienti da fonti diverse (stato sessione vs eventi WS provider-specific) e applicare `_normalizeSymbol()` dove serve.
+
+**File da verificare:**
+- `trade-log/` — confronto simbolo in filter/subscriber
+- `position-ticker/` — idem
+- `market-intel-panel/` — idem
+- `supervisor-log/` — idem
+
+**Task:**
+1. **1118.A — grep confronti:** cercare `.symbol.toUpperCase()` e confronti simili nei componenti scalping
+2. **1118.B — Fix componenti:** applicare normalizzazione simmetrica ( Rimuovi `-` e `/` + upper-case )
+3. **1118.C — Refactor (opzionale):** centralizzare in `SymbolUtils.normalize()` condiviso per evitare riproduzioni future
+4. **1118.D — Verifica:** confermare che ogni update WS real-time viene visualizzato in tutti i pannelli dopo il fix
+
+---
 
 ### TASK-906 — Trend Analysis: Prevenzione Falling Knife in Mean-Reversion (2026-06-30)
 
@@ -566,11 +640,12 @@ questo task — `execute()` e `verify()` (chiamate API reali) sono un task futur
 
 ## Ordine di esecuzione consigliato
 
-1. **TASK-1100** — spike OKX Demo Trading: blocca o abilita tutto il resto della migrazione.
-2. **TASK-1101 -> TASK-1107** — provider config, adapter, WS e router provider-neutral.
-3. **TASK-1112 -> TASK-1113** — validazione demo end-to-end e cutover live readiness.
-4. **TASK-907** — bug frontend su reload sessione paused, da riprendere dopo il path OKX minimo o se serve una pausa dal refactor exchange.
-5. **TASK-908** — safety guard utile finche' lo short resta disabilitato.
+1. **TASK-1100** ✅ partial — spike OKX Demo Trading completato (A-F/H ✅, G workaround REST polling per WS privato bloccato).
+2. **TASK-1101 -> TASK-1116** ✅ config, adapter REST, WS market data, order stream, router provider-neutral, DB migration, frontend exchange-neutral, backtest factory, integration tests, validazione e2e.
+3. **TASK-1113** — Cutover OKX live readiness: rendere OKX provider primario e preparare go-live (prossimo passo critico).
+4. **TASK-1114** — OKX fee tier e net pricing parity: preservare logica fee-aware su OKX.
+5. **TASK-1117 -> TASK-1118** — Bug da recap 2026-07-08: constraint DB `rejected_short_unsupported` e audit frontend symbol normalization.
+6. **TASK-907 / TASK-908** — bug non OKX (frontend paused reload, resume guard).
 
 Le fasi successive dello short (`MarginBorrowManager`, `OrderExecutor` margin,
 `ExecutionLoop` branch short, migration DB) restano come da

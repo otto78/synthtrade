@@ -26,10 +26,13 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - `synthtrade/backend/app/scalping/intelligence/collectors/funding_rate.py`
 - `synthtrade/backend/app/scalping/intelligence/collectors/long_short_ratio.py`
 - `synthtrade/backend/app/scalping/router.py`
+- `synthtrade/backend/app/execution/okx_exchange.py` — fallback REST per get_trade_fee()
+- `synthtrade/backend/app/scheduler/scalping_jobs.py` — fix mode_valid health check
 - `synthtrade/frontend/synthtrade-ui/src/app/scalping/models/session.model.ts`
 - `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/session-api.service.ts`
 - `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/session-controls.component.ts`
-- `docs/TASKS.md` — nuovo task 1116.C
+- `synthtrade/supabase/migrations/20260709000000_task1116d_add_test_mode_check.sql` — nuova migration
+- `docs/TASKS.md` — task 1116.D, 1116.E, 1116.F
 
 ### v1.4.7 — 2026-07-09
 

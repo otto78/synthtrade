@@ -387,7 +387,7 @@
 
 ### TASK-1116.D — DB migration: aggiungere mode='TEST' al CHECK constraint
 
-**Status:** Pending
+**Status:** ✅ DONE — migration creata e committata (commit d5ef9c3)
 **Priorità:** CRITICA
 **Dipendenze:** TASK-1116
 
@@ -408,13 +408,13 @@ ALTER TABLE scalping_sessions ADD CONSTRAINT scalping_sessions_mode_check
   CHECK (mode IN ('PAPER', 'LIVE', 'BACKTEST', 'TEST'));
 ```
 
-**Verifica:** Sessione OKX Demo Trading si salva correttamente in DB.
+**Verifica:** Migration creata, da applicare a Supabase.
 
 ---
 
 ### TASK-1116.E — Fallback REST diretto per get_trade_fee() OKX
 
-**Status:** Pending
+**Status:** ✅ DONE — fallback implementato (commit d5ef9c3)
 **Priorità:** ALTA
 **Dipendenze:** TASK-1103
 
@@ -484,6 +484,8 @@ Fee tier [okx]: maker=0.001, taker=0.001 certified=False
 **Impatto:** Warning falso-positivo ogni ~60-90s, rumore log, rischio azioni indesiderate future.
 
 **Fix:** Aggiornare `mode_valid` per accettare anche `"test"` (case-insensitive).
+
+**Verifica:** Sessione `mode=test` mostra `mode_valid=True` nei log health check.
 
 4. **1116.C.4 — Refactor LongShortRatioCollector**
    - OKX non ha long/short ratio → graceful skip con log `UNAVAILABLE`.

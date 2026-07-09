@@ -99,8 +99,9 @@
 - ✅ OKB-EUR ora graceful skip nei collector (nessun 400)
 - ✅ Router supporta `mode=test` (OKX Demo Trading)
 - ✅ Frontend supporta `mode='test'`
-- ⏳ TASK-1116.D pending: migration DB da applicare
-- ⏳ TASK-1116.E pending: verifica fallback REST fee
+- ✅ TASK-1116.D completato: migration DB applicata (commit d5ef9c3)
+- ✅ TASK-1116.E completato: fallback REST fee implementato
+- ✅ TASK-1116.F completato: fix mode_valid health check (commit 14d5af2)
 
 **Demo mode checklist (per test OKX Demo Trading):**
 - ✅ `TRADING_MODE=test` in `.env` → OKX Demo Trading (non paper)

@@ -153,15 +153,18 @@ class OkxExchangeAdapter:
             return data.get("data", [])
 
     async def _balance_from_rest(self, asset: str) -> float:
-        """Get balance for a specific asset via direct OKX REST."""
+        """Get balance for a specific asset via direct OKX REST.
+
+        Uses only availBal (available balance) to match get_holdings() behavior
+        and okx_balance.py dashboard logic. This prevents double-counting.
+        """
         raw = await self._direct_fetch_balance()
         for account in raw:
             for detail in account.get("details", []):
                 if detail.get("ccy") == asset:
-                    avail = float(detail.get("availBal", 0) or 0)
-                    cash = float(detail.get("cashBal", 0) or 0)
-                    frozen = float(detail.get("frozenBal", 0) or 0)
-                    return avail + cash + frozen
+                    # Use only available balance (availBal) to avoid double-counting
+                    # cashBal + frozenBal are already included in total calculations elsewhere
+                    return float(detail.get("availBal", 0) or 0)
         return 0.0
 
     async def get_holdings(self) -> dict[str, float]:
@@ -185,15 +188,16 @@ class OkxExchangeAdapter:
                 raise ExchangeOrderError(f"OKX holdings fetch failed: {e2}", original_exception=e2) from e2
 
     async def get_balance(self, asset: str = "EUR") -> float:
+        """Get available balance for an asset.
+
+        Uses direct REST to match okx_balance.py dashboard logic.
+        CCXT fetch_balance() can return inconsistent totals on OKX EU accounts.
+        """
         try:
-            balance = await self.client.fetch_balance()
-            return float(balance.get("free", {}).get(asset, 0.0))
+            return await self._balance_from_rest(asset)
         except Exception as e:
-            logger.warning("CCXT fetch_balance failed (%s), falling back to direct REST", e)
-            try:
-                return await self._balance_from_rest(asset)
-            except Exception as e2:
-                raise ExchangeOrderError(f"OKX balance fetch failed: {e2}", original_exception=e2) from e2
+            logger.warning("OKX balance fetch failed: %s", e)
+            raise ExchangeOrderError(f"OKX balance fetch failed: {e}") from e
 
     # ── Ticker ────────────────────────────────────────────────────────────────
 

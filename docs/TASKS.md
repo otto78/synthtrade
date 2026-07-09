@@ -575,6 +575,51 @@ Fee tier [okx]: maker=0.001, taker=0.001 certified=False
 - `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/live-chart.component.ts` — refactor a SymbolUtils
 - `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/market-intel-panel.component.ts` — fix confronto simbolo
 
+### TASK-1119 — CRITICO: `OkxExchangeAdapter` manca metodi usati dal path LIVE, trade reale fallito
+
+**Status:** ✅ DONE — commit 9461f82
+**Priorità:** CRITICA — blocca ogni trade LIVE reale su OKX
+
+**Dipendenze:** TASK-1103 (OkxExchangeAdapter), TASK-1107 (router provider-neutral)
+
+**Problema:** `AttributeError: 'OkxExchangeAdapter' object has no attribute 'get_symbol_filters'` e `'get_btc_macro_context'` durante tentativo trade LIVE su OKB-EUR.
+
+**File coinvolti:**
+- `synthtrade/backend/app/execution/okx_exchange.py`
+
+**Completato:**
+- ✅ **1119.B** — `get_symbol_filters()` aggiunto come wrapper su `get_symbol_rules()`
+- ✅ **1119.C** — `get_btc_macro_context()` implementato con fallback BTC-USDT/BTC-EUR
+
+**Verifica:** Sessione live completa ciclo senza AttributeError.
+
+### TASK-1120 — CRITICO: saldo "Starting balance" sessione LIVE ~2x rispetto al saldo reale OKX
+
+**Status:** ✅ DONE — commit 16b26f2
+**Priorità:** CRITICA — impatta risk management/position sizing su capitale reale
+
+**Dipendenza:** nessuna
+
+**Problema:** Sessione LIVE logga "Starting balance: 45.99 EUR" mentre OKX reale mostra €28,87. Dashboard okx_balance.py è corretto (28,88 EUR).
+
+**Ipotesi:** Due funzioni di calcolo balance distinte e non allineate.
+
+**File coinvolti:**
+- `synthtrade/backend/app/core/okx_balance.py` — versione corretta (dashboard)
+- `synthtrade/backend/app/scalping/router.py` — punto log "✓ Starting balance"
+- `synthtrade/backend/app/execution/okx_exchange.py` — se `get_balance()` ha logica diversa
+
+**Completato:**
+- ✅ **1120.C** — `get_balance()` ora usa solo `availBal` via REST diretto, allineato a okx_balance.py
+
+**Verifica:** Dashboard, log avvio sessione, e interfaccia OKX reale mostrano lo stesso totale EUR.
+2. Riprodurre con dati grezzi
+3. Unificare la fonte (usare okx_balance.py)
+4. Test unitario con mock balance
+5. Verifica manuale
+
+**Verifica:** Dashboard, log avvio sessione, e interfaccia OKX reale mostrano lo stesso totale EUR.
+
 ---
 
 ### TASK-906 — Trend Analysis: Prevenzione Falling Knife in Mean-Reversion (2026-06-30)

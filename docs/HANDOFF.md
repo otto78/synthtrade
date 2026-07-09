@@ -102,6 +102,8 @@
 - ✅ TASK-1116.D completato: migration DB applicata (commit d5ef9c3)
 - ✅ TASK-1116.E completato: fallback REST fee implementato
 - ✅ TASK-1116.F completato: fix mode_valid health check (commit 14d5af2)
+- ✅ TASK-1119 completato: get_symbol_filters e get_btc_macro_context (commit 9461f82)
+- ✅ TASK-1120 completato: get_balance usa solo availBal (commit 16b26f2)
 
 **Demo mode checklist (per test OKX Demo Trading):**
 - ✅ `TRADING_MODE=test` in `.env` → OKX Demo Trading (non paper)
@@ -120,6 +122,33 @@
 ---
 
 ### TASK-1116.G — Instrument discovery environment-aware (pending)
+
+**Problema:** OKB-EUR non disponibile in Demo Trading (errore 51001), ma è nella dropdown e causa fallimenti silenziosi.
+
+**File coinvolti:**
+- `synthtrade/backend/app/execution/okx_exchange.py`
+- `synthtrade/backend/app/scalping/router.py`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/exchange-symbols.service.ts`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/session-controls.component.ts`
+
+**Sottotask:**
+1. Discovery cache separata per demo/live
+2. Endpoint `/api/scalping/exchange/instruments` filtra per ambiente
+3. Validazione pre-avvio sessione con errore esplicito
+4. Dropdown Angular filtrato dinamicamente al cambio modalità
+5. Tooltip per simboli non disponibili in demo
+6. Test unit + integration
+
+---
+
+### TASK-1119/1120 — Fix LIVE trading OKX (completato)
+
+**Completato:**
+- ✅ `get_symbol_filters()` aggiunto come wrapper su `get_symbol_rules()`
+- ✅ `get_btc_macro_context()` implementato con fallback BTC-USDT/BTC-EUR
+- ✅ `get_balance()` usa solo `availBal` via REST diretto
+
+**Verifica:** Sessione LIVE deve completare il ciclo senza AttributeError e con saldo corretto.
 
 **Problema:** OKB-EUR non disponibile in Demo Trading (errore 51001), ma è nella dropdown e causa fallimenti silenziosi.
 

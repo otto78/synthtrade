@@ -34,7 +34,22 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/session-api.service.ts`
 - `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/session-controls.component.ts`
 - `synthtrade/supabase/migrations/20260709000000_task1116d_add_test_mode_check.sql` — nuova migration
-- `docs/TASKS.md` — task 1116.D, 1116.E, 1116.F, 1116.G
+- `docs/TASKS.md` — task 1116.D, 1116.E, 1116.F, 1116.G, 1119, 1120
+
+### v1.4.9 — 2026-07-09
+
+**Milestone:** Fix metodi mancanti OkxExchangeAdapter + saldo LIVE
+
+**Completato:**
+- ✅ **TASK-1119:** `get_symbol_filters()` e `get_btc_macro_context()` aggiunti a OkxExchangeAdapter
+- ✅ **TASK-1120:** `get_balance()` usa solo `availBal` via REST diretto, allineato a okx_balance.py
+
+**Decisioni chiave:**
+- OkxExchangeAdapter deve implementare tutti i metodi chiamati dal router LIVE path
+- Balance deve usare la stessa logica del dashboard per coerenza
+
+**File modificati:**
+- `synthtrade/backend/app/execution/okx_exchange.py`
 
 ### v1.4.7 — 2026-07-09
 

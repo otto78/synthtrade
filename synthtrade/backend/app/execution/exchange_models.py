@@ -65,6 +65,23 @@ class SymbolRef:
         base, quote = inst_id.split("-")
         return cls(base=base.upper(), quote=quote.upper())
 
+    @classmethod
+    def from_any(cls, symbol: str) -> "SymbolRef":
+        """Parse any common symbol format into SymbolRef.
+
+        Supports:
+        - OKX format:  BTC-EUR
+        - CCXT format: BTC/EUR
+        - Compact:     BTCEUR
+        """
+        s = symbol.upper().strip()
+        if "-" in s:
+            base, quote = s.split("-", 1)
+            return cls(base=base, quote=quote)
+        if "/" in s:
+            base, quote = s.split("/", 1)
+            return cls(base=base, quote=quote)
+        return cls.from_compact(s)
 
 @dataclass
 class SymbolRules:

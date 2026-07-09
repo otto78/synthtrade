@@ -36,6 +36,22 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - `synthtrade/supabase/migrations/20260709000000_task1116d_add_test_mode_check.sql` — nuova migration
 - `docs/TASKS.md` — task 1116.D, 1116.E, 1116.F, 1116.G, 1119, 1120
 
+### v1.4.10 — 2026-07-09
+
+**Milestone:** Fix Pylance NoneType error in self.client.urls["api"] access
+
+**Completato:**
+- ✅ **TASK-1121:** Aggiunto guard `self.client.urls is not None` per evitare `Object of type "None" is not subscriptable` quando ccxt restituisce `None` per `urls`
+- ✅ **TASK-1121:** Sostituito `.get("api", {})` con `(self.client.urls.get("api") or {})` per gestire `None` values nel dict
+- ✅ **TASK-1121:** isinstance guard già presente per saltare valori `None` nel dict comprehension
+
+**Decisioni chiave:**
+- CCXT può restituire `None` per `urls` in certe modalità operative → doppia guardia necessaria
+- Il fix è conservativo: non modifica la logica, aggiunge solo safety checks
+
+**File modificati:**
+- `synthtrade/backend/app/execution/okx_exchange.py`
+
 ### v1.4.9 — 2026-07-09
 
 **Milestone:** Fix metodi mancanti OkxExchangeAdapter + saldo LIVE

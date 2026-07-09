@@ -4,11 +4,42 @@
 
 ## 🔄 Ultimo Handoff
 
-### Da: Cascade → prossima sessione
+### Da: Cline → prossima sessione
 
-**Data:** 2026-07-09 09:36
+**Data:** 2026-07-09 15:02
 
-**Contesto:** Sessione corrente — fix regressione chart live + recap stato epica OKB.
+**Contesto:** Fix Pylance NoneType + SymbolRef.from_any() missing + aggiornamento docs
+
+---
+
+### ✅ FASE COMPLETATA: TASK-1121 — Fix Pylance NoneType in okx_exchange.py
+
+**Problema:** Pylance segnala `Object of type "None" is not subscriptable` alla riga 90.
+
+**Fix:**
+- Aggiunto guard `self.client.urls is not None` prima di accedere a `self.client.urls["api"]`
+- Sostituito `.get("api", {})` con `(self.client.urls.get("api") or {})` per gestire `None` values
+
+### ✅ FASE COMPLETATA: TASK-1122 — Fix SymbolRef.from_any() missing
+
+**Problema:** `OkxExchangeAdapter.get_symbol_filters()` chiama `SymbolRef.from_any(symbol)` ma il metodo non esiste.
+
+**Log osservato:**
+```
+Live trade failed: OKX get_symbol_filters failed for OKB-EUR: type object 'SymbolRef' has no attribute 'from_any'
+```
+
+**Fix:**
+- Aggiunto `SymbolRef.from_any(symbol: str) -> SymbolRef` in `exchange_models.py`
+- Supporta tre formati: OKX (`BTC-EUR`), CCXT (`BTC/EUR`), Compact (`BTCEUR`)
+
+**Stato sistema:**
+- ✅ 3 symbol_ref test passano senza modifiche
+- ✅ Syntax check su entrambi i file modificati: OK
+
+**File modificati:**
+- `synthtrade/backend/app/execution/okx_exchange.py` — TASK-1121
+- `synthtrade/backend/app/execution/exchange_models.py` — TASK-1122
 
 ---
 

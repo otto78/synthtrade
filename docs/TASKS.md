@@ -1,5 +1,37 @@
 # TASKS.md — SynthTrade Task Tracking
 
+### TASK-1121 — Fix Pylance NoneType error in self.client.urls["api"] access
+
+**Status:** Done ✅
+**Priorità:** Media
+**File:** `synthtrade/backend/app/execution/okx_exchange.py`
+
+**Problema:** Pylance segnala `Object of type "None" is not subscriptable` alla riga 90 quando si accede a `self.client.urls["api"]`. CCXT può restituire `None` per `urls` in certe modalità operative.
+
+**Fix applicato:**
+- Aggiunto guard `self.client.urls is not None` per evitare subscript su `None`
+- Sostituito `.get("api", {})` con `(self.client.urls.get("api") or {})` per gestire `None` values nel dict
+- isinstance guard già presente per saltare valori `None` nel dict comprehension
+
+### TASK-1122 — Add missing SymbolRef.from_any() method
+
+**Status:** Done ✅
+**Priorità:** ALTA — blocca live trading OKX
+
+**File:** `synthtrade/backend/app/execution/exchange_models.py`
+
+**Problema:** `OkxExchangeAdapter.get_symbol_filters()` chiama `SymbolRef.from_any(symbol)` ma il metodo non esiste. Solo `from_compact()`, `from_ccxt()` e `from_okx()` sono implementati. Causa `AttributeError: type object 'SymbolRef' has no attribute 'from_any'` quando il router tenta di aprire un trade live.
+
+**Log osservato:**
+```
+Live trade failed: OKX get_symbol_filters failed for OKB-EUR: type object 'SymbolRef' has no attribute 'from_any'
+```
+
+**Fix applicato:**
+- Aggiunto `SymbolRef.from_any(symbol: str) -> SymbolRef` in `exchange_models.py`
+- Supporta tre formati: OKX (`BTC-EUR`), CCXT (`BTC/EUR`), Compact (`BTCEUR`)
+- Usa `from_compact()` come fallback con quote_assets predefinite
+
 ## Task Attivi
 
 ## EPICA OKX — Migrazione Binance -> OKX (PRIORITA' ASSOLUTA)
@@ -471,7 +503,7 @@ Fee tier [okx]: maker=0.001, taker=0.001 certified=False
 
 ### TASK-1116.F — Fix `mode_valid` sempre FAILED nel session health check
 
-**Status:** Pending
+**Status:** ✅ DONE — commit 14d5af2
 **Priorità:** MEDIA — non blocca la sessione (resta `running`), ma inquina i log ogni ~30-90s e nasconde altri problemi reali nel rumore
 
 **Dipendenze:** TASK-1116.D (ha introdotto `mode='TEST'` come valore valido a livello DB, ma non a livello di health check applicativo)

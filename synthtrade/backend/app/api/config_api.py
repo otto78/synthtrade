@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from app.config import settings
 from app.dependencies import get_current_user
-from app.core.exchange_factory import reconnect, reset as reset_exchange
+from app.core.exchange_factory import get_adapter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/config", tags=["config"])
@@ -89,8 +89,17 @@ def set_mode(
     # Usiamo l'override diretto del campo bypassando il modello.
     object.__setattr__(settings, 'TRADING_MODE', new_mode)
 
-    # Forza riconnessione exchange
-    reconnect()
+    # Forza riconnessione exchange con il provider corretto
+    try:
+        get_adapter()
+        logger.info(
+            "ExchangeFactory: adapter ricreato per provider=%s demo=%s mode=%s",
+            settings.EXCHANGE_PROVIDER,
+            settings.exchange_demo,
+            settings.TRADING_MODE,
+        )
+    except Exception as exc:
+        logger.warning("ExchangeFactory: riconnessione adapter fallita: %s", exc)
 
     # Stop scalping session if mode is inconsistent
     # A live session cannot run in test mode and vice versa
@@ -150,8 +159,9 @@ def set_mode(
 
 def _build_details(mode: str) -> str:
     """Restituisce una descrizione leggibile della modalità."""
+    provider = settings.EXCHANGE_PROVIDER.upper()
     if mode == 'test':
-        segment = "Paper Trading su Binance Testnet"
+        segment = f"{provider} Demo Trading"
     else:
-        segment = "Live Trading su Binance Produzione"
+        segment = f"{provider} Live Trading"
     return segment

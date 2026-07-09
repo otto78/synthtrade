@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from app.dependencies import get_current_user
 from app.ai.cache import EvalCache
 from app.config import settings
+from app.execution.exchange_factory import build_exchange_adapter
 from app.services.market_data_service import MarketDataService
 import logging
 
@@ -52,7 +53,6 @@ async def _run_eval_background(strategy_id: str) -> None:
     from app.dependencies import get_market_data_service
     from app.db.supabase_client import get_supabase
     from app.db.repositories.ohlcv_repository import OhlcvRepository
-    from app.execution.exchange import BinanceExchangeAdapter
     from app.config import settings
 
     try:
@@ -64,11 +64,7 @@ async def _run_eval_background(strategy_id: str) -> None:
         
         # Setup temporary dependencies for service
         repo = OhlcvRepository(db)
-        exchange = BinanceExchangeAdapter(
-            api_key=settings.binance_api_key,
-            secret=settings.binance_secret_key,
-            testnet=settings.TRADING_MODE == 'test',
-        )
+        exchange = build_exchange_adapter()
         md_service = MarketDataService(repo, exchange)
         
         ohlcv = md_service.get_ohlcv(strategy["pair"], strategy["timeframe"])

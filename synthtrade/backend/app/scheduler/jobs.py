@@ -6,7 +6,7 @@ from app.core.run_pipeline import run_pipeline
 from app.core.market_data import get_current_price
 from app.services.market_data_service import MarketDataService
 from app.db.repositories.ohlcv_repository import OhlcvRepository
-from app.execution.exchange import BinanceExchangeAdapter
+from app.execution.exchange_factory import build_exchange_adapter
 from app.db.supabase_client import get_supabase
 from app.api.ws import manager
 from app.config import settings
@@ -35,11 +35,7 @@ scheduler = AsyncIOScheduler(
 async def run_pipeline_job() -> None:
     try:
         db = get_supabase()
-        exchange = BinanceExchangeAdapter(
-            api_key=settings.binance_api_key,
-            secret=settings.binance_secret_key,
-            testnet=settings.BINANCE_TESTNET,
-        )
+        exchange = build_exchange_adapter()
         repo = OhlcvRepository(db)
         md_service = MarketDataService(repo=repo, exchange=exchange)
         await run_pipeline(md_service=md_service)

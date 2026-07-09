@@ -1,18 +1,27 @@
 """
-TASK-1103: OkxExchangeAdapter — REST adapter for OKX via ccxt.
+TASK-1103: OkxExchangeAdapter — REST adapter for OKX via ccxt + direct REST fallback.
 
 Implements ExchangeAdapterProtocol from exchange_models.py.
 Supports Demo Trading (x-simulated-trading: 1) and Live mode.
 Base URL must be eea.okx.com for EU accounts.
+
+NOTE: CCXT's fetch_balance() calls fetch_currencies() first, which fails with
+50119 on OKX EU live accounts. We fall back to direct REST /api/v5/account/balance.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 import ccxt.async_support as ccxt
+import httpx
 
+from app.config import settings
 from app.execution.exchange_models import (
     ClosePositionRequest,
     ExchangeOrder,
@@ -103,26 +112,87 @@ class OkxExchangeAdapter:
 
     # ── Balance ───────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _sign_headers(method: str, path: str, body: str = "") -> dict:
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        prehash = ts + method + path + body
+        sig = base64.b64encode(
+            hmac.new(
+                settings.exchange_secret_key.encode(),
+                prehash.encode(),
+                hashlib.sha256,
+            ).digest()
+        ).decode()
+        headers = {
+            "OK-ACCESS-KEY": settings.exchange_api_key,
+            "OK-ACCESS-SIGN": sig,
+            "OK-ACCESS-TIMESTAMP": ts,
+            "OK-ACCESS-PASSPHRASE": settings.exchange_passphrase,
+            "Content-Type": "application/json",
+        }
+        if settings.exchange_demo:
+            headers["x-simulated-trading"] = "1"
+        return headers
+
+    async def _direct_fetch_balance(self) -> list[dict]:
+        """Direct REST fallback for OKX balance when CCXT fetch_balance fails.
+
+        CCXT fetch_balance() calls fetch_currencies() first, which returns
+        50119 on OKX EU live accounts. This bypasses CCXT entirely.
+        """
+        path = "/api/v5/account/balance"
+        url = settings.OKX_BASE_URL.rstrip("/") + path
+        headers = self._sign_headers("GET", path)
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("code") != "0":
+                raise RuntimeError(f"OKX API error {data.get('code')}: {data.get('msg')}")
+            return data.get("data", [])
+
+    async def _balance_from_rest(self, asset: str) -> float:
+        """Get balance for a specific asset via direct OKX REST."""
+        raw = await self._direct_fetch_balance()
+        for account in raw:
+            for detail in account.get("details", []):
+                if detail.get("ccy") == asset:
+                    avail = float(detail.get("availBal", 0) or 0)
+                    cash = float(detail.get("cashBal", 0) or 0)
+                    frozen = float(detail.get("frozenBal", 0) or 0)
+                    return avail + cash + frozen
+        return 0.0
+
     async def get_holdings(self) -> dict[str, float]:
         try:
             balance = await self.client.fetch_balance()
             free = balance.get("free", {})
             return {asset: float(amt) for asset, amt in free.items() if float(amt or 0) > 0}
-        except ccxt.AuthenticationError as e:
-            raise ExchangeAuthError(f"OKX auth error: {e}") from e
         except Exception as e:
-            raise ExchangeOrderError(f"OKX holdings fetch failed: {e}", original_exception=e) from e
+            logger.warning("CCXT fetch_balance failed (%s), falling back to direct REST", e)
+            try:
+                raw = await self._direct_fetch_balance()
+                holdings: dict[str, float] = {}
+                for account in raw:
+                    for detail in account.get("details", []):
+                        asset = detail.get("ccy", "")
+                        avail = float(detail.get("availBal", 0) or 0)
+                        if asset and avail > 0:
+                            holdings[asset] = holdings.get(asset, 0.0) + avail
+                return holdings
+            except Exception as e2:
+                raise ExchangeOrderError(f"OKX holdings fetch failed: {e2}", original_exception=e2) from e2
 
     async def get_balance(self, asset: str = "EUR") -> float:
         try:
             balance = await self.client.fetch_balance()
             return float(balance.get("free", {}).get(asset, 0.0))
-        except ccxt.AuthenticationError as e:
-            raise ExchangeAuthError(f"OKX auth error: {e}") from e
-        except ccxt.NetworkError as e:
-            raise ExchangeNetworkError(f"OKX network error: {e}") from e
         except Exception as e:
-            raise ExchangeOrderError(f"OKX balance fetch failed: {e}", original_exception=e) from e
+            logger.warning("CCXT fetch_balance failed (%s), falling back to direct REST", e)
+            try:
+                return await self._balance_from_rest(asset)
+            except Exception as e2:
+                raise ExchangeOrderError(f"OKX balance fetch failed: {e2}", original_exception=e2) from e2
 
     # ── Ticker ────────────────────────────────────────────────────────────────
 

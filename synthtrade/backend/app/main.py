@@ -7,7 +7,6 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.execution.exchange import BinanceExchangeAdapter
 from app.api import auth, strategies, dashboard, logs, ws, trades, eval as eval_api, pipeline, exchange, monitor, config_api
 # WatchFiles reload uccide la connessione WS Binance in corso, causando
 # "unknown" regime e blocchi di pipeline. Disabilitiamo il watch su file
@@ -143,84 +142,67 @@ async def _restore_scalping_session(db) -> None:
     has_open_position = False
     if session_mode == "live":
         try:
-            from app.execution.exchange import BinanceExchangeAdapter
-            from app.config import settings as app_settings
+            from app.execution.exchange_factory import build_exchange_adapter
+            from app.execution.exchange_models import SymbolRef
+            adapter = build_exchange_adapter()
+            _execution_state["exchange"] = adapter
 
-            api_key = app_settings.BINANCE_API_KEY_LIVE or app_settings.BINANCE_API_KEY
-            api_secret = app_settings.BINANCE_SECRET_KEY_LIVE or app_settings.BINANCE_SECRET_KEY
-            if api_key and api_secret:
-                adapter = BinanceExchangeAdapter(api_key, api_secret, testnet=False)
-                _execution_state["exchange"] = adapter
+            symbol = _execution_state["session"]["symbol"]
+            sym_ref = SymbolRef.from_okx(symbol) if "-" in symbol else SymbolRef.from_compact(symbol)
+            rules = await adapter.get_symbol_rules(sym_ref)
+            base_asset = rules.symbol.base
+            min_qty = float(rules.min_sz)
 
-                symbol = _execution_state["session"]["symbol"]
-                from app.scalping.router import _get_spot_balances_from_info
+            total_bal = await adapter.get_balance(base_asset)
 
-                ccxt_balance = await adapter.client.fetch_balance()
-                spot_balances = _get_spot_balances_from_info(ccxt_balance)
-
-                filters = await adapter.get_symbol_filters(symbol)
-                base_asset = filters.get("baseAsset", "")
-                min_qty = float(filters.get("minQty", 0.001))
-
-                total_bal = float(ccxt_balance.get("total", {}).get(base_asset, 0))
-
-                # Check if we have an open trade in DB for this symbol
-                def _db_op_open():
-                    return db.table("scalping_trades") \
-                        .select("*") \
-                        .eq("session_id", session_id) \
-                        .eq("status", "open") \
-                        .limit(1) \
-                        .execute()
-                open_trades = await asyncio.to_thread(_db_op_open)
-                if open_trades.data:
-                    ot = open_trades.data[0]
-                    symbol_ot = ot.get("symbol", symbol)
-                    side = ot.get("side", "BUY")
-                    entry_price = ot.get("entry_price", 0)
-                    quantity = ot.get("quantity", 0)
-                    if entry_price and quantity and entry_price > 0 and quantity > 0:
-                        from decimal import Decimal
-                        pm = _execution_state["position_manager"]
-                        pos_obj = pm.open_position(
-                            symbol=symbol_ot,
-                            side=side,
-                            entry_price=Decimal(str(entry_price)),
-                            quantity=Decimal(str(quantity)),
-                        )
-                        pos_obj.oco_order_list_id = ot.get("oco_order_list_id")
-                        pos_obj.sl_order_id = ot.get("sl_order_id")
-                        pos_obj.tp_order_id = ot.get("tp_order_id")
-                        has_open_position = True
-                        logger.info(
-                            "Open position restored from DB during startup: %s %s @ %s qty=%s",
-                            side, symbol_ot, entry_price, quantity,
-                        )
+            # Check if we have an open trade in DB for this symbol
+            def _db_op_open():
+                return db.table("scalping_trades") \
+                    .select("*") \
+                    .eq("session_id", session_id) \
+                    .eq("status", "open") \
+                    .limit(1) \
+                    .execute()
+            open_trades = await asyncio.to_thread(_db_op_open)
+            if open_trades.data:
+                ot = open_trades.data[0]
+                symbol_ot = ot.get("symbol", symbol)
+                side = ot.get("side", "BUY")
+                entry_price = ot.get("entry_price", 0)
+                quantity = ot.get("quantity", 0)
+                if entry_price and quantity and entry_price > 0 and quantity > 0:
+                    from decimal import Decimal
+                    pm = _execution_state["position_manager"]
+                    pos_obj = pm.open_position(
+                        symbol=symbol_ot,
+                        side=side,
+                        entry_price=Decimal(str(entry_price)),
+                        quantity=Decimal(str(quantity)),
+                    )
+                    pos_obj.oco_order_list_id = ot.get("oco_order_list_id")
+                    pos_obj.sl_order_id = ot.get("sl_order_id")
+                    pos_obj.tp_order_id = ot.get("tp_order_id")
+                    has_open_position = True
+                    logger.info(
+                        "Open position restored from DB during startup: %s %s @ %s qty=%s",
+                        side, symbol_ot, entry_price, quantity,
+                    )
         except Exception as e:
             logger.warning(f"Could not check open positions during restore: {e}")
 
     # Step 6b — Inizializza balance live se la modalità è live
     if session_mode == "live":
         try:
-            from app.execution.exchange import BinanceExchangeAdapter
-            adapter = _execution_state.get("exchange") or BinanceExchangeAdapter(
-                settings.BINANCE_API_KEY_LIVE or settings.BINANCE_API_KEY,
-                settings.BINANCE_SECRET_KEY_LIVE or settings.BINANCE_SECRET_KEY,
-                testnet=False,
-            )
+            from app.execution.exchange_factory import build_exchange_adapter
+            from app.execution.exchange_models import SymbolRef
+            adapter = _execution_state.get("exchange") or build_exchange_adapter()
             if not _execution_state.get("exchange"):
                 _execution_state["exchange"] = adapter
 
             symbol = _execution_state["session"]["symbol"]
-            from app.scalping.router import _normalize_binance_total_balance, _select_preferred_quote_balance, _get_spot_balances_from_info
-
-            ccxt_balance = await adapter.client.fetch_balance()
-            spot_balances = _get_spot_balances_from_info(ccxt_balance)
-            normalized = _normalize_binance_total_balance(spot_balances)
-
-            filters = await adapter.get_symbol_filters(symbol)
-            quote = filters.get("quoteAsset", "USDT")
-            live_bal = _select_preferred_quote_balance(normalized, quote)
+            sym_ref = SymbolRef.from_okx(symbol) if "-" in symbol else SymbolRef.from_compact(symbol)
+            quote = sym_ref.quote
+            live_bal = await adapter.get_balance(quote)
 
             if has_open_position:
                 # Skip balance check - we have an open position
@@ -231,7 +213,7 @@ async def _restore_scalping_session(db) -> None:
                 
                 # TASK-877: Recupera fee tier durante restore sessione
                 try:
-                    fee_tier = await adapter.get_trade_fee(symbol)
+                    fee_tier = await adapter.get_trade_fee(sym_ref)
                     _execution_state["fee_tier"] = fee_tier
                     logger.info(f"✓ Fee tier salvato durante restore: maker={fee_tier['maker']}, taker={fee_tier['taker']}")
                 except Exception as e:
@@ -248,7 +230,7 @@ async def _restore_scalping_session(db) -> None:
                     
                     # TASK-877: Recupera fee tier durante restore sessione (no open position)
                     try:
-                        fee_tier = await adapter.get_trade_fee(symbol)
+                        fee_tier = await adapter.get_trade_fee(sym_ref)
                         _execution_state["fee_tier"] = fee_tier
                         logger.info(f"✓ Fee tier salvato durante restore: maker={fee_tier['maker']}, taker={fee_tier['taker']}")
                     except Exception as e:
@@ -430,7 +412,6 @@ async def lifespan(app: FastAPI):
     logger.info("SynthTrade API starting...")
 
     # TASK-409: Singleton ExecutionEngine — istanziato una sola volta, condiviso da scheduler e API
-    from app.execution.exchange import BinanceExchangeAdapter
     from app.execution.risk_manager import RiskManager, RiskConfig
     from app.execution.order_tracker import OrderTracker
     from app.execution.execution_engine import ExecutionEngine
@@ -442,11 +423,9 @@ async def lifespan(app: FastAPI):
     db = get_supabase()
     trade_repo = TradeRepository(db)
 
-    exchange = BinanceExchangeAdapter(
-        api_key=settings.binance_api_key,
-        secret=settings.binance_secret_key,
-        testnet=settings.TRADING_MODE == 'test',
-    )
+    from app.execution.exchange_factory import build_exchange_adapter
+
+    exchange = build_exchange_adapter()
     risk_config = RiskConfig.from_settings(settings)
     sl_service  = StopLossService()
 
@@ -465,7 +444,8 @@ async def lifespan(app: FastAPI):
     app.state.exchange = exchange
 
     sched = setup_scheduler(engine=engine)
-    logger.info("ExecutionEngine singleton ready (testnet=%s)", settings.BINANCE_TESTNET)
+    is_demo = getattr(settings, 'exchange_demo', settings.TRADING_MODE == 'test')
+    logger.info("ExecutionEngine singleton ready (demo=%s)", is_demo)
 
     print("")
     print("====================================================================")
@@ -480,7 +460,7 @@ async def lifespan(app: FastAPI):
     print("  SynthTrade IS RUNNING!!!")
     print("")
     print("  Version   : 0.1.0")
-    print("  Mode      : %s" % ("TESTNET" if settings.BINANCE_TESTNET else "LIVENET"))
+    print("  Mode      : %s" % ("TESTNET" if settings.TRADING_MODE == 'test' else "LIVE"))
     print("  Host      : 0.0.0.0:8000")
     print("  API Docs  : http://0.0.0.0:8000/docs")
     print("")

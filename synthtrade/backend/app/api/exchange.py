@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from app.dependencies import get_current_user, get_exchange
 from app.config import settings
-from app.execution.exchange import BinanceExchangeAdapter, ExchangeAuthError, ExchangeNetworkError
+from app.execution.exchange_factory import build_exchange_adapter
+from app.execution.exchange import ExchangeAuthError, ExchangeNetworkError
 
 router = APIRouter(prefix="/exchange", tags=["exchange"])
 
@@ -11,16 +12,15 @@ async def get_exchange_status(_user: str = Depends(get_current_user)):
     """
     TASK-090: GET /api/exchange/status
     """
-    adapter = BinanceExchangeAdapter(
-        api_key=settings.binance_api_key,
-        secret=settings.binance_secret_key,
-        testnet=settings.TRADING_MODE == 'test'
-    )
+    adapter = build_exchange_adapter()
     try:
         balance = await adapter.get_balance()
+        provider = settings.EXCHANGE_PROVIDER.upper()
+        mode_label = "Demo" if settings.TRADING_MODE == 'test' else "Live"
         return {
-            "mode": "testnet" if settings.TRADING_MODE == 'test' else "live",
-            "base_url": settings.binance_base_url,
+            "mode": mode_label,
+            "provider": provider,
+            "base_url": settings.OKX_BASE_URL if settings.EXCHANGE_PROVIDER == "okx" else settings.binance_base_url,
             "usdt_balance": balance,
         }
     finally:

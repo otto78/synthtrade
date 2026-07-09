@@ -13,6 +13,8 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - ✅ **Router supporto demo mode:** `control.get("mode") == "live"` → `in ("live", "test")` per costruire adapter anche in demo mode
 - ✅ **Frontend session.model.ts:** aggiunto `'test'` ai tipi `mode`
 - ✅ **Frontend session-api.service.ts:** aggiunto `'test'` al parametro `start()`
+- ✅ **Frontend session-controls.component.ts:** mappato `globalMode='test'` → `mode='test'` (prima era mappato a 'paper')
+- ✅ **Frontend session-controls.component.ts:** template mostra "DEMO" quando `session.mode === 'test'`
 
 **Decisioni chiave:**
 - OKX non ha futures perpetual per OKB-EUR → graceful skip corretto
@@ -26,6 +28,7 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - `synthtrade/backend/app/scalping/router.py`
 - `synthtrade/frontend/synthtrade-ui/src/app/scalping/models/session.model.ts`
 - `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/session-api.service.ts`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/session-controls.component.ts`
 - `docs/TASKS.md` — nuovo task 1116.C
 
 ### v1.4.7 — 2026-07-09

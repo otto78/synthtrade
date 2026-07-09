@@ -102,11 +102,11 @@ import { ConfigService } from '../../core/services/config.service';
           <div class="meta-item">
             <span class="meta-label">Stato</span>
             <span class="meta-value" [ngClass]="session.status">
-              {{ session.status === 'running' ? 'LIVE' : (session.status === 'stopped' ? 'STOPPED' : 'PAUSED') }}
+              {{ session.status === 'running' ? (session.mode === 'test' ? 'DEMO' : 'LIVE') : (session.status === 'stopped' ? 'STOPPED' : 'PAUSED') }}
             </span>
           </div>
           <div class="meta-item">
-            <span class="meta-label">Saldo {{ session.mode === 'live' ? 'Free' : 'Paper' }}</span>
+            <span class="meta-label">Saldo {{ session.mode === 'live' ? 'Free' : (session.mode === 'test' ? 'Demo' : 'Paper') }}</span>
             <span class="meta-value" [class.live-val]="session.mode === 'live'">
               {{ (session.mode === 'live' ? (session.live_balance ?? session.paper_balance) : session.paper_balance) | number:'1.2-2' }}
               {{ getQuoteAsset() }}
@@ -548,14 +548,15 @@ export class SessionControlsComponent implements OnInit {
   startSession(): void {
     this.loading = true;
     this.saveTradeValue();
-    const executionMode = this.globalMode === 'live' ? 'live' : 'paper';
+    // Map globalMode: 'live' -> 'live', 'test' -> 'test', default -> 'paper'
+    const executionMode = this.globalMode === 'live' ? 'live' : (this.globalMode === 'test' ? 'test' : 'paper');
     this.sessionApi.start(executionMode, this.selectedStrategy, this.selectedSymbol, this.tradeValue).subscribe({
       next: (data: ScalpingSession) => {
         this.session = data;
         this.sessionId = data.session_id || null;
         this.loading = false;
-        // Show error toast if session returned with error (Live start blocked due to insufficient balance)
-        if (data.error_code === 'LIVE_START_BLOCKED' && data.error_message) {
+        // Show error toast if session returned with error (Live/Demo start blocked due to insufficient balance)
+        if ((data.error_code === 'LIVE_START_BLOCKED' || data.error_code === 'DEMO_START_BLOCKED') && data.error_message) {
           this.showErrorToast(data.error_message, data.error_code);
         }
         this.cdr.detectChanges();

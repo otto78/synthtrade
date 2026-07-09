@@ -385,6 +385,58 @@
 - Verificare assenza warning 400 nei log.
 - Score intelligence deve ricalcolare con collector disponibili.
 
+### TASK-1116.D — DB migration: aggiungere mode='TEST' al CHECK constraint
+
+**Status:** Pending
+**Priorità:** CRITICA
+**Dipendenze:** TASK-1116
+
+**Problema:** Sessione avviata con `mode='test'` (OKX Demo Trading) fallisce l'INSERT in `scalping_sessions` perché il CHECK constraint `scalping_sessions_mode_check` ammette solo `'PAPER', 'LIVE', 'BACKTEST'`.
+
+**Log osservato:**
+```
+Failed to insert session in DB: {'code': '23514', 'message': "new row for relation 'scalping_sessions' violates check constraint 'scalping_sessions_mode_check'"}
+```
+
+**File coinvolti:**
+- `synthtrade/supabase/migrations/20260709000000_task1116d_add_test_mode_check.sql` (nuovo)
+
+**Fix:**
+```sql
+ALTER TABLE scalping_sessions DROP CONSTRAINT scalping_sessions_mode_check;
+ALTER TABLE scalping_sessions ADD CONSTRAINT scalping_sessions_mode_check
+  CHECK (mode IN ('PAPER', 'LIVE', 'BACKTEST', 'TEST'));
+```
+
+**Verifica:** Sessione OKX Demo Trading si salva correttamente in DB.
+
+---
+
+### TASK-1116.E — Fallback REST diretto per get_trade_fee() OKX
+
+**Status:** Pending
+**Priorità:** ALTA
+**Dipendenze:** TASK-1103
+
+**Problema:** `get_trade_fee()` fallisce con errore `50119 API key doesn't exist` su account EU OKX. La chiave è valida (il balance viene letto), ma ccxt routing interno punta a `www.okx.com` invece che a `eea.okx.com`.
+
+**Log osservato:**
+```
+OKX get_trade_fee failed for OKB/EUR: okx {"msg":"API key doesn't exist","code":"50119"} — using fallback
+Fee tier [okx]: maker=0.001, taker=0.001 certified=False
+```
+
+**File coinvolti:**
+- `synthtrade/backend/app/execution/okx_exchange.py`
+
+**Fix:**
+- Aggiungere fallback REST diretto in `get_trade_fee()` analogo a quello esistente per `fetch_balance()`
+- Endpoint: `GET /api/v5/account/trade-fee?instType=SPOT&instId={symbol}`
+
+**Verifica:** Fee tier OKX Demo (rebate negativi) viene letto correttamente, `certified=True`.
+
+---
+
 ### TASK-1116.C — Collector adapter provider-aware (OKX derivatives)
 
 **Status:** Pending

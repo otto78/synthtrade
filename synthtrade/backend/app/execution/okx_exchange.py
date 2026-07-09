@@ -249,18 +249,52 @@ class OkxExchangeAdapter:
 
     # ── Fee tier ──────────────────────────────────────────────────────────────
 
+    async def _direct_fetch_trade_fee(self, symbol: SymbolRef) -> FeeTier:
+        """Direct REST fallback for OKX trade fee when CCXT fetch_trading_fee fails.
+
+        CCXT fetch_trading_fee() can fail with 50119 on OKX EU accounts.
+        This bypasses CCXT entirely and calls the OKX REST endpoint directly.
+        """
+        path = f"/api/v5/account/trade-fee?instType=SPOT&instId={symbol.okx}"
+        url = settings.OKX_BASE_URL.rstrip("/") + path
+        headers = self._sign_headers("GET", path)
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("code") != "0":
+                raise RuntimeError(f"OKX API error {data.get('code')}: {data.get('msg')}")
+            fee_data = data.get("data", [])
+            if not fee_data:
+                raise RuntimeError("No fee data returned")
+            # OKX returns fee in maker/taker fields (negative = rebate)
+            maker = float(fee_data[0].get("maker", 0.001))
+            taker = float(fee_data[0].get("taker", 0.001))
+            logger.info(
+                "[OKX FEE DIRECT] %s maker=%.4f taker=%.4f (negative=rebate)",
+                symbol.okx, maker, taker,
+            )
+            return FeeTier(
+                maker=maker,
+                taker=taker,
+                certified=True,
+                source="okx_trade_fee_direct",
+                raw=fee_data[0],
+            )
+
     async def get_trade_fee(self, symbol: SymbolRef) -> FeeTier:
         """
         Fetch fee tier from OKX GET /api/v5/account/trade-fee.
 
         OKX returns negative values for rebates (maker=-0.002 means -0.2% rebate).
         We preserve the sign: negative = rebate (exchange pays you).
+        Falls back to direct REST if CCXT fails (50119 on EU accounts).
         """
         try:
             response = await self.client.fetch_trading_fee(symbol.ccxt)
             if not response or response.get("maker") is None:
                 logger.warning("OKX get_trade_fee: empty response for %s", symbol.ccxt)
-                return _FALLBACK_FEE
+                return await self._direct_fetch_trade_fee(symbol)
 
             maker = float(response["maker"])
             taker = float(response["taker"])
@@ -276,8 +310,12 @@ class OkxExchangeAdapter:
                 raw=response,
             )
         except Exception as e:
-            logger.error("OKX get_trade_fee failed for %s: %s — using fallback", symbol.ccxt, e)
-            return _FALLBACK_FEE
+            logger.warning("OKX get_trade_fee failed for %s: %s — trying direct REST fallback", symbol.ccxt, e)
+            try:
+                return await self._direct_fetch_trade_fee(symbol)
+            except Exception as fallback_e:
+                logger.error("OKX get_trade_fee direct fallback also failed: %s — using hardcoded fallback", fallback_e)
+                return _FALLBACK_FEE
 
     # ── Orders ────────────────────────────────────────────────────────────────
 

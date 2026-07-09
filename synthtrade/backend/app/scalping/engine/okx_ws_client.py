@@ -64,6 +64,8 @@ def _normalize_okx_symbol(symbol: str) -> str:
             base = s[: -len(q)]
             return f"{base}-{q}"
     return s
+
+
 _WS_LIVE = "wss://ws.okx.com:8443/ws/v5/public"
 _WS_BUSINESS_LIVE = "wss://ws.okx.com:8443/ws/v5/business"
 
@@ -112,7 +114,7 @@ class OkxWSClient:
         self._on_candle: Optional[Callable[[CandleEvent], None]] = None
         self._on_trade: Optional[Callable[[TradeEvent], None]] = None
         self._on_status: Optional[Callable[[ConnectionStatusEvent], None]] = None
-        
+
         # Track WS activity for REST poller fallback logic
         self._ws_candle_received = False
 
@@ -149,27 +151,27 @@ class OkxWSClient:
 
     async def start(self) -> None:
         self._stop_event.clear()
-        
+
         # Candele: canale business (OKX ha spostato candleX su business WS)
         task_candles = asyncio.create_task(
             self._run_connection(self._ws_business_url, "candle1m"),
             name="okx-ws-candles",
         )
         self._tasks.append(task_candles)
-        
+
         # Trade: resta su public
         task_trades = asyncio.create_task(
             self._run_connection(self._ws_url, "trades"),
             name="okx-ws-trades",
         )
         self._tasks.append(task_trades)
-        
+
         task_candle_poller = asyncio.create_task(
             self._rest_candle_poller(),
             name="okx-rest-candles-fallback",
         )
         self._tasks.append(task_candle_poller)
-        
+
         logger.info("OkxWSClient started for %d symbols: %s (WS candles primary, REST fallback)", len(self.symbols), self.symbols)
 
     async def stop(self) -> None:
@@ -191,7 +193,7 @@ class OkxWSClient:
             current_url = self._ws_url_backup if use_backup else url
             if current_url is None:
                 current_url = url  # guard difensivo: non dovrebbe mai accadere
-            
+
             try:
                 async with websockets.connect(current_url, ping_interval=None) as ws:
                     logger.info("OKX WS connected: %s (channel: %s)", current_url, channel)
@@ -223,7 +225,7 @@ class OkxWSClient:
                     self._emit_status(ConnectionStatusEvent(sym, connected=False, error=str(exc), provider="okx"))
                 if self._stop_event.is_set():
                     break
-                
+
                 # Try backup URL if available and primary failed
                 if not use_backup and self._ws_url_backup and "getaddrinfo" in str(exc):
                     logger.info("OKX WS primary URL failed, trying backup: %s", self._ws_url_backup)
@@ -236,7 +238,7 @@ class OkxWSClient:
 
     async def _subscribe(self, ws, channel: str) -> None:
         """Send subscription message for the specific channel(s).
-        
+
         Supports single channel (e.g. "candle1m") or combined
         (e.g. "candle1m+trades") which subscribes to both.
         """
@@ -349,39 +351,32 @@ class OkxWSClient:
     # ── REST candle poller (fallback quando WS non invia dati) ─────────────
 
     async def _rest_candle_poller(self) -> None:
-        """Poll OKX REST API every ~55s for the latest closed candle.
-        
+        """Poll OKX REST API every ~5s for staleness, fetching a fresh candle
+        at most once per ~55s while the WS candle channel is inactive.
+
         Used as fallback when WS candle1m subscription doesn't deliver data
-        (common in OKX demo environment). Disables itself if WS delivers data.
+        (common in OKX demo environment). Disables itself once the WS proves
+        it is delivering candles, and re-enables itself if the WS goes quiet.
+
+        NOTE: the WS-activity check runs every ~50s of real time (10 x 5s
+        sleep steps), not every ~50s of outer-loop iterations — the outer
+        loop itself takes ~55s per pass, so counting outer iterations would
+        only check WS activity every ~9 minutes. See TASK fix 2026-07-09.
         """
         import httpx
         from app.config import settings
-        
+
         logger.info("OKX REST candle poller started (interval: ~55s) — using %s", _OKX_PUBLIC_REST)
-        
+
         _last_candle_ts = 0
         _ws_active = False
         _check_counter = 0
         # Use www.okx.com (public REST) for market data candles.
         # eea.okx.com is for authenticated REST only and does not serve public candles.
         base = _OKX_PUBLIC_REST
-        
+
         while not self._stop_event.is_set():
             try:
-                        # Check if WS is delivering data (using the flag set in _dispatch)
-                _check_counter += 1
-                if _check_counter % 10 == 0:  # Every ~50s
-                    if self._ws_candle_received:
-                        if not _ws_active:
-                            logger.info("OKX WS candles active, disabling REST poller")
-                            _ws_active = True
-                    else:
-                        if _ws_active:
-                            logger.warning("OKX WS candles stopped, re-enabling REST poller")
-                            _ws_active = False
-                    # Reset flag for next check
-                    self._ws_candle_received = False
-                
                 # Only poll if WS is not active
                 if not _ws_active:
                     for sym in self.symbols:
@@ -418,12 +413,27 @@ class OkxWSClient:
                                                  sym, closed_row[1], closed_row[2], closed_row[3], closed_row[4], closed_row[5])
             except Exception as e:
                 logger.error("OKX REST candle poller error: %s", e)
-            
-            # Sleep ~55s, check stop every 5s
+
+            # Sleep ~55s in 5s steps, checking WS activity every ~50s (10 steps).
+            # The check lives INSIDE this loop (not in the outer while) so that
+            # _check_counter advances in real 5s increments instead of once per
+            # ~55s outer-loop pass.
             for _ in range(11):
                 if self._stop_event.is_set():
                     return
                 await asyncio.sleep(5)
+                _check_counter += 1
+                if _check_counter % 10 == 0:  # ~50s of real time
+                    if self._ws_candle_received:
+                        if not _ws_active:
+                            logger.info("OKX WS candles active, disabling REST poller")
+                            _ws_active = True
+                    else:
+                        if _ws_active:
+                            logger.warning("OKX WS candles stopped, re-enabling REST poller")
+                            _ws_active = False
+                    # Reset flag for next check
+                    self._ws_candle_received = False
 
     # ── Helper ────────────────────────────────────────────────────────────────
 

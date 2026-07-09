@@ -90,6 +90,17 @@
 1. `router.py`: `control.get("mode") == "live"` → `in ("live", "test")` per costruire adapter anche in demo mode
 2. `session.model.ts`: aggiunto `'test'` ai tipi `mode`
 3. `session-api.service.ts`: aggiunto `'test'` al parametro `start()`
+4. `session-controls.component.ts`: mappato `globalMode='test'` → `mode='test'` (prima era mappato a 'paper')
+5. `session-controls.component.ts`: template mostra "DEMO" quando `session.mode === 'test'`
+6. `okx_exchange.py`: aggiunto `_direct_fetch_trade_fee()` fallback REST diretto per `get_trade_fee()`
+7. `20260709000000_task1116d_add_test_mode_check.sql`: migration per aggiungere `mode='TEST'` al CHECK constraint
+
+**Stato sistema:**
+- ✅ OKB-EUR ora graceful skip nei collector (nessun 400)
+- ✅ Router supporta `mode=test` (OKX Demo Trading)
+- ✅ Frontend supporta `mode='test'`
+- ⏳ TASK-1116.D pending: migration DB da applicare
+- ⏳ TASK-1116.E pending: verifica fallback REST fee
 
 **Demo mode checklist (per test OKX Demo Trading):**
 - ✅ `TRADING_MODE=test` in `.env` → OKX Demo Trading (non paper)
@@ -100,9 +111,10 @@
 - ⚠️ OKX Demo Trading non supporta WS private → order stream usa REST polling fallback
 
 **Prossimo step:**
+- Applicare migration SQL a Supabase
 - Riavviare backend con `PAPER_TRADING=false`
 - Avviare sessione con `mode=test` dal frontend
-- Verificare log senza warning 400 Binance Futures
+- Verificare log senza warning 400 Binance Futures e fee tier certificato
 
 ---
 

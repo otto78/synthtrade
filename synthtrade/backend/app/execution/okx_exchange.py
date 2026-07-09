@@ -85,11 +85,12 @@ class OkxExchangeAdapter:
             self.client = ccxt.okx(config)
 
             # Override base URL for EU accounts
-            # Use isinstance guard to skip None values in urls["api"] dict
-            if base_url and "eea.okx.com" in base_url:
+            # Guard against None urls (ccxt may return None in certain modes) and
+            # None values in urls["api"] dict. isinstance guard skips non-string values.
+            if base_url and "eea.okx.com" in base_url and self.client.urls is not None:
                 self.client.urls["api"] = {
                     k: v.replace("www.okx.com", "eea.okx.com") if isinstance(v, str) else v
-                    for k, v in self.client.urls.get("api", {}).items()
+                    for k, v in (self.client.urls.get("api") or {}).items()
                 }
 
             if demo:
@@ -250,7 +251,40 @@ class OkxExchangeAdapter:
         except UnsupportedInstrumentError:
             raise
         except Exception as e:
-            raise ExchangeOrderError(f"OKX get_symbol_rules failed for {symbol.okx}: {e}") from e
+            logger.warning(f"CCXT load_markets failed for {symbol.okx} ({e}), trying direct REST fallback")
+            try:
+                return await self._direct_fetch_symbol_rules(symbol)
+            except Exception as e2:
+                raise ExchangeOrderError(f"OKX get_symbol_rules failed for {symbol.okx}: {e2}") from e2
+
+    # ── Direct REST fallback for symbol rules ─────────────────────────────────
+
+    async def _direct_fetch_symbol_rules(self, symbol: SymbolRef) -> SymbolRules:
+        """Direct REST fallback for OKX symbol rules when CCXT load_markets fails.
+
+        Uses /api/v5/public/instruments endpoint.
+        """
+        path = f"/api/v5/public/instruments?instType=SPOT&instId={symbol.okx}"
+        url = settings.OKX_BASE_URL.rstrip("/") + path
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("code") != "0":
+                raise RuntimeError(f"OKX API error {data.get('code')}: {data.get('msg')}")
+            instruments = data.get("data", [])
+            if not instruments:
+                raise UnsupportedInstrumentError(f"OKX: {symbol.okx} not found in instruments")
+            info = instruments[0]
+            return SymbolRules(
+                symbol=symbol,
+                lot_sz=float(info.get("lotSz", 0.00000001)),
+                min_sz=float(info.get("minSz", 0.00001)),
+                tick_sz=float(info.get("tickSz", 0.01)),
+                max_mkt_sz=float(info.get("maxMktSz", 1_000_000)),
+                max_mkt_amt=float(info.get("maxMktAmt", 1_000_000)),
+                raw=info,
+            )
 
     # ── Symbol filters (router compatibility) ───────────────────────────────
 

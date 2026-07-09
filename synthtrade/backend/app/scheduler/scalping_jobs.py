@@ -208,7 +208,7 @@ async def session_health_job() -> None:
         checks = {
             "session_running": status == "running",
             "symbol_set": symbol != "N/A",
-            "mode_valid": mode in ("paper", "live"),
+            "mode_valid": mode in ("paper", "live", "test"),
         }
 
         ws_client = _execution_state.get("ws_client")

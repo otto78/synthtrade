@@ -469,6 +469,22 @@ Fee tier [okx]: maker=0.001, taker=0.001 certified=False
    - Stesso pattern: `adapter.get_funding_rate(symbol)`.
    - OKX funding rate via `/api/v5/public/funding-rate` (derivatives).
 
+### TASK-1116.F — Fix `mode_valid` sempre FAILED nel session health check
+
+**Status:** Pending
+**Priorità:** MEDIA — non blocca la sessione (resta `running`), ma inquina i log ogni ~30-90s e nasconde altri problemi reali nel rumore
+
+**Dipendenze:** TASK-1116.D (ha introdotto `mode='TEST'` come valore valido a livello DB, ma non a livello di health check applicativo)
+
+**Problema:** `session_health_job` in `app/scheduler/scalping_jobs.py` valida `mode` contro `("paper", "live")` senza includere `"test"`.
+
+**File coinvolto:**
+- `synthtrade/backend/app/scheduler/scalping_jobs.py` — linea 226
+
+**Impatto:** Warning falso-positivo ogni ~60-90s, rumore log, rischio azioni indesiderate future.
+
+**Fix:** Aggiornare `mode_valid` per accettare anche `"test"` (case-insensitive).
+
 4. **1116.C.4 — Refactor LongShortRatioCollector**
    - OKX non ha long/short ratio → graceful skip con log `UNAVAILABLE`.
 

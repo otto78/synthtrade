@@ -51,6 +51,8 @@ TASK-1100
           -> TASK-1105
               -> TASK-1106
               -> TASK-1116
+                  -> TASK-1116.D
+                  -> TASK-1116.E
                   -> TASK-1116.C
           -> TASK-1107
               -> TASK-1108
@@ -1004,3 +1006,5 @@ Prima di dichiarare completa l'epica OKX:
 - [ ] Fake integration tests verdi.
 - [ ] Demo E2E completata senza ordini orfani.
 - [ ] Runbook live pronto.
+- [ ] TASK-1116.D: DB migration applicata (mode='TEST' nel CHECK constraint)
+- [ ] TASK-1116.E: Fallback REST fee funzionante (fee tier certificato in demo mode)

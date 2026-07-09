@@ -106,6 +106,7 @@ class OkxExchangeAdapter:
         self._rules_cache_ttl = 300  # 5 min
         self._price_cache: dict[str, dict[str, Any]] = {}
         self._price_cache_ttl = 15
+        self._macro_cache: dict[str, Any] = {"timestamp": 0, "data": None}
 
     async def close(self) -> None:
         await self.client.close()
@@ -246,6 +247,89 @@ class OkxExchangeAdapter:
             raise
         except Exception as e:
             raise ExchangeOrderError(f"OKX get_symbol_rules failed for {symbol.okx}: {e}") from e
+
+    # ── Symbol filters (router compatibility) ───────────────────────────────
+
+    async def get_symbol_filters(self, symbol: str) -> Dict[str, Any]:
+        """Get symbol filters for router compatibility.
+
+        Returns dict with stepSize, minQty, minNotional, quoteAsset, baseAsset.
+        Wraps get_symbol_rules() for BinanceExchangeAdapter compatibility.
+        """
+        try:
+            from app.scalping.models.symbol import SymbolRef
+            sym_ref = SymbolRef.from_any(symbol)
+            rules = await self.get_symbol_rules(sym_ref)
+            return {
+                "stepSize": rules.lot_sz,
+                "minQty": rules.min_sz,
+                "minNotional": rules.max_mkt_sz,  # OKX uses max_mkt_sz as min notional proxy
+                "tickSize": rules.tick_sz,
+                "quoteAsset": sym_ref.quote,
+                "baseAsset": sym_ref.base,
+            }
+        except Exception as e:
+            raise ExchangeOrderError(f"OKX get_symbol_filters failed for {symbol}: {e}") from e
+
+    # ── BTC macro context (router compatibility) ─────────────────────────────
+
+    async def get_btc_macro_context(self) -> Dict[str, Any]:
+        """Fetch BTC macro context for supervisor compatibility.
+
+        Uses BTC-USDT (or BTC-EUR if available) for price and changes.
+        60-second cache to avoid rate limits.
+        """
+        import time
+        now = time.time()
+        if now - self._macro_cache.get("timestamp", 0) < 60 and self._macro_cache.get("data"):
+            return self._macro_cache["data"]
+
+        try:
+            # Try BTC-USDT first (more liquid), fallback to BTC-EUR
+            btc_symbol = "BTC-USDT"
+            try:
+                ticker = await self.client.fetch_ticker(btc_symbol)
+            except Exception:
+                btc_symbol = "BTC-EUR"
+                ticker = await self.client.fetch_ticker(btc_symbol)
+
+            price = float(ticker.get("last", 0.0))
+            change_24h_pct = float(ticker.get("percentage", 0.0))
+
+            # Klines 1h for 1h change
+            klines = await self.client.fetch_ohlcv(btc_symbol, timeframe="1h", limit=2)
+            change_1h_pct = 0.0
+            if len(klines) >= 2:
+                close_prev = float(klines[0][4])
+                close_now = float(klines[1][4])
+                if close_prev > 0:
+                    change_1h_pct = ((close_now - close_prev) / close_prev) * 100
+
+            # Determine regime
+            regime = "normal"
+            if change_1h_pct < -2.0:
+                regime = "crash"
+            elif change_1h_pct > 2.0:
+                regime = "rally"
+
+            data = {
+                "btc_price_at_entry": price,
+                "btc_change_1h_pct": round(change_1h_pct, 2),
+                "btc_change_24h_pct": round(change_24h_pct, 2),
+                "macro_regime": regime,
+            }
+            self._macro_cache["timestamp"] = now
+            self._macro_cache["data"] = data
+            return data
+
+        except Exception as e:
+            logger.warning(f"Failed to fetch BTC macro context: {e}")
+            return {
+                "btc_price_at_entry": 0.0,
+                "btc_change_1h_pct": 0.0,
+                "btc_change_24h_pct": 0.0,
+                "macro_regime": "unknown",
+            }
 
     # ── Fee tier ──────────────────────────────────────────────────────────────
 

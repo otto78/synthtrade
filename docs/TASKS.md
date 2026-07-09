@@ -577,7 +577,7 @@ Fee tier [okx]: maker=0.001, taker=0.001 certified=False
 
 ### TASK-1119 — CRITICO: `OkxExchangeAdapter` manca metodi usati dal path LIVE, trade reale fallito
 
-**Status:** ✅ DONE — commit 9461f82
+**Status:** ✅ DONE — commit 6d3b52b
 **Priorità:** CRITICA — blocca ogni trade LIVE reale su OKX
 
 **Dipendenze:** TASK-1103 (OkxExchangeAdapter), TASK-1107 (router provider-neutral)
@@ -588,8 +588,8 @@ Fee tier [okx]: maker=0.001, taker=0.001 certified=False
 - `synthtrade/backend/app/execution/okx_exchange.py`
 
 **Completato:**
-- ✅ **1119.B** — `get_symbol_filters()` aggiunto come wrapper su `get_symbol_rules()`
-- ✅ **1119.C** — `get_btc_macro_context()` implementato con fallback BTC-USDT/BTC-EUR
+- ✅ **1119.B** — `get_symbol_filters()` aggiunto come wrapper su `get_symbol_rules()` (fix import)
+- ✅ **1119.C** — `get_btc_macro_context()` implementato con fallback REST diretto per EU accounts
 
 **Verifica:** Sessione live completa ciclo senza AttributeError.
 
@@ -611,12 +611,6 @@ Fee tier [okx]: maker=0.001, taker=0.001 certified=False
 
 **Completato:**
 - ✅ **1120.C** — `get_balance()` ora usa solo `availBal` via REST diretto, allineato a okx_balance.py
-
-**Verifica:** Dashboard, log avvio sessione, e interfaccia OKX reale mostrano lo stesso totale EUR.
-2. Riprodurre con dati grezzi
-3. Unificare la fonte (usare okx_balance.py)
-4. Test unitario con mock balance
-5. Verifica manuale
 
 **Verifica:** Dashboard, log avvio sessione, e interfaccia OKX reale mostrano lo stesso totale EUR.
 

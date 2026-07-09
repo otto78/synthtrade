@@ -41,12 +41,14 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 **Milestone:** Fix metodi mancanti OkxExchangeAdapter + saldo LIVE
 
 **Completato:**
-- ✅ **TASK-1119:** `get_symbol_filters()` e `get_btc_macro_context()` aggiunti a OkxExchangeAdapter
-- ✅ **TASK-1120:** `get_balance()` usa solo `availBal` via REST diretto, allineato a okx_balance.py
+- ✅ **TASK-1119:** `get_symbol_filters()` aggiunto come wrapper su `get_symbol_rules()` (commit 6d3b52b)
+- ✅ **TASK-1119:** `get_btc_macro_context()` con fallback REST diretto per EU accounts (commit 6d3b52b)
+- ✅ **TASK-1120:** `get_balance()` usa solo `availBal` via REST diretto, allineato a okx_balance.py (commit 16b26f2)
 
 **Decisioni chiave:**
 - OkxExchangeAdapter deve implementare tutti i metodi chiamati dal router LIVE path
 - Balance deve usare la stessa logica del dashboard per coerenza
+- CCXT fallisce con 50119 su EU accounts → fallback REST diretto necessario
 
 **File modificati:**
 - `synthtrade/backend/app/execution/okx_exchange.py`

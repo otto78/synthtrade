@@ -144,19 +144,11 @@
 ### TASK-1119/1120 — Fix LIVE trading OKX (completato)
 
 **Completato:**
-- ✅ `get_symbol_filters()` aggiunto come wrapper su `get_symbol_rules()`
-- ✅ `get_btc_macro_context()` implementato con fallback BTC-USDT/BTC-EUR
-- ✅ `get_balance()` usa solo `availBal` via REST diretto
+- ✅ `get_symbol_filters()` aggiunto come wrapper su `get_symbol_rules()` (commit 6d3b52b)
+- ✅ `get_btc_macro_context()` con fallback REST diretto per EU accounts (commit 6d3b52b)
+- ✅ `get_balance()` usa solo `availBal` via REST diretto (commit 16b26f2)
 
 **Verifica:** Sessione LIVE deve completare il ciclo senza AttributeError e con saldo corretto.
-
-**Problema:** OKB-EUR non disponibile in Demo Trading (errore 51001), ma è nella dropdown e causa fallimenti silenziosi.
-
-**File coinvolti:**
-- `synthtrade/backend/app/execution/okx_exchange.py`
-- `synthtrade/backend/app/scalping/router.py`
-- `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/exchange-symbols.service.ts`
-- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/session-controls.component.ts`
 
 **Sottotask:**
 1. Discovery cache separata per demo/live

@@ -36,7 +36,6 @@ from app.scalping.backtest.report_generator import ReportGenerator
 from app.scalping.intelligence.signal_score_engine import SignalScoreEngine
 from app.scalping.engine.position_manager import PositionManager
 from app.scalping.models.intelligence import SignalScore, CVDData
-from app.scalping.engine.ws_client import BinanceWSClient, CandleEvent, TradeEvent
 from app.db.supabase_client import get_supabase
 from app.scalping.data.candle_buffer import CandleBuffer
 from app.scalping.engine.execution_loop import ExecutionLoop
@@ -44,8 +43,6 @@ from app.scalping.engine.signal_aggregator import SignalAggregator
 from app.scalping.engine.regime_detector import RegimeDetector
 from app.scalping.engine.strategy_selector import StrategySelector
 from app.scalping.models.market import Candle
-from app.execution.exchange import BinanceExchangeAdapter
-from app.core.binance_balance import LD_MAP
 from app.config import settings
 from app.scalping.session_load_guard import SessionLoadGuard
 from app.scalping.config_loader import get_scalping_config
@@ -78,7 +75,7 @@ _execution_state: Dict[str, Any] = {
     "loop": None,              # ExecutionLoop instance
     "position_manager": PositionManager(),
     "signal_engine": None,      # SignalScoreEngine instance
-    "ws_client": None,          # BinanceWSClient instance
+    "ws_client": None,          # WS client instance
     "ws_tasks": [],             # asyncio tasks for WS stream → broadcast
     "session": {
         "session_id": None,
@@ -351,53 +348,9 @@ def _sync_session_load_guard() -> None:
         _execution_state["session"]["load_guard"] = guard.monitor_data
 
 
-def _normalize_binance_total_balance(balance_total: Dict[str, Any]) -> Dict[str, float]:
-    """Normalize Binance total balances by mapping LD tokens to their base asset."""
-    normalized: Dict[str, float] = {}
-    for asset, amount in balance_total.items():
-        try:
-            amount_val = float(amount)
-        except (TypeError, ValueError):
-            continue
-        normalized_asset = LD_MAP.get(asset, asset)
-        normalized[normalized_asset] = normalized.get(normalized_asset, 0.0) + amount_val
-    return normalized
-
-
-def _select_preferred_quote_balance(balances: Dict[str, float], quote_asset: str) -> Optional[float]:
-    priority_assets = [quote_asset, "USDC", "USDT", "BUSD", "FDUSD"]
-    for asset in priority_assets:
-        if balances.get(asset, 0.0) > 0:
-            return float(balances[asset])
-    return None
-
-
 # ---------------------------------------------------------------------------
-# Helper: wire BinanceWSClient events → broadcast to scalping WS clients
+# Helper: wire WS client events → broadcast to scalping WS clients
 # ---------------------------------------------------------------------------
-
-def _get_spot_balances_from_info(ccxt_balance: Dict[str, Any]) -> Dict[str, float]:
-    """Extract only Spot wallet balances from Binance fetch_balance() raw info.
-    
-    CCXT aggregates Spot + Earn/Simple Earn in both 'total' and 'free'.
-    The raw Binance response has 'info.balances' which contains ONLY the Spot wallet.
-    """
-    spot: Dict[str, float] = {}
-    try:
-        raw_info = ccxt_balance.get("info", {})
-        raw_balances = raw_info.get("balances", [])
-        for entry in raw_balances:
-            asset = entry.get("asset", "")
-            # Escludi token LD* (Simple Earn Flexible) — non sono Spot reale
-            if asset.startswith("LD"):
-                continue
-            free = float(entry.get("free", 0))
-            if free > 0:
-                spot[asset] = free
-    except Exception as e:
-        logger.warning("_get_spot_balances_from_info error: %s", e)
-    return spot
-
 
 async def _refresh_session_balance():
     """Refresh session live_balance from exchange (TASK-1107: provider-neutral)."""
@@ -1135,7 +1088,7 @@ def _check_drawdown() -> bool:
     return dd_pct >= max_dd_pct
 
 async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
-    """Create BinanceWSClient, connect to Binance, and broadcast candle/trade events
+    """Create WS client, connect to exchange, and broadcast candle/trade events
     to all connected scalping WS clients.
     
     Also feeds the CandleBuffer and ExecutionLoop pipelines for signal generation.
@@ -1280,7 +1233,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
         guard.complete_phase("pipeline_phase")
 
 
-    # Pull events from BinanceWSClient queues and broadcast to scalping WS clients
+    # Pull events from WS client queues and broadcast to scalping WS clients
     async def _candle_processor():
         """Consume candle_queue and broadcast + feed execution loop.
         
@@ -2416,36 +2369,36 @@ async def get_trade_history(session_id: Optional[str] = None, limit: int = 50) -
     return result
 
 
-    @router.get("/candles/{symbol}")
-    async def get_candles(symbol: str, limit: int = 100) -> List[Dict]:
-        """Get candle history for a symbol. ..."""
-        try:
-            from app.scalping.backtest.historical_loader import HistoricalLoader
-            loader = HistoricalLoader()
-            past_candles = await loader.load_ohlcv(symbol.upper(), interval="1m", limit=limit)
-            if past_candles:
-                result = [
-                    {
-                        "symbol": symbol,
-                        "open": float(c.open),
-                        "high": float(c.high),
-                        "low": float(c.low),
-                        "close": float(c.close),
-                        "volume": float(c.volume),
-                        "timestamp": c.timestamp.isoformat(),
-                    }
-                    for c in past_candles
-                ]
-                logger.info(f"Returning {len(result)} candles from HistoricalLoader for {symbol}")
-                return result
-            return []  # <-- ADD THIS: handles the empty/falsy past_candles case
-        except Exception as e:
-            logger.warning(f"HistoricalLoader fetch failed for {symbol}: {e}")
-            return []
+@router.get("/candles/{symbol}")
+async def get_candles(symbol: str, limit: int = 100) -> List[Dict]:
+    """Get candle history for a symbol. ..."""
+    try:
+        from app.scalping.backtest.historical_loader import HistoricalLoader
+        loader = HistoricalLoader()
+        past_candles = await loader.load_ohlcv(symbol.upper(), interval="1m", limit=limit)
+        if past_candles:
+            result = [
+                {
+                    "symbol": symbol,
+                    "open": float(c.open),
+                    "high": float(c.high),
+                    "low": float(c.low),
+                    "close": float(c.close),
+                    "volume": float(c.volume),
+                    "timestamp": c.timestamp.isoformat(),
+                }
+                for c in past_candles
+            ]
+            logger.info(f"Returning {len(result)} candles from HistoricalLoader for {symbol}")
+            return result
+        return []  # <-- ADD THIS: handles the empty/falsy past_candles case
+    except Exception as e:
+        logger.warning(f"HistoricalLoader fetch failed for {symbol}: {e}")
+        return []
 
 
 async def _stop_ws_broadcast():
-    """Stop BinanceWSClient and clean up pipeline components."""
+    """Stop WS client and clean up pipeline components."""
     client = _execution_state.get("ws_client")
     if client:
         await client.stop()
@@ -2884,7 +2837,7 @@ async def control_session(control: Dict) -> Dict:
         # Viene avviato da _start_uds_if_needed() DOPO che l'OCO è confermato.
         # Questo evita che UDS sia attivo senza ordini e rispetta il pattern singleton.
 
-        # Start BinanceWSClient + ExecutionLoop pipeline
+        # Start WS client + ExecutionLoop pipeline
         async def _start_with_error_logging():
             """Wrapper that logs any exception from _start_ws_broadcast."""
             try:
@@ -3075,7 +3028,7 @@ async def control_session(control: Dict) -> Dict:
                 if pos.status == "open" and _mode_stop != "live":
                     pm.close_position(Decimal(str(close_price)))
         
-        # Stop BinanceWSClient and pipeline
+        # Stop WS client and pipeline
         asyncio.create_task(
             _stop_ws_broadcast(),
             name="scalping-ws-stop",

@@ -4,6 +4,22 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.7 — 2026-07-09
+
+**Milestone:** Fix regressione chart live - indentazione endpoint /candles/{symbol}
+
+**Completato:**
+- ✅ **TASK-1100.G (Chart fix v5)** — Corretta indentazione dell'endpoint `@router.get("/candles/{symbol}")` in `router.py` che era erroneamente annidato dentro la funzione `get_trade_history`. Questo causava errore 404 e chart vuote quando il frontend cercava di recuperare i dati delle candele.
+- ✅ **Verifica endpoint REST** — L'endpoint `/api/scalping/candles/{symbol}` ora restituisce correttamente i dati delle candele da HistoricalLoader per simboli come BTC-EUR.
+- ✅ **Chart funzionante** — La live chart ora visualizza correttamente le candele storiche e gli aggiornamenti real-time sia quando si seleziona un simbolo sia quando si avvia una sessione.
+
+**Decisioni chiave:**
+- L'endpoint deve essere a livello di modulo per essere registrato correttamente da FastAPI
+- La regressione era introdotta probabilmente durante un refactor precedente
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/router.py` — Fix indentazione endpoint candles
+
 ### v1.4.6 — 2026-07-08
 
 **Milestone:** TASK-1113 Cutover OKX live readiness + TASK-1114 Fee tier parity completati

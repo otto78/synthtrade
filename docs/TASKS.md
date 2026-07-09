@@ -46,6 +46,9 @@
 - ✅ **1100.G (Backend: type guard)** — Aggiunto guard difensivo `if current_url is None: current_url = url` in `_run_connection()` per eliminare warning Pylance.
 - ⚠️ **Aperti:** Pylance warning su backup URL logic (proposto rimozione completa, non bloccante); audit altri componenti Angular per stesso mismatch simbolo.
 
+**Stato 2026-07-09 (Fix regressione chart):**
+- ✅ **1100.G (Backend: router.py indentation fix)** — Corretta indentazione dell'endpoint `@router.get("/candles/{symbol}")` che era erroneamente annidato dentro la funzione `get_trade_history`. Questo causava errore 404 e chart vuote. L'endpoint è ora a livello di modulo e restituisce correttamente i dati delle candele da HistoricalLoader.
+
 **Decisione:**
 - Demo mode influenza solo trading execution, MAI market data
 - Candele OKX → WS business; Trade → WS public

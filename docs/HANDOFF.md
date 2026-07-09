@@ -4,6 +4,91 @@
 
 ## 🔄 Ultimo Handoff
 
+### Da: Cascade → prossima sessione
+
+**Data:** 2026-07-09 09:36
+
+**Contesto:** Sessione corrente — fix regressione chart live + recap stato epica OKB.
+
+---
+
+### ✅ FASE COMPLETATA: Fix Regressione Chart Live
+
+**Problema risolto:**
+- Live chart non visualizzava candele (vuota) sia quando si selezionava un simbolo sia quando si avviava una sessione
+- L'endpoint `@router.get("/candles/{symbol}")` era erroneamente annidato dentro la funzione `get_trade_history` in `router.py`
+- Questo causava errore 404 quando il frontend cercava di recuperare i dati delle candele via REST
+
+**Soluzioni implementate:**
+
+1. **router.py:**
+    - Corretta indentazione dell'endpoint `/candles/{symbol}` (righe 2372-2397): spostato da dentro `get_trade_history` a livello di modulo
+    - Python syntax check: OK
+    - Endpoint REST ora restituisce correttamente i dati delle candele da HistoricalLoader
+
+2. **Verifica funzionamento:**
+    - `curl http://localhost:8008/api/scalping/candles/BTC-EUR?limit=5` → restituisce 5 candele corrette
+    - Backend riavviato automaticamente con WatchFiles dopo il fix
+    - Chart ora visualizza correttamente le candele storiche e gli aggiornamenti real-time
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/router.py` (fix indentazione endpoint)
+
+**Commit:**
+- `42d95bd` - fix: correct indentation of /candles/{symbol} endpoint in router.py
+
+**Stato sistema:**
+- ✅ Endpoint REST `/api/scalping/candles/{symbol}` funzionante
+- ✅ Chart visualizza correttamente le candele storiche
+- ✅ Codice Python compila senza errori
+- ✅ Backend avvia senza errori
+
+---
+
+## 🔄 Handoff Precedente
+
+### Da: Kilo → prossima sessione
+
+**Data:** 2026-07-09 08:24
+
+**Contesto:** Sessione corrente — fix avvio backend + verifica balance OKX live mode.
+
+---
+
+### ✅ FASE COMPLETATA: Fix IndentationError + verifica OKX live balance
+
+**Problema risolto:**
+- Backend non partiva per `IndentationError` in `router.py:2400` (funzione `_stop_ws_broadcast()` con indentazione mista: 8 spazi invece di 4)
+- Verificato funzionamento balance fetch in live mode OKX (errore 50119 precedente risolto)
+
+**Soluzioni implementate:**
+
+1. **router.py:**
+    - Corretta indentazione di `_stop_ws_broadcast()` (riga 2400): body della funzione ora a 4 spazi invece di 8
+    - Python syntax check: OK
+
+2. **okx_exchange.py (verificato, non modificato):**
+    - Confermata presenza del CCXT→REST fallback (`_direct_fetch_balance` → `/api/v5/account/balance`)
+    - `OKX_BASE_URL` correttamente configurato per EEA (`https://eea.okx.com`)
+    - Log di conferma: `OKX balance fetched: 29.28 EUR (2 assets)` in live mode senza errori 50119
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/router.py` (fix indentazione)
+
+**Commit:**
+- (nessun commit — modifica minore indentazione)
+
+**Stato sistema:**
+- ✅ Backend avvia senza errori di sintassi
+- ✅ Live mode balance fetch OK: `29.28 EUR` caricato correttamente
+- ✅ Paper mode funzionante (sessione BTC-EUR completata con PnL -0.21%)
+- ✅ 100 candele storiche caricate via HistoricalLoader
+- ✅ Nessun errore 50119 in live mode
+
+---
+
+## 🔄 Handoff Precedente
+
 ### Da: Cline → prossima sessione
 
 **Data:** 2026-07-08 14:53

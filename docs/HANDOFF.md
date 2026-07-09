@@ -45,7 +45,66 @@
 
 ---
 
+---
+
 ## 🔄 Handoff Precedente
+
+### Da: GitHub Copilot → prossima sessione
+
+**Data:** 2026-07-09 09:45
+
+**Contesto:** Bug collector OKB-EUR + task 1116.C per provider-aware collectors.
+
+### ✅ FASE COMPLETATA: Bug OKB-EUR in FUTURES_SYMBOL_MAP + TASK-1116.C
+
+**Problema risolto:**
+- Sessione OKB-EUR (paper mode) tentava chiamate a Binance Futures per OpenInterest, FundingRate, LongShortRatio
+- OKB-EUR non era nella mappa `FUTURES_SYMBOL_MAP` → 400 Bad Request
+- I collector non sono provider-aware: ignorano `EXCHANGE_PROVIDER=okx`
+
+**Soluzioni implementate:**
+
+1. **FUTURES_SYMBOL_MAP (3 collector):**
+   - Aggiunto `"OKBEUR": None, "OKB-EUR": None` a `open_interest.py`, `funding_rate.py`, `long_short_ratio.py`
+   - OKX non ha futures perpetual per OKB-EUR → graceful skip corretto
+
+2. **TASK-1116.C creato in TASKS.md:**
+   - Refactor collector per accettare `adapter` opzionale
+   - Implementare `CollectorAdapter` interface in `OkxExchangeAdapter`
+   - SignalScoreEngine wiring per passare adapter ai collector
+   - Test con fake adapter
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/intelligence/collectors/open_interest.py`
+- `synthtrade/backend/app/scalping/intelligence/collectors/funding_rate.py`
+- `synthtrade/backend/app/scalping/intelligence/collectors/long_short_ratio.py`
+- `docs/TASKS.md` (nuovo task 1116.C)
+
+**Stato sistema:**
+- ✅ OKB-EUR ora graceful skip nei collector (nessun 400)
+- ✅ Router ora supporta `mode=test` (OKX Demo Trading) oltre a `mode=live`
+- ✅ Frontend session-api.service.ts aggiornato con `mode: 'paper' | 'live' | 'test'`
+- ⏳ TASK-1116.C pending: collector provider-aware (OKX derivatives o skip)
+
+**Modifiche appena fatte:**
+1. `router.py`: `control.get("mode") == "live"` → `in ("live", "test")` per costruire adapter anche in demo mode
+2. `session.model.ts`: aggiunto `'test'` ai tipi `mode`
+3. `session-api.service.ts`: aggiunto `'test'` al parametro `start()`
+
+**Demo mode checklist (per test OKX Demo Trading):**
+- ✅ `TRADING_MODE=test` in `.env` → OKX Demo Trading (non paper)
+- ✅ `EXCHANGE_PROVIDER=okx` → usa OkxExchangeAdapter
+- ✅ `OKX_API_KEY`, `OKX_SECRET_KEY`, `OKX_PASSPHRASE` valorizzati con credenziali demo
+- ✅ `OKX_BASE_URL=https://eea.okx.com` (per account EU)
+- ⚠️ `PAPER_TRADING=true` deve essere `false` per demo reale (altrimenti usa fake adapter)
+- ⚠️ OKX Demo Trading non supporta WS private → order stream usa REST polling fallback
+
+**Prossimo step:**
+- Riavviare backend con `PAPER_TRADING=false`
+- Avviare sessione con `mode=test` dal frontend
+- Verificare log senza warning 400 Binance Futures
+
+---
 
 ### Da: Kilo → prossima sessione
 

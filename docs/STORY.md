@@ -4,6 +4,30 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.8 — 2026-07-09
+
+**Milestone:** Bug OKB-EUR collector + supporto demo mode OKX
+
+**Completato:**
+- ✅ **Bug fix OKB-EUR in FUTURES_SYMBOL_MAP:** Aggiunto `"OKBEUR": None, "OKB-EUR": None` a `open_interest.py`, `funding_rate.py`, `long_short_ratio.py` per evitare chiamate 400 a Binance Futures
+- ✅ **Router supporto demo mode:** `control.get("mode") == "live"` → `in ("live", "test")` per costruire adapter anche in demo mode
+- ✅ **Frontend session.model.ts:** aggiunto `'test'` ai tipi `mode`
+- ✅ **Frontend session-api.service.ts:** aggiunto `'test'` al parametro `start()`
+
+**Decisioni chiave:**
+- OKX non ha futures perpetual per OKB-EUR → graceful skip corretto
+- Il router deve costruire l'adapter anche per `mode=test` (OKX Demo Trading)
+- Il frontend deve supportare `mode='test'` per avviare sessioni demo
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/intelligence/collectors/open_interest.py`
+- `synthtrade/backend/app/scalping/intelligence/collectors/funding_rate.py`
+- `synthtrade/backend/app/scalping/intelligence/collectors/long_short_ratio.py`
+- `synthtrade/backend/app/scalping/router.py`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/models/session.model.ts`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/session-api.service.ts`
+- `docs/TASKS.md` — nuovo task 1116.C
+
 ### v1.4.7 — 2026-07-09
 
 **Milestone:** Fix regressione chart live - indentazione endpoint /candles/{symbol}

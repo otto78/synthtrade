@@ -7,7 +7,7 @@ export interface ScalpingSession {
   /** UUID del DB (scalping_sessions.id) — usato per download logs, etc. */
   db_session_id?: string;
   status: 'idle' | 'running' | 'paused' | 'stopped';
-  mode: 'paper' | 'live';
+  mode: 'paper' | 'live' | 'test';
   strategy: string;
   symbol: string;
   started_at?: string;
@@ -23,7 +23,7 @@ export interface ScalpingSession {
 
 export interface SessionControl {
   action: 'start' | 'stop' | 'pause' | 'resume';
-  mode?: 'paper' | 'live';
+  mode?: 'paper' | 'live' | 'test';
   strategy?: string;
   symbol?: string;
   trade_value?: number;

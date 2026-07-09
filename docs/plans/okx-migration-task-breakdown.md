@@ -51,6 +51,7 @@ TASK-1100
           -> TASK-1105
               -> TASK-1106
               -> TASK-1116
+                  -> TASK-1116.C
           -> TASK-1107
               -> TASK-1108
               -> TASK-1109
@@ -922,6 +923,61 @@ Assicurare che il SignalScoreEngine in sessione OKX non usi fonti Binance in mod
 - Sessione OKX non chiama Binance per fonti provider-bound.
 - SignalScoreEngine logga collector attivi/assenti e pesi effettivi.
 - Nessun segnale viene falsato da collector unavailable.
+
+---
+
+## TASK-1116.C — Collector adapter provider-aware (OKX derivatives)
+
+**Status:** Pending
+**Priorità:** ALTA
+**Dipendenze:** TASK-1116
+
+**Obiettivo:** rendere i collector (open_interest, funding_rate, long_short_ratio) provider-aware invece di hardcoded Binance Futures. Quando `EXCHANGE_PROVIDER=okx`, usare endpoint OKX derivatives (se disponibili) o graceful skip con log esplicito.
+
+**Problema:** i collector chiamano direttamente `fapi.binance.com` ignorando `settings.EXCHANGE_PROVIDER`. Questo invalida le decisioni del supervisor quando si usa OKX.
+
+**File coinvolti:**
+- `synthtrade/backend/app/scalping/intelligence/collectors/open_interest.py`
+- `synthtrade/backend/app/scalping/intelligence/collectors/funding_rate.py`
+- `synthtrade/backend/app/scalping/intelligence/collectors/long_short_ratio.py`
+- `synthtrade/backend/app/scalping/intelligence/signal_score_engine.py` (wiring)
+- `synthtrade/backend/app/execution/exchange_factory.py` (eventuale factory collector)
+
+**Sottotask:**
+1. **1116.C.0 — Fix demo mode support (COMPLETATO 2026-07-09)**
+   - Router: `control.get("mode") == "live"` → `in ("live", "test")` per costruire adapter anche in demo mode
+   - Frontend: aggiunto `'test'` ai tipi `mode` in `session.model.ts` e `session-api.service.ts`
+
+1. **1116.C.1 — CollectorAdapter interface**
+   - Definire interfaccia read-only: `get_open_interest(symbol)`, `get_funding_rate(symbol)`, `get_long_short_ratio(symbol, period)`.
+   - Implementare in `OkxExchangeAdapter` (OKX derivatives) o `None` se non disponibile.
+
+2. **1116.C.2 — Refactor OpenInterestCollector**
+   - Accettare `adapter` opzionale in `__init__`.
+   - Se `adapter` fornito e provider=okx → chiamare `adapter.get_open_interest()`.
+   - Se OKX non ha futures per il simbolo → log `UNAVAILABLE` e return `None`.
+   - Se `adapter=None` → fallback Binance (backward compat).
+
+3. **1116.C.3 — Refactor FundingRateCollector**
+   - Stesso pattern: `adapter.get_funding_rate(symbol)`.
+   - OKX funding rate via `/api/v5/public/funding-rate` (derivatives).
+
+4. **1116.C.4 — Refactor LongShortRatioCollector**
+   - OKX non ha long/short ratio → graceful skip con log `UNAVAILABLE`.
+
+5. **1116.C.5 — SignalScoreEngine wiring**
+   - Passare `adapter` ai collector in `get_or_create()` o costruttore.
+   - Leggere `settings.EXCHANGE_PROVIDER` e `settings.exchange_demo`.
+
+6. **1116.C.6 — Test**
+   - Fake adapter con `get_open_interest` mockato.
+   - Sessione OKX con collector OKX (o skip) → nessun 400 Binance.
+   - Score reweighted correttamente quando collector non disponibile.
+
+**Acceptance Criteria:**
+- Sessione OKX non chiama mai Binance Futures per collector provider-bound.
+- Log mostra `collector=okx_unavailable` o dati OKX reali.
+- Score intelligence riflette i collector attivi/disponibili.
 
 ---
 

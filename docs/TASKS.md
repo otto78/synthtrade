@@ -356,7 +356,83 @@
 - ✅ `funding_rate.py`: idem
 - ✅ `long_short_ratio.py`: idem
 - ✅ Nessun WARNING 400 Bad Request su BTC-EUR, ETH-EUR, SOL-EUR ecc.
-- ℹ️ CVD/RSI/announcements non toccati (già provider-neutral o Binance-optional)
+- ⚠️ **Bug scoperto 2026-07-09**: OKB-EUR non è nella mappa `FUTURES_SYMBOL_MAP` → tenta chiamata Binance Futures e fallisce con 400. Vedi TASK-1116.B.
+
+### TASK-1116.B — Bug: OKB-EUR mancante in FUTURES_SYMBOL_MAP collector
+
+**Status:** 🐞 Bug — OKB-EUR causa 400 Bad Request Binance Futures
+**Priorità:** ALTA
+**Dipendenze:** TASK-1116
+
+**Problema:** Sessione OKB-EUR (paper/demo) tenta chiamate a `fapi.binance.com/fapi/v1/openInterest?symbol=OKB-EUR` generando errori 400. Il simbolo OKB-EUR non è incluso nella mappa `FUTURES_SYMBOL_MAP` dei collector.
+
+**Log osservato:**
+```
+2026-07-09 09:40:37 WARN OpenInterestCollector error for OKB-EUR: Client error '400 Bad Request' for url 'https://fapi.binance.com/fapi/v1/openInterest?symbol=OKB-EUR'
+```
+
+**File coinvolti:**
+- `synthtrade/backend/app/scalping/intelligence/collectors/open_interest.py`
+- `synthtrade/backend/app/scalping/intelligence/collectors/funding_rate.py`
+- `synthtrade/backend/app/scalping/intelligence/collectors/long_short_ratio.py`
+
+**Fix:**
+- Aggiungere `"OKBEUR": None, "OKB-EUR": None` a `FUTURES_SYMBOL_MAP` in tutti e 3 i collector.
+- OKX non ha futures perpetual per OKB-EUR → graceful skip corretto.
+
+**Verifica:**
+- Riavviare sessione OKB-EUR in paper mode.
+- Verificare assenza warning 400 nei log.
+- Score intelligence deve ricalcolare con collector disponibili.
+
+### TASK-1116.C — Collector adapter provider-aware (OKX derivatives)
+
+**Status:** Pending
+**Priorità:** ALTA
+**Dipendenze:** TASK-1116.B
+
+**Obiettivo:** rendere i collector (open_interest, funding_rate, long_short_ratio) provider-aware invece di hardcoded Binance Futures. Quando `EXCHANGE_PROVIDER=okx`, usare endpoint OKX derivatives (se disponibili) o graceful skip con log esplicito.
+
+**Problema:** i collector chiamano direttamente `fapi.binance.com` ignorando `settings.EXCHANGE_PROVIDER`. Questo invalida le decisioni del supervisor quando si usa OKX.
+
+**File coinvolti:**
+- `synthtrade/backend/app/scalping/intelligence/collectors/open_interest.py`
+- `synthtrade/backend/app/scalping/intelligence/collectors/funding_rate.py`
+- `synthtrade/backend/app/scalping/intelligence/collectors/long_short_ratio.py`
+- `synthtrade/backend/app/scalping/intelligence/signal_score_engine.py` (wiring)
+- `synthtrade/backend/app/execution/exchange_factory.py` (eventuale factory collector)
+
+**Sottotask:**
+1. **1116.C.1 — CollectorAdapter interface**
+   - Definire interfaccia read-only: `get_open_interest(symbol)`, `get_funding_rate(symbol)`, `get_long_short_ratio(symbol, period)`.
+   - Implementare in `OkxExchangeAdapter` (OKX derivatives) o `None` se non disponibile.
+
+2. **1116.C.2 — Refactor OpenInterestCollector**
+   - Accettare `adapter` opzionale in `__init__`.
+   - Se `adapter` fornito e provider=okx → chiamare `adapter.get_open_interest()`.
+   - Se OKX non ha futures per il simbolo → log `UNAVAILABLE` e return `None`.
+   - Se `adapter=None` → fallback Binance (backward compat).
+
+3. **1116.C.3 — Refactor FundingRateCollector**
+   - Stesso pattern: `adapter.get_funding_rate(symbol)`.
+   - OKX funding rate via `/api/v5/public/funding-rate` (derivatives).
+
+4. **1116.C.4 — Refactor LongShortRatioCollector**
+   - OKX non ha long/short ratio → graceful skip con log `UNAVAILABLE`.
+
+5. **1116.C.5 — SignalScoreEngine wiring**
+   - Passare `adapter` ai collector in `get_or_create()` o costruttore.
+   - Leggere `settings.EXCHANGE_PROVIDER` e `settings.exchange_demo`.
+
+6. **1116.C.6 — Test**
+   - Fake adapter con `get_open_interest` mockato.
+   - Sessione OKX con collector OKX (o skip) → nessun 400 Binance.
+   - Score reweighted correttamente quando collector non disponibile.
+
+**Acceptance Criteria:**
+- Sessione OKX non chiama mai Binance Futures per collector provider-bound.
+- Log mostra `collector=okx_unavailable` o dati OKX reali.
+- Score intelligence riflette i collector attivi/disponibili.
 
 ### TASK-1117 — Fix DB constraint `session_signal_log_decision_type_check`
 

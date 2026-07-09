@@ -35,6 +35,8 @@ FUTURES_SYMBOL_MAP = {
     "SOL-EUR": None,
     "XRPEUR": None,
     "XRP-EUR": None,
+    "OKBEUR": None,
+    "OKB-EUR": None,
 }
 
 

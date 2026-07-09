@@ -2719,13 +2719,14 @@ async def control_session(control: Dict) -> Dict:
 
         active_symbol = control.get("symbol", session.get("symbol", "BTCUSDT"))
 
-        # ── LIVE MODE: verify balance BEFORE setting session state ────────────
+        # ── LIVE/DEMO MODE: verify balance BEFORE setting session state ────────────
         # TASK-1107: provider-neutral — build adapter via factory (OKX or Binance).
         # Prevent stale state when balance check fails (HTTPException would leave
         # a dirty session in memory, confusing the frontend on reconnect).
-        if control.get("mode", session.get("mode", "paper")) == "live":
+        session_mode = control.get("mode", session.get("mode", "paper"))
+        if session_mode in ("live", "test"):
             if not settings.exchange_api_key or not settings.exchange_secret_key:
-                raise HTTPException(status_code=400, detail="Mancano le API Key nel file .env per la modalità Live.")
+                raise HTTPException(status_code=400, detail="Mancano le API Key nel file .env per la modalità Live/Demo.")
 
             # TASK-1107: use factory — returns OkxExchangeAdapter or BinanceExchangeAdapter
             from app.execution.exchange_factory import build_exchange_adapter
@@ -2747,7 +2748,8 @@ async def control_session(control: Dict) -> Dict:
                     _execution_state["exchange"] = adapter
                     session["live_balance"] = available_balance
                     session["paper_balance"] = available_balance
-                    logger.info(f"✓ \033[96m\033[1mStarting balance: {available_balance} {quote_asset} [{settings.EXCHANGE_PROVIDER.upper()}]\033[0m")
+                    mode_label = "DEMO" if session_mode == "test" else "LIVE"
+                    logger.info(f"✓ \033[96m\033[1mStarting balance: {available_balance} {quote_asset} [{settings.EXCHANGE_PROVIDER.upper()} {mode_label}]\033[0m")
 
                     # TASK-877/1114: Recupera fee tier account all'avvio sessione
                     # OKX returns negative fees (rebates): maker=-0.002 means -0.2% rebate.
@@ -2767,14 +2769,15 @@ async def control_session(control: Dict) -> Dict:
                         f"Nessun saldo Spot disponibile per {quote_asset} (trovato: {available_balance}). "
                         f"I fondi potrebbero essere in Simple Earn. Spostali su Spot e riprova."
                     )
-                    logger.error(f"\033[91m✗ LIVE START BLOCKED: {error_msg}\033[0m")
+                    mode_label = "DEMO" if session_mode == "test" else "LIVE"
+                    logger.error(f"\033[91m✗ {mode_label} START BLOCKED: {error_msg}\033[0m")
                     session["live_balance"] = None
                     session["paper_balance"] = None
                     session["status"] = "idle"
                     session["error_message"] = error_msg
-                    session["error_code"] = "LIVE_START_BLOCKED"
+                    session["error_code"] = f"{mode_label}_START_BLOCKED"
                     if guard:
-                        guard.fail("live_start_blocked: insufficient_spot_balance")
+                        guard.fail(f"{session_mode}_start_blocked: insufficient_spot_balance")
                         _sync_session_load_guard()
                     # Close the exchange adapter to prevent resource leak
                     try:
@@ -2788,7 +2791,7 @@ async def control_session(control: Dict) -> Dict:
             except Exception as e:
                 error_msg = f"Impossibile verificare il saldo Spot: {type(e).__name__}. Riprova."
                 logger.error(f"✗ Balance fetch failed: {e}", exc_info=True)
-                await broadcast_scalping_event("error", {"code": "LIVE_START_BALANCE_FETCH_FAILED", "message": error_msg})
+                await broadcast_scalping_event("error", {"code": f"{session_mode.upper()}_START_BALANCE_FETCH_FAILED", "message": error_msg})
                 raise HTTPException(status_code=400, detail=error_msg)
 
         # ── Set session state (balance is verified) ───────────────────────────

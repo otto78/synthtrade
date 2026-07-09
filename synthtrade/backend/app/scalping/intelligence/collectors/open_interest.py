@@ -44,6 +44,8 @@ FUTURES_SYMBOL_MAP = {
     "ETH-EUR": None,
     "SOLEUR": None,
     "SOL-EUR": None,
+    "OKBEUR": None,
+    "OKB-EUR": None,
 }
 
 

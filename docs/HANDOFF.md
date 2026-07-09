@@ -112,10 +112,30 @@
 - ⚠️ OKX Demo Trading non supporta WS private → order stream usa REST polling fallback
 
 **Prossimo step:**
-- Applicare migration SQL a Supabase
-- Riavviare backend con `PAPER_TRADING=false`
-- Avviare sessione con `mode=test` dal frontend
-- Verificare log senza warning 400 Binance Futures e fee tier certificato
+- ✅ Migration SQL applicata a Supabase (confermare)
+- ✅ Backend riavviato con `PAPER_TRADING=false`
+- ✅ Sessione avviata con `mode=test` dal frontend
+- ✅ Verificare log senza warning `mode_valid` nei health check
+
+---
+
+### TASK-1116.G — Instrument discovery environment-aware (pending)
+
+**Problema:** OKB-EUR non disponibile in Demo Trading (errore 51001), ma è nella dropdown e causa fallimenti silenziosi.
+
+**File coinvolti:**
+- `synthtrade/backend/app/execution/okx_exchange.py`
+- `synthtrade/backend/app/scalping/router.py`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/exchange-symbols.service.ts`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/session-controls.component.ts`
+
+**Sottotask:**
+1. Discovery cache separata per demo/live
+2. Endpoint `/api/scalping/exchange/instruments` filtra per ambiente
+3. Validazione pre-avvio sessione con errore esplicito
+4. Dropdown Angular filtrato dinamicamente al cambio modalità
+5. Tooltip per simboli non disponibili in demo
+6. Test unit + integration
 
 ---
 

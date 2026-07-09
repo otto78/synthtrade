@@ -487,6 +487,31 @@ Fee tier [okx]: maker=0.001, taker=0.001 certified=False
 
 **Verifica:** Sessione `mode=test` mostra `mode_valid=True` nei log health check.
 
+### TASK-1116.G — Instrument discovery deve essere environment-aware (Demo vs Live)
+
+**Status:** Pending
+**Priorità:** ALTA — causa fallimenti fee/trading silenziosi e fuorvianti per simboli validi in live ma assenti in demo
+
+**Dipendenze:** TASK-1103 (OkxExchangeAdapter), TASK-1109 (Frontend exchange-neutral), TASK-1116.E (fallback fee REST)
+
+**Problema:** OKB-EUR è tradeable in live ma non esiste in Demo Trading (errore 51001). Il sistema non distingue i due cataloghi, causando fallimenti silenziosi in fee/trading.
+
+**File coinvolti:**
+- `synthtrade/backend/app/execution/okx_exchange.py`
+- `synthtrade/backend/app/scalping/router.py`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/exchange-symbols.service.ts`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/session-controls.component.ts`
+
+**Sottotask:**
+1. **1116.G.1 — Discovery cache environment-aware**: cache separata per demo/live
+2. **1116.G.2 — Endpoint backend filtra per ambiente**: `/api/scalping/exchange/instruments` risponde solo strumenti validi
+3. **1116.G.3 — Validazione pre-avvio sessione**: errore esplicito se simbolo non disponibile nell'ambiente
+4. **1116.G.4 — Frontend: dropdown simboli filtrato dinamicamente**: aggiornamento al cambio modalità
+5. **1116.G.5 — Messaggio UI esplicativo**: tooltip per simboli non disponibili in demo
+6. **1116.G.6 — Test**: unit + integration test
+
+**Verifica:** OKB-EUR non disponibile in dropdown demo; errore chiaro se forzato via API.
+
 4. **1116.C.4 — Refactor LongShortRatioCollector**
    - OKX non ha long/short ratio → graceful skip con log `UNAVAILABLE`.
 

@@ -15,11 +15,13 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - ✅ **Frontend session-api.service.ts:** aggiunto `'test'` al parametro `start()`
 - ✅ **Frontend session-controls.component.ts:** mappato `globalMode='test'` → `mode='test'` (prima era mappato a 'paper')
 - ✅ **Frontend session-controls.component.ts:** template mostra "DEMO" quando `session.mode === 'test'`
+- ✅ **TASK-1116.F:** Fix `mode_valid` health check per accettare `mode='test'`
 
 **Decisioni chiave:**
 - OKX non ha futures perpetual per OKB-EUR → graceful skip corretto
 - Il router deve costruire l'adapter anche per `mode=test` (OKX Demo Trading)
 - Il frontend deve supportare `mode='test'` per avviare sessioni demo
+- Health check deve validare `mode='test'` come valore legittimo
 
 **File modificati:**
 - `synthtrade/backend/app/scalping/intelligence/collectors/open_interest.py`
@@ -32,7 +34,7 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/session-api.service.ts`
 - `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/session-controls.component.ts`
 - `synthtrade/supabase/migrations/20260709000000_task1116d_add_test_mode_check.sql` — nuova migration
-- `docs/TASKS.md` — task 1116.D, 1116.E, 1116.F
+- `docs/TASKS.md` — task 1116.D, 1116.E, 1116.F, 1116.G
 
 ### v1.4.7 — 2026-07-09
 

@@ -261,7 +261,6 @@ class OkxExchangeAdapter:
         Wraps get_symbol_rules() for BinanceExchangeAdapter compatibility.
         """
         try:
-            from app.scalping.models.symbol import SymbolRef
             sym_ref = SymbolRef.from_any(symbol)
             rules = await self.get_symbol_rules(sym_ref)
             return {
@@ -327,13 +326,70 @@ class OkxExchangeAdapter:
             return data
 
         except Exception as e:
-            logger.warning(f"Failed to fetch BTC macro context: {e}")
-            return {
-                "btc_price_at_entry": 0.0,
-                "btc_change_1h_pct": 0.0,
-                "btc_change_24h_pct": 0.0,
-                "macro_regime": "unknown",
-            }
+            logger.warning(f"CCXT failed for BTC macro context ({e}), trying direct REST fallback")
+            try:
+                # Direct REST fallback for EU accounts
+                return await self._direct_fetch_btc_macro_context()
+            except Exception as e2:
+                logger.warning(f"Failed to fetch BTC macro context: {e2}")
+                return {
+                    "btc_price_at_entry": 0.0,
+                    "btc_change_1h_pct": 0.0,
+                    "btc_change_24h_pct": 0.0,
+                    "macro_regime": "unknown",
+                }
+
+    async def _direct_fetch_btc_macro_context(self) -> Dict[str, Any]:
+        """Direct REST fallback for BTC macro context on EU accounts."""
+        # Try BTC-USDT first, then BTC-EUR
+        for btc_symbol in ["BTC-USDT", "BTC-EUR"]:
+            try:
+                # Get current ticker
+                ticker_path = f"/api/v5/market/ticker?instId={btc_symbol}"
+                ticker_url = settings.OKX_BASE_URL.rstrip("/") + ticker_path
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    ticker_resp = await client.get(ticker_url)
+                    ticker_resp.raise_for_status()
+                    ticker_data = ticker_resp.json()
+                    if ticker_data.get("code") != "0":
+                        continue
+                    ticker = ticker_data.get("data", [{}])[0]
+                    price = float(ticker.get("last", 0.0))
+                    change_24h_pct = float(ticker.get("chg", 0.0)) * 100
+
+                # Get 1h candles for 1h change
+                candles_path = f"/api/v5/market/candles?instId={btc_symbol}&bar=1H&limit=2"
+                candles_url = settings.OKX_BASE_URL.rstrip("/") + candles_path
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    candles_resp = await client.get(candles_url)
+                    candles_resp.raise_for_status()
+                    candles_data = candles_resp.json()
+                    if candles_data.get("code") != "0":
+                        continue
+                    candles = candles_data.get("data", [])
+
+                change_1h_pct = 0.0
+                if len(candles) >= 2:
+                    close_prev = float(candles[1][4])  # OKX candles are newest-first
+                    close_now = float(candles[0][4])
+                    if close_prev > 0:
+                        change_1h_pct = ((close_now - close_prev) / close_prev) * 100
+
+                regime = "normal"
+                if change_1h_pct < -2.0:
+                    regime = "crash"
+                elif change_1h_pct > 2.0:
+                    regime = "rally"
+
+                return {
+                    "btc_price_at_entry": price,
+                    "btc_change_1h_pct": round(change_1h_pct, 2),
+                    "btc_change_24h_pct": round(change_24h_pct, 2),
+                    "macro_regime": regime,
+                }
+            except Exception:
+                continue
+        raise RuntimeError("Could not fetch BTC macro context from any endpoint")
 
     # ── Fee tier ──────────────────────────────────────────────────────────────
 

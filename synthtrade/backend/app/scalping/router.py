@@ -56,6 +56,7 @@ from app.core.signal_log_writer import (
     log_mean_reversion_decision,
     log_rejected_short_unsupported,
 )
+from app.execution.exchange_models import MarketOrderRequest, OrderSide, SymbolRef, ClosePositionRequest, ExitBracketRequest, FeeTier
 
 logger = logging.getLogger(__name__)
 
@@ -469,13 +470,12 @@ async def _live_close_position(exchange, pos, qty: float) -> float:
         logger.warning(f"Could not get symbol rules for rounding ({round_e}), using raw qty")
 
     # 4. Execute Market Close — retry up to 3 times with delay
-    opp_side = "sell" if pos.side.upper() == "BUY" else "buy"
     close_res = None
     for attempt in range(3):
         try:
             close_req = ClosePositionRequest(
                 symbol=sym_ref,
-                side=pos.side.upper(),  # side of the POSITION (not the close order)
+                side=pos.side.lower(),  # side of the POSITION (not the close order)
                 quantity=qty,
             )
             close_res = await exchange.close_position(close_req)
@@ -971,7 +971,7 @@ async def _handle_bracket_failed(exchange, symbol: str):
                 from app.execution.exchange_models import ClosePositionRequest
                 close_req = ClosePositionRequest(
                     symbol=sym_ref,
-                    side="BUY",  # side is position side, close is opposite
+                    side="buy",  # side is position side, close is opposite
                     quantity=actual_qty,
                 )
                 await exchange.close_position(close_req)
@@ -1532,6 +1532,11 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                 )
                                 continue
 
+                            # Only BUY signals reach this point (CLOSE/NONE already filtered)
+                            if side != "BUY":
+                                logger.debug(f"Skipping non-BUY signal: {side}")
+                                continue
+
                             if _check_daily_loss():
                                 logger.warning("Max daily loss exceeded. Blocking new real trade.")
                                 continue
@@ -1575,7 +1580,10 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     filters = await exchange.get_symbol_filters(event.symbol.upper())
                                     
                                     # 2. Compute exact quantity
-                                    _trade_val = max(float(filters.get("minNotional", 5.0)), _trade_val)
+                                    min_notional = float(filters.get("minNotional", 5.0))
+                                    if _trade_val < min_notional:
+                                        logger.warning(f"Trade value {_trade_val} below minNotional {min_notional}, adjusting")
+                                        _trade_val = min_notional
                                     _qty_raw = _trade_val / float(event.close)
                                     step_size = float(filters["stepSize"])
                                     _qty_precise = round(math.floor(_qty_raw / step_size) * step_size, 8)
@@ -1619,14 +1627,31 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                         })
                                         continue
                                         
-                                     # 3. Execute Market Buy
-                                    market_res = await exchange.place_market_order(event.symbol.upper(), side, _qty_precise)
-                                    exec_price = float(market_res.get("price") or event.close)
-                                    exec_qty = _qty_precise  # ignora risposta Binance, usa qty calcolata
+                                    # 3. Execute Market Buy
+                                    from app.execution.exchange_models import MarketOrderRequest, SymbolRef
+
+                                    sym_str = event.symbol.upper()
+                                    sym_ref = SymbolRef.from_okx(sym_str) if "-" in sym_str else SymbolRef.from_compact(sym_str)
+
+                                    # side is "BUY" (validated above)
+                                    # FIX-2026-07-10: Use quote_amount (EUR) instead of quantity (OKB)
+                                    # for BUY market orders so OKX uses tgtCcy=quote_ccy and calculates
+                                    # the base quantity respecting its own minSz constraints.
+                                    # This fixes sCode=51020 "Your order should meet or exceed the minimum order amount."
+                                    market_request = MarketOrderRequest(
+                                        symbol=sym_ref,
+                                        side="buy",  # 'buy' o 'sell'
+                                        quote_amount=_trade_val,  # OKX calcola la quantità base da sola
+                                    )
+                                    market_res = await exchange.place_market_order(market_request)
+
+                                    exec_price = float(market_res.average_price or event.close)
+                                    # Use the actual filled quantity from OKX response, fallback to calculated
+                                    exec_qty = float(market_res.filled or market_res.quantity or _qty_precise)
 
                                     # TASK-886: commissione reale dell'entry, dalla risposta dell'ordine market
-                                    entry_commission_real = float(market_res.get("commission") or 0.0)
-                                    entry_commission_asset_real = market_res.get("commission_asset")
+                                    entry_commission_real = float(market_res.commission or 0.0)
+                                    entry_commission_asset_real = market_res.commission_asset
 
                                     # 4. Calculate Risk SL/TP with proper price precision
                                     # I valori configurati (stop_loss_pct, take_profit_pct) rappresentano
@@ -1681,7 +1706,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                             quantity=exec_qty,
                                             tp_price=tp_price,
                                             sl_price=sl_price,
-                                            entry_order_id=market_res.get("order_id"),
+                                            entry_order_id=market_res.order_id,
                                             fee_tier=fee_tier_obj,
                                         )
                                         bracket_res = await exchange.place_exit_bracket(bracket_req)

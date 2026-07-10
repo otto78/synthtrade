@@ -684,6 +684,39 @@ Fee tier [okx]: maker=0.001, taker=0.001 certified=False
 
 ---
 
+### TASK-1125 — Collector Intelligence: Diagnostica Coverage Reale per Simbolo
+
+**Status:** Done ✅
+**Priorità:** ALTA — prerequisito per qualsiasi fix successivo dei collector intelligence
+**Fase:** 1a (diagnostica pura, zero rischio, nessun cambio di comportamento)
+**Commit:** `1263803`
+
+**Problema:** Il coverage/bypass del `SignalAggregator` confronta "quanti collector hanno risposto" contro un `min_collectors` fisso pensato per 8 collector totali. Per simboli come OKB-EUR, 3 collector (funding_rate, open_interest, long_short_ratio) sono strutturalmente impossibili da ottenere su OKX per uno spot EUR senza perpetual. Il denominatore attuale non distingue collector che non hanno ancora risposto (transitorio) da collector che non risponderanno mai (strutturale).
+
+**Modifiche:**
+1. **`is_symbol_supported()`** in `FundingRateCollector`, `OpenInterestCollector`, `LongShortRatioCollector` — ogni collector ora può indicare se un simbolo supporta strutturalmente quel dato, usando la stessa `FUTURES_SYMBOL_MAP` già presente
+2. **`get_configurable_weight_total(symbol)`** in `SignalScoreEngine` — calcola il peso configurabile totale ESCLUDENDO i collector strutturalmente impossibili per quel simbolo
+3. **Log `[COVERAGE_REAL]`** in `_build_snapshot()` — mostra `real_coverage`, `structurally_unavailable`, `no_response_transient`, `old_coverage_field` per ogni ciclo di scoring, senza modificare alcun comportamento
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/intelligence/collectors/funding_rate.py`
+- `synthtrade/backend/app/scalping/intelligence/collectors/open_interest.py`
+- `synthtrade/backend/app/scalping/intelligence/collectors/long_short_ratio.py`
+- `synthtrade/backend/app/scalping/intelligence/signal_score_engine.py`
+
+**Verifica:** Syntax check passato su tutti e 4 i file. I test esistenti (collector empty response, http error, interpret_rate, rate_to_score) passano. I test `test_collect_success` e `test_rate_to_score_clamped` falliscono pre-esistenti (bug mock asincrono nei test, non correlato).
+
+**Esplicitamente fuori scope per questo task:**
+- Nessuna modifica a `min_collectors`, `signal_strength_threshold`, o bypass in `signal_aggregator.py`
+- Nessuna redistribuzione pesi tra collector
+- Nessun nuovo collector OKX-specifico
+
+**Decisioni chiave:**
+- Coverage reale = peso risposto / peso configurabile (esclude collector che non risponderanno MAI per quel simbolo)
+- `old_coverage_field` loggato accanto per confronto — nessun comportamento di trading cambiato
+
+---
+
 ### TASK-906 — Trend Analysis: Prevenzione Falling Knife in Mean-Reversion (2026-06-30)
 
 **Status:** Pending (in attesa del prossimo drop di mercato per raccogliere i dati reali)
@@ -1010,6 +1043,49 @@ separati (TASK-910 in poi) quando si arriva a quel punto.
 | **TASK-INVEST-018** — Soglia dinamica Supervisor senza decadimento | ⚠️ **PARZIALE** | Commenti in `supervisor_client.py` ma decay/degradation non implementato |
 | **TASK-INVEST-019** — 5/8 collector Intelligence non funzionanti | ⚠️ **PARZIALE** | Circuit breaker presenti ma CVD/OI/LSR dipendono da futures (5/8 falliscono) |
 | **TASK-INVEST-020** — Slope filter su EMA Cross causa regressione | 🟡 **APERTO** | Nessuno slope filter in `ema_cross.py` |
+
+---
+
+### FIX-2026-07-10 — Router passa quantity invece di quote_amount per BUY market order su OKX (sCode=51020)
+
+**Status:** Done ✅
+**Priorità:** CRITICA — blocca trading live su OKX per simboli con minSz più alta
+
+**File:** `synthtrade/backend/app/scalping/router.py`
+
+**Problema:** Il router costruiva `MarketOrderRequest(quantity=_qty_precise, ...)` per i BUY market in live mode, passando la quantità in base currency (0.2851 OKB) invece dell'importo in quote currency (20.0 EUR). Questo impediva a OKX di usare `tgtCcy=quote_ccy`, causando l'errore `sCode=51020: "Your order should meet or exceed the minimum order amount."` perché OKX interpretava `sz=0.2851` come quantità base OKB — che poteva essere sotto il minimo consentito per il symbol.
+
+**Log osservato:**
+```
+qty_raw=0.285, step_size=1e-05, qty_precise=0.2851
+→ OKX API error 1: sCode=51020 "Your order should meet or exceed the minimum order amount."
+```
+
+**Fix applicato:**
+- Il `MarketOrderRequest` ora passa `quote_amount=_trade_val` (20.0 EUR) invece di `quantity=_qty_precise` (0.2851 OKB)
+- OKX riceve `tgtCcy=quote_ccy` e calcola autonomamente la quantità base nel rispetto dei propri vincoli `minSz`
+- `exec_qty` ora prende la quantità filled dalla risposta OKX (`market_res.filled` o `market_res.quantity`) invece di usare la quantità precalcolata
+- Il calcolo di `_qty_precise` rimane come guardia per il balance check e il controllo `minQty`, ma non viene più passato all'exchange
+
+**Dettaglio modifiche (righe 1634-1645):**
+```python
+# PRIMA (bug):
+market_request = MarketOrderRequest(
+    symbol=sym_ref,
+    side="buy",
+    quantity=_qty_precise,  # 0.2851 OKB → sCode=51020
+)
+
+# DOPO (fix):
+market_request = MarketOrderRequest(
+    symbol=sym_ref,
+    side="buy",
+    quote_amount=_trade_val,  # 20.0 EUR → OKX usa tgtCcy=quote_ccy
+)
+exec_qty = float(market_res.filled or market_res.quantity or _qty_precise)
+```
+
+**Test:** Verificare che il prossimo BUY market su OKX per OKB-EUR non produca più sCode=51020.
 
 ---
 

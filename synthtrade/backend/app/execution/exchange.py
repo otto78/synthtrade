@@ -7,7 +7,7 @@ import time
 logger = logging.getLogger(__name__)
 
 OrderSide = Literal["buy", "sell"]
-OrderType = Literal["limit", "market", "stop_loss_limit"]
+OrderType = Literal["limit", "market", "stop_loss_limit", "oco"]
 
 class ExchangeOrderError(Exception):
     """Exception wrapper for exchange order errors with original details."""

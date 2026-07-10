@@ -52,9 +52,66 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 **File modificati:**
 - `synthtrade/backend/app/execution/okx_exchange.py`
 
-### v1.4.9 — 2026-07-09
+### v1.4.13 — 2026-07-10
 
-**Milestone:** Fix metodi mancanti OkxExchangeAdapter + saldo LIVE
+**Milestone:** Fix sCode=51020 — Router passa quote_amount invece di quantity per BUY market order su OKX
+
+**Completato:**
+- ✅ **FIX-2026-07-10:** Il `MarketOrderRequest` per BUY live ora passa `quote_amount=_trade_val` (20.0 EUR) invece di `quantity=_qty_precise` (0.2851 OKB), permettendo a OKX di usare `tgtCcy=quote_ccy` e calcolare autonomamente la quantità base nel rispetto dei propri vincoli `minSz`
+- ✅ **FIX-2026-07-10:** `exec_qty` ora prende la quantità filled dalla risposta OKX (`market_res.filled` o `market_res.quantity`) invece di usare la quantità precalcolata
+- ✅ **FIX-2026-07-10:** Il calcolo di `_qty_precise` rimane come guardia per il balance check e il controllo `minQty`, ma non viene più passato all'exchange
+
+**Decisioni chiave:**
+- Per BUY market su OKX, passare sempre l'importo in quote currency (EUR) e lasciare che OKX calcoli la quantità base — questo rispetta automaticamente i vincoli `minSz` del symbol
+- La quantità precalcolata (`_qty_precise`) resta utile solo per il balance check preventivo e il controllo `minQty`, non per l'ordine reale
+- Stesso pattern già confermato funzionante nello spike (docs/analysis/okx-demo-spike-results.md §5)
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/router.py` — righe 1634-1645: `quantity=_qty_precise` → `quote_amount=_trade_val`
+
+**Verifica:** Il prossimo BUY market su OKX per OKB-EUR non deve più produrre sCode=51020.
+
+### v1.4.12 — 2026-07-10
+
+**Milestone:** TASK-1125 — Collector Intelligence: Diagnostica Coverage Reale per Simbolo
+
+**Completato:**
+- ✅ **TASK-1125:** Aggiunto `is_symbol_supported()` a `FundingRateCollector`, `OpenInterestCollector`, `LongShortRatioCollector` — ogni collector ora sa dire se un simbolo può strutturalmente avere quel dato (es. OKB-EUR non ha perpetual futures → `False`)
+- ✅ **TASK-1125:** Aggiunto `get_configurable_weight_total(symbol)` in `SignalScoreEngine` — calcola il peso configurabile totale ESCLUDENDO i collector strutturalmente impossibili per quel simbolo
+- ✅ **TASK-1125:** Aggiunto log diagnostico `[COVERAGE_REAL]` in `_build_snapshot()` — mostra `real_coverage`, `structurally_unavailable`, `no_response_transient`, `old_coverage_field` per ogni ciclo di scoring
+
+**Decisioni chiave:**
+- Coverage reale = peso risposto / peso configurabile (esclude collector che non risponderanno MAI per quel simbolo)
+- `old_coverage_field` viene loggato accanto per confronto — nessun comportamento di trading cambiato
+- La diagnostica copre: OKB-EUR (3 collector structuralmente assenti), BTC-EUR (quasi tutti presenti), e qualsiasi simbolo
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/intelligence/collectors/funding_rate.py` — nuovo metodo `is_symbol_supported()`
+- `synthtrade/backend/app/scalping/intelligence/collectors/open_interest.py` — nuovo metodo `is_symbol_supported()`
+- `synthtrade/backend/app/scalping/intelligence/collectors/long_short_ratio.py` — nuovo metodo `is_symbol_supported()`
+- `synthtrade/backend/app/scalping/intelligence/signal_score_engine.py` — nuovo metodo `get_configurable_weight_total()` + log `[COVERAGE_REAL]`
+
+**Verifica:** Syntax check passato su tutti e 4 i file. Commit `1263803`.
+
+### v1.4.11 — 2026-07-09
+
+**Milestone:** CCXT create_order fallisce con 50119 su OKX EU — fallback REST diretto per market order
+
+**Completato:**
+- ✅ **TASK-1123:** Aggiunto metodo `_direct_place_market_order()` che usa POST `/api/v5/trade/order` con firma HMAC-SHA256 diretta, bypassando CCXT
+- ✅ **TASK-1123:** Modificata `place_market_order()`: se CCXT fallisce con `50119` o `"API key doesn't exist"`, usa il fallback REST diretto
+- ✅ **TASK-1123:** Il fallback supporta sia quantità base che `tgtCcy=quote_ccy` per buy con importo in valuta quota
+
+**Decisioni chiave:**
+- Stesso pattern di fallback già usato con successo per `_direct_fetch_balance()` — esteso ora agli ordini market
+- CCXT `create_order()` fallisce con 50119 su EU accounts per lo stesso motivo di `load_markets()` — REST diretto risolve
+
+**File modificati:**
+- `synthtrade/backend/app/execution/okx_exchange.py` — nuovo metodo `_direct_place_market_order()` + fallback in `place_market_order()`
+
+### v1.4.10 — 2026-07-09
+
+**Milestone:** Fix Pylance NoneType error in self.client.urls["api"] access
 
 **Completato:**
 - ✅ **TASK-1119:** `get_symbol_filters()` aggiunto come wrapper su `get_symbol_rules()` (commit 6d3b52b)

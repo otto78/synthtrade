@@ -6,9 +6,9 @@
 
 ### Da: Cline → prossima sessione
 
-**Data:** 2026-07-09 15:02
+**Data:** 2026-07-10 08:59
 
-**Contesto:** Fix Pylance NoneType + SymbolRef.from_any() missing + aggiornamento docs
+**Contesto:** TASK-1125 — Collector Intelligence: Diagnostica Coverage Reale per Simbolo
 
 ---
 
@@ -19,6 +19,28 @@
 **Fix:**
 - Aggiunto guard `self.client.urls is not None` prima di accedere a `self.client.urls["api"]`
 - Sostituito `.get("api", {})` con `(self.client.urls.get("api") or {})` per gestire `None` values
+
+### ✅ FASE COMPLETATA: TASK-1123 — CCXT create_order fallisce con 50119 su OKX EU, fallback REST diretto per market order
+
+**Problema:** `place_market_order()` chiama `self.client.create_order()` via CCXT, che fallisce con errore `50119 API key doesn't exist` su OKX EU live accounts. Il balance (che usa REST diretto) funzionava già, ma gli ordini erano bloccati.
+
+**Log osservato:**
+```
+ERROR: Live trade failed: OKX market order failed: okx {"msg":"API key doesn't exist","code":"50119"}
+```
+
+**Fix:**
+- Aggiunto metodo `_direct_place_market_order()` che usa POST `/api/v5/trade/order` con firma HMAC-SHA256 diretta, bypassando CCXT
+- Modificata `place_market_order()`: se CCXT fallisce con `50119` o `"API key doesn't exist"`, usa il fallback REST diretto
+- Il fallback supporta sia quantità base che `tgtCcy=quote_ccy` per buy con importo in valuta quota
+
+**File modificati:**
+- `synthtrade/backend/app/execution/okx_exchange.py`
+
+**Stato sistema:**
+- ✅ Syntax check passato
+- ✅ Logica speculare a `_direct_fetch_balance()` già funzionante in produzione
+- ✅ Docs aggiornati (TASKS.md, STORY.md, HANDOFF.md)
 
 ### ✅ FASE COMPLETATA: TASK-1122 — Fix SymbolRef.from_any() missing
 

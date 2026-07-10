@@ -7,9 +7,14 @@ SynthTrade domain concepts usable by any exchange adapter.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from app.execution.exchange import ExchangeOrderError, ExchangeAuthError, ExchangeNetworkError  # noqa: F401 re-export
+
+
+# ── Type aliases ──────────────────────────────────────────────────────────────
+
+OrderSide = Literal["buy", "sell"]
 
 
 # ── Errors ────────────────────────────────────────────────────────────────────
@@ -122,22 +127,22 @@ class FeeTier:
 @dataclass
 class MarketOrderRequest:
     symbol: SymbolRef
-    side: str           # "buy" | "sell"
-    quantity: float     # base asset quantity
+    side: OrderSide
+    quantity: float = 0.0     # base asset quantity (optional when quote_amount is used)
     quote_amount: float | None = None  # alternative: spend this quote amount
 
 
 @dataclass
 class ClosePositionRequest:
     symbol: SymbolRef
-    side: str           # side of the POSITION (buy=long -> close with sell)
+    side: OrderSide     # side of the POSITION (buy=long -> close with sell)
     quantity: float
 
 
 @dataclass
 class ExitBracketRequest:
     symbol: SymbolRef
-    side: str           # side of the EXIT orders (opposite of entry)
+    side: OrderSide     # side of the EXIT orders (opposite of entry)
     quantity: float
     tp_price: float
     sl_price: float
@@ -151,7 +156,7 @@ class ExchangeOrder:
     provider: str
     symbol: SymbolRef
     order_id: str
-    side: str
+    side: OrderSide
     order_type: str
     status: str
     quantity: float

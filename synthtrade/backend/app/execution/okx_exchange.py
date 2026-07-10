@@ -13,14 +13,14 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Dict, Optional, cast
 
 import ccxt.async_support as ccxt
 import httpx
-
 from app.config import settings
 from app.execution.exchange_models import (
     ClosePositionRequest,
@@ -30,11 +30,12 @@ from app.execution.exchange_models import (
     ExitProtectionError,
     FeeTier,
     MarketOrderRequest,
+    OrderSide,
     SymbolRef,
     SymbolRules,
     UnsupportedInstrumentError,
 )
-from app.execution.exchange import ExchangeOrderError, ExchangeAuthError, ExchangeNetworkError
+from app.execution.exchange import ExchangeOrderError
 
 logger = logging.getLogger(__name__)
 
@@ -116,8 +117,12 @@ class OkxExchangeAdapter:
 
     @staticmethod
     def _sign_headers(method: str, path: str, body: str = "") -> dict:
+        """Firma le richieste OKX con il body incluso per POST."""
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        prehash = ts + method + path + body
+        if body:
+            prehash = ts + method + path + body
+        else:
+            prehash = ts + method + path
         sig = base64.b64encode(
             hmac.new(
                 settings.exchange_secret_key.encode(),
@@ -293,14 +298,18 @@ class OkxExchangeAdapter:
 
         Returns dict with stepSize, minQty, minNotional, quoteAsset, baseAsset.
         Wraps get_symbol_rules() for BinanceExchangeAdapter compatibility.
+        Note: OKX doesn't have minNotional - using minSz * typical_price as proxy.
         """
         try:
             sym_ref = SymbolRef.from_any(symbol)
             rules = await self.get_symbol_rules(sym_ref)
+            # OKX doesn't have minNotional - use minSz * 100 as reasonable minimum
+            # (typical minimum order value is ~1-10 EUR)
+            min_notional = max(1.0, rules.min_sz * 100)
             return {
                 "stepSize": rules.lot_sz,
                 "minQty": rules.min_sz,
-                "minNotional": rules.max_mkt_sz,  # OKX uses max_mkt_sz as min notional proxy
+                "minNotional": min_notional,
                 "tickSize": rules.tick_sz,
                 "quoteAsset": sym_ref.quote,
                 "baseAsset": sym_ref.base,
@@ -316,7 +325,6 @@ class OkxExchangeAdapter:
         Uses BTC-USDT (or BTC-EUR if available) for price and changes.
         60-second cache to avoid rate limits.
         """
-        import time
         now = time.time()
         if now - self._macro_cache.get("timestamp", 0) < 60 and self._macro_cache.get("data"):
             return self._macro_cache["data"]
@@ -497,6 +505,42 @@ class OkxExchangeAdapter:
 
     # ── Orders ────────────────────────────────────────────────────────────────
 
+    async def _direct_place_market_order(self, symbol: SymbolRef, side: str, quantity: float, quote_amount: Optional[float] = None) -> dict:
+        """Direct REST fallback per OKX market order quando CCXT fallisce."""
+        path = "/api/v5/trade/order"
+        url = settings.OKX_BASE_URL.rstrip("/") + path
+        
+        # Prepara il body
+        body = {
+            "instId": symbol.okx,
+            "tdMode": "cash",
+            "side": side,
+            "ordType": "market",
+            "sz": str(quantity),
+        }
+        
+        if quote_amount and side == "buy":
+            body["tgtCcy"] = "quote_ccy"
+            body["sz"] = str(quote_amount)
+        
+        headers = self._sign_headers("POST", path, json.dumps(body))
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, headers=headers, json=body)
+            if resp.status_code != 200:
+                logger.error("OKX order POST failed [%s]: %s", resp.status_code, resp.text)
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("code") != "0":
+                s_code = data.get("sCode")
+                s_msg = data.get("sMsg")
+                raise RuntimeError(
+                    f"OKX API error {data.get('code')}: {data.get('msg')} "
+                    f"| sCode={s_code} sMsg={s_msg} | full_data={data}"
+                )
+
+            return data.get("data", [{}])[0]
+
     async def place_market_order(self, request: MarketOrderRequest) -> ExchangeOrder:
         """
         Place a spot market order on OKX.
@@ -505,6 +549,7 @@ class OkxExchangeAdapter:
         so OKX handles the base quantity calculation internally.
         """
         symbol = request.symbol
+        rules: SymbolRules | None = None
         try:
             rules = await self.get_symbol_rules(symbol)
             params: dict[str, Any] = {"tdMode": "cash"}
@@ -552,10 +597,32 @@ class OkxExchangeAdapter:
         except ccxt.InsufficientFunds as e:
             raise ExchangeOrderError(f"OKX insufficient funds: {e}", original_exception=e) from e
         except Exception as e:
+            # Se CCXT fallisce con 50119, usa il fallback REST diretto
+            if "50119" in str(e) or "API key doesn't exist" in str(e):
+                logger.warning(f"CCXT create_order failed with 50119, using direct REST fallback for {symbol.okx}")
+                try:
+                    qty_val: float = request.quote_amount if request.quote_amount and request.side == "buy" else (rules.round_qty(request.quantity) if rules else request.quantity)
+                    order_data = await self._direct_place_market_order(symbol, request.side, qty_val, request.quote_amount)
+                    return ExchangeOrder(
+                        provider="okx",
+                        symbol=symbol,
+                        order_id=str(order_data.get("ordId", "")),
+                        side=request.side,
+                        order_type="market",
+                        status="filled" if order_data.get("state") == "filled" else "open",
+                        quantity=float(order_data.get("sz", qty_val)),
+                        filled=float(order_data.get("accFillSz", 0)),
+                        average_price=float(order_data.get("avgPx", 0)),
+                        commission=float(order_data.get("fee", 0)),
+                        commission_asset=symbol.quote,
+                        raw=order_data,
+                    )
+                except Exception as rest_e:
+                    raise ExchangeOrderError(f"OKX market order failed (REST fallback also failed): {rest_e}", original_exception=rest_e) from rest_e
             raise ExchangeOrderError(f"OKX market order failed: {e}", original_exception=e) from e
 
     async def close_position(self, request: ClosePositionRequest) -> ExchangeOrder:
-        opp_side = "sell" if request.side == "buy" else "buy"
+        opp_side: OrderSide = "sell" if request.side == "buy" else "buy"
         return await self.place_market_order(
             MarketOrderRequest(symbol=request.symbol, side=opp_side, quantity=request.quantity)
         )
@@ -597,7 +664,7 @@ class OkxExchangeAdapter:
 
             order = await self.client.create_order(
                 symbol=symbol.ccxt,
-                type="oco",
+                type=cast(Any, "oco"),  # OKX supports oco via order-algo
                 side=request.side,
                 amount=qty,
                 price=tp_price,
@@ -710,7 +777,6 @@ class OkxExchangeAdapter:
     @classmethod
     def from_settings(cls) -> "OkxExchangeAdapter":
         """Build adapter from app settings (TASK-1101 config)."""
-        from app.config import settings
         return cls(
             api_key=settings.exchange_api_key,
             secret=settings.exchange_secret_key,

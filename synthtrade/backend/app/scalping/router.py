@@ -240,15 +240,14 @@ async def scalping_websocket(ws: WebSocket):
         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
         _ef = fee_tier.get("taker", 0.001)
         _xf = fee_tier.get("maker", 0.001)
-        # TASK-1127 fix: use abs() + explicit direction, same as trade processor.
-        # _net_to_gross_pct with high OKX fees can return positive even for negative net_pct,
-        # so we always pass a positive magnitude and apply direction explicitly.
-        _ef = abs(fee_tier.get("taker", 0.001))
-        _xf = abs(fee_tier.get("maker", 0.001))
-        sl_gross_pct = abs(_net_to_gross_pct(sl_pct_cfg, _ef, _xf)) / 100
-        tp_gross_pct = abs(_net_to_gross_pct(tp_pct_cfg, _ef, _xf)) / 100
-        # BUY: SL below entry, TP above entry — SELL: reversed
-        sl_price = entry_f * (1 - sl_gross_pct) if pos.side == "BUY" else entry_f * (1 + sl_gross_pct)
+        # TASK-1127: Fees are now positive for base level accounts (converted in adapter)
+        # _net_to_gross_pct works with positive fee rates
+        # SL target is a LOSS: pass the NEGATIVE net so _net_to_gross_pct returns
+        # the (smaller) gross move that nets that loss AFTER fees.
+        sl_gross_pct = _net_to_gross_pct(-sl_pct_cfg, _ef, _xf) / 100
+        tp_gross_pct = _net_to_gross_pct(tp_pct_cfg, _ef, _xf) / 100
+        # BUY: SL below entry (1 + negative), TP above entry (1 + positive) — SELL: reversed
+        sl_price = entry_f * (1 + sl_gross_pct) if pos.side == "BUY" else entry_f * (1 - sl_gross_pct)
         tp_price = entry_f * (1 + tp_gross_pct) if pos.side == "BUY" else entry_f * (1 - tp_gross_pct)
         # TASK-1129: usa i veri prezzi TP/SL piazzati su OKX se disponibili
         # (fallback al ricalcolo da percentuali per posizioni pre-fix / restore).
@@ -1680,24 +1679,20 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     price_prec = int(filters.get("pricePrecision", 2))
 
                                     fee_tier_pricing = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-                                    # TASK-1114: OKX fees are negative rebates (e.g. maker=-0.002).
-                                    # _net_to_gross_pct expects positive rates — use abs() so the
-                                    # formula correctly accounts for the fee magnitude regardless of sign.
-                                    entry_fee_pricing = abs(fee_tier_pricing.get("taker", 0.001))
-                                    exit_fee_pricing = abs(fee_tier_pricing.get("maker", 0.001))
+                                    # TASK-1127: Fees are now positive for base level accounts (converted in adapter)
+                                    entry_fee_pricing = fee_tier_pricing.get("taker", 0.001)
+                                    exit_fee_pricing = fee_tier_pricing.get("maker", 0.001)
 
                                     # TASK-1127: SL/TP gross price calculation.
                                     # _net_to_gross_pct returns a positive magnitude for both TP and SL.
-                                    # For SL we always call with a positive value (the magnitude of the
-                                    # desired loss) and then explicitly subtract for BUY / add for SELL.
-                                    # Do NOT pass negative input: with high OKX fees the formula can still
-                                    # return positive even for negative net_pct, causing SL > entry.
-                                    sl_gross_pct = abs(_net_to_gross_pct(sl_pct_net_cfg, entry_fee_pricing, exit_fee_pricing)) / 100
-                                    tp_gross_pct = abs(_net_to_gross_pct(tp_pct_net_cfg, entry_fee_pricing, exit_fee_pricing)) / 100
+                                    # SL target is a LOSS: pass the NEGATIVE net so _net_to_gross_pct
+                                    # returns the (smaller) gross move that nets that loss AFTER fees.
+                                    sl_gross_pct = _net_to_gross_pct(-sl_pct_net_cfg, entry_fee_pricing, exit_fee_pricing) / 100
+                                    tp_gross_pct = _net_to_gross_pct(tp_pct_net_cfg, entry_fee_pricing, exit_fee_pricing) / 100
 
-                                    # BUY:  SL = below entry (exec * (1 - sl_pct)), TP = above entry (exec * (1 + tp_pct))
-                                    # SELL: SL = above entry (exec * (1 + sl_pct)), TP = below entry (exec * (1 - tp_pct))
-                                    sl_price = round(exec_price * (1 - sl_gross_pct), price_prec) if side == "BUY" else round(exec_price * (1 + sl_gross_pct), price_prec)
+                                    # BUY:  SL = below entry (exec * (1 + negative)), TP = above entry (exec * (1 + tp_pct))
+                                    # SELL: SL = above entry (exec * (1 - negative)), TP = below entry (exec * (1 - tp_pct))
+                                    sl_price = round(exec_price * (1 + sl_gross_pct), price_prec) if side == "BUY" else round(exec_price * (1 - sl_gross_pct), price_prec)
                                     tp_price = round(exec_price * (1 + tp_gross_pct), price_prec) if side == "BUY" else round(exec_price * (1 - tp_gross_pct), price_prec)
 
                                     logger.info(
@@ -2002,6 +1997,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         _tp_cfg = float(risk_cfg.get("take_profit_pct", 0.5))
                         _ft3 = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
                         _ef3, _xf3 = _ft3.get("taker", 0.001), _ft3.get("maker", 0.001)
+                        # TASK-1127: Fees are now positive for base level accounts
                         sl_price = entry_f * (1 + _net_to_gross_pct(-_sl_cfg, _ef3, _xf3) / 100) if pos.side == "BUY" else entry_f * (1 - _net_to_gross_pct(-_sl_cfg, _ef3, _xf3) / 100)
                         tp_price = entry_f * (1 + _net_to_gross_pct(_tp_cfg, _ef3, _xf3) / 100) if pos.side == "BUY" else entry_f * (1 - _net_to_gross_pct(_tp_cfg, _ef3, _xf3) / 100)
                         # TASK-1129: usa i veri prezzi TP/SL piazzati su OKX se disponibili
@@ -2121,6 +2117,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     _tp_cfg4 = float(risk_cfg.get("take_profit_pct", 0.5))
                     _ft4 = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
                     _ef4, _xf4 = _ft4.get("taker", 0.001), _ft4.get("maker", 0.001)
+                    # TASK-1127: Fees are now positive for base level accounts
                     sl = entry * (1 + _net_to_gross_pct(-_sl_cfg4, _ef4, _xf4) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(-_sl_cfg4, _ef4, _xf4) / 100)
                     tp = entry * (1 + _net_to_gross_pct(_tp_cfg4, _ef4, _xf4) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(_tp_cfg4, _ef4, _xf4) / 100)
                     # TASK-1129: usa i veri prezzi TP/SL piazzati su OKX se disponibili
@@ -3386,12 +3383,12 @@ async def get_position() -> Optional[Dict]:
         return None
     
     # Calculate current PnL estimate
+    entry = float(pos.entry_price)
     loop = _execution_state.get("loop")
     if loop and hasattr(loop, "_candle_buffer") and len(loop._candle_buffer) > 0:
         candles = loop._candle_buffer.get()
         current_price = float(candles[-1].close)
         qty = float(pos.quantity)
-        entry = float(pos.entry_price)
         entry_val = entry * qty
         current_val = current_price * qty
         gross_pnl = (current_price - entry) * qty if pos.side == "BUY" else (entry - current_price) * qty
@@ -3439,8 +3436,9 @@ async def get_position() -> Optional[Dict]:
 
     # TASK-1129: veri prezzi TP/SL piazzati su OKX (fallback a ricalcolo da pct
     # per posizioni pre-fix / restore senza questi campi).
-    _ef_p = abs(fee_tier.get("taker", 0.001))
-    _xf_p = abs(fee_tier.get("maker", 0.001))
+    _ef_p = fee_tier.get("taker", 0.001)
+    _xf_p = fee_tier.get("maker", 0.001)
+    # TASK-1127: Fees are now positive for base level accounts
     sl_price_calc = entry * (1 + _net_to_gross_pct(-sl_pct, _ef_p, _xf_p) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(-sl_pct, _ef_p, _xf_p) / 100)
     tp_price_calc = entry * (1 + _net_to_gross_pct(tp_pct, _ef_p, _xf_p) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(tp_pct, _ef_p, _xf_p) / 100)
     stop_loss_price = float(pos.sl_price) if pos.sl_price is not None else sl_price_calc

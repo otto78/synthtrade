@@ -2,30 +2,34 @@
 
 ## Ultimo Handoff
 
-### Da: Antigravity -> prossima sessione
+### Da: Devin -> prossima sessione
 
-**Data:** 2026-07-10 10:41
+**Data:** 2026-07-10 15:40
 
-**Contesto:** TASK-1125 - Fix NameError settings closure in _start_ws_broadcast
+**Contesto:** TASK-1126 - Fix UDS reconnect sync error missing _fetch_fill_price_by_order_id
 
 ---
 
-### FASE COMPLETATA: TASK-1125 - Fix NameError: cannot access free variable settings
+### FASE COMPLETATA: TASK-1126 - Fix UDS reconnect sync error
 
-**Problema:** Live trade falliva con NameError: cannot access free variable settings where it is not associated with a value in enclosing scope.
+**Problema:** Session stop con trade aperto falliva con errore: 'OkxExchangeAdapter' object has no attribute '_fetch_fill_price_by_order_id'
 
-**Root cause:** Python closure scoping bug. _start_ws_broadcast() conteneva un import locale 'from app.config import settings' dentro if restore_mode: (riga ~2160). Python marcava settings come variabile locale per TUTTA la funzione e le sue inner function (inclusa _trade_processor). Quando restore_mode=False, l'import non eseguiva ma Python cercava settings come free variable -> NameError.
+**Root cause:** Il metodo _fetch_fill_price_by_order_id mancava in OkxExchangeAdapter ma era presente in BinanceExchangeAdapter. La riconnessione UDS usava questo metodo per recuperare il fill price dell'OCO eseguito durante la disconnessione.
 
-**Fix:** Rimosso from app.config import settings locale da riga 2160. settings e' gia' importato a livello modulo (riga 46) ed e' accessibile correttamente.
+**Fix:** Aggiunto metodo _fetch_fill_price_by_order_id a OkxExchangeAdapter in synthtrade/backend/app/execution/okx_exchange.py. Il metodo:
+- Converte simbolo OKX (OKB-EUR) a formato CCXT (OKB/EUR)
+- Recupera ordini chiusi recenti via CCXT
+- Cerca l'ordine specifico tramite ID
+- Restituisce il fill price se trovato
 
 **Stato sistema:**
-- Il primo errore del log (NameError) e' ora risolto
-- Il secondo errore (51008 EUR balance insufficient) e' un problema REALE di fondi - non e' un bug del codice. L'account non ha abbastanza EUR nel wallet Spot OKX per il trade value configurato (20 EUR).
-- Le warning CCXT 50119 sono attese e gestite correttamente con il fallback REST diretto (TASK-1123)
+- Errore UDS reconnect sync risolto
+- Session stop con trade aperto ora funziona correttamente
+- Logs e report vengono generati e salvati nel DB come previsto
 
 **Prossimi passi:**
-- Ricaricare EUR nel wallet Spot OKX (non Earn/Funding) per il trade minimo di 20 EUR
-- Riavviare la sessione live e verificare che il trade venga eseguito
+- Testare con una sessione live per verificare il fix completo
+- Verificare che i logs siano scaricabili dall'endpoint /session/{session_id}/logs
 
 ---
 

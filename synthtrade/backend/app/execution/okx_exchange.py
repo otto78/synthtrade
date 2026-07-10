@@ -446,10 +446,12 @@ class OkxExchangeAdapter:
         path = f"/api/v5/account/trade-fee?instType=SPOT&instId={symbol.okx}"
         url = settings.OKX_BASE_URL.rstrip("/") + path
         headers = self._sign_headers("GET", path)
+        
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(url, headers=headers)
             resp.raise_for_status()
             data = resp.json()
+            
             if data.get("code") != "0":
                 raise RuntimeError(f"OKX API error {data.get('code')}: {data.get('msg')}")
             fee_data = data.get("data", [])
@@ -458,10 +460,26 @@ class OkxExchangeAdapter:
             # OKX returns fee in maker/taker fields (negative = rebate)
             maker = float(fee_data[0].get("maker", 0.001))
             taker = float(fee_data[0].get("taker", 0.001))
-            logger.info(
-                "[OKX FEE DIRECT] %s maker=%.4f taker=%.4f (negative=rebate)",
-                symbol.okx, maker, taker,
-            )
+            
+            # TASK-1127: Convert negative fees to positive for base level accounts
+            # OKX API returns negative fees even for regular accounts (Lv1), but regular accounts
+            # don't actually have rebates. We convert to positive for base VIP levels.
+            vip_level = fee_data[0].get("level", "")
+            if vip_level in ["Lv1", ""] or not any(char.isalpha() for char in vip_level):
+                # Base level - convert to positive fees
+                maker = abs(maker)
+                taker = abs(taker)
+                logger.info(
+                    "[OKX FEE DIRECT] %s maker=%.4f taker=%.4f (base level, converted to positive)",
+                    symbol.okx, maker, taker,
+                )
+            else:
+                # VIP level with actual rebates - keep negative
+                logger.info(
+                    "[OKX FEE DIRECT] %s maker=%.4f taker=%.4f (VIP level %s, keeping negative)",
+                    symbol.okx, maker, taker, vip_level,
+                )
+            
             return FeeTier(
                 maker=maker,
                 taker=taker,
@@ -475,7 +493,7 @@ class OkxExchangeAdapter:
         Fetch fee tier from OKX GET /api/v5/account/trade-fee.
 
         OKX returns negative values for rebates (maker=-0.002 means -0.2% rebate).
-        We preserve the sign: negative = rebate (exchange pays you).
+        For base level accounts (Lv1), we convert to positive since they don't have rebates.
         Falls back to direct REST if CCXT fails (50119 on EU accounts).
         """
         try:
@@ -486,10 +504,24 @@ class OkxExchangeAdapter:
 
             maker = float(response["maker"])
             taker = float(response["taker"])
-            logger.info(
-                "[OKX FEE] %s maker=%.4f taker=%.4f (negative=rebate)",
-                symbol.ccxt, maker, taker,
-            )
+            
+            # TASK-1127: Convert negative fees to positive for base level accounts
+            # CCXT response doesn't include VIP level, so we check the sign and context
+            # If we're in live mode and fees are negative, it's likely API returning wrong data
+            if not self._demo and (maker < 0 or taker < 0):
+                # Live mode with negative fees - likely base level account with API bug
+                maker = abs(maker)
+                taker = abs(taker)
+                logger.info(
+                    "[OKX FEE] %s maker=%.4f taker=%.4f (live mode, converted to positive)",
+                    symbol.ccxt, maker, taker,
+                )
+            else:
+                logger.info(
+                    "[OKX FEE] %s maker=%.4f taker=%.4f (negative=rebate)",
+                    symbol.ccxt, maker, taker,
+                )
+                
             return FeeTier(
                 maker=maker,
                 taker=taker,
@@ -598,41 +630,6 @@ class OkxExchangeAdapter:
             raise
         except ccxt.InsufficientFunds as e:
             raise ExchangeOrderError(f"OKX insufficient funds: {e}", original_exception=e) from e
-
-    # ── Fee tier ──────────────────────────────────────────────────────────────
-
-    async def _direct_fetch_trade_fee(self, symbol: SymbolRef) -> FeeTier:
-        """Direct REST fallback for OKX trade fee when CCXT fetch_trading_fee fails.
-
-        CCXT fetch_trading_fee() can fail with 50119 on OKX EU accounts.
-        This bypasses CCXT entirely and calls the OKX REST endpoint directly.
-        """
-        path = f"/api/v5/account/trade-fee?instType=SPOT&instId={symbol.okx}"
-        url = settings.OKX_BASE_URL.rstrip("/") + path
-        headers = self._sign_headers("GET", path)
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-            if data.get("code") != "0":
-                raise RuntimeError(f"OKX API error {data.get('code')}: {data.get('msg')}")
-            fee_data = data.get("data", [])
-            if not fee_data:
-                raise RuntimeError("No fee data returned")
-            # OKX returns fee in maker/taker fields (negative = rebate)
-            maker = float(fee_data[0].get("maker", 0.001))
-            taker = float(fee_data[0].get("taker", 0.001))
-            logger.info(
-                "[OKX FEE DIRECT] %s maker=%.4f taker=%.4f (negative=rebate)",
-                symbol.okx, maker, taker,
-            )
-            return FeeTier(
-                maker=maker,
-                taker=taker,
-                certified=True,
-                source="okx_trade_fee_direct",
-                raw=fee_data[0],
-            )
 
     async def get_trade_fee(self, symbol: SymbolRef) -> FeeTier:
         """

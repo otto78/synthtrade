@@ -49,6 +49,17 @@ class LongShortRatioCollector:
         from app.scalping.intelligence.collectors.circuit_breaker import CollectorCircuitBreaker
         self._cb = CollectorCircuitBreaker("long_short_ratio")
 
+    def is_symbol_supported(self, symbol: str) -> bool:
+        """True se il simbolo può strutturalmente avere long/short ratio.
+
+        Usa la stessa FUTURES_SYMBOL_MAP del collect(). Se il simbolo
+        non è nella mappa, ritorna True in modo conservativo.
+        """
+        sym_upper = symbol.upper()
+        if sym_upper not in FUTURES_SYMBOL_MAP:
+            return True
+        return FUTURES_SYMBOL_MAP[sym_upper] is not None
+
     async def collect(self, symbol: str = "BTCUSDT", period: str = "5m") -> Optional[LongShortRatio]:
         if not self._cb.is_available():
             return None

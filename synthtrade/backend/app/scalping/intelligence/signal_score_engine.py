@@ -146,6 +146,32 @@ class SignalScoreEngine:
         """Collega un CVDCalculator esterno (alimentato dal WS client)."""
         self._cvd_calculator = calculator
 
+    def get_configurable_weight_total(self, symbol: str) -> tuple[float, list[str]]:
+        """Calcola il peso configurabile totale per questo simbolo.
+
+        Esclude dal denominatore:
+        - whale, se SCALPING_WHALE_ENABLED=False
+        - funding_rate/open_interest/long_short_ratio, se
+          is_symbol_supported(symbol) == False per quel collector
+
+        Ritorna (peso_totale_configurabile, lista_nomi_esclusi_strutturalmente)
+        """
+        weights = dict(self.weights)  # copia dei pesi runtime
+        excluded: list[str] = []
+
+        collectors_to_check = [
+            ("funding_rate", self._funding_rate),
+            ("open_interest", self._open_interest),
+            ("long_short_ratio", self._long_short),
+        ]
+        for name, collector in collectors_to_check:
+            if hasattr(collector, "is_symbol_supported"):
+                if not collector.is_symbol_supported(symbol):
+                    weights.pop(name, None)
+                    excluded.append(name)
+
+        return sum(weights.values()), excluded
+
     async def compute(self) -> SignalScore:
         """Calcola lo score intelligence aggregato per il simbolo.
 
@@ -366,7 +392,37 @@ class SignalScoreEngine:
         
         total_weight_configured = sum(w for w in self.weights.values() if w > 0)
         coverage = total_weight / total_weight_configured if total_weight_configured > 0 else 0.0
-        
+
+        # ── Log diagnostico COVERAGE_REAL (TASK-1125) ──
+        # Calcola la coverage reale: peso dei collector che hanno risposto diviso
+        # peso dei collector strutturalmente disponibili per QUESTO simbolo.
+        # Esclude dal denominatore collector che non possono MAI rispondere
+        # (es. funding_rate per OKB-EUR che non ha perpetual futures).
+        configurable_total, structurally_excluded = self.get_configurable_weight_total(self.symbol)
+        responded_names = set(k for k in breakdown)
+        responded_weight = sum(self.weights.get(k, 0.0) for k in responded_names)
+        real_coverage = responded_weight / configurable_total if configurable_total > 0 else 0.0
+
+        no_response_transient = [
+            k for k in self.weights
+            if self.weights.get(k, 0.0) > 0  # solo pesi attivi (> 0.0)
+            and k not in responded_names
+            and k not in structurally_excluded
+            and k != "onchain"  # onchain ha peso 0.0, ignorato
+        ]
+
+        logger.info(
+            "[ScoreEngine][COVERAGE_REAL] symbol=%s configurable_total=%.2f "
+            "responded_weight=%.2f real_coverage=%.1f%% "
+            "structurally_unavailable=%s no_response_transient=%s "
+            "old_coverage_field=%.1f%%",
+            self.symbol, configurable_total, responded_weight,
+            real_coverage * 100,
+            structurally_excluded, no_response_transient,
+            coverage * 100,
+        )
+        # ── Fine log diagnostico ──
+
         # Gate 1: Skip se coverage insufficiente (meno del 50% dei dati disponibili)
         if coverage < 0.5:
             bias = "neutral"

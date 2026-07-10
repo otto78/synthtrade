@@ -49,6 +49,23 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - CCXT può restituire `None` per `urls` in certe modalità operative → doppia guardia necessaria
 - Il fix è conservativo: non modifica la logica, aggiunge solo safety checks
 
+### v1.4.11 — 2026-07-10
+
+**Milestone:** Fix UDS reconnect sync error - missing _fetch_fill_price_by_order_id method
+
+**Completato:**
+- ✅ **TASK-1126:** Aggiunto metodo `_fetch_fill_price_by_order_id` a `OkxExchangeAdapter` per recupero fill price durante riconnessione UDS
+- ✅ **TASK-1126:** Il metodo converte simbolo OKX (OKB-EUR) a formato CCXT (OKB/EUR) e recupera ordini chiusi recenti
+- ✅ **TASK-1126:** Risolto errore `'OkxExchangeAdapter' object has no attribute '_fetch_fill_price_by_order_id'` durante session stop con trade aperto
+
+**Decisioni chiave:**
+- Il metodo mancava in `OkxExchangeAdapter` ma era presente in `BinanceExchangeAdapter`
+- La riconnessione UDS usava questo metodo per recuperare il fill price dell'OCO eseguito durante la disconnessione
+- Senza questo metodo, il recupero falliva e il trade rimaneva in stato inconsistente
+
+**File modificati:**
+- `synthtrade/backend/app/execution/okx_exchange.py` — aggiunto `_fetch_fill_price_by_order_id` method
+
 **File modificati:**
 - `synthtrade/backend/app/execution/okx_exchange.py`
 

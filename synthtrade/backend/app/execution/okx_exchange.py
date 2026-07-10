@@ -17,7 +17,7 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional, Union, cast
 
 import ccxt.async_support as ccxt
 import httpx
@@ -1030,6 +1030,26 @@ class OkxExchangeAdapter:
                 logger.info("OKX: cancelled %d open orders for %s", len(orders), symbol.okx)
         except Exception as e:
             logger.warning("OKX cancel_open_exit_orders failed for %s: %s", symbol.okx, e)
+
+    async def _fetch_fill_price_by_order_id(self, symbol: str, order_id: str) -> Optional[float]:
+        """Recupera il fill price di un ordine specifico tramite orderId.
+
+        Usato da restore sessione per trovare il prezzo di chiusura dell'OCO
+        tramite sl_order_id o tp_order_id salvati in DB.
+        """
+        try:
+            # Convert symbol to CCXT format (e.g., "OKB-EUR" -> "OKB/EUR")
+            ccxt_symbol = symbol.replace("-", "/")
+            
+            orders = await self.client.fetch_closed_orders(ccxt_symbol, limit=50)
+            for o in orders:
+                if str(o.get("id")) == str(order_id):
+                    fill = float(o.get("price") or o.get("average") or 0)
+                    if fill > 0:
+                        return fill
+        except Exception as e:
+            logger.warning(f"_fetch_fill_price_by_order_id failed for {symbol} orderId={order_id}: {e}")
+        return None
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

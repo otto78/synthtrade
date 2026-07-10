@@ -7,6 +7,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.4.11] — 2026-07-10
+
+### Fixed
+- **UDS reconnect sync error**: Aggiunto metodo `_fetch_fill_price_by_order_id` a `OkxExchangeAdapter` per recupero fill price durante riconnessione UDS
+- **Session stop with open position**: Risolto errore `'OkxExchangeAdapter' object has no attribute '_fetch_fill_price_by_order_id'` durante la chiusura forzata di posizioni aperte al session stop
+- **Symbol format conversion**: Il metodo converte simbolo OKX (OKB-EUR) a formato CCXT (OKB/EUR) per recupero ordini chiusi recenti
+
+### Changed
+- **Documentation**: aggiornati `docs/STORY.md` con milestone v1.4.11 e dettagli fix TASK-1126
+
+---
+
 ## [1.4.5] — 2026-07-08
 
 ### Fixed

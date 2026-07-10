@@ -75,7 +75,7 @@ import { ConfigService } from '../../core/services/config.service';
                 class="trade-input"
                 placeholder="100"
               />
-              <span class="trade-currency">USDT</span>
+              <span class="trade-currency">{{ getQuoteAsset() }}</span>
             </div>
             <div class="trade-hint">Importo per singolo trade</div>
           </div>
@@ -455,7 +455,7 @@ import { ConfigService } from '../../core/services/config.service';
 export class SessionControlsComponent implements OnInit {
   session: ScalpingSession | null = null;
   sessionId: string | null = null;
-  selectedSymbol = 'BTCEUR';
+  selectedSymbol = 'OKBEUR';
   selectedStrategy = 'momentum_base';
   
   /** Trade value: restore from localStorage or default 100 */
@@ -642,10 +642,16 @@ export class SessionControlsComponent implements OnInit {
   }
 
   getQuoteAsset(): string {
-    // Use session symbol first (when session is running), fallback to selectedSymbol
-    const sym = (this.session?.symbol || this.selectedSymbol || '').toUpperCase();
+    // Always use the user's selected symbol — NOT session.symbol — to avoid timing issues
+    // where an old/stopped session returned by getStatus() overrides the active selection.
+    const sym = (this.selectedSymbol || '').toUpperCase();
+    // Known quote currencies, longest first to avoid partial matches (e.g. USDC vs USDT)
     if (sym.endsWith('USDC')) return 'USDC';
-    if (sym.endsWith('EUR')) return 'EUR';
+    if (sym.endsWith('USDT')) return 'USDT';
+    if (sym.endsWith('EUR'))  return 'EUR';
+    if (sym.endsWith('USD'))  return 'USD';
+    if (sym.endsWith('BTC'))  return 'BTC';
+    if (sym.endsWith('ETH'))  return 'ETH';
     return 'USDT';
   }
 }

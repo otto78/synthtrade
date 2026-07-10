@@ -6,9 +6,9 @@
 
 ### Da: Cline → prossima sessione
 
-**Data:** 2026-07-10 08:59
+**Data:** 2026-07-10 09:59
 
-**Contesto:** TASK-1125 — Collector Intelligence: Diagnostica Coverage Reale per Simbolo
+**Contesto:** TASK-1124 — Direct REST fallback per place_exit_bracket + fix double emergency close
 
 ---
 

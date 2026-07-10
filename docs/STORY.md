@@ -52,6 +52,26 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 **File modificati:**
 - `synthtrade/backend/app/execution/okx_exchange.py`
 
+### v1.4.14 — 2026-07-10
+
+**Milestone:** TASK-1124 — Direct REST fallback per place_exit_bracket + fix double emergency close
+
+**Completato:**
+- ✅ **Aggiunto `_direct_place_exit_bracket()`** — chiama direttamente POST `/api/v5/trade/order-algo` con firma HMAC-SHA256, body speculare a quello passato via ccxt, e stessa gestione errori di `_direct_place_market_order()` (sCode, sMsg, full_data)
+- ✅ **Modificato `place_exit_bracket()`** — se CCXT fallisce con `50119` o `"API key doesn't exist"`, prova il fallback REST diretto prima di arrendersi
+- ✅ **Eliminata race condition double emergency close** — l'adapter non tenta più `close_position()` interno; solleva solo `ExitProtectionError` e lascia che il router (`BRACKET_FLOW CASO B`) sia l'unico proprietario della chiusura d'emergenza
+- ✅ **Se l'errore CCXT NON è 50119** (es. parametri invalidi), solleva direttamente `ExitProtectionError` senza fallback REST
+
+**Decisioni chiave:**
+- Stesso pattern di fallback già usato con successo per `_direct_place_market_order()` — esteso ora agli ordini algo bracket
+- Il doppio tentativo di emergency close (adapter + router) causava l'errore 51008 ("margin borrowing") sulla prima chiusura — ora un solo owner
+- Se entrambi CCXT e REST falliscono, l'adapter non lascia mai la posizione scoperta: il router gestisce l'emergency close come unico responsabile
+
+**File modificati:**
+- `synthtrade/backend/app/execution/okx_exchange.py` — nuovo metodo `_direct_place_exit_bracket()` + refactor `place_exit_bracket()` con fallback REST e rimozione emergency close interno
+
+**Verifica:** Il prossimo bracket su OKX EU non deve più produrre `[OKX BRACKET FAILED]` per 50119 — deve passare tramite REST diretto e piazzare correttamente il TP/SL server-side.
+
 ### v1.4.13 — 2026-07-10
 
 **Milestone:** Fix sCode=51020 — Router passa quote_amount invece di quantity per BUY market order su OKX

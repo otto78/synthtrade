@@ -68,6 +68,34 @@ Live trade failed: OKX get_symbol_filters failed for OKB-EUR: type object 'Symbo
 
 **Verifica:** Firma ora corrisponde alla specifica OKX HMAC-SHA256 sia per GET che per POST.
 
+### TASK-1124 — Direct REST fallback per place_exit_bracket + fix double emergency close
+
+**Status:** Done ✅
+**Priorità:** CRITICA — blocca ogni bracket server-side su OKX EU accounts
+**File:** `synthtrade/backend/app/execution/okx_exchange.py`
+
+**Problema:** Due bug distinti:
+
+1. **place_exit_bracket non ha fallback REST diretto:** a differenza di `place_market_order`, che ora prova ccxt e cade sul fallback `_direct_place_market_order` via POST `/api/v5/trade/order`, il metodo `place_exit_bracket` provava solo `self.client.create_order(type="oco", ...)` via ccxt. Se falliva con 50119 (lo stesso routing quirk EU di sempre), andava direttamente all'emergency close senza mai provare il REST diretto per POST `/api/v5/trade/order-algo`. Risultato: in sessione EU oggi nessun bracket TP/SL viene mai effettivamente piazzato — ogni entry finisce sempre in emergency close immediato.
+
+2. **Doppio tentativo di emergency close:** l'adapter interno (`place_exit_bracket` nel suo blocco `except`) tentava un `close_position()` di emergenza, mentre il router in `BRACKET_FLOW CASO B` tentava anch'esso un `_handle_bracket_failed()` con un altro `close_position()`. Questo causava race condition e l'errore 51008 ("margin borrowing") sulla prima chiusura, mentre la seconda riusciva — rischio concreto di doppio ordine se entrambe avessero successo.
+
+**Log osservato:**
+```
+[OKX BRACKET FAILED] OKB-EUR: okx {"msg":"API key doesn't exist","code":"50119"} — executing emergency market close
+[OKX EMERGENCY CLOSE FAILED] ... sCode=51008 "Order failed. Your available EUR balance is insufficient..."
+```
+
+**Fix applicato:**
+- ✅ Aggiunto metodo `_direct_place_exit_bracket()` che chiama direttamente POST `/api/v5/trade/order-algo` con firma HMAC-SHA256, body speculare a quello passato via ccxt, e stessa gestione errori di `_direct_place_market_order()` (sCode, sMsg, full_data)
+- ✅ Modificato `place_exit_bracket()`: se CCXT fallisce con `50119` o `"API key doesn't exist"`, prova il fallback REST diretto prima di arrendersi
+- ✅ Se il fallback REST diretto fallisce anch'esso, solleva `ExitProtectionError` **senza** tentare emergency close interno — il router (`BRACKET_FLOW CASO B`) è l'unico proprietario della procedura di chiusura d'emergenza, eliminando la race condition del doppio tentativo
+- ✅ Se l'errore CCXT NON è 50119 (es. parametri invalidi), solleva direttamente `ExitProtectionError` senza fallback REST
+
+**Verifica:** Il prossimo bracket su OKX EU non deve più produrre `[OKX BRACKET FAILED]` per 50119 — deve passare tramite REST diretto e piazzare correttamente il TP/SL server-side.
+
+---
+
 ## Task Attivi
 
 ## EPICA OKX — Migrazione Binance -> OKX (PRIORITA' ASSOLUTA)

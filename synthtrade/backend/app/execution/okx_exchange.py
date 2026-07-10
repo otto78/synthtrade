@@ -629,17 +629,71 @@ class OkxExchangeAdapter:
 
     # ── Exit bracket (TP/SL algo order) ──────────────────────────────────────
 
+    async def _direct_place_exit_bracket(
+        self,
+        symbol: SymbolRef,
+        side: str,
+        quantity: float,
+        tp_price: float,
+        sl_price: float,
+    ) -> dict:
+        """Direct REST fallback for OKX exit bracket when CCXT create_order fails.
+
+        POST /api/v5/trade/order-algo with tdMode=cash for spot.
+        Uses tpTriggerPx/slTriggerPx with -1 for market execution.
+        """
+        path = "/api/v5/trade/order-algo"
+        url = settings.OKX_BASE_URL.rstrip("/") + path
+
+        body = {
+            "instId": symbol.okx,
+            "tdMode": "cash",
+            "side": side,
+            "sz": str(quantity),
+            "tpTriggerPx": str(tp_price),
+            "tpOrdPx": "-1",
+            "slTriggerPx": str(sl_price),
+            "slOrdPx": "-1",
+            "tpTriggerPxType": "last",
+            "slTriggerPxType": "last",
+        }
+
+        headers = self._sign_headers("POST", path, json.dumps(body))
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, headers=headers, json=body)
+            if resp.status_code != 200:
+                logger.error(
+                    "OKX order-algo POST failed [%s]: %s",
+                    resp.status_code, resp.text,
+                )
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("code") != "0":
+                s_code = data.get("sCode")
+                s_msg = data.get("sMsg")
+                raise RuntimeError(
+                    f"OKX API error {data.get('code')}: {data.get('msg')} "
+                    f"| sCode={s_code} sMsg={s_msg} | full_data={data}"
+                )
+
+            result = data.get("data", [{}])[0]
+            algo_id = result.get("algoId", "")
+            logger.info(
+                "[OKX BRACKET DIRECT] %s TP=%s SL=%s qty=%s algoId=%s",
+                symbol.okx, tp_price, sl_price, quantity, algo_id,
+            )
+            return result
+
     async def place_exit_bracket(self, request: ExitBracketRequest) -> ExitBracketOrder:
         """
         Place TP/SL bracket on OKX using order-algo (POST /api/v5/trade/order-algo).
 
         Uses attachAlgoOrds approach via ccxt create_order with params.
-        If bracket placement fails, executes emergency market close and raises
-        ExitProtectionError — no open position is left unprotected.
-
-        NOTE: TASK-1100.F (bracket spike) is still pending. This implementation
-        uses the most common OKX algo approach; validate in Demo Trading before
-        enabling in live mode.
+        If CCXT fails with 50119 (EU routing quirk), falls back to direct REST.
+        If both fail, raises ExitProtectionError with NO internal emergency close
+        — the caller (router) is the sole owner of the emergency close procedure,
+        preventing race conditions from dual close attempts.
         """
         symbol = request.symbol
         try:
@@ -688,28 +742,52 @@ class OkxExchangeAdapter:
             )
 
         except (ExchangeOrderError, UnsupportedInstrumentError):
-            # Re-raise without emergency close — caller decides
             raise
         except Exception as e:
-            logger.error(
-                "[OKX BRACKET FAILED] %s: %s — executing emergency market close",
-                symbol.okx, e,
-            )
-            # Emergency close: never leave an open position without protection
-            try:
-                await self.close_position(
-                    ClosePositionRequest(
+            # Try direct REST fallback for 50119 (EU routing quirk) before giving up
+            if "50119" in str(e) or "API key doesn't exist" in str(e):
+                logger.warning(
+                    "[OKX BRACKET] CCXT failed with 50119 for %s — trying direct REST fallback",
+                    symbol.okx,
+                )
+                try:
+                    result = await self._direct_place_exit_bracket(
                         symbol=symbol,
                         side=request.side,
-                        quantity=request.quantity,
+                        quantity=qty,
+                        tp_price=tp_price,
+                        sl_price=sl_price,
                     )
-                )
-                logger.info("[OKX EMERGENCY CLOSE] executed for %s", symbol.okx)
-            except Exception as close_e:
-                logger.error("[OKX EMERGENCY CLOSE FAILED] %s: %s", symbol.okx, close_e)
-            raise ExitProtectionError(
-                f"OKX bracket failed for {symbol.okx}: {e}. Emergency close attempted."
-            ) from e
+                    algo_id = str(result.get("algoId", ""))
+                    logger.info(
+                        "[OKX BRACKET DIRECT] %s algoId=%s — bracket placed via direct REST",
+                        symbol.okx, algo_id,
+                    )
+                    return ExitBracketOrder(
+                        provider="okx",
+                        symbol=symbol,
+                        bracket_id=algo_id,
+                        tp_order_id=algo_id,
+                        sl_order_id=algo_id,
+                        status="placed",
+                        raw=result,
+                    )
+                except Exception as rest_e:
+                    logger.error(
+                        "[OKX BRACKET] Direct REST fallback also failed for %s: %s",
+                        symbol.okx, rest_e,
+                    )
+                    # Both failed — raise ExitProtectionError without internal close.
+                    # The caller (router) handles emergency close as the single owner.
+                    raise ExitProtectionError(
+                        f"OKX bracket failed for {symbol.okx}: CCXT error={e}, REST fallback error={rest_e}. "
+                        "No emergency close attempted by adapter — caller must handle."
+                    ) from rest_e
+            else:
+                raise ExitProtectionError(
+                    f"OKX bracket failed for {symbol.okx}: {e}. "
+                    "No emergency close attempted by adapter — caller must handle."
+                ) from e
 
     # ── Open exit orders ──────────────────────────────────────────────────────
 

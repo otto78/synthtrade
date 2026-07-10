@@ -182,6 +182,12 @@ async def _restore_scalping_session(db) -> None:
                     pos_obj.oco_order_list_id = ot.get("oco_order_list_id")
                     pos_obj.sl_order_id = ot.get("sl_order_id")
                     pos_obj.tp_order_id = ot.get("tp_order_id")
+                    # TASK-1129: ripristina i veri prezzi TP/SL dalla riga scalping_trades
+                    # (altrimenti il bug si ripresenta a ogni riavvio).
+                    if ot.get("tp_price"):
+                        pos_obj.tp_price = Decimal(str(ot["tp_price"]))
+                    if ot.get("sl_price"):
+                        pos_obj.sl_price = Decimal(str(ot["sl_price"]))
                     has_open_position = True
                     logger.info(
                         "Open position restored from DB during startup: %s %s @ %s qty=%s",
@@ -339,6 +345,12 @@ async def _restore_scalping_session(db) -> None:
                         pos_obj.oco_order_list_id = ot.get("oco_order_list_id")
                         pos_obj.sl_order_id = ot.get("sl_order_id")
                         pos_obj.tp_order_id = ot.get("tp_order_id")
+                        # TASK-1129: ripristina i veri prezzi TP/SL dalla riga scalping_trades
+                        # (altrimenti il bug si ripresenta a ogni riavvio).
+                        if ot.get("tp_price"):
+                            pos_obj.tp_price = Decimal(str(ot["tp_price"]))
+                        if ot.get("sl_price"):
+                            pos_obj.sl_price = Decimal(str(ot["sl_price"]))
                         logger.info(
                             "Open position restored from DB: %s %s @ %s qty=%s",
                             side, symbol, entry_price, quantity,

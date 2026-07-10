@@ -42,6 +42,12 @@ class Position:
     # TASK-876: commissione reale di entrata (dal WebSocket)
     entry_commission: Optional[float] = None
     entry_commission_asset: Optional[str] = None
+    # TASK-1129: veri prezzi TP/SL piazzati sull'exchange all'apertura.
+    # Calcolati e salvati su DB in fase di open, ma devono vivere anche
+    # sull'oggetto in memoria per evitare ricalcoli errati da percentuali
+    # (stesso pattern di TASK-825/831 per gli ID del bracket).
+    tp_price: Optional[Decimal] = None
+    sl_price: Optional[Decimal] = None
 
 
 class PositionManager:

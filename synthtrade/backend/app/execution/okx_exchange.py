@@ -410,13 +410,15 @@ class OkxExchangeAdapter:
                         continue
                     candles = candles_data.get("data", [])
 
+                # Calculate 1h change from candles
                 change_1h_pct = 0.0
                 if len(candles) >= 2:
-                    close_prev = float(candles[1][4])  # OKX candles are newest-first
-                    close_now = float(candles[0][4])
+                    close_prev = float(candles[0][4])
+                    close_now = float(candles[1][4])
                     if close_prev > 0:
                         change_1h_pct = ((close_now - close_prev) / close_prev) * 100
 
+                # Determine regime
                 regime = "normal"
                 if change_1h_pct < -2.0:
                     regime = "crash"
@@ -432,6 +434,170 @@ class OkxExchangeAdapter:
             except Exception:
                 continue
         raise RuntimeError("Could not fetch BTC macro context from any endpoint")
+
+    # ── Fee tier ──────────────────────────────────────────────────────────────
+
+    async def _direct_fetch_trade_fee(self, symbol: SymbolRef) -> FeeTier:
+        """Direct REST fallback for OKX trade fee when CCXT fetch_trading_fee fails.
+
+        CCXT fetch_trading_fee() can fail with 50119 on OKX EU accounts.
+        This bypasses CCXT entirely and calls the OKX REST endpoint directly.
+        """
+        path = f"/api/v5/account/trade-fee?instType=SPOT&instId={symbol.okx}"
+        url = settings.OKX_BASE_URL.rstrip("/") + path
+        headers = self._sign_headers("GET", path)
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("code") != "0":
+                raise RuntimeError(f"OKX API error {data.get('code')}: {data.get('msg')}")
+            fee_data = data.get("data", [])
+            if not fee_data:
+                raise RuntimeError("No fee data returned")
+            # OKX returns fee in maker/taker fields (negative = rebate)
+            maker = float(fee_data[0].get("maker", 0.001))
+            taker = float(fee_data[0].get("taker", 0.001))
+            logger.info(
+                "[OKX FEE DIRECT] %s maker=%.4f taker=%.4f (negative=rebate)",
+                symbol.okx, maker, taker,
+            )
+            return FeeTier(
+                maker=maker,
+                taker=taker,
+                certified=True,
+                source="okx_trade_fee_direct",
+                raw=fee_data[0],
+            )
+
+    async def get_trade_fee(self, symbol: SymbolRef) -> FeeTier:
+        """
+        Fetch fee tier from OKX GET /api/v5/account/trade-fee.
+
+        OKX returns negative values for rebates (maker=-0.002 means -0.2% rebate).
+        We preserve the sign: negative = rebate (exchange pays you).
+        Falls back to direct REST if CCXT fails (50119 on EU accounts).
+        """
+        try:
+            response = await self.client.fetch_trading_fee(symbol.ccxt)
+            if not response or response.get("maker") is None:
+                logger.warning("OKX get_trade_fee: empty response for %s", symbol.ccxt)
+                return await self._direct_fetch_trade_fee(symbol)
+
+            maker = float(response["maker"])
+            taker = float(response["taker"])
+            logger.info(
+                "[OKX FEE] %s maker=%.4f taker=%.4f (negative=rebate)",
+                symbol.ccxt, maker, taker,
+            )
+            return FeeTier(
+                maker=maker,
+                taker=taker,
+                certified=True,
+                source="okx_trade_fee",
+                raw=response,
+            )
+        except Exception as e:
+            logger.warning("OKX get_trade_fee failed for %s: %s — trying direct REST fallback", symbol.ccxt, e)
+            try:
+                return await self._direct_fetch_trade_fee(symbol)
+            except Exception as fallback_e:
+                logger.error("OKX get_trade_fee direct fallback also failed: %s — using hardcoded fallback", fallback_e)
+                return _FALLBACK_FEE
+
+    # ── Orders ────────────────────────────────────────────────────────────────
+
+    async def _direct_place_market_order(self, symbol: SymbolRef, side: str, quantity: float, quote_amount: Optional[float] = None) -> dict:
+        """Direct REST fallback per OKX market order quando CCXT fallisce."""
+        path = "/api/v5/trade/order"
+        url = settings.OKX_BASE_URL.rstrip("/") + path
+        
+        # Prepara il body
+        body = {
+            "instId": symbol.okx,
+            "tdMode": "cash",
+            "side": side,
+            "ordType": "market",
+            "sz": str(quantity),
+        }
+        
+        if quote_amount and side == "buy":
+            body["tgtCcy"] = "quote_ccy"
+            body["sz"] = str(quote_amount)
+        
+        headers = self._sign_headers("POST", path, json.dumps(body))
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, headers=headers, json=body)
+            if resp.status_code != 200:
+                logger.error("OKX order POST failed [%s]: %s", resp.status_code, resp.text)
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("code") != "0":
+                s_code = data.get("sCode")
+                s_msg = data.get("sMsg")
+                raise RuntimeError(
+                    f"OKX API error {data.get('code')}: {data.get('msg')} "
+                    f"| sCode={s_code} sMsg={s_msg} | full_data={data}"
+                )
+
+            return data.get("data", [{}])[0]
+
+    async def place_market_order(self, request: MarketOrderRequest) -> ExchangeOrder:
+        """
+        Place a spot market order on OKX.
+
+        Uses tdMode=cash for spot. If quote_amount is set, uses tgtCcy=quote_ccy
+        so OKX handles the base quantity calculation internally.
+        """
+        symbol = request.symbol
+        rules: SymbolRules | None = None
+        try:
+            rules = await self.get_symbol_rules(symbol)
+            params: dict[str, Any] = {"tdMode": "cash"}
+
+            if request.quote_amount and request.side == "buy":
+                # Buy with quote amount (e.g. spend 10 EUR to buy BTC)
+                params["tgtCcy"] = "quote_ccy"
+                qty = request.quote_amount
+            else:
+                qty = rules.round_qty(request.quantity)
+                if qty <= 0:
+                    raise ExchangeOrderError(f"OKX: rounded qty=0 for {symbol.okx}")
+
+            order = await self.client.create_order(
+                symbol=symbol.ccxt,
+                type="market",
+                side=request.side,
+                amount=qty,
+                params=params,
+            )
+
+            commission, commission_asset = self._extract_commission(order)
+            logger.info(
+                "[OKX ORDER] %s %s qty=%s avg=%s commission=%s %s",
+                request.side, symbol.okx, qty,
+                order.get("average"), commission, commission_asset,
+            )
+
+            return ExchangeOrder(
+                provider="okx",
+                symbol=symbol,
+                order_id=str(order.get("id", "")),
+                side=request.side,
+                order_type="market",
+                status=order.get("status", "unknown"),
+                quantity=float(order.get("amount") or qty),
+                filled=float(order.get("filled") or 0),
+                average_price=float(order.get("average") or order.get("price") or 0),
+                commission=commission,
+                commission_asset=commission_asset or symbol.quote,
+                raw=order,
+            )
+        except (ExchangeOrderError, UnsupportedInstrumentError):
+            raise
+        except ccxt.InsufficientFunds as e:
+            raise ExchangeOrderError(f"OKX insufficient funds: {e}", original_exception=e) from e
 
     # ── Fee tier ──────────────────────────────────────────────────────────────
 
@@ -627,6 +793,41 @@ class OkxExchangeAdapter:
             MarketOrderRequest(symbol=request.symbol, side=opp_side, quantity=request.quantity)
         )
 
+    async def get_open_orders(self, symbol: str) -> list[dict]:
+        """Return open orders for a symbol (both regular and algo/OCO).
+
+        Used by _on_uds_reconnect_sync to detect if the OCO bracket is still active.
+        Returns a combined list of open regular orders and pending algo orders.
+        """
+        sym_ref = SymbolRef.from_okx(symbol) if "-" in symbol else SymbolRef.from_compact(symbol)
+        results: list[dict] = []
+
+        # 1. Check pending algo orders (OCO brackets via order-algo)
+        try:
+            path = "/api/v5/trade/orders-algo-pending"
+            url = settings.OKX_BASE_URL.rstrip("/") + path
+            headers = self._sign_headers("GET", path)
+            params = {"instType": "SPOT", "instId": sym_ref.okx, "ordType": "oco"}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers=headers, params=params)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("code") == "0":
+                        results.extend(data.get("data", []))
+        except Exception as e:
+            logger.debug("get_open_orders: algo-pending check failed: %s", e)
+
+        # 2. Check regular open orders via CCXT
+        try:
+            ccxt_sym = await self._get_ccxt_symbol(sym_ref.okx)
+            orders = await self.client.fetch_open_orders(ccxt_sym)
+            results.extend(orders)
+        except Exception as e:
+            logger.debug("get_open_orders: CCXT fetch_open_orders failed: %s", e)
+
+        return results
+
+
     # ── Exit bracket (TP/SL algo order) ──────────────────────────────────────
 
     async def _direct_place_exit_bracket(
@@ -649,6 +850,7 @@ class OkxExchangeAdapter:
             "instId": symbol.okx,
             "tdMode": "cash",
             "side": side,
+            "ordType": "oco",          # REQUIRED by OKX /api/v5/trade/order-algo (50014 without it)
             "sz": str(quantity),
             "tpTriggerPx": str(tp_price),
             "tpOrdPx": "-1",
@@ -678,11 +880,12 @@ class OkxExchangeAdapter:
                 )
 
             result = data.get("data", [{}])[0]
-            algo_id = result.get("algoId", "")
-            logger.info(
-                "[OKX BRACKET DIRECT] %s TP=%s SL=%s qty=%s algoId=%s",
-                symbol.okx, tp_price, sl_price, quantity, algo_id,
-            )
+            if result.get("sCode", "0") != "0":
+                raise RuntimeError(
+                    f"OKX Order failed with sCode={result.get('sCode')}: {result.get('sMsg')} "
+                    f"| full_data={data}"
+                )
+
             return result
 
     async def place_exit_bracket(self, request: ExitBracketRequest) -> ExitBracketOrder:

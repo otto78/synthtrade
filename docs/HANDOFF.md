@@ -1,5 +1,35 @@
 # Handoff Protocol — SynthTrade
 
+## Ultimo Handoff
+
+### Da: Antigravity -> prossima sessione
+
+**Data:** 2026-07-10 10:41
+
+**Contesto:** TASK-1125 - Fix NameError settings closure in _start_ws_broadcast
+
+---
+
+### FASE COMPLETATA: TASK-1125 - Fix NameError: cannot access free variable settings
+
+**Problema:** Live trade falliva con NameError: cannot access free variable settings where it is not associated with a value in enclosing scope.
+
+**Root cause:** Python closure scoping bug. _start_ws_broadcast() conteneva un import locale 'from app.config import settings' dentro if restore_mode: (riga ~2160). Python marcava settings come variabile locale per TUTTA la funzione e le sue inner function (inclusa _trade_processor). Quando restore_mode=False, l'import non eseguiva ma Python cercava settings come free variable -> NameError.
+
+**Fix:** Rimosso from app.config import settings locale da riga 2160. settings e' gia' importato a livello modulo (riga 46) ed e' accessibile correttamente.
+
+**Stato sistema:**
+- Il primo errore del log (NameError) e' ora risolto
+- Il secondo errore (51008 EUR balance insufficient) e' un problema REALE di fondi - non e' un bug del codice. L'account non ha abbastanza EUR nel wallet Spot OKX per il trade value configurato (20 EUR).
+- Le warning CCXT 50119 sono attese e gestite correttamente con il fallback REST diretto (TASK-1123)
+
+**Prossimi passi:**
+- Ricaricare EUR nel wallet Spot OKX (non Earn/Funding) per il trade minimo di 20 EUR
+- Riavviare la sessione live e verificare che il trade venga eseguito
+
+---
+
+
 ---
 
 ## 🔄 Ultimo Handoff

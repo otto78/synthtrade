@@ -1,9 +1,81 @@
 # TASKS.md — SynthTrade Task Tracking
 
-### TASK-1121 — Fix Pylance NoneType error in self.client.urls["api"] access
+### TASK-1128 - Fix Bracket qty 51008 insufficient balance
+
+**Status:** Done
+**Priorita:** CRITICA - order-algo falliva per via della fee OKX sottratta prima del bracket
+**File:** synthtrade/backend/app/scalping/router.py
+
+**Problema:** OKX preleva la fee di ingresso per ordini BUY in asset base (es. OKB). Noi inviavamo il bracket con la qty lorda dell'entry (exec_qty = 0.28425) ma in pancia avevamo 0.28425 - fee = 0.28325. Mentre per market order OKX esegue l'importo massimo disponibile anche se superiore, per \order-algo\ rifiuta con 51008 \Order failed. Your available OKB balance is insufficient\.
+
+**Fix:** Se side=BUY e l'asset di commissione e' l'asset base (o sconosciuto, assumendo standard crypto OKX), sottrarre la commissione prima di piazzare l'exit bracket.
+
+**Note per l'utente (posizione rimasta aperta):** Il fatto che ci fosse una posizione aperta su OKB che non si e' chiusa allo stop della sessione alle 11:10 e' dovuto al fatto che il bot e' stato fermato nel brevissimo istante (1 secondo) in cui l'ordine BUY era stato completato ma il Bracket TP/SL non era ancora stato mandato. Questo ha fatto si che il bot considerasse la posizione non ancora formalmente 'aperta' nel suo registro. Fixato il bracket (non fallira piu con 51008), queste edge case non si verificheranno piu (il bracket entrera liscio).
+
+### TASK-1127 - Fix SL price SOPRA entry per BUY: OKX error 51280
+
+**Status:** Done
+**Priorita:** CRITICA - il bracket TP/SL falliva sempre con 51280 SL trigger price must be less than the last price
+**File:** synthtrade/backend/app/scalping/router.py (riga 1656-1676)
+
+**Root cause:** _net_to_gross_pct(-0.3, 0.0035, 0.002) restituisce +0.2507% (POSITIVO) per via delle fee OKX alte.
+La formula: gross = (1 + net) / ((1 - entry_fee) * (1 - exit_fee)) - 1
+Con net=-0.003, entry=0.0035, exit=0.002: gross = 0.997 / 0.99451 - 1 = +0.002507 (positivo!)
+Il codice poi calcolava: sl_price = exec_price * (1 + 0.002507) = entry + 0.25% -> SL SOPRA entry per BUY.
+OKX rifiutava con 51280 perche il SL deve essere SOTTO il prezzo corrente.
+
+**Fix:**
+- sl_gross_pct ora calcolato con input POSITIVO e abs(): abs(_net_to_gross_pct(sl_pct_net_cfg, ...))
+- sl_price per BUY usa (1 - sl_gross_pct) invece di (1 + sl_gross_pct)
+- Logica esplicita: BUY: SL sotto (1-sl), TP sopra (1+tp) / SELL: SL sopra (1+sl), TP sotto (1-tp)
+- Log aggiornato per mostrare sl_price e tp_price effettivi
+
+**Verifica matematica con entry=70.36, SL=0.3%, fee taker=0.0035, maker=0.002:**
+  sl_gross_pct = abs(_net_to_gross_pct(0.3, 0.0035, 0.002)) / 100 = 0.002507
+  sl_price = 70.36 * (1 - 0.002507) = 70.36 * 0.997493 = 70.18 (SOTTO entry, corretto)
+
+
+### TASK-1126 - Fix OKX bracket 50014: Parameter ordType can not be empty
+
+**Status:** Done
+**Priorita:** CRITICA - ogni trade live veniva eseguito ma il bracket TP/SL falliva, generando market sell emergenza
+**File:** synthtrade/backend/app/execution/okx_exchange.py
+
+**Problema:** _direct_place_exit_bracket() costruiva il body per POST /api/v5/trade/order-algo senza il campo ordType. OKX restituiva errore 50014: Parameter ordType can not be empty. Il CASO B veniva attivato: emergency market sell immediata.
+
+**Log osservato:**
+OKX order-algo POST failed [400]: {code:50014, msg:Parameter ordType can not be empty.}
+BRACKET_FLOW CASO B: bracket fallito per OKB-EUR -> eseguo market sell emergenza
+
+**Fix:** Aggiunto campo ordType: oco nel body della chiamata REST diretta a /api/v5/trade/order-algo.
+
+**Effetto:** I trade buy vengono eseguiti correttamente (confermato su OKX), ora il bracket OCO con TP/SL dovrebbe essere creato correttamente dopo il buy.
+
+
+### TASK-1125 - Fix NameError: cannot access free variable settings in _start_ws_broadcast
+
+**Status:** Done
+**Priorita:** CRITICA - blocca ogni trade live (non solo restore_mode)
+**File:** synthtrade/backend/app/scalping/router.py
+
+**Problema:** NameError in _trade_processor (inner function di _start_ws_broadcast). La funzione conteneva un import locale 'from app.config import settings' dentro un blocco 'if restore_mode:'. Python lo trattava come variabile locale per l'intera funzione, incluse le inner function come _trade_processor. Quando restore_mode=False, il blocco non eseguiva e settings rimaneva non associato.
+
+**Fix:** Rimosso import locale ridondante. Le inner function ora risolvono settings dall'import module-level (riga 46 di router.py).
+
+
+### TASK-1125 — Fix NameError: cannot access free variable 'settings' in _start_ws_broadcast
 
 **Status:** Done ✅
-**Priorità:** Media
+**Priorità:** CRITICA — blocca ogni trade live (non solo restore_mode)
+**File:** synthtrade/backend/app/scalping/router.py
+
+**Problema:** NameError: cannot access free variable 'settings' where it is not associated with a value in enclosing scope in _trade_processor (inner function di _start_ws_broadcast).
+
+**Root cause:** La funzione _start_ws_broadcast conteneva un import locale rom app.config import settings dentro un blocco if restore_mode:. Python lo tratta come variabile locale per l'intera funzione, incluse le inner function come _trade_processor. Quando 
+estore_mode=False, il blocco non esegue e settings rimane non associato.
+
+**Fix:** Rimosso rom app.config import settings locale. Le inner function ora risolvono settings dall'import module-level (riga 46).
+
 **File:** `synthtrade/backend/app/execution/okx_exchange.py`
 
 **Problema:** Pylance segnala `Object of type "None" is not subscriptable` alla riga 90 quando si accede a `self.client.urls["api"]`. CCXT può restituire `None` per `urls` in certe modalità operative.

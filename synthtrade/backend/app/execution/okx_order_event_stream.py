@@ -49,7 +49,8 @@ _WS_EU_LIVE = "wss://wsaws.okx.com:8443/ws/v5/private"
 _WS_LIVE = "wss://ws.okx.com:8443/ws/v5/private"
 
 _PING_INTERVAL = 25
-_RECONNECT_DELAY = 5
+_RECONNECT_DELAY = 10  # seconds between reconnect attempts
+_MAX_NOISY_FAILURES = 3  # after this many consecutive failures, log at DEBUG instead of WARNING
 
 
 class OkxOrderEventStream:
@@ -87,6 +88,7 @@ class OkxOrderEventStream:
         self._on_order_update: Optional[Callable] = None
         self._on_reconnect_sync: Optional[Callable] = None
         self._listen_task: Optional[asyncio.Task] = None
+        self._consecutive_failures = 0  # suppress repeated WS failure spam
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -193,15 +195,20 @@ class OkxOrderEventStream:
                     await self._start_polling()
                     break
 
-                logger.warning("OKX order stream disconnected (%s). Reconnect in %ds...",
-                               exc, _RECONNECT_DELAY)
+                self._consecutive_failures += 1
+                if self._consecutive_failures <= _MAX_NOISY_FAILURES:
+                    logger.warning("OKX order stream disconnected (%s). Reconnect in %ds...",
+                                   exc, _RECONNECT_DELAY)
+                else:
+                    logger.debug("OKX order stream disconnected (%s). Reconnect in %ds... [failure #%d, suppressing repeated warnings]",
+                                 exc, _RECONNECT_DELAY, self._consecutive_failures)
                 await asyncio.sleep(_RECONNECT_DELAY)
 
                 if self._on_reconnect_sync:
                     try:
                         await self._on_reconnect_sync()
                     except Exception as sync_e:
-                        logger.warning("OKX order stream reconnect sync failed: %s", sync_e)
+                        logger.debug("OKX order stream reconnect sync failed: %s", sync_e)
 
     async def _start_polling(self) -> None:
         """Fallback polling loop using REST API."""

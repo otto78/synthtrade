@@ -240,8 +240,22 @@ async def scalping_websocket(ws: WebSocket):
         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
         _ef = fee_tier.get("taker", 0.001)
         _xf = fee_tier.get("maker", 0.001)
-        sl_price = entry_f * (1 + _net_to_gross_pct(-sl_pct_cfg, _ef, _xf) / 100) if pos.side == "BUY" else entry_f * (1 - _net_to_gross_pct(-sl_pct_cfg, _ef, _xf) / 100)
-        tp_price = entry_f * (1 + _net_to_gross_pct(tp_pct_cfg, _ef, _xf) / 100) if pos.side == "BUY" else entry_f * (1 - _net_to_gross_pct(tp_pct_cfg, _ef, _xf) / 100)
+        # TASK-1127 fix: use abs() + explicit direction, same as trade processor.
+        # _net_to_gross_pct with high OKX fees can return positive even for negative net_pct,
+        # so we always pass a positive magnitude and apply direction explicitly.
+        _ef = abs(fee_tier.get("taker", 0.001))
+        _xf = abs(fee_tier.get("maker", 0.001))
+        sl_gross_pct = abs(_net_to_gross_pct(sl_pct_cfg, _ef, _xf)) / 100
+        tp_gross_pct = abs(_net_to_gross_pct(tp_pct_cfg, _ef, _xf)) / 100
+        # BUY: SL below entry, TP above entry — SELL: reversed
+        sl_price = entry_f * (1 - sl_gross_pct) if pos.side == "BUY" else entry_f * (1 + sl_gross_pct)
+        tp_price = entry_f * (1 + tp_gross_pct) if pos.side == "BUY" else entry_f * (1 - tp_gross_pct)
+        # TASK-1129: usa i veri prezzi TP/SL piazzati su OKX se disponibili
+        # (fallback al ricalcolo da percentuali per posizioni pre-fix / restore).
+        if pos.sl_price is not None:
+            sl_price = float(pos.sl_price)
+        if pos.tp_price is not None:
+            tp_price = float(pos.tp_price)
         
         # TASK-885: Calcola target netti TP/SL (fee tier round-trip)
         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
@@ -1646,8 +1660,11 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     market_res = await exchange.place_market_order(market_request)
 
                                     exec_price = float(market_res.average_price or event.close)
-                                    # Use the actual filled quantity from OKX response, fallback to calculated
-                                    exec_qty = float(market_res.filled or market_res.quantity or _qty_precise)
+                                    # TASK-1128 FIX: The market order uses quote_amount (EUR) so the REST
+                                    # fallback returns sz=20 (EUR input) and accFillSz=0 (not filled yet).
+                                    # Using market_res.quantity here gives 20 EUR misread as OKB.
+                                    # Correct fallback: use _qty_precise (pre-calculated base qty).
+                                    exec_qty = float(market_res.filled) if market_res.filled and float(market_res.filled) > 0 else _qty_precise
 
                                     # TASK-886: commissione reale dell'entry, dalla risposta dell'ordine market
                                     entry_commission_real = float(market_res.commission or 0.0)
@@ -1669,16 +1686,25 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     entry_fee_pricing = abs(fee_tier_pricing.get("taker", 0.001))
                                     exit_fee_pricing = abs(fee_tier_pricing.get("maker", 0.001))
 
-                                    sl_gross_pct = _net_to_gross_pct(-sl_pct_net_cfg, entry_fee_pricing, exit_fee_pricing) / 100
-                                    tp_gross_pct = _net_to_gross_pct(tp_pct_net_cfg, entry_fee_pricing, exit_fee_pricing) / 100
+                                    # TASK-1127: SL/TP gross price calculation.
+                                    # _net_to_gross_pct returns a positive magnitude for both TP and SL.
+                                    # For SL we always call with a positive value (the magnitude of the
+                                    # desired loss) and then explicitly subtract for BUY / add for SELL.
+                                    # Do NOT pass negative input: with high OKX fees the formula can still
+                                    # return positive even for negative net_pct, causing SL > entry.
+                                    sl_gross_pct = abs(_net_to_gross_pct(sl_pct_net_cfg, entry_fee_pricing, exit_fee_pricing)) / 100
+                                    tp_gross_pct = abs(_net_to_gross_pct(tp_pct_net_cfg, entry_fee_pricing, exit_fee_pricing)) / 100
 
-                                    sl_price = round(exec_price * (1 + sl_gross_pct), price_prec) if side == "BUY" else round(exec_price * (1 - sl_gross_pct), price_prec)
+                                    # BUY:  SL = below entry (exec * (1 - sl_pct)), TP = above entry (exec * (1 + tp_pct))
+                                    # SELL: SL = above entry (exec * (1 + sl_pct)), TP = below entry (exec * (1 - tp_pct))
+                                    sl_price = round(exec_price * (1 - sl_gross_pct), price_prec) if side == "BUY" else round(exec_price * (1 + sl_gross_pct), price_prec)
                                     tp_price = round(exec_price * (1 + tp_gross_pct), price_prec) if side == "BUY" else round(exec_price * (1 - tp_gross_pct), price_prec)
 
                                     logger.info(
                                          f"[NET_PRICING] provider={settings.EXCHANGE_PROVIDER} symbol={event.symbol} maker={exit_fee_pricing} taker={entry_fee_pricing} certified={_execution_state.get('fee_tier_certified', False)} | "
                                         f"Target netti: TP={tp_pct_net_cfg}% SL={sl_pct_net_cfg}% | "
-                                        f"Lordi al prezzo: TP={tp_gross_pct*100:.4f}% SL={sl_gross_pct*100:.4f}% | "
+                                        f"Lordi al prezzo: TP=+{tp_gross_pct*100:.4f}% SL=-{sl_gross_pct*100:.4f}% | "
+                                        f"sl_price={sl_price} tp_price={tp_price} | "
                                         f"fee entry={entry_fee_pricing} exit={exit_fee_pricing}"
                                     )
 
@@ -1700,10 +1726,34 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                             source="execution_state",
                                         )
                                         
+                                        # TASK-1128: Calculate exact bracket quantity to avoid 51008.
+                                        # OKX deducts the taker fee in the base asset before the OCO goes live.
+                                        # Strategy: read the ACTUAL available balance from OKX (most reliable),
+                                        # fall back to estimated qty if the REST call fails.
+                                        bracket_qty = exec_qty  # safe initial fallback
+                                        if side == "BUY":
+                                            try:
+                                                # Ask OKX directly what balance is available right now
+                                                actual_bal = await exchange._balance_from_rest(sym_ref.base)
+                                                if actual_bal > 0:
+                                                    bracket_qty = actual_bal
+                                                    logger.info(f"[BRACKET_QTY] actual_balance={actual_bal:.6f} {sym_ref.base} (from REST) — using as bracket qty")
+                                                else:
+                                                    # REST returned 0 (unlikely) — estimate fee
+                                                    estimated_fee = exec_qty * entry_fee_pricing
+                                                    bracket_qty = exec_qty - estimated_fee
+                                                    logger.warning(f"[BRACKET_QTY] balance=0 from REST, using estimate: exec_qty={exec_qty:.6f} - fee={estimated_fee:.6f} = {bracket_qty:.6f}")
+                                            except Exception as _bal_e:
+                                                estimated_fee = exec_qty * entry_fee_pricing
+                                                bracket_qty = exec_qty - estimated_fee
+                                                logger.warning(f"[BRACKET_QTY] balance REST failed ({_bal_e}), using estimate: {bracket_qty:.6f}")
+                                            bracket_qty = round(bracket_qty, 8)
+
+                                                
                                         bracket_req = ExitBracketRequest(
                                             symbol=sym_ref,
                                             side="sell" if side == "BUY" else "buy",
-                                            quantity=exec_qty,
+                                            quantity=bracket_qty,
                                             tp_price=tp_price,
                                             sl_price=sl_price,
                                             entry_order_id=market_res.order_id,
@@ -1741,6 +1791,12 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     pos_obj.oco_id = bracket_res.bracket_id
                                     pos_obj.sl_id = bracket_res.sl_order_id
                                     pos_obj.tp_id = bracket_res.tp_order_id
+
+                                    # TASK-1129: porta i veri prezzi TP/SL (piazzati sull'exchange
+                                    # via bracket) anche sull'oggetto in memoria. Altrimenti il
+                                    # sistema li ricalcola da percentuali e mostra valori sballati.
+                                    pos_obj.tp_price = Decimal(str(tp_price))
+                                    pos_obj.sl_price = Decimal(str(sl_price))
 
                                     # Persist open position to DB con tp/sl price e OCO IDs (TASK-825)
                                     if supervisor_context:
@@ -1948,6 +2004,12 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         _ef3, _xf3 = _ft3.get("taker", 0.001), _ft3.get("maker", 0.001)
                         sl_price = entry_f * (1 + _net_to_gross_pct(-_sl_cfg, _ef3, _xf3) / 100) if pos.side == "BUY" else entry_f * (1 - _net_to_gross_pct(-_sl_cfg, _ef3, _xf3) / 100)
                         tp_price = entry_f * (1 + _net_to_gross_pct(_tp_cfg, _ef3, _xf3) / 100) if pos.side == "BUY" else entry_f * (1 - _net_to_gross_pct(_tp_cfg, _ef3, _xf3) / 100)
+                        # TASK-1129: usa i veri prezzi TP/SL piazzati su OKX se disponibili
+                        # (fallback al ricalcolo da percentuali per posizioni pre-fix / restore).
+                        if pos.sl_price is not None:
+                            sl_price = float(pos.sl_price)
+                        if pos.tp_price is not None:
+                            tp_price = float(pos.tp_price)
                         
                         # TASK-885: Calcola target netti TP/SL (fee tier round-trip)
                         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
@@ -2061,6 +2123,12 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     _ef4, _xf4 = _ft4.get("taker", 0.001), _ft4.get("maker", 0.001)
                     sl = entry * (1 + _net_to_gross_pct(-_sl_cfg4, _ef4, _xf4) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(-_sl_cfg4, _ef4, _xf4) / 100)
                     tp = entry * (1 + _net_to_gross_pct(_tp_cfg4, _ef4, _xf4) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(_tp_cfg4, _ef4, _xf4) / 100)
+                    # TASK-1129: usa i veri prezzi TP/SL piazzati su OKX se disponibili
+                    # (fallback al ricalcolo da percentuali per posizioni pre-fix / restore).
+                    if pos.sl_price is not None:
+                        sl = float(pos.sl_price)
+                    if pos.tp_price is not None:
+                        tp = float(pos.tp_price)
                     
                     gross_pnl = (current - entry) * qty if pos.side == "BUY" else (entry - current) * qty
                     
@@ -2157,7 +2225,6 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     if restore_mode:
         try:
             from app.scalping.supervisor.supervisor_scheduler import SupervisorScheduler
-            from app.config import settings
             supervisor = SupervisorScheduler(symbol=symbol, interval_seconds=settings.scalping.SCALPING_SUPERVISOR_INTERVAL_SEC, score_engine=_execution_state.get("signal_engine"))
             _execution_state["loop"].session_id = _execution_state["session"].get("db_session_id")
             supervisor.set_execution_loop(_execution_state["loop"])
@@ -3000,6 +3067,21 @@ async def control_session(control: Dict) -> Dict:
         # Force close any open position at market price
         pm = _execution_state["position_manager"]
         pos = pm.get_open()
+        
+        # TASK-1128 FIX: In live mode, also liquidate any untracked base asset balance.
+        # Race condition: if the session is stopped between the market BUY and the bracket
+        # registration, pm.get_open() returns None but we still hold the base asset.
+        _stop_mode = _execution_state.get("session", {}).get("mode", "paper")
+        _stop_exchange = _execution_state.get("exchange")
+        if not pos and _stop_mode == "live" and _stop_exchange:
+            active_sym = _execution_state.get("session", {}).get("symbol", "")
+            if active_sym:
+                try:
+                    logger.info(f"[STOP] No tracked position but live mode — checking exchange balance for {active_sym} before stop")
+                    await _handle_bracket_failed(_stop_exchange, active_sym.upper())
+                except Exception as _stop_emergency_e:
+                    logger.warning(f"[STOP] Emergency liquidation check failed (non-blocking): {_stop_emergency_e}")
+        
         if pos:
             close_price: float = float(pos.entry_price)
             _mode_stop = _execution_state["session"].get("mode", "paper")
@@ -3354,7 +3436,16 @@ async def get_position() -> Optional[Dict]:
     # Calcola percentuali nette (sottrai fee round-trip dai target lordi)
     sl_pct_net = sl_pct - fee_round_trip  # perdita netta è peggiore
     tp_pct_net = tp_pct - fee_round_trip  # guadagno netto è minore
-    
+
+    # TASK-1129: veri prezzi TP/SL piazzati su OKX (fallback a ricalcolo da pct
+    # per posizioni pre-fix / restore senza questi campi).
+    _ef_p = abs(fee_tier.get("taker", 0.001))
+    _xf_p = abs(fee_tier.get("maker", 0.001))
+    sl_price_calc = entry * (1 + _net_to_gross_pct(-sl_pct, _ef_p, _xf_p) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(-sl_pct, _ef_p, _xf_p) / 100)
+    tp_price_calc = entry * (1 + _net_to_gross_pct(tp_pct, _ef_p, _xf_p) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(tp_pct, _ef_p, _xf_p) / 100)
+    stop_loss_price = float(pos.sl_price) if pos.sl_price is not None else sl_price_calc
+    take_profit_price = float(pos.tp_price) if pos.tp_price is not None else tp_price_calc
+
     return {
         "symbol": pos.symbol,
         "side": pos.side,
@@ -3369,6 +3460,8 @@ async def get_position() -> Optional[Dict]:
         "take_profit_pct": tp_pct,
         "stop_loss_pct_net": round(sl_pct_net, 2),  # TASK-885
         "take_profit_pct_net": round(tp_pct_net, 2),  # TASK-885
+        "stop_loss_price": round(stop_loss_price, 2),  # TASK-1129
+        "take_profit_price": round(take_profit_price, 2),  # TASK-1129
     }
 
 

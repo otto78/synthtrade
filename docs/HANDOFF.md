@@ -4,7 +4,39 @@
 
 ### Da: Devin -> prossima sessione
 
-**Data:** 2026-07-10 15:40
+**Data:** 2026-07-10 16:30
+
+**Contesto:** TASK-1129 - Fix type errors in okx_exchange.py
+
+---
+
+### FASE COMPLETATA: TASK-1129 - Fix type errors in okx_exchange.py
+
+**Problema:** Pylance segnalava 30+ errori di tipo nel file okx_exchange.py, principalmente:
+- Duplicate method definitions (get_trade_fee, _direct_place_market_order)
+- None handling in float() conversions (TypeError: float() argument must be convertible to float)
+- Type mismatches between CCXT Order objects and dict[str, Any]
+- Missing _get_ccxt_symbol method
+- Unbound variables in exception handlers (qty, tp_price, sl_price)
+
+**Fix:**
+- Rimosso metodo duplicato get_trade_fee (seconda definizione senza logica TASK-1127)
+- Rimosso metodo duplicato _direct_place_market_order
+- Aggiunto `or 0` a tutte le conversioni float() per gestire valori None
+- Aggiunto `cast(dict[str, Any], ...)` per convertire oggetti CCXT in dict dove richiesto
+- Sostituito chiamata `_get_ccxt_symbol(sym_ref.okx)` con `sym_ref.ccxt` diretto
+- Inizializzato qty, tp_price, sl_price prima del try-catch in place_exit_bracket
+- Aggiunto tipi di ritorno specifici per dict methods (dict[str, Any])
+
+**Stato sistema:**
+- Tutti gli errori Pylance risolti
+- Type checking ora passa senza errori
+- Codice più robusto con gestione corretta di None
+
+**File modificati:**
+- `synthtrade/backend/app/execution/okx_exchange.py`
+
+---
 
 **Contesto:** TASK-1126 - Fix UDS reconnect sync error missing _fetch_fill_price_by_order_id
 

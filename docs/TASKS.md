@@ -1,5 +1,29 @@
 # TASKS.md — SynthTrade Task Tracking
 
+### TASK-1129 - Fix type errors in okx_exchange.py
+
+**Status:** Done
+**Priorità:** ALTA - Pylance type errors bloccano type checking
+**File:** synthtrade/backend/app/execution/okx_exchange.py
+
+**Problema:** Pylance segnalava 30+ errori di tipo nel file okx_exchange.py, principalmente:
+- Duplicate method definitions (get_trade_fee, _direct_place_market_order)
+- None handling in float() conversions (TypeError: float() argument must be convertible to float)
+- Type mismatches between CCXT Order objects and dict[str, Any]
+- Missing _get_ccxt_symbol method
+- Unbound variables in exception handlers (qty, tp_price, sl_price)
+
+**Fix applicato:**
+- Rimosso metodo duplicato get_trade_fee (seconda definizione senza logica TASK-1127)
+- Rimosso metodo duplicato _direct_place_market_order
+- Aggiunto `or 0` a tutte le conversioni float() per gestire valori None
+- Aggiunto `cast(dict[str, Any], ...)` per convertire oggetti CCXT in dict dove richiesto
+- Sostituito chiamata `_get_ccxt_symbol(sym_ref.okx)` con `sym_ref.ccxt` diretto
+- Inizializzato qty, tp_price, sl_price prima del try-catch in place_exit_bracket
+- Aggiunto tipi di ritorno specifici per dict methods (dict[str, Any])
+
+**Effetto:** Tutti gli errori Pylance risolti, type checking ora passa senza errori.
+
 ### TASK-1128 - Fix Bracket qty 51008 insufficient balance
 
 **Status:** Done

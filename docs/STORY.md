@@ -66,6 +66,31 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 **File modificati:**
 - `synthtrade/backend/app/execution/okx_exchange.py` — aggiunto `_fetch_fill_price_by_order_id` method
 
+### v1.4.12 — 2026-07-10
+
+**Milestone:** Fix OKX fee API returns negative fees for base level accounts
+
+**Completato:**
+- ✅ **TASK-1127:** Aggiunto conversione automatica fee negative in positive per account base level (Lv1)
+- ✅ **TASK-1127:** OKX API restituisce fee negative anche per account "Utente regolare" che non hanno rebate
+- ✅ **TASK-1127:** Corretto calcolo TP/SL che erroneamente piazzava TP sotto entry per BUY orders
+- ✅ **TASK-1127:** Mantenute fee negative per account VIP con rebate reali
+
+**Decisioni chiave:**
+- L'API OKX `/api/v5/account/trade-fee` restituisce fee negative per tutti gli account, indipendentemente dal livello VIP
+- Per account base level (Lv1), le fee negative sono errate - non hanno rebate reali
+- Il sistema ora converte automaticamente le fee negative in positive per account base level
+- Per account VIP con rebate reali, mantiene le fee negative
+
+**Problema risolto:**
+- TP era calcolato SOTTO l'entry per BUY orders (es: entry 70.9€, TP 70.86€)
+- Questo causava chiusura immediata del trade
+- Ora con fee positive, TP viene calcolato correttamente SOPRA l'entry
+
+**File modificati:**
+- `synthtrade/backend/app/execution/okx_exchange.py` — conversione fee base level, rimozione metodo duplicato
+- `synthtrade/backend/app/scalping/router.py` — aggiornato calcolo TP/SL per fee positive
+
 **File modificati:**
 - `synthtrade/backend/app/execution/okx_exchange.py`
 
@@ -107,6 +132,31 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - `synthtrade/backend/app/scalping/router.py` — righe 1634-1645: `quantity=_qty_precise` → `quote_amount=_trade_val`
 
 **Verifica:** Il prossimo BUY market su OKX per OKB-EUR non deve più produrre sCode=51020.
+
+### v1.4.15 — 2026-07-10
+
+**Milestone:** TASK-1129 — Fix type errors in okx_exchange.py
+
+**Completato:**
+- ✅ **TASK-1129:** Rimosso metodo duplicato `get_trade_fee` (seconda definizione senza logica TASK-1127)
+- ✅ **TASK-1129:** Rimosso metodo duplicato `_direct_place_market_order`
+- ✅ **TASK-1129:** Aggiunto `or 0` a tutte le conversioni float() per gestire valori None
+- ✅ **TASK-1129:** Aggiunto `cast(dict[str, Any], ...)` per convertire oggetti CCXT in dict dove richiesto
+- ✅ **TASK-1129:** Sostituito chiamata `_get_ccxt_symbol(sym_ref.okx)` con `sym_ref.ccxt` diretto
+- ✅ **TASK-1129:** Inizializzato qty, tp_price, sl_price prima del try-catch in place_exit_bracket
+- ✅ **TASK-1129:** Aggiunto tipi di ritorno specifici per dict methods (dict[str, Any])
+
+**Decisioni chiave:**
+- I duplicati erano residui di refactoring precedenti e causavano errori Pylance
+- CCXT restituisce spesso None per campi op → necessarie guardie or 0 nelle conversioni float
+- CCXT Order objects non sono dict nativi → necessaria conversione con cast()
+- Metodo _get_ccxt_symbol non esisteva → sostituito con accesso diretto a sym_ref.ccxt
+- Variabili unbound in exception handler causavano errori runtime in edge cases
+
+**File modificati:**
+- `synthtrade/backend/app/execution/okx_exchange.py` — cleanup duplicati, fix type errors, aggiunti cast
+
+**Effetto:** Tutti gli errori Pylance risolti, type checking ora passa senza errori.
 
 ### v1.4.12 — 2026-07-10
 

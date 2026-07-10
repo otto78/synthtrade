@@ -13,6 +13,27 @@
 - Sostituito `.get("api", {})` con `(self.client.urls.get("api") or {})` per gestire `None` values nel dict
 - isinstance guard già presente per saltare valori `None` nel dict comprehension
 
+### TASK-1123 — CCXT create_order fallisce con 50119 su OKX EU, fallback REST diretto per market order
+
+**Status:** Done ✅
+**Priorità:** CRITICA — blocca trading live su OKX EU accounts
+
+**File:** `synthtrade/backend/app/execution/okx_exchange.py`
+
+**Problema:** `place_market_order()` chiama `self.client.create_order()` via CCXT, che fallisce con errore `50119 API key doesn't exist` su OKX EU live accounts perché `load_markets()` non si autentica correttamente con le chiavi EU. Il balance (che usa REST diretto) funzionava già, ma gli ordini erano bloccati.
+
+**Log osservato:**
+```
+ERROR: Live trade failed: OKX market order failed: okx {"msg":"API key doesn't exist","code":"50119"}
+```
+
+**Fix applicato:**
+- Aggiunto metodo `_direct_place_market_order()` che usa POST `/api/v5/trade/order` con firma HMAC-SHA256 diretta, bypassando CCXT
+- Modificata `place_market_order()`: se CCXT fallisce con `50119` o `"API key doesn't exist"`, usa il fallback REST diretto
+- Il fallback supporta sia quantità base che `tgtCcy=quote_ccy` per buy con importo in valuta quota
+
+**Verifica:** Syntax check passato, logica speculare a `_direct_fetch_balance()` già funzionante.
+
 ### TASK-1122 — Add missing SymbolRef.from_any() method
 
 **Status:** Done ✅
@@ -31,6 +52,21 @@ Live trade failed: OKX get_symbol_filters failed for OKB-EUR: type object 'Symbo
 - Aggiunto `SymbolRef.from_any(symbol: str) -> SymbolRef` in `exchange_models.py`
 - Supporta tre formati: OKX (`BTC-EUR`), CCXT (`BTC/EUR`), Compact (`BTCEUR`)
 - Usa `from_compact()` come fallback con quote_assets predefinite
+
+### TASK-1124 — Fix firma HMAC-SHA256 per POST /api/v5/trade/order (errore 401)
+
+**Status:** Done ✅
+**Priorità:** CRITICA — blocca trading live su OKX EU accounts (fallback REST)
+**File:** `synthtrade/backend/app/execution/okx_exchange.py`
+
+**Problema:** `_direct_place_market_order()` falliva con `Client error '401 Unauthorized' for url 'https://eea.okx.com/api/v5/trade/order'`. Il metodo `_sign_headers()` includeva sempre `body` nella prehash anche se vuoto, ma per le richieste GET (es. balance) veniva passata stringa vuota, quindi funzionava. Il problema era che per POST il body veniva incluso sempre senza distinzione — la specifica OKX richiede esplicitamente che per POST con body la prehash sia `timestamp + method + path + body`, mentre per GET senza body sia solo `timestamp + method + path`.
+
+**Fix applicato:**
+- `_sign_headers()`: aggiunto controllo esplicito `if body:` per costruire prehash condizionale (con o senza body)
+- `_direct_place_market_order()`: passa `json.dumps(body)` come body stringa a `_sign_headers("POST", path, body_str)`
+- Rimosso `import json` duplicato e inline import obsoleto
+
+**Verifica:** Firma ora corrisponde alla specifica OKX HMAC-SHA256 sia per GET che per POST.
 
 ## Task Attivi
 

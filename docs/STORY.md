@@ -14,7 +14,7 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - ✅ **Completamente disabilitato fill price recovery UDS:** Disabilitato tutti i metodi REST e CCXT per fill price recovery durante UDS reconnection per OKX EU (problema autenticazione 401/50119)
 - ✅ **Disabilitati metodi REST:** `_direct_fetch_order_detail()`, `_direct_fetch_closed_orders()`, `fetch_closed_orders_with_rest_fallback()`, `_fetch_fill_price_by_order_id()`
 - ✅ **Fix OKX order stream URL:** Corretto da wsaws.okx.com a wspap.okx.com per OKX EU live (risolve errore DNS [Errno 11001])
-- ✅ **Fix FeeTier access:** Corretto accesso come dataclass (.maker/.taker) invece che dict ['maker']['taker'] (risolve 'FeeTier object is not subscriptable')
+- ✅ **Fix FeeTier access completo:** Aggiunto helper _get_fee_rate() per gestire sia dict che FeeTier dataclass, corretti tutti gli accessi in router.py (risolve 'FeeTier object has no attribute get')
 - ✅ **Rimossa logica dead code:** Rimossa logica UDS reconnect sync dopo return statement
 - ✅ **Verifica compilazione:** Sintassi Python corretta per tutti i file modificati
 
@@ -23,7 +23,7 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 - REST order detail/closed orders falliscono con 401 Unauthorized (permessi limitati API key EU)
 - Completamente disabilitare fill price recovery durante UDS elimina completamente spam warning
 - OKX order stream URL errato causava errori DNS
-- FeeTier è dataclass, non dict
+- FeeTier è dataclass, non dict - richiede helper function per accessi misti
 - Bracket OCO rimane attivo, fill price recuperato da WS private o log trade chiuso
 
 **File modificati:**

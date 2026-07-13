@@ -31,7 +31,7 @@
 
 ### TASK-1131 — CCXT REST fallback per OKX EU accounts
 
-**Status:** ✅ DONE (workaround completo + fix ulteriori)
+**Status:** ✅ DONE (workaround completo + fix ulteriori + FeeTier access)
 **Priorità:** CRITICA
 **Dipendenze:** TASK-1130
 
@@ -55,7 +55,8 @@
 - ✅ Disabilitati tutti i metodi REST fallback (`_direct_fetch_order_detail`, `_direct_fetch_closed_orders`, `fetch_closed_orders_with_rest_fallback`)
 - ✅ Disabilitato `_fetch_fill_price_by_order_id` completamente
 - ✅ Corretto URL OKX order stream da wsaws.okx.com a wspap.okx.com (fix DNS error)
-- ✅ Fix warning fee tier: accesso a FeeTier come dataclass (.maker/.taker) invece che dict ['maker']['taker']
+- ✅ Fix fee tier access: aggiunto helper _get_fee_rate() per gestire sia dict che FeeTier dataclass
+- ✅ Corretti tutti gli accessi fee_tier.get() in router.py usando _get_fee_rate()
 - ✅ Rimossa logica UDS reconnect sync dead code dopo return statement
 - ✅ I fill price verranno recuperati dal WS private quando funzionerà o dal log trade chiuso
 - ✅ Elimina completamente warning 401/50119 nei log
@@ -69,9 +70,10 @@
 **Fix applicato:**
 - ✅ Disabilitato tutti i tentativi REST per fill price recovery
 - ✅ Corretto OKX order stream URL per OKX EU live
-- ✅ Fix accesso FeeTier come dataclass
+- ✅ Fix completo FeeTier access con helper _get_fee_rate()
 - ✅ Bracket OCO rimane attivo, fill price recuperato da WS private o log trade chiuso
 - ✅ Elimina completamente spam warning 401/50119 nei log
+- ✅ Risolti errori 'FeeTier object has no attribute get' durante websocket
 
 **Nota tecnica:**
 Le API key OKX EU live hanno permessi limitati per `/api/v5/trade/order` e `/api/v5/trade/orders-history`. Il recupero fill price durante disconnessioni UDS è completamente disabilitato finché non si risolverà il problema di autenticazione o si implementerà WS private completo.

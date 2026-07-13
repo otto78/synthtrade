@@ -25,10 +25,11 @@
 - ✅ Completamente disabilitato fill price recovery durante UDS reconnection per OKX EU
 - ✅ Disabilitati tutti i metodi REST fallback (`_direct_fetch_order_detail`, `_direct_fetch_closed_orders`, `fetch_closed_orders_with_rest_fallback`, `_fetch_fill_price_by_order_id`)
 - ✅ Corretto URL OKX order stream da wsaws.okx.com a wspap.okx.com (fix DNS error)
-- ✅ Fix FeeTier access: accesso come dataclass (.maker/.taker) invece che dict ['maker']['taker']
+- ✅ Fix FeeTier access completo: aggiunto helper _get_fee_rate() per gestire sia dict che FeeTier dataclass
 - ✅ Rimossa logica UDS reconnect sync dead code dopo return statement
 - ✅ Bracket OCO rimane attivo, fill price recuperato da WS private o log trade chiuso
 - ✅ Elimina completamente spam warning 401/50119 nei log durante disconnessioni UDS
+- ✅ Risolti errori 'FeeTier object has no attribute get' durante websocket
 - ✅ Verificata compilazione Python senza errori
 
 **Nota tecnica:**

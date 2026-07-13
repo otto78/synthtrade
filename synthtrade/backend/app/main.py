@@ -221,7 +221,7 @@ async def _restore_scalping_session(db) -> None:
                 try:
                     fee_tier = await adapter.get_trade_fee(sym_ref)
                     _execution_state["fee_tier"] = fee_tier
-                    logger.info(f"✓ Fee tier salvato durante restore: maker={fee_tier['maker']}, taker={fee_tier['taker']}")
+                    logger.info(f"✓ Fee tier salvato durante restore: maker={fee_tier.maker}, taker={fee_tier.taker}")
                 except Exception as e:
                     logger.warning(f"Impossibile recuperare fee tier durante restore: {e} — uso default 0.001")
                     _execution_state["fee_tier"] = {"maker": 0.001, "taker": 0.001}
@@ -238,7 +238,7 @@ async def _restore_scalping_session(db) -> None:
                     try:
                         fee_tier = await adapter.get_trade_fee(sym_ref)
                         _execution_state["fee_tier"] = fee_tier
-                        logger.info(f"✓ Fee tier salvato durante restore: maker={fee_tier['maker']}, taker={fee_tier['taker']}")
+                        logger.info(f"✓ Fee tier salvato durante restore: maker={fee_tier.maker}, taker={fee_tier.taker}")
                     except Exception as e:
                         logger.warning(f"Impossibile recuperare fee tier durante restore: {e} — uso default 0.001")
                         _execution_state["fee_tier"] = {"maker": 0.001, "taker": 0.001}

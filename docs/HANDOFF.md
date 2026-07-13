@@ -10,32 +10,39 @@
 
 ---
 
-### ✅ FASE COMPLETATA: TASK-1130 + TASK-1131 — OKX EU authentication issues resolution
+### ✅ FASE COMPLETATA: TASK-1130 + TASK-1131 — OKX EU authentication issues resolution + ulteriori fix
 
 **Problema risolto:**
 - CCXT fallisce sistematicamente su OKX EU live con errore 50119 ("API key doesn't exist")
 - REST order detail/closed orders falliscono con 401 Unauthorized (permessi limitati API key EU)
 - Questo causava warning ripetuti ogni 10 secondi durante UDS reconnection
 - `_get_ccxt_symbol` mancante in `OkxExchangeAdapter`
+- OKX order stream error DNS [Errno 11001] getaddrinfo failed su wsaws.okx.com
+- Fee tier warning: 'FeeTier' object is not subscriptable
 
 **Fix applicato:**
 - ✅ Aggiunto metodo `_get_ccxt_symbol(self, symbol: str) -> str` in `OkxExchangeAdapter`
 - ✅ Completamente disabilitato fill price recovery durante UDS reconnection per OKX EU
 - ✅ Disabilitati tutti i metodi REST fallback (`_direct_fetch_order_detail`, `_direct_fetch_closed_orders`, `fetch_closed_orders_with_rest_fallback`, `_fetch_fill_price_by_order_id`)
+- ✅ Corretto URL OKX order stream da wsaws.okx.com a wspap.okx.com (fix DNS error)
+- ✅ Fix FeeTier access: accesso come dataclass (.maker/.taker) invece che dict ['maker']['taker']
+- ✅ Rimossa logica UDS reconnect sync dead code dopo return statement
 - ✅ Bracket OCO rimane attivo, fill price recuperato da WS private o log trade chiuso
 - ✅ Elimina completamente spam warning 401/50119 nei log durante disconnessioni UDS
 - ✅ Verificata compilazione Python senza errori
 
 **Nota tecnica:**
-Le API key OKX EU live hanno permessi limitati per `/api/v5/trade/order` e `/api/v5/trade/orders-history`. Il recupero fill price durante disconnessioni UDS è completamente disabilitato finché non si risolverà il problema di autenticazione o si implementerà WS private completo.
+Le API key OKX EU live hanno permessi limitati per `/api/v5/trade/order` e `/api/v5/trade/orders-history`. Il recupero fill price durante disconnessioni UDS è completamente disabilitato finché non si risolverà il problema di autenticazione o si implementerà WS private completo. L'URL corretto per OKX EU private WS è wspap.okx.com, non wsaws.okx.com.
 
 **File modificati:**
 - `synthtrade/backend/app/execution/okx_exchange.py`
 - `synthtrade/backend/app/scalping/router.py`
+- `synthtrade/backend/app/execution/okx_order_event_stream.py`
+- `synthtrade/backend/app/main.py`
 - `docs/TASKS.md` — aggiunto TASK-1130 e TASK-1131
 - `docs/STORY.md` — aggiornato v1.4.14
 
-**Prossimo passo:** Test in sessione live/demo per conferma eliminazione warning UDS
+**Prossimo passo:** Test in sessione live/demo per conferma eliminazione warning UDS e verifica OKX order stream stabile
 
 ---
 

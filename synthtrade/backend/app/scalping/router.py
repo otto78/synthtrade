@@ -927,54 +927,6 @@ async def _on_uds_reconnect_sync():
             logger.info(f"UDS reconnect sync: fill price recovery skipped for {pos.symbol} (OKX EU auth issues)")
             return
 
-            entry_f = float(pos.entry_price)
-            qty_f = float(pos.quantity)
-            gross_pnl = (fill_price - entry_f) * qty_f if pos.side == "BUY" else (entry_f - fill_price) * qty_f
-            
-            # TASK-879: Usa commissioni reali/attese invece di hardcode
-            # Entry: commissione reale se disponibile da WebSocket (TASK-876), altrimenti fee tier
-            if pos.entry_commission is not None and pos.entry_commission > 0:
-                entry_commission = float(pos.entry_commission)
-                # Converti BNB to USDC se necessario
-                if pos.entry_commission_asset == "BNB":
-                    entry_commission = await _convert_bnb_commission_to_usdc(
-                        exchange, entry_commission, context="UDS sync: "
-                    )
-            else:
-                # Fallback: usa fee tier per entrata (costo atteso)
-                fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-                entry_fee_rate = fee_tier.get("taker", 0.001)  # market order = taker
-                entry_commission = entry_f * qty_f * entry_fee_rate
-            
-            # Exit: usa fee tier (non abbiamo la commissione reale di uscita in questo scenario di riconnessione)
-            fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-            exit_fee_rate = fee_tier.get("maker", 0.001)  # OCO stop/limit orders = maker
-            exit_commission = fill_price * qty_f * exit_fee_rate
-            
-            total_fees = entry_commission + exit_commission
-            pnl = gross_pnl - total_fees
-            pnl_pct = (pnl / (entry_f * qty_f)) * 100 if entry_f > 0 else 0.0
-            reason = "take_profit" if pnl > 0 else "stop_loss"
-            
-            logger.debug(f"[TASK-879] UDS sync PnL: gross={gross_pnl:.4f}, entry_fee={entry_commission:.4f}, exit_fee={exit_commission:.4f}, total_fees={total_fees:.4f}, pnl={pnl:.4f}")
-
-            _execution_state["position_manager"].close_position(Decimal(str(fill_price)))
-            trade_record = {
-                "symbol": pos.symbol, "side": pos.side,
-                "entry_price": entry_f, "exit_price": fill_price,
-                "quantity": qty_f, "pnl": round(pnl, 2),
-                "pnl_pct": round(pnl_pct, 2),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "signal_reason": reason,
-            }
-            _execution_state["trade_history"].append(trade_record)
-            await _update_closed_position_in_db(pos, fill_price, pnl, pnl_pct, reason)
-            await _refresh_session_balance()
-            await broadcast_scalping_event("trade_closed", {
-                **trade_record,
-            })
-            logger.info(f"✅ UDS reconnect sync: trade chiuso @ {fill_price} | PnL={pnl:.2f}")
-
     except Exception as e:
         logger.warning(f"UDS reconnect sync error (non-fatal): {e}")
 

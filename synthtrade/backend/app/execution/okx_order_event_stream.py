@@ -45,7 +45,7 @@ from typing import Callable, Optional
 logger = logging.getLogger(__name__)
 
 _WS_DEMO = "wss://wspap.okx.com/ws/v5/private?brokerId=9999"
-_WS_EU_LIVE = "wss://wsaws.okx.com:8443/ws/v5/private"
+_WS_EU_LIVE = "wss://wspap.okx.com:8443/ws/v5/private"  # Changed from wsaws.okx.com to wspap.okx.com
 _WS_LIVE = "wss://ws.okx.com:8443/ws/v5/private"
 
 _PING_INTERVAL = 25

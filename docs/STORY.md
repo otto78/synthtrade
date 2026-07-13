@@ -6,24 +6,31 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ### v1.4.14 — 2026-07-13
 
-**Milestone:** TASK-1130 + TASK-1131 — CCXT REST fallback per OKX EU accounts
+**Milestone:** TASK-1130 + TASK-1131 — CCXT REST fallback per OKX EU accounts + ulteriori fix
 
 **Completato:**
 - ✅ **Bug fix _get_ccxt_symbol mancante:** Aggiunto metodo `_get_ccxt_symbol(self, symbol: str) -> str` in `OkxExchangeAdapter` per conversione simbolo CCXT (`"BTC-EUR"` → `"BTC/EUR"`)
 - ✅ **Fix chiamate router.py:** Rimossi `await` dalle chiamate in `router.py` dato che il metodo è sincrono
 - ✅ **Completamente disabilitato fill price recovery UDS:** Disabilitato tutti i metodi REST e CCXT per fill price recovery durante UDS reconnection per OKX EU (problema autenticazione 401/50119)
 - ✅ **Disabilitati metodi REST:** `_direct_fetch_order_detail()`, `_direct_fetch_closed_orders()`, `fetch_closed_orders_with_rest_fallback()`, `_fetch_fill_price_by_order_id()`
-- ✅ **Verifica compilazione:** Sintassi Python corretta per entrambi i file modificati
+- ✅ **Fix OKX order stream URL:** Corretto da wsaws.okx.com a wspap.okx.com per OKX EU live (risolve errore DNS [Errno 11001])
+- ✅ **Fix FeeTier access:** Corretto accesso come dataclass (.maker/.taker) invece che dict ['maker']['taker'] (risolve 'FeeTier object is not subscriptable')
+- ✅ **Rimossa logica dead code:** Rimossa logica UDS reconnect sync dopo return statement
+- ✅ **Verifica compilazione:** Sintassi Python corretta per tutti i file modificati
 
 **Decisioni chiave:**
 - CCXT fallisce sistematicamente su OKX EU con errore 50119
 - REST order detail/closed orders falliscono con 401 Unauthorized (permessi limitati API key EU)
 - Completamente disabilitare fill price recovery durante UDS elimina completamente spam warning
+- OKX order stream URL errato causava errori DNS
+- FeeTier è dataclass, non dict
 - Bracket OCO rimane attivo, fill price recuperato da WS private o log trade chiuso
 
 **File modificati:**
 - `synthtrade/backend/app/execution/okx_exchange.py`
 - `synthtrade/backend/app/scalping/router.py`
+- `synthtrade/backend/app/execution/okx_order_event_stream.py`
+- `synthtrade/backend/app/main.py`
 
 ### v1.4.13 — 2026-07-10
 

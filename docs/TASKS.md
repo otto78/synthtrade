@@ -31,7 +31,7 @@
 
 ### TASK-1131 — CCXT REST fallback per OKX EU accounts
 
-**Status:** ✅ DONE (workaround completo)
+**Status:** ✅ DONE (workaround completo + fix ulteriori)
 **Priorità:** CRITICA
 **Dipendenze:** TASK-1130
 
@@ -46,21 +46,30 @@
 **Analisi approfondita:**
 - CCXT: fallisce con 50119 su OKX EU live
 - REST balance/fee: funzionano correttamente
-- REST order detail/closed orders: falliscono con 401 Unauthorized (permessi insufficienti o firma non corretta)
+- REST order detail/closed orders: falliscono con 401 Unauthorized (permessi insufficienti API key EU)
+- OKX order stream: errore DNS [Errno 11001] getaddrinfo failed su wsaws.okx.com
+- Fee tier warning: 'FeeTier' object is not subscriptable (accesso come dict invece che come dataclass)
 
 **Soluzione implementata:**
 - ✅ Completamente disabilitato fill price recovery durante UDS reconnection per OKX EU
 - ✅ Disabilitati tutti i metodi REST fallback (`_direct_fetch_order_detail`, `_direct_fetch_closed_orders`, `fetch_closed_orders_with_rest_fallback`)
 - ✅ Disabilitato `_fetch_fill_price_by_order_id` completamente
+- ✅ Corretto URL OKX order stream da wsaws.okx.com a wspap.okx.com (fix DNS error)
+- ✅ Fix warning fee tier: accesso a FeeTier come dataclass (.maker/.taker) invece che dict ['maker']['taker']
+- ✅ Rimossa logica UDS reconnect sync dead code dopo return statement
 - ✅ I fill price verranno recuperati dal WS private quando funzionerà o dal log trade chiuso
 - ✅ Elimina completamente warning 401/50119 nei log
 
 **File coinvolti:**
 - `synthtrade/backend/app/execution/okx_exchange.py`
 - `synthtrade/backend/app/scalping/router.py`
+- `synthtrade/backend/app/execution/okx_order_event_stream.py`
+- `synthtrade/backend/app/main.py`
 
 **Fix applicato:**
 - ✅ Disabilitato tutti i tentativi REST per fill price recovery
+- ✅ Corretto OKX order stream URL per OKX EU live
+- ✅ Fix accesso FeeTier come dataclass
 - ✅ Bracket OCO rimane attivo, fill price recuperato da WS private o log trade chiuso
 - ✅ Elimina completamente spam warning 401/50119 nei log
 

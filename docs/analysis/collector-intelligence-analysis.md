@@ -51,7 +51,28 @@ Basata su facilità di fix e impatto:
 |------|------|----------|
 | TASK-INVEST-019 | Verificare endpoint /debug/pipeline per stato collector live | 🔍 Da Investigare |
 | TASK-INVEST-016 | Verificare feed intermittenti (CryptoCompare/RSS) | 🔍 Da Investigare |
+| TASK-COLLECTOR-001 | Provider-aware collector base (Funding Rate + Open Interest + Long/Short) | CRITICA |
+| TASK-COLLECTOR-002 | Sentiment collector fallback affidabile | ALTA |
+| TASK-COLLECTOR-003 | Whale collector OKX | MEDIA |
+| TASK-COLLECTOR-004 | On-Chain collector con Blockchair | MEDIA |
+| TASK-COLLECTOR-005 | CVD collector verifica grace period | BASSA |
 
 ---
 
-**Ultima modifica:** 2026-07-02 — Cline
+## 5. OKX Integration Notes
+
+**Problema principale:** I collector sono hardcoded per Binance Futures, non funzionano con OKX EUR pairs.
+
+**Soluzione:**
+- Aggiungere interfaccia `CollectorAdapter` con metodi read-only
+- Implementare in `OkxExchangeAdapter` per derivatives (USDT pairs)
+- Per EUR pairs, usare USDT pairs come proxy (BTC-EUR → BTC-USDT)
+
+**OKX endpoints disponibili:**
+- Funding Rate: `GET /api/v5/public/funding-rate-history` (perpetual futures)
+- Open Interest: `GET /api/v5/public/open-interest` (perpetual futures)
+- Long/Short Ratio: OKX non ha endpoint equivalente
+
+---
+
+**Ultima modifica:** 2026-07-13 — Aggiornato con TASK-COLLECTOR-001..005

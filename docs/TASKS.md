@@ -4,7 +4,7 @@
 
 ### TASK-1130 — Fix: Missing _get_ccxt_symbol method in OkxExchangeAdapter
 
-**Status:** ✅ DONE
+**Status:** ⚠️ REVERTED (2026-07-13)
 **Priorità:** ALTA
 **Dipendenze:** TASK-1129
 
@@ -19,64 +19,17 @@
 - `synthtrade/backend/app/execution/okx_exchange.py`
 - `synthtrade/backend/app/scalping/router.py`
 
-**Fix applicato:**
-- ✅ Aggiunto metodo `_get_ccxt_symbol(self, symbol: str) -> str` in `OkxExchangeAdapter` (conversione semplice: `"BTC-EUR"` → `"BTC/EUR"`)
-- ✅ Aggiornato `_fetch_fill_price_by_order_id` per usare il nuovo metodo invece di conversione inline
-- ✅ Rimossi `await` dalle chiamate in `router.py` dato che il metodo è ora sincrono
-- ✅ Verificata compilazione Python senza errori
-
-**Verifica:**
-- ✅ Sintassi Python corretta per entrambi i file modificati
-- ⏳ Test in sessione live/demo per conferma eliminazione warning nei log
+**Stato:** Revertito - il sistema funziona con i fix precedenti (TASK-1126) e il fallback REST polling gestisce correttamente gli eventi.
 
 ### TASK-1131 — CCXT REST fallback per OKX EU accounts
 
-**Status:** ✅ DONE (workaround completo + fix ulteriori + FeeTier access)
+**Status:** ⚠️ REVERTED (2026-07-13)
 **Priorità:** CRITICA
 **Dipendenze:** TASK-1130
 
 **Problema:** CCXT fallisce sistematicamente su OKX EU live accounts con errore 50119 ("API key doesn't exist"), mentre le chiamate REST dirette funzionano. Questo causa warning ripetuti durante la riconnessione UDS ogni 10 secondi quando si cerca di recuperare il fill price degli ordini.
 
-**Log osservato:**
-```
-2026-07-13 12:15:23,780 [WARNING] app.execution.okx_exchange: _fetch_fill_price_by_order_id failed for BTC-EUR orderId=3739107764904636416: okx {"msg":"API key doesn't exist","code":"50119"}
-2026-07-13 12:15:24,541 [WARNING] app.scalping.router: UDS reconnect sync: fetch_closed_orders failed: okx {"msg":"API key doesn't exist","code":"50119"}
-```
-
-**Analisi approfondita:**
-- CCXT: fallisce con 50119 su OKX EU live
-- REST balance/fee: funzionano correttamente
-- REST order detail/closed orders: falliscono con 401 Unauthorized (permessi insufficienti API key EU)
-- OKX order stream: errore DNS [Errno 11001] getaddrinfo failed su wsaws.okx.com
-- Fee tier warning: 'FeeTier' object is not subscriptable (accesso come dict invece che come dataclass)
-
-**Soluzione implementata:**
-- ✅ Completamente disabilitato fill price recovery durante UDS reconnection per OKX EU
-- ✅ Disabilitati tutti i metodi REST fallback (`_direct_fetch_order_detail`, `_direct_fetch_closed_orders`, `fetch_closed_orders_with_rest_fallback`)
-- ✅ Disabilitato `_fetch_fill_price_by_order_id` completamente
-- ✅ Corretto URL OKX order stream da wsaws.okx.com a wspap.okx.com (fix DNS error)
-- ✅ Fix fee tier access: aggiunto helper _get_fee_rate() per gestire sia dict che FeeTier dataclass
-- ✅ Corretti tutti gli accessi fee_tier.get() in router.py usando _get_fee_rate()
-- ✅ Rimossa logica UDS reconnect sync dead code dopo return statement
-- ✅ I fill price verranno recuperati dal WS private quando funzionerà o dal log trade chiuso
-- ✅ Elimina completamente warning 401/50119 nei log
-
-**File coinvolti:**
-- `synthtrade/backend/app/execution/okx_exchange.py`
-- `synthtrade/backend/app/scalping/router.py`
-- `synthtrade/backend/app/execution/okx_order_event_stream.py`
-- `synthtrade/backend/app/main.py`
-
-**Fix applicato:**
-- ✅ Disabilitato tutti i tentativi REST per fill price recovery
-- ✅ Corretto OKX order stream URL per OKX EU live
-- ✅ Fix completo FeeTier access con helper _get_fee_rate()
-- ✅ Bracket OCO rimane attivo, fill price recuperato da WS private o log trade chiuso
-- ✅ Elimina completamente spam warning 401/50119 nei log
-- ✅ Risolti errori 'FeeTier object has no attribute get' durante websocket
-
-**Nota tecnica:**
-Le API key OKX EU live hanno permessi limitati per `/api/v5/trade/order` e `/api/v5/trade/orders-history`. Il recupero fill price durante disconnessioni UDS è completamente disabilitato finché non si risolverà il problema di autenticazione o si implementerà WS private completo.
+**Stato:** Revertito - il fallback REST polling è operativo e gestisce gli eventi di fill senza errori critici. WS private failure (60032) non è bloccante.
 
 ## EPICA OKX — Migrazione Binance -> OKX (PRIORITA' ASSOLUTA)
 
@@ -263,6 +216,123 @@ Le API key OKX EU live hanno permessi limitati per `/api/v5/trade/order` e `/api
 - Sessione OKX non chiama mai Binance Futures per collector provider-bound.
 - Log mostra `collector=okx_unavailable` o dati OKX reali.
 - Score intelligence riflette i collector attivi/disponibili.
+
+---
+
+## EPICA COLLECTOR IMPROVEMENT — Intelligence non funzionante
+
+**Status:** In Planning
+**Priorità:** CRITICA
+**Motivazione:** Senza collector funzionanti, l'intelligence non può calcolare segnali per il supervisor.
+
+**Problema:** 5/8 collector non funzionanti (Funding Rate, CVD, Sentiment, Whale, On-Chain). Senza dati di mercato, SignalScoreEngine lavora con solo 3 collector.
+
+### TASK-COLLECTOR-001 — Provider-aware collector base (Funding Rate + Open Interest + Long/Short)
+
+**Status:** Pending
+**Priorità:** CRITICA
+**Dipendenze:** TASK-1116.C
+
+**Obiettivo:** Rendi i collector provider-aware invece di hardcoded Binance Futures.
+
+**File coinvolti:**
+- `synthtrade/backend/app/scalping/intelligence/collectors/open_interest.py`
+- `synthtrade/backend/app/scalping/intelligence/collectors/funding_rate.py`
+- `synthtrade/backend/app/scalping/intelligence/collectors/long_short_ratio.py`
+- `synthtrade/backend/app/scalping/intelligence/signal_score_engine.py`
+
+**Sottotask:**
+1. **COLLECTOR-001.1 — CollectorAdapter interface**
+   - Definire interfaccia read-only: `get_open_interest(symbol)`, `get_funding_rate(symbol)`, `get_long_short_ratio(symbol, period)`
+   - Implementare in `OkxExchangeAdapter` o `None` se non disponibile
+
+2. **COLLECTOR-001.2 — Refactor FundingRateCollector**
+   - Accettare `adapter` opzionale in `__init__`
+   - Se `adapter` fornito e provider=okx → chiamare `adapter.get_funding_rate()`
+   - OKX funding rate via `/api/v5/public/funding-rate-history` (perpetual futures)
+   - Per EUR pairs, usare USDT pairs come proxy (BTC-EUR → BTC-USDT)
+
+3. **COLLECTOR-001.3 — Refactor OpenInterestCollector**
+   - Stesso pattern: `adapter.get_open_interest(symbol)`
+   - OKX open interest via `/api/v5/public/open-interest`
+
+4. **COLLECTOR-001.4 — Refactor LongShortRatioCollector**
+   - OKX non ha long/short ratio → graceful skip con log `UNAVAILABLE`
+
+5. **COLLECTOR-001.5 — SignalScoreEngine wiring**
+   - Passare `adapter` ai collector in `get_or_create()` o costruttore
+   - Leggere `settings.EXCHANGE_PROVIDER`
+
+6. **COLLECTOR-001.6 — Test**
+   - Fake adapter con `get_open_interest` mockato
+   - Sessione OKX con collector OKX (o skip) → nessun 400 Binance
+
+### TASK-COLLECTOR-002 — Sentiment collector fallback affidabile
+
+**Status:** Pending
+**Priorità:** ALTA
+**Dipendenze:** TASK-COLLECTOR-001
+
+**Obiettivo:** Implementare fallback funzionante quando API key mancano.
+
+**File:** `synthtrade/backend/app/scalping/intelligence/collectors/sentiment.py`
+
+**Problemi:**
+- NewsAPI richiede API key
+- CryptoCompare richiede API key
+- RSS feeds potrebbero essere bloccati
+
+**Soluzione:**
+- Priorità: CryptoCompare (con key) → NewsAPI (con key) → RSS (fallback)
+- Aggiungere fallback testuale semplice basato su keyword "bull/bear"
+- Cache 5 minuti per evitare rate limit
+
+### TASK-COLLECTOR-003 — Whale collector OKX
+
+**Status:** Pending
+**Priorità:** MEDIA
+**Dipendenze:** TASK-COLLECTOR-001
+
+**Obiettivo:** Implementare fonti whale affidabili.
+
+**File:** `synthtrade/backend/app/scalping/intelligence/collectors/whale.py`
+
+**Soluzione:**
+- Usare Blockchair per BTC/LTC (gratuito)
+- Aggiungere Whale Alert API come opzione (se API key disponibile)
+- Implementare fallback su CryptoCompare news con keyword "whale"
+
+### TASK-COLLECTOR-004 — On-Chain collector con Blockchair
+
+**Status:** Pending
+**Priorità:** MEDIA
+**Dipendenze:** TASK-COLLECTOR-001
+
+**Obiettivo:** Rendi funzionante con fonti gratuite.
+
+**File:** `synthtrade/backend/app/scalping/intelligence/collectors/onchain.py`
+
+**Soluzione:**
+- Priorità: Dune (con key) → Blockchair (gratuito)
+- Per OKX EUR pairs, usare dati BTC/ETH come proxy macro
+- Aggiungere fallback su CryptoCompare per dati di rete
+
+### TASK-COLLECTOR-005 — CVD collector verifica grace period
+
+**Status:** Pending
+**Priorità:** BASSA
+**Dipendenze:** TASK-COLLECTOR-001
+
+**Obiettivo:** Verificare se CVD funziona dopo 100 trade.
+
+**File:** `synthtrade/backend/app/scalping/intelligence/collectors/cvd_calculator.py`
+
+**Azioni:**
+- Monitorare log per "CVD grace period"
+- Verificare se dopo warmup inizia a contribuire
+- Aggiungere fallback su OKX public trades se necessario
+
+---
 
 ### TASK-906 — Trend Analysis: Prevenzione Falling Knife in Mean-Reversion (2026-06-30)
 

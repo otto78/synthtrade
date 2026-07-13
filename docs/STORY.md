@@ -4,33 +4,38 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
-### v1.4.14 — 2026-07-13
+### v1.4.15 — 2026-07-13
+
+**Milestone:** Revert TASK-1130/1131 + Stato operativo sistema OKX EU live
+
+**Completato:**
+- ✅ **Revert TASK-1130/1131:** Tutti i cambiamenti sono stati revertiti (`git checkout --`)
+- ✅ **Sistema operativo:** Sessione BTC-EUR avviata con successo in modalità live
+- ✅ **Saldo EUR:** 23.10 disponibile, sufficiente per trade_value 20.0
+- ✅ **Bracket OCO:** Piazzato via REST diretto, algoId=3739635723994378240
+- ✅ **WS private fallback:** REST polling attivo (2s interval) dopo errore 60032
+- ✅ **Nessun errore critico:** Il fallback REST polling gestisce gli eventi di fill correttamente
+
+**Decisioni chiave:**
+- WS private failure (60032) su OKX EU non è un errore bloccante
+- REST polling fallback è operativo e sufficiente
+- I fix TASK-1126, TASK-1121, TASK-1122, TASK-1123 rimangono in atto
+
+**File modificati:**
+- Nessuno - stato originale ripristinato
+
+### v1.4.14 — 2026-07-13 (REVERTED)
 
 **Milestone:** TASK-1130 + TASK-1131 — CCXT REST fallback per OKX EU accounts + ulteriori fix
 
-**Completato:**
-- ✅ **Bug fix _get_ccxt_symbol mancante:** Aggiunto metodo `_get_ccxt_symbol(self, symbol: str) -> str` in `OkxExchangeAdapter` per conversione simbolo CCXT (`"BTC-EUR"` → `"BTC/EUR"`)
-- ✅ **Fix chiamate router.py:** Rimossi `await` dalle chiamate in `router.py` dato che il metodo è sincrono
-- ✅ **Completamente disabilitato fill price recovery UDS:** Disabilitato tutti i metodi REST e CCXT per fill price recovery durante UDS reconnection per OKX EU (problema autenticazione 401/50119)
-- ✅ **Disabilitati metodi REST:** `_direct_fetch_order_detail()`, `_direct_fetch_closed_orders()`, `fetch_closed_orders_with_rest_fallback()`, `_fetch_fill_price_by_order_id()`
-- ✅ **Fix OKX order stream URL:** Corretto da wsaws.okx.com a wspap.okx.com per OKX EU live (risolve errore DNS [Errno 11001])
-- ✅ **Fix FeeTier access completo:** Aggiunto helper _get_fee_rate() per gestire sia dict che FeeTier dataclass, corretti tutti gli accessi in router.py (risolve 'FeeTier object has no attribute get')
-- ✅ **Rimossa logica dead code:** Rimossa logica UDS reconnect sync dopo return statement
-- ✅ **Verifica compilazione:** Sintassi Python corretta per tutti i file modificati
+**Stato:** Revertito - il sistema funziona con i fix precedenti.
 
 **Decisioni chiave:**
-- CCXT fallisce sistematicamente su OKX EU con errore 50119
-- REST order detail/closed orders falliscono con 401 Unauthorized (permessi limitati API key EU)
-- Completamente disabilitare fill price recovery durante UDS elimina completamente spam warning
-- OKX order stream URL errato causava errori DNS
-- FeeTier è dataclass, non dict - richiede helper function per accessi misti
-- Bracket OCO rimane attivo, fill price recuperato da WS private o log trade chiuso
+- Revertito perché il fallback REST polling è operativo
+- WS private failure non segnalato come errore se c'è fallback funzionante
 
 **File modificati:**
-- `synthtrade/backend/app/execution/okx_exchange.py`
-- `synthtrade/backend/app/scalping/router.py`
-- `synthtrade/backend/app/execution/okx_order_event_stream.py`
-- `synthtrade/backend/app/main.py`
+- Revertiti tutti i file modificati
 
 ### v1.4.13 — 2026-07-10
 

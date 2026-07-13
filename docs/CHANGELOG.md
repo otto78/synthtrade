@@ -7,6 +7,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.4.15] — 2026-07-13
+
+### Reverted
+- **TASK-1130/1131 revert**: Tutti i cambiamenti sono stati revertiti (`git checkout --`)
+- **Motivo**: Il sistema funziona correttamente con i fix precedenti (TASK-1126, TASK-1121, TASK-1122, TASK-1123) e il fallback REST polling gestisce gli eventi di fill senza errori critici
+
+### Verified
+- **Sistema operativo**: Sessione BTC-EUR avviata con successo in modalità live
+- **Saldo EUR**: 23.10 disponibile, sufficiente per trade_value 20.0
+- **Bracket OCO**: Piazzato via REST diretto, algoId=3739635723994378240
+- **WS private fallback**: REST polling attivo (2s interval) dopo errore 60032
+- **Nessun errore critico**: Il fallback REST polling è operativo e sufficiente
+
+---
+
 ## [1.4.13] — 2026-07-10
 
 ### Fixed

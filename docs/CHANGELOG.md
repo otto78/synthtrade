@@ -7,6 +7,32 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.4.13] — 2026-07-10
+
+### Fixed
+- **OKX bracket SL above entry (sCode 51280)**: Con fee OKX reali (taker 0.35%, maker 0.2%), `_net_to_gross_pct(-sl)` restituiva un valore **positivo**; il router usava `entry * (1 + sl_gross)` per BUY e piazzava lo SL sopra l'entry. OKX rifiutava con `51280 SL trigger price must be less than the last price`, scatenando emergency market sell.
+- **Helper `_sl_price_from_entry`**: Calcolo SL centralizzato con `abs()` sul movimento lordo — BUY SL sotto entry, SELL SL sopra entry.
+
+---
+
+## [1.4.12] — 2026-07-10
+
+### Fixed
+- **OKX fee API negative fees for base accounts**: OKX API restituisce fee negative anche per account base level (Lv1) che non hanno rebate
+- **TP/SL calculation with negative fees**: Convertito automaticamente fee negative in positive per account base level
+- **TP below entry bug**: Corretto calcolo TP che erroneamente piazzava TP sotto entry per BUY orders causando chiusura immediata
+- **VIP account support**: Mantenute fee negative per account VIP con rebate reali
+
+### Changed
+- **Fee handling**: `OkxExchangeAdapter` ora converte fee negative in positive per account base level
+- **TP/SL formula**: Rimossi wrapper `abs()` obsoleti, formula ora lavora con fee positive
+- **Code cleanup**: Rimosso metodo duplicato `_direct_fetch_trade_fee`
+
+### Fixed
+- **Documentation**: aggiornati `docs/STORY.md` con milestone v1.4.12 e TASK-1127
+
+---
+
 ## [1.4.11] — 2026-07-10
 
 ### Fixed

@@ -4,6 +4,23 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.13 — 2026-07-10
+
+**Milestone:** Fix bracket OKX — SL sopra entry (sCode 51280)
+
+**Completato:**
+- ✅ **Bug SL BUY con fee OKX alte:** `_net_to_gross_pct(-sl)` positivo con taker 0.35%/maker 0.2% → SL calcolato sopra entry → OKX 51280 → emergency sell
+- ✅ **Helper `_sl_price_from_entry`:** movimento lordo sempre positivo, direzione corretta per BUY/SELL
+- ✅ **Test integrazione** aggiornato per fee OKX reali
+
+**Decisioni chiave:**
+- Non assumere il segno del risultato di `_net_to_gross_pct` per lo SL — usare sempre magnitudine assoluta
+- I warning CCXT 50119 sono non-bloccanti (fallback REST operativo)
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/router.py`
+- `synthtrade/backend/tests/integration/test_okx_integration.py`
+
 ### v1.4.8 — 2026-07-09
 
 **Milestone:** Bug OKB-EUR collector + supporto demo mode OKX

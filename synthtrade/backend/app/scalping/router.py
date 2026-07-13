@@ -139,6 +139,15 @@ def _is_valid_uuid(value: str) -> bool:
     ))
 
 
+def _exit_price_ratio(net_pct: float, entry_fee_rate: float, exit_fee_rate: float) -> float:
+    """Rapporto prezzo_uscita/prezzo_entrata per un target netto net_pct (%).
+
+    Modello round-trip (long): net = (1-fe)*ratio*(1-fx) - 1
+    => ratio = (1 + net/100) / ((1-fe)*(1-fx))
+    """
+    return (1 + net_pct / 100) / ((1 - entry_fee_rate) * (1 - exit_fee_rate))
+
+
 def _net_to_gross_pct(net_pct: float, entry_fee_rate: float, exit_fee_rate: float) -> float:
     """Converte un target NETTO (%) nel movimento di prezzo LORDO (%) necessario
     perché, dopo le due fee (entry + exit), il risultato netto coincida col target.
@@ -156,9 +165,80 @@ def _net_to_gross_pct(net_pct: float, entry_fee_rate: float, exit_fee_rate: floa
     sui dati reali. Se si osserva una discrepanza sistematica tra SL netto atteso
     e osservato, rivedere questa assunzione e passare taker per exit_fee_rate sullo SL.
     """
-    net = net_pct / 100
-    gross = (1 + net) / ((1 - entry_fee_rate) * (1 - exit_fee_rate)) - 1
-    return gross * 100
+    return (_exit_price_ratio(net_pct, entry_fee_rate, exit_fee_rate) - 1) * 100
+
+
+def _round_trip_fee_drag_pct(entry_fee_rate: float, exit_fee_rate: float) -> float:
+    """Perdita netta % vendendo allo stesso prezzo di acquisto (solo fee)."""
+    return (1 - (1 - entry_fee_rate) * (1 - exit_fee_rate)) * 100
+
+
+def _expected_net_pct_at_exit(
+    entry: float,
+    exit_price: float,
+    side: str,
+    entry_fee_rate: float,
+    exit_fee_rate: float,
+) -> float:
+    """Rendimento netto % sul capitale deployato dopo entry+exit fee."""
+    if entry <= 0 or exit_price <= 0:
+        return 0.0
+    if side.upper() == "BUY":
+        ratio = exit_price / entry
+    else:
+        ratio = entry / exit_price
+    return ((1 - entry_fee_rate) * ratio * (1 - exit_fee_rate) - 1) * 100
+
+
+def _tp_price_from_entry(
+    entry: float,
+    side: str,
+    net_tp_pct: float,
+    entry_fee_rate: float,
+    exit_fee_rate: float,
+    *,
+    price_prec: int | None = None,
+) -> float:
+    """Prezzo TP: sopra entry per BUY/long, sotto entry per SELL/short."""
+    ratio = _exit_price_ratio(net_tp_pct, entry_fee_rate, exit_fee_rate)
+    price = entry * ratio if side.upper() == "BUY" else entry / ratio
+    return round(price, price_prec) if price_prec is not None else price
+
+
+def _sl_price_from_entry(
+    entry: float,
+    side: str,
+    net_sl_pct: float,
+    entry_fee_rate: float,
+    exit_fee_rate: float,
+    *,
+    price_prec: int | None = None,
+) -> tuple[float, bool]:
+    """Prezzo SL con target netto -net_sl_pct % sul capitale.
+
+    Returns (price, feasible). Per long, se fee round-trip > target SL netto,
+    il prezzo ideale cadrebbe sopra entry (infeasible su exchange): si clamp
+    appena sotto entry e feasible=False.
+    """
+    net_sl_pct = abs(net_sl_pct)
+    ratio = _exit_price_ratio(-net_sl_pct, entry_fee_rate, exit_fee_rate)
+    feasible = True
+    min_frac = max(net_sl_pct / 100, 1e-4)
+
+    if side.upper() == "BUY":
+        if ratio >= 1.0:
+            ratio = 1.0 - min_frac
+            feasible = False
+        price = entry * ratio
+    else:
+        if ratio >= 1.0:
+            price = entry * (1 + min_frac)
+            feasible = False
+        else:
+            price = entry / ratio
+    if price_prec is not None:
+        price = round(price, price_prec)
+    return price, feasible
 
 
 async def _convert_bnb_commission_to_usdc(exchange, bnb_amount: float, context: str = "") -> float:
@@ -244,10 +324,10 @@ async def scalping_websocket(ws: WebSocket):
         # _net_to_gross_pct works with positive fee rates
         # SL target is a LOSS: pass the NEGATIVE net so _net_to_gross_pct returns
         # the (smaller) gross move that nets that loss AFTER fees.
-        sl_gross_pct = _net_to_gross_pct(-sl_pct_cfg, _ef, _xf) / 100
+        sl_gross_frac = _sl_gross_fraction(sl_pct_cfg, _ef, _xf)
         tp_gross_pct = _net_to_gross_pct(tp_pct_cfg, _ef, _xf) / 100
-        # BUY: SL below entry (1 + negative), TP above entry (1 + positive) — SELL: reversed
-        sl_price = entry_f * (1 + sl_gross_pct) if pos.side == "BUY" else entry_f * (1 - sl_gross_pct)
+        # BUY: SL below entry, TP above — SELL: reversed
+        sl_price = entry_f * (1 - sl_gross_frac) if pos.side == "BUY" else entry_f * (1 + sl_gross_frac)
         tp_price = entry_f * (1 + tp_gross_pct) if pos.side == "BUY" else entry_f * (1 - tp_gross_pct)
         # TASK-1129: usa i veri prezzi TP/SL piazzati su OKX se disponibili
         # (fallback al ricalcolo da percentuali per posizioni pre-fix / restore).
@@ -1684,21 +1764,22 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     exit_fee_pricing = fee_tier_pricing.get("maker", 0.001)
 
                                     # TASK-1127: SL/TP gross price calculation.
-                                    # _net_to_gross_pct returns a positive magnitude for both TP and SL.
-                                    # SL target is a LOSS: pass the NEGATIVE net so _net_to_gross_pct
-                                    # returns the (smaller) gross move that nets that loss AFTER fees.
-                                    sl_gross_pct = _net_to_gross_pct(-sl_pct_net_cfg, entry_fee_pricing, exit_fee_pricing) / 100
+                                    # SL: _sl_gross_fraction always returns positive move magnitude
+                                    # (with high OKX fees _net_to_gross_pct(-sl) can be positive — must use abs).
+                                    sl_gross_frac = _sl_gross_fraction(sl_pct_net_cfg, entry_fee_pricing, exit_fee_pricing)
                                     tp_gross_pct = _net_to_gross_pct(tp_pct_net_cfg, entry_fee_pricing, exit_fee_pricing) / 100
 
-                                    # BUY:  SL = below entry (exec * (1 + negative)), TP = above entry (exec * (1 + tp_pct))
-                                    # SELL: SL = above entry (exec * (1 - negative)), TP = below entry (exec * (1 - tp_pct))
-                                    sl_price = round(exec_price * (1 + sl_gross_pct), price_prec) if side == "BUY" else round(exec_price * (1 - sl_gross_pct), price_prec)
+                                    # BUY: SL below entry, TP above — SELL: reversed
+                                    sl_price = _sl_price_from_entry(
+                                        exec_price, side, sl_pct_net_cfg,
+                                        entry_fee_pricing, exit_fee_pricing, price_prec=price_prec,
+                                    )
                                     tp_price = round(exec_price * (1 + tp_gross_pct), price_prec) if side == "BUY" else round(exec_price * (1 - tp_gross_pct), price_prec)
 
                                     logger.info(
                                          f"[NET_PRICING] provider={settings.EXCHANGE_PROVIDER} symbol={event.symbol} maker={exit_fee_pricing} taker={entry_fee_pricing} certified={_execution_state.get('fee_tier_certified', False)} | "
                                         f"Target netti: TP={tp_pct_net_cfg}% SL={sl_pct_net_cfg}% | "
-                                        f"Lordi al prezzo: TP=+{tp_gross_pct*100:.4f}% SL=-{sl_gross_pct*100:.4f}% | "
+                                        f"Lordi al prezzo: TP=+{tp_gross_pct*100:.4f}% SL=-{sl_gross_frac*100:.4f}% | "
                                         f"sl_price={sl_price} tp_price={tp_price} | "
                                         f"fee entry={entry_fee_pricing} exit={exit_fee_pricing}"
                                     )
@@ -1998,7 +2079,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         _ft3 = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
                         _ef3, _xf3 = _ft3.get("taker", 0.001), _ft3.get("maker", 0.001)
                         # TASK-1127: Fees are now positive for base level accounts
-                        sl_price = entry_f * (1 + _net_to_gross_pct(-_sl_cfg, _ef3, _xf3) / 100) if pos.side == "BUY" else entry_f * (1 - _net_to_gross_pct(-_sl_cfg, _ef3, _xf3) / 100)
+                        sl_price = _sl_price_from_entry(entry_f, pos.side, _sl_cfg, _ef3, _xf3)
                         tp_price = entry_f * (1 + _net_to_gross_pct(_tp_cfg, _ef3, _xf3) / 100) if pos.side == "BUY" else entry_f * (1 - _net_to_gross_pct(_tp_cfg, _ef3, _xf3) / 100)
                         # TASK-1129: usa i veri prezzi TP/SL piazzati su OKX se disponibili
                         # (fallback al ricalcolo da percentuali per posizioni pre-fix / restore).
@@ -2118,7 +2199,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     _ft4 = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
                     _ef4, _xf4 = _ft4.get("taker", 0.001), _ft4.get("maker", 0.001)
                     # TASK-1127: Fees are now positive for base level accounts
-                    sl = entry * (1 + _net_to_gross_pct(-_sl_cfg4, _ef4, _xf4) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(-_sl_cfg4, _ef4, _xf4) / 100)
+                    sl = _sl_price_from_entry(entry, pos.side, _sl_cfg4, _ef4, _xf4)
                     tp = entry * (1 + _net_to_gross_pct(_tp_cfg4, _ef4, _xf4) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(_tp_cfg4, _ef4, _xf4) / 100)
                     # TASK-1129: usa i veri prezzi TP/SL piazzati su OKX se disponibili
                     # (fallback al ricalcolo da percentuali per posizioni pre-fix / restore).
@@ -3439,7 +3520,7 @@ async def get_position() -> Optional[Dict]:
     _ef_p = fee_tier.get("taker", 0.001)
     _xf_p = fee_tier.get("maker", 0.001)
     # TASK-1127: Fees are now positive for base level accounts
-    sl_price_calc = entry * (1 + _net_to_gross_pct(-sl_pct, _ef_p, _xf_p) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(-sl_pct, _ef_p, _xf_p) / 100)
+    sl_price_calc = _sl_price_from_entry(entry, pos.side, sl_pct, _ef_p, _xf_p)
     tp_price_calc = entry * (1 + _net_to_gross_pct(tp_pct, _ef_p, _xf_p) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(tp_pct, _ef_p, _xf_p) / 100)
     stop_loss_price = float(pos.sl_price) if pos.sl_price is not None else sl_price_calc
     take_profit_price = float(pos.tp_price) if pos.tp_price is not None else tp_price_calc

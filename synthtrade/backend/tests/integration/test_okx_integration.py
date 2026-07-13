@@ -403,7 +403,7 @@ def test_1111f_net_to_gross_pricing_okx_fees():
     - SL gross (negative) is smaller in abs than net SL
     - TP price is above entry, SL price is below entry
     """
-    from app.scalping.router import _net_to_gross_pct
+    from app.scalping.router import _net_to_gross_pct, _sl_price_from_entry
 
     entry_price = 43700.0
 
@@ -415,23 +415,18 @@ def test_1111f_net_to_gross_pricing_okx_fees():
     sl_net_pct = 0.3
 
     tp_gross_pct = _net_to_gross_pct(tp_net_pct, entry_fee, exit_fee)
-    sl_gross_pct = _net_to_gross_pct(-sl_net_pct, entry_fee, exit_fee)
 
     tp_price = round(entry_price * (1 + tp_gross_pct / 100), 1)
-    sl_price = round(entry_price * (1 + sl_gross_pct / 100), 1)
+    sl_price = round(_sl_price_from_entry(entry_price, "BUY", sl_net_pct, entry_fee, exit_fee), 1)
 
     assert tp_gross_pct > tp_net_pct, (
         f"Gross TP {tp_gross_pct:.4f}% should exceed net {tp_net_pct}% (fee overhead)"
     )
-    # sl_gross_pct: _net_to_gross_pct(-0.3,...) returns a small positive value (~0.25%)
-    # The router then does: sl_price = entry * (1 - sl_gross_pct) which puts it below entry.
-    assert sl_gross_pct > 0, "SL gross pct returned by formula is positive (router applies sign)"
+    # With high OKX fees, _net_to_gross_pct(-0.3,...) returns POSITIVE (~0.25%).
+    # Router must use _sl_price_from_entry (1 - move) for BUY, not (1 + gross).
     assert tp_price > entry_price, f"TP {tp_price} should be above entry {entry_price}"
-    # For SL, price formula in router for BUY: entry * (1 + sl_gross_pct/100) where sl_gross_pct is already negative from _net_to_gross_pct
-    # Actually let's just verify the direct price calc
-    sl_price_correct = round(entry_price * (1 - sl_gross_pct / 100), 1)  # router uses (1 + gross) but gross is negative for SL
-    assert sl_price_correct < entry_price, f"SL price {sl_price_correct} should be below entry {entry_price}"
-    assert tp_price > sl_price_correct, "TP must be above SL"
+    assert sl_price < entry_price, f"SL price {sl_price} should be below entry {entry_price}"
+    assert tp_price > sl_price, "TP must be above SL"
 
     # gross TP ≈ net + entry_fee + exit_fee (within 0.1%)
     expected_approx = tp_net_pct + (entry_fee + exit_fee) * 100

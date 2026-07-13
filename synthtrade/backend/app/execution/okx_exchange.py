@@ -177,7 +177,7 @@ class OkxExchangeAdapter:
         try:
             balance = await self.client.fetch_balance()
             free = balance.get("free", {})
-            return {asset: float(amt or 0) for asset, amt in free.items() if float(amt or 0) > 0}
+            return {asset: float(amt) if amt is not None else 0.0 for asset, amt in free.items() if amt is not None and float(amt) > 0}
         except Exception as e:
             logger.warning("CCXT fetch_balance failed (%s), falling back to direct REST", e)
             try:
@@ -576,140 +576,55 @@ class OkxExchangeAdapter:
             return data.get("data", [{}])[0]
 
     async def place_market_order(self, request: MarketOrderRequest) -> ExchangeOrder:
-        """
-        Place a spot market order on OKX.
+        """Place a market order on OKX.
 
-        Uses tdMode=cash for spot. If quote_amount is set, uses tgtCcy=quote_ccy
-        so OKX handles the base quantity calculation internally.
+        Tries CCXT first, falls back to direct REST for EU accounts.
         """
         symbol = request.symbol
-        rules: SymbolRules | None = None
+        side = request.side
+        quantity = request.quantity
+        quote_amount = request.quote_amount
+
+        rules = await self.get_symbol_rules(symbol)
+        qty = rules.round_qty(quantity) if quantity else 0.0
+
+        if qty <= 0 and not quote_amount:
+            raise ExchangeOrderError(f"OKX place_market_order: rounded qty=0 for {symbol.okx}")
+
         try:
-            rules = await self.get_symbol_rules(symbol)
             params: dict[str, Any] = {"tdMode": "cash"}
-
-            if request.quote_amount and request.side == "buy":
-                # Buy with quote amount (e.g. spend 10 EUR to buy BTC)
-                params["tgtCcy"] = "quote_ccy"
-                qty = request.quote_amount
-            else:
-                qty = rules.round_qty(request.quantity)
-                if qty <= 0:
-                    raise ExchangeOrderError(f"OKX: rounded qty=0 for {symbol.okx}")
-
             order = await self.client.create_order(
                 symbol=symbol.ccxt,
                 type="market",
-                side=request.side,
-                amount=qty,
+                side=side,
+                amount=qty or quote_amount or 0,
                 params=params,
             )
-
-            commission, commission_asset = self._extract_commission(order)
-            logger.info(
-                "[OKX ORDER] %s %s qty=%s avg=%s commission=%s %s",
-                request.side, symbol.okx, qty,
-                order.get("average"), commission, commission_asset,
-            )
-
-            return ExchangeOrder(
-                provider="okx",
-                symbol=symbol,
-                order_id=str(order.get("id", "")),
-                side=request.side,
-                order_type="market",
-                status=order.get("status") or "unknown",
-                quantity=float(order.get("amount") or qty),
-                filled=float(order.get("filled") or 0),
-                average_price=float(order.get("average") or order.get("price") or 0),
-                commission=commission,
-                commission_asset=commission_asset or symbol.quote,
-                raw=cast(dict[str, Any], order),
-            )
-        except (ExchangeOrderError, UnsupportedInstrumentError):
-            raise
-        except ccxt.InsufficientFunds as e:
-            raise ExchangeOrderError(f"OKX insufficient funds: {e}", original_exception=e) from e
-
-    async def place_market_order(self, request: MarketOrderRequest) -> ExchangeOrder:
-        """
-        Place a spot market order on OKX.
-
-        Uses tdMode=cash for spot. If quote_amount is set, uses tgtCcy=quote_ccy
-        so OKX handles the base quantity calculation internally.
-        """
-        symbol = request.symbol
-        rules: SymbolRules | None = None
-        try:
-            rules = await self.get_symbol_rules(symbol)
-            params: dict[str, Any] = {"tdMode": "cash"}
-
-            if request.quote_amount and request.side == "buy":
-                # Buy with quote amount (e.g. spend 10 EUR to buy BTC)
-                params["tgtCcy"] = "quote_ccy"
-                qty = request.quote_amount
-            else:
-                qty = rules.round_qty(request.quantity)
-                if qty <= 0:
-                    raise ExchangeOrderError(f"OKX: rounded qty=0 for {symbol.okx}")
-
-            order = await self.client.create_order(
-                symbol=symbol.ccxt,
-                type="market",
-                side=request.side,
-                amount=qty,
-                params=params,
-            )
-
-            commission, commission_asset = self._extract_commission(order)
-            logger.info(
-                "[OKX ORDER] %s %s qty=%s avg=%s commission=%s %s",
-                request.side, symbol.okx, qty,
-                order.get("average"), commission, commission_asset,
-            )
-
-            return ExchangeOrder(
-                provider="okx",
-                symbol=symbol,
-                order_id=str(order.get("id", "")),
-                side=request.side,
-                order_type="market",
-                status=order.get("status") or "unknown",
-                quantity=float(order.get("amount") or qty),
-                filled=float(order.get("filled") or 0),
-                average_price=float(order.get("average") or order.get("price") or 0),
-                commission=commission,
-                commission_asset=commission_asset or symbol.quote,
-                raw=cast(dict[str, Any], order),
-            )
-        except (ExchangeOrderError, UnsupportedInstrumentError):
-            raise
-        except ccxt.InsufficientFunds as e:
-            raise ExchangeOrderError(f"OKX insufficient funds: {e}", original_exception=e) from e
+            result = cast(dict[str, Any], order)
         except Exception as e:
-            # Se CCXT fallisce con 50119, usa il fallback REST diretto
-            if "50119" in str(e) or "API key doesn't exist" in str(e):
-                logger.warning(f"CCXT create_order failed with 50119, using direct REST fallback for {symbol.okx}")
-                try:
-                    qty_val: float = request.quote_amount if request.quote_amount and request.side == "buy" else (rules.round_qty(request.quantity) if rules else request.quantity)
-                    order_data = await self._direct_place_market_order(symbol, request.side, qty_val, request.quote_amount)
-                    return ExchangeOrder(
-                        provider="okx",
-                        symbol=symbol,
-                        order_id=str(order_data.get("ordId", "")),
-                        side=request.side,
-                        order_type="market",
-                        status="filled" if order_data.get("state") == "filled" else "open",
-                        quantity=float(order_data.get("sz", qty_val)),
-                        filled=float(order_data.get("accFillSz", 0)),
-                        average_price=float(order_data.get("avgPx", 0)),
-                        commission=float(order_data.get("fee", 0)),
-                        commission_asset=symbol.quote,
-                        raw=cast(dict[str, Any], order_data),
-                    )
-                except Exception as rest_e:
-                    raise ExchangeOrderError(f"OKX market order failed (REST fallback also failed): {rest_e}", original_exception=rest_e) from rest_e
-            raise ExchangeOrderError(f"OKX market order failed: {e}", original_exception=e) from e
+            logger.warning("OKX CCXT create_order failed for %s: %s — trying direct REST fallback", symbol.okx, e)
+            result = await self._direct_place_market_order(
+                symbol=symbol,
+                side=side,
+                quantity=qty or quantity,
+                quote_amount=quote_amount,
+            )
+
+        commission, commission_asset = self._extract_commission(result)
+        return ExchangeOrder(
+            provider="okx",
+            symbol=symbol,
+            order_id=str(result.get("id") or result.get("ordId", "")),
+            side=side,
+            order_type="market",
+            status=result.get("status", ""),
+            quantity=qty or quantity,
+            filled=float(result.get("filled") or result.get("fillSz") or 0),
+            average_price=float(result.get("average") or result.get("avgPx") or 0),
+            commission=commission,
+            commission_asset=commission_asset or symbol.quote,
+            raw=result,
+        )
 
     async def close_position(self, request: ClosePositionRequest) -> ExchangeOrder:
         opp_side: OrderSide = "sell" if request.side == "buy" else "buy"
@@ -931,7 +846,7 @@ class OkxExchangeAdapter:
                     provider="okx",
                     symbol=symbol,
                     order_id=str(o.get("id", "")),
-                    side=o.get("side") or "",
+                    side=cast(OrderSide, o.get("side") or "buy"),
                     order_type=o.get("type") or "",
                     status=o.get("status") or "",
                     quantity=float(o.get("amount") or 0),

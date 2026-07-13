@@ -126,22 +126,31 @@ Script deterministici per: commit git, gestione task, deploy.
 
 ### 1. {Your core principle / Il tuo principio core}
 ```
-{Example: Routes thin, Services fat / Esempio: Route leggere, Servizi pesanti}
+Routes thin, Services fat / Route leggere, Servizi pesanti
 ```
 
-### 2. Always write tests for critical features / Sempre test per feature critiche
+### 2. Always use existing libraries / Usa sempre librerie esistenti
+```
+Quando scrivi codice Python, SEMPRE considera le librerie già installate nel progetto.
+- Verifica le dipendenze in pyproject.toml, requirements.txt, o poetry.lock
+- Usa librerie già disponibili invece di aggiungerne nuove
+- Evita di fixare errori Pylance/Type checkers dovuti a librerie mancanti se la funzionalità è disponibile in librerie esistenti
+- Se un errore Pylance sembra strano, verifica prima se la libreria è già installata ma il type checker non la vede
+```
+
+### 3. Always write tests for critical features / Sempre test per feature critiche
 ```
 "start TDD task TASK-XXX 'description'"
 ```
 
-### 3. Use loom scripts for task management / Usa script loom per task
+### 4. Use loom scripts for task management / Usa script loom per task
 ```bash
 python loom/scripts/task.py start TASK-XXX "Description"
 python loom/scripts/task.py complete TASK-XXX "Done" --bump minor
 python loom/scripts/task.py list
 ```
 
-### 4. Update task status programmatically / Aggiorna stato task via script
+### 5. Update task status programmatically / Aggiorna stato task via script
 ```bash
 python loom/execution/task_status.py --action set-status --task-id TASK-XXX --status "Done"
 python loom/execution/task_status.py --action list
@@ -149,7 +158,7 @@ python loom/execution/task_status.py --action get --task-id TASK-XXX
 ```
 **You MUST update task status** after completing or starting a task. / **DEVI aggiornare lo stato dei task** dopo aver completato o avviato un task.
 
-### 5. Check and apply framework updates / Controlla e applica aggiornamenti framework
+### 6. Check and apply framework updates / Controlla e applica aggiornamenti framework
 ```bash
 python loom/scripts/update.py --status     # current version / versione attuale
 python loom/scripts/update.py --check      # check for updates / controlla aggiornamenti
@@ -167,30 +176,30 @@ When running `--check`: inform the user of the result and suggest `--apply` if a
 During `--apply`: the `loom/` directory is replaced; project files (AGENT.md, IDE configs, docs/) are **never touched**.
 
 
-### 6. Manage custom directive plugins / Gestisci plugin direttive custom
+### 7. Manage custom directive plugins / Gestisci plugin direttive custom
 ```bash
 python loom/scripts/plugins.py list
 python loom/scripts/plugins.py add --source https://github.com/user/directives
 python loom/scripts/plugins.py remove --name directives
 ```
 
-### 7. Commit only worked files / Committa solo file modificati
+### 8. Commit only worked files / Committa solo file modificati
 ```bash
 python loom/execution/git_commit.py --files "file1,file2" --message "feat: description [TASK-XXX]"
 ```
 
-### 8. Always update TASKS.md before ending / Aggiorna sempre TASKS.md prima di terminare
+### 9. Always update TASKS.md before ending / Aggiorna sempre TASKS.md prima di terminare
 
-### 9. Ask before irreversible operations / Chiedi prima di operazioni irreversibili
+### 10. Ask before irreversible operations / Chiedi prima di operazioni irreversibili
 
-### 10. Versioning and Changelog / Versioning e Changelog (Mandatorio)
+### 11. Versioning and Changelog / Versioning e Changelog (Mandatorio)
 
 Ogni modifica che altera il comportamento del sistema deve:
 1. Incrementare la versione semantica (es: `version` in `pyproject.toml`)
 2. Aggiungere entry in `directives/changelog.md` con messaggio per l'utente
 3. Questo garantisce che gli utenti ricevano notifiche delle nuove capacità
 
-### 11. Commit and Push after every fix / Commit e Push dopo ogni fix
+### 12. Commit and Push after every fix / Commit e Push dopo ogni fix
 
 Dopo ogni modifica richiesta dall'utente:
 1. **Commit selettivo**: `git add <file1> <file2>` — SOLO file modificati direttamente
@@ -203,7 +212,7 @@ Prima del push, aggiorna SEMPRE:
 - `docs/STORY.md` — versione, fix, evoluzioni
 - `docs/TASKS.md` — stato lavoro
 
-### 12. DB ↔ Local Files Alignment / Allineamento DB ↔ File Locali (Mandatorio)
+### 13. DB ↔ Local Files Alignment / Allineamento DB ↔ File Locali (Mandatorio)
 
 Se una direttiva o configurazione è usata sia da file locali (`directives/*.md`) sia dal database (`agent_prompts`):
 1. Aggiorna il file locale richiesto

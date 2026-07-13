@@ -45,3 +45,6 @@ python loom/scripts/setup.py
 **E** — **Execution**: Script in `loom/scripts/` e `loom/execution/`.
 
 Fonte di verità: `AGENT.md` nella root del progetto.
+
+**Principio operativo aggiuntivo (da AGENT.md):**
+- **Always use existing libraries**: Quando scrivi codice Python, SEMPRE considera le librerie già installate nel progetto. Verifica le dipendenze in pyproject.toml/requirements.txt e usa librerie già disponibili invece di aggiungerne nuove. Evita di fixare errori Pylance/Type checkers dovuti a librerie mancanti se la funzionalità è disponibile in librerie esistenti.

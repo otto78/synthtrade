@@ -61,3 +61,4 @@ Dopo aver completato QUALSIASI task o modifica, DEVI aggiornare TUTTI questi fil
 - Chat per spiegazioni e planning, Composer per codice multi-file
 - Usa @-mentions per includere file nel contesto (`@filename`, `@folder/`)
 - Chiedi conferma prima di operazioni irreversibili
+- **Always use existing libraries**: Quando scrivi codice Python, SEMPRE considera le librerie già installate nel progetto. Verifica le dipendenze in pyproject.toml/requirements.txt e usa librerie già disponibili invece di aggiungerne nuove. Evita di fixare errori Pylance/Type checkers dovuti a librerie mancanti se la funzionalità è disponibile in librerie esistenti.

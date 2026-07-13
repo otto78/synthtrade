@@ -937,12 +937,19 @@ async def _on_uds_reconnect_sync():
             # Fallback: cerca negli ordini chiusi recenti
             if not fill_price:
                 try:
-                    closed = await exchange.client.fetch_closed_orders(
-                        exchange._get_ccxt_symbol(pos.symbol),
-                        limit=10
-                    )
+                    # Use REST fallback method for OKX EU compatibility
+                    if hasattr(exchange, 'fetch_closed_orders_with_rest_fallback'):
+                        closed = await exchange.fetch_closed_orders_with_rest_fallback(pos.symbol, limit=10)
+                    else:
+                        # Generic fallback for other exchanges
+                        closed = await exchange.client.fetch_closed_orders(
+                            exchange._get_ccxt_symbol(pos.symbol),
+                            limit=10
+                        )
                     for order in sorted(closed, key=lambda x: x.get("timestamp", 0), reverse=True):
-                        if order.get("status") == "closed" and order.get("side", "").upper() == "SELL":
+                        # Handle both CCXT format ("closed") and OKX REST format ("filled")
+                        status = order.get("status")
+                        if status in ["closed", "filled"] and order.get("side", "").upper() == "SELL":
                             fp = float(order.get("price") or order.get("average") or 0)
                             if fp > 0:
                                 fill_price = fp

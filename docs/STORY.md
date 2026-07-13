@@ -6,18 +6,22 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ### v1.4.14 — 2026-07-13
 
-**Milestone:** TASK-1130 — Fix missing _get_ccxt_symbol method in OkxExchangeAdapter
+**Milestone:** TASK-1130 + TASK-1131 — CCXT REST fallback per OKX EU accounts
 
 **Completato:**
 - ✅ **Bug fix _get_ccxt_symbol mancante:** Aggiunto metodo `_get_ccxt_symbol(self, symbol: str) -> str` in `OkxExchangeAdapter` per conversione simbolo CCXT (`"BTC-EUR"` → `"BTC/EUR"`)
 - ✅ **Fix chiamate router.py:** Rimossi `await` dalle chiamate in `router.py` dato che il metodo è sincrono
-- ✅ **Refactor _fetch_fill_price_by_order_id:** Ora usa il nuovo metodo invece di conversione inline
+- ✅ **CCXT REST fallback chain:** Implementato fallback tripla per operazioni critiche: REST order detail → REST closed orders → CCXT
+- ✅ **Nuovi metodi REST:** `_direct_fetch_order_detail()`, `_direct_fetch_closed_orders()`, `fetch_closed_orders_with_rest_fallback()`
+- ✅ **Conversione formato OKX→CCXT:** Il metodo pubblico converte risposte OKX REST in formato compatibile CCXT
+- ✅ **Router update:** UDS reconnection usa ora il nuovo metodo con fallback automatico
 - ✅ **Verifica compilazione:** Sintassi Python corretta per entrambi i file modificati
 
 **Decisioni chiave:**
+- CCXT fallisce sistematicamente su OKX EU con errore 50119, REST diretto funziona sempre
 - `OkxExchangeAdapter` non eredita da `ExchangeAdapter`, quindi deve implementare i propri helper methods
 - La conversione simbolo OKX è semplice (sostituire `-` con `/`) e non richiede chiamate async
-- Questo fix elimina i warning ripetuti ogni 10s durante la riconnessione UDS
+- Priorità REST su CCXT per OKX EU elimina i warning ripetuti ogni 10s durante UDS reconnection
 
 **File modificati:**
 - `synthtrade/backend/app/execution/okx_exchange.py`

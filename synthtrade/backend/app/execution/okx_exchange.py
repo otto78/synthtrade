@@ -881,12 +881,80 @@ class OkxExchangeAdapter:
         """Convert symbol to CCXT format (e.g., 'BTC-EUR' -> 'BTC/EUR')."""
         return symbol.replace("-", "/")
 
+    async def _direct_fetch_order_detail(self, order_id: str) -> Optional[dict[str, Any]]:
+        """Fetch order details via direct OKX REST.
+
+        Used as fallback when CCXT fails (e.g., 50119 on EU accounts).
+        """
+        try:
+            path = "/api/v5/trade/order"
+            url = settings.OKX_BASE_URL.rstrip("/") + path
+            headers = self._sign_headers("GET", path)
+            params = {"ordId": order_id}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers=headers, params=params)
+                resp.raise_for_status()
+                data = resp.json()
+                if data.get("code") != "0":
+                    logger.warning(f"OKX REST order detail failed: {data.get('msg')}")
+                    return None
+                orders = data.get("data", [])
+                if orders:
+                    return orders[0]
+        except Exception as e:
+            logger.warning(f"_direct_fetch_order_detail failed for {order_id}: {e}")
+        return None
+
+    async def _direct_fetch_closed_orders(self, symbol: str, limit: int = 50) -> list[dict[str, Any]]:
+        """Fetch closed orders via direct OKX REST.
+
+        Used as fallback when CCXT fails (e.g., 50119 on EU accounts).
+        """
+        try:
+            path = "/api/v5/trade/orders-history"
+            url = settings.OKX_BASE_URL.rstrip("/") + path
+            headers = self._sign_headers("GET", path)
+            params = {
+                "instId": symbol.replace("-", "/"),  # OKX uses BTC-EUR format
+                "limit": str(limit)
+            }
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers=headers, params=params)
+                resp.raise_for_status()
+                data = resp.json()
+                if data.get("code") != "0":
+                    logger.warning(f"OKX REST closed orders failed: {data.get('msg')}")
+                    return []
+                return data.get("data", [])
+        except Exception as e:
+            logger.warning(f"_direct_fetch_closed_orders failed for {symbol}: {e}")
+        return []
+
     async def _fetch_fill_price_by_order_id(self, symbol: str, order_id: str) -> Optional[float]:
         """Recupera il fill price di un ordine specifico tramite orderId.
 
         Usato da restore sessione per trovare il prezzo di chiusura dell'OCO
         tramite sl_order_id o tp_order_id salvati in DB.
         """
+        # Try direct REST order detail first (most reliable for OKX EU)
+        order_detail = await self._direct_fetch_order_detail(order_id)
+        if order_detail:
+            fill = float(order_detail.get("avgPx") or order_detail.get("px") or 0)
+            if fill > 0:
+                return fill
+
+        # Try direct REST closed orders as second fallback
+        try:
+            closed_orders = await self._direct_fetch_closed_orders(symbol, limit=50)
+            for o in closed_orders:
+                if str(o.get("ordId")) == str(order_id):
+                    fill = float(o.get("avgPx") or o.get("px") or 0)
+                    if fill > 0:
+                        return fill
+        except Exception as e:
+            logger.debug(f"_fetch_fill_price_by_order_id REST closed orders fallback failed for {symbol} orderId={order_id}: {e}")
+
+        # Final fallback to CCXT (least reliable for OKX EU)
         try:
             ccxt_symbol = self._get_ccxt_symbol(symbol)
             orders = await self.client.fetch_closed_orders(ccxt_symbol, limit=50)
@@ -896,8 +964,44 @@ class OkxExchangeAdapter:
                     if fill > 0:
                         return fill
         except Exception as e:
-            logger.warning(f"_fetch_fill_price_by_order_id failed for {symbol} orderId={order_id}: {e}")
+            logger.debug(f"_fetch_fill_price_by_order_id CCXT fallback failed for {symbol} orderId={order_id}: {e}")
         return None
+
+    async def fetch_closed_orders_with_rest_fallback(self, symbol: str, limit: int = 50) -> list[dict[str, Any]]:
+        """Fetch closed orders with REST fallback for OKX EU accounts.
+
+        Tries direct REST first (more reliable for EU accounts), then CCXT as fallback.
+        Returns list of order dicts in a format compatible with CCXT response.
+        """
+        # Try direct REST first (more reliable for OKX EU)
+        rest_orders = await self._direct_fetch_closed_orders(symbol, limit)
+        if rest_orders:
+            # Convert OKX REST format to CCXT-like format for compatibility
+            converted = []
+            for o in rest_orders:
+                converted.append({
+                    "id": o.get("ordId"),
+                    "timestamp": int(o.get("cTime", 0)),
+                    "datetime": o.get("cTime"),
+                    "status": o.get("state"),  # OKX: filled, live, etc.
+                    "side": o.get("side"),
+                    "price": float(o.get("avgPx") or o.get("px") or 0),
+                    "average": float(o.get("avgPx") or 0),
+                    "amount": float(o.get("sz") or 0),
+                    "filled": float(o.get("fillSz") or 0),
+                    "remaining": float(o.get("sz") or 0) - float(o.get("fillSz") or 0),
+                    "cost": float(o.get("fillPx") or 0) * float(o.get("fillSz") or 0),
+                    "fee": None,  # OKX separates fee in trade history
+                })
+            return converted
+
+        # Fallback to CCXT
+        try:
+            ccxt_symbol = self._get_ccxt_symbol(symbol)
+            return await self.client.fetch_closed_orders(ccxt_symbol, limit=limit)
+        except Exception as e:
+            logger.warning(f"fetch_closed_orders_with_rest_fallback CCXT fallback failed for {symbol}: {e}")
+            return []
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

@@ -4,31 +4,39 @@
 
 ### Da: Devin -> prossima sessione
 
-**Data:** 2026-07-13 11:57
+**Data:** 2026-07-13 12:17
 
-**Contesto:** Fix bug _get_ccxt_symbol mancante in OkxExchangeAdapter (TASK-1130)
+**Contesto:** CCXT REST fallback per OKX EU accounts (TASK-1130 + TASK-1131)
 
 ---
 
-### ✅ FASE COMPLETATA: TASK-1130 — Fix missing _get_ccxt_symbol method
+### ✅ FASE COMPLETATA: TASK-1130 + TASK-1131 — CCXT REST fallback per OKX EU
 
 **Problema risolto:**
-- Durante la riconnessione UDS, il sistema chiamava `exchange._get_ccxt_symbol(pos.symbol)` ma `OkxExchangeAdapter` non implementava questo metodo
-- Questo causava errori ripetuti ogni 10 secondi: `'OkxExchangeAdapter' object has no attribute '_get_ccxt_symbol'`
+- CCXT fallisce sistematicamente su OKX EU live con errore 50119 ("API key doesn't exist")
+- Questo causava warning ripetuti ogni 10 secondi durante UDS reconnection
+- `_get_ccxt_symbol` mancante in `OkxExchangeAdapter`
 
 **Fix applicato:**
-- ✅ Aggiunto metodo `_get_ccxt_symbol(self, symbol: str) -> str` in `OkxExchangeAdapter` (conversione: `"BTC-EUR"` → `"BTC/EUR"`)
-- ✅ Aggiornato `_fetch_fill_price_by_order_id` per usare il nuovo metodo
-- ✅ Rimossi `await` dalle chiamate in `router.py` (metodo sincrono)
+- ✅ Aggiunto metodo `_get_ccxt_symbol(self, symbol: str) -> str` in `OkxExchangeAdapter`
+- ✅ Implementato fallback chain tripla: REST order detail → REST closed orders → CCXT
+- ✅ Nuovi metodi REST: `_direct_fetch_order_detail()`, `_direct_fetch_closed_orders()`, `fetch_closed_orders_with_rest_fallback()`
+- ✅ Conversione formato OKX→CCXT per compatibilità
+- ✅ Router update per usare nuovo metodo con fallback automatico
 - ✅ Verificata compilazione Python senza errori
+
+**Architettura fallback:**
+1. REST order detail (più affidabile per OKX EU) → `/api/v5/trade/order`
+2. REST closed orders (secondo fallback) → `/api/v5/trade/orders-history`
+3. CCXT (fallback finale, meno affidabile per EU)
 
 **File modificati:**
 - `synthtrade/backend/app/execution/okx_exchange.py`
 - `synthtrade/backend/app/scalping/router.py`
-- `docs/TASKS.md` — aggiunto TASK-1130
-- `docs/STORY.md` — aggiunto v1.4.14
+- `docs/TASKS.md` — aggiunto TASK-1130 e TASK-1131
+- `docs/STORY.md` — aggiornato v1.4.14
 
-**Prossimo passo:** Test in sessione live/demo per conferma eliminazione warning nei log
+**Prossimo passo:** Test in sessione live/demo per conferma eliminazione warning UDS
 
 ---
 

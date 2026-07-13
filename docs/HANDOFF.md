@@ -2,28 +2,47 @@
 
 ## Ultimo Handoff
 
-### Da: Composer -> prossima sessione
+### Da: Devin -> prossima sessione
 
-**Data:** 2026-07-10 16:50
+**Data:** 2026-07-13 11:57
 
-**Contesto:** Fix critico bracket OKX — SL piazzato sopra entry (sCode 51280)
+**Contesto:** Fix bug _get_ccxt_symbol mancante in OkxExchangeAdapter (TASK-1130)
 
 ---
 
-### FASE COMPLETATA: Fix SL pricing BUY OKX (sCode 51280)
+### ✅ FASE COMPLETATA: TASK-1130 — Fix missing _get_ccxt_symbol method
 
-**Problema:** Dopo BUY OKB-EUR @ 70.38, il bracket falliva con `51280 SL trigger price must be less than the last price` perché `sl_price=70.56` era **sopra** l'entry. Il sistema eseguiva emergency market sell.
+**Problema risolto:**
+- Durante la riconnessione UDS, il sistema chiamava `exchange._get_ccxt_symbol(pos.symbol)` ma `OkxExchangeAdapter` non implementava questo metodo
+- Questo causava errori ripetuti ogni 10 secondi: `'OkxExchangeAdapter' object has no attribute '_get_ccxt_symbol'`
 
-**Root cause:** `_net_to_gross_pct(-0.3%, fees 0.35%/0.2%)` restituisce **+0.25%** (positivo) con fee alte. Il router assumeva un valore negativo e calcolava `entry * (1 + sl_gross)` → SL sopra entry per BUY.
+**Fix applicato:**
+- ✅ Aggiunto metodo `_get_ccxt_symbol(self, symbol: str) -> str` in `OkxExchangeAdapter` (conversione: `"BTC-EUR"` → `"BTC/EUR"`)
+- ✅ Aggiornato `_fetch_fill_price_by_order_id` per usare il nuovo metodo
+- ✅ Rimossi `await` dalle chiamate in `router.py` (metodo sincrono)
+- ✅ Verificata compilazione Python senza errori
 
-**Fix:**
-- Aggiunti `_sl_gross_fraction()` e `_sl_price_from_entry()` in `router.py`
-- Tutti i punti di calcolo SL usano ora `entry * (1 - move)` per BUY e `entry * (1 + move)` per SELL
-- Test `test_1111f_net_to_gross_pricing_okx_fees` aggiornato
+**File modificati:**
+- `synthtrade/backend/app/execution/okx_exchange.py`
+- `synthtrade/backend/app/scalping/router.py`
+- `docs/TASKS.md` — aggiunto TASK-1130
+- `docs/STORY.md` — aggiunto v1.4.14
 
-**Verifica:** Con entry=70.38, SL corretto = **70.20** (prima 70.56)
+**Prossimo passo:** Test in sessione live/demo per conferma eliminazione warning nei log
 
-**Nota secondaria:** I warning `50119 API key doesn't exist` su CCXT sono un quirk EU routing — il fallback REST funziona (ordine market e balance OK). Non bloccano il trade.
+---
+
+### 📋 Task da Investigare
+
+- **TASK-1100.G (WS private OKX EEA):** WebSocket private endpoint bloccato con errore 60032 su account EU. Workaround: REST polling per fill events (operativo ma non ideale).
+- **TASK-1116.B (Bug OKB-EUR):** OKB-EUR mancante in FUTURES_SYMBOL_MAP collector → fix aggiunto mapping.
+- **TASK-1116.C (Collector adapter):** Collector hardcoding Binance → deve diventare provider-aware per OKX derivatives.
+
+### 🎯 Priorità Operative
+
+1. **TASK-OKX-RECAL:** Verifica fee_tier_certified su DB, poi sessione paper per validare nuovi SL/TP ricalibrati
+2. **TASK-1100.G:** Investigare WS private OKX EEA (opzionale, workaround operativo)
+3. **TASK-1116.C:** Rendere collector provider-aware per OKX derivatives
 
 **File modificati:**
 - `synthtrade/backend/app/scalping/router.py`

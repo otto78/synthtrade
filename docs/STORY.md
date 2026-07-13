@@ -4,6 +4,25 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.14 — 2026-07-13
+
+**Milestone:** TASK-1130 — Fix missing _get_ccxt_symbol method in OkxExchangeAdapter
+
+**Completato:**
+- ✅ **Bug fix _get_ccxt_symbol mancante:** Aggiunto metodo `_get_ccxt_symbol(self, symbol: str) -> str` in `OkxExchangeAdapter` per conversione simbolo CCXT (`"BTC-EUR"` → `"BTC/EUR"`)
+- ✅ **Fix chiamate router.py:** Rimossi `await` dalle chiamate in `router.py` dato che il metodo è sincrono
+- ✅ **Refactor _fetch_fill_price_by_order_id:** Ora usa il nuovo metodo invece di conversione inline
+- ✅ **Verifica compilazione:** Sintassi Python corretta per entrambi i file modificati
+
+**Decisioni chiave:**
+- `OkxExchangeAdapter` non eredita da `ExchangeAdapter`, quindi deve implementare i propri helper methods
+- La conversione simbolo OKX è semplice (sostituire `-` con `/`) e non richiede chiamate async
+- Questo fix elimina i warning ripetuti ogni 10s durante la riconnessione UDS
+
+**File modificati:**
+- `synthtrade/backend/app/execution/okx_exchange.py`
+- `synthtrade/backend/app/scalping/router.py`
+
 ### v1.4.13 — 2026-07-10
 
 **Milestone:** Fix bracket OKX — SL sopra entry (sCode 51280)

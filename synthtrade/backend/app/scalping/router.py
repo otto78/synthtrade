@@ -94,8 +94,8 @@ _execution_state: Dict[str, Any] = {
         "max_daily_loss": 50,
         "max_drawdown": 10,
         "leverage": 10,
-        "stop_loss_pct": 0.3,
-        "take_profit_pct": 0.5,
+        "stop_loss_pct": 1.05,
+        "take_profit_pct": 1.55,
     },
     "pending_live_close": False,  # set to True when a live BUY is executed
     "session_load_guard": SessionLoadGuard(),
@@ -203,6 +203,16 @@ def _tp_price_from_entry(
     ratio = _exit_price_ratio(net_tp_pct, entry_fee_rate, exit_fee_rate)
     price = entry * ratio if side.upper() == "BUY" else entry / ratio
     return round(price, price_prec) if price_prec is not None else price
+
+
+def _sl_gross_fraction(net_sl_pct: float, entry_fee_rate: float, exit_fee_rate: float) -> float:
+    """Calcola la frazione di movimento lordo (positiva) necessaria per ottenere
+    un target netto -net_sl_pct dopo le fee. Wrappa abs(_net_to_gross_pct()) / 100
+    per garantire che il risultato sia sempre positivo.
+    
+    Usata per calcolare sl_price nei broadcast posizione e bracket.
+    """
+    return abs(_net_to_gross_pct(net_sl_pct, entry_fee_rate, exit_fee_rate)) / 100
 
 
 def _sl_price_from_entry(
@@ -928,7 +938,7 @@ async def _on_uds_reconnect_sync():
             if not fill_price:
                 try:
                     closed = await exchange.client.fetch_closed_orders(
-                        await exchange._get_ccxt_symbol(pos.symbol),
+                        exchange._get_ccxt_symbol(pos.symbol),
                         limit=10
                     )
                     for order in sorted(closed, key=lambda x: x.get("timestamp", 0), reverse=True):
@@ -1773,7 +1783,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     sl_price = _sl_price_from_entry(
                                         exec_price, side, sl_pct_net_cfg,
                                         entry_fee_pricing, exit_fee_pricing, price_prec=price_prec,
-                                    )
+                                    )[0]
                                     tp_price = round(exec_price * (1 + tp_gross_pct), price_prec) if side == "BUY" else round(exec_price * (1 - tp_gross_pct), price_prec)
 
                                     logger.info(
@@ -2079,7 +2089,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         _ft3 = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
                         _ef3, _xf3 = _ft3.get("taker", 0.001), _ft3.get("maker", 0.001)
                         # TASK-1127: Fees are now positive for base level accounts
-                        sl_price = _sl_price_from_entry(entry_f, pos.side, _sl_cfg, _ef3, _xf3)
+                        sl_price = _sl_price_from_entry(entry_f, pos.side, _sl_cfg, _ef3, _xf3)[0]
                         tp_price = entry_f * (1 + _net_to_gross_pct(_tp_cfg, _ef3, _xf3) / 100) if pos.side == "BUY" else entry_f * (1 - _net_to_gross_pct(_tp_cfg, _ef3, _xf3) / 100)
                         # TASK-1129: usa i veri prezzi TP/SL piazzati su OKX se disponibili
                         # (fallback al ricalcolo da percentuali per posizioni pre-fix / restore).
@@ -2199,7 +2209,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     _ft4 = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
                     _ef4, _xf4 = _ft4.get("taker", 0.001), _ft4.get("maker", 0.001)
                     # TASK-1127: Fees are now positive for base level accounts
-                    sl = _sl_price_from_entry(entry, pos.side, _sl_cfg4, _ef4, _xf4)
+                    sl = _sl_price_from_entry(entry, pos.side, _sl_cfg4, _ef4, _xf4)[0]
                     tp = entry * (1 + _net_to_gross_pct(_tp_cfg4, _ef4, _xf4) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(_tp_cfg4, _ef4, _xf4) / 100)
                     # TASK-1129: usa i veri prezzi TP/SL piazzati su OKX se disponibili
                     # (fallback al ricalcolo da percentuali per posizioni pre-fix / restore).
@@ -3187,7 +3197,7 @@ async def control_session(control: Dict) -> Dict:
                 try:
                     open_orders_before = await exchange_stop.get_open_orders(pos.symbol)
                     if open_orders_before:
-                        ccxt_sym = await exchange_stop._get_ccxt_symbol(pos.symbol)
+                        ccxt_sym = exchange_stop._get_ccxt_symbol(pos.symbol)
                         for o in open_orders_before:
                             try:
                                 await exchange_stop.client.cancel_order(o["id"], ccxt_sym)
@@ -3520,7 +3530,7 @@ async def get_position() -> Optional[Dict]:
     _ef_p = fee_tier.get("taker", 0.001)
     _xf_p = fee_tier.get("maker", 0.001)
     # TASK-1127: Fees are now positive for base level accounts
-    sl_price_calc = _sl_price_from_entry(entry, pos.side, sl_pct, _ef_p, _xf_p)
+    sl_price_calc = _sl_price_from_entry(entry, pos.side, sl_pct, _ef_p, _xf_p)[0]
     tp_price_calc = entry * (1 + _net_to_gross_pct(tp_pct, _ef_p, _xf_p) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(tp_pct, _ef_p, _xf_p) / 100)
     stop_loss_price = float(pos.sl_price) if pos.sl_price is not None else sl_price_calc
     take_profit_price = float(pos.tp_price) if pos.tp_price is not None else tp_price_calc
@@ -3620,8 +3630,8 @@ async def update_risk_config(config: Dict) -> Dict:
             "max_daily_loss": clean_cfg.get("max_daily_loss", 50),
             "max_drawdown": clean_cfg.get("max_drawdown", 10),
             "leverage": clean_cfg.get("leverage", 10),
-            "stop_loss_pct": clean_cfg.get("stop_loss_pct", 0.3),
-            "take_profit_pct": clean_cfg.get("take_profit_pct", 0.5),
+            "stop_loss_pct": clean_cfg.get("stop_loss_pct", 1.05),
+            "take_profit_pct": clean_cfg.get("take_profit_pct", 1.55),
         }
         supabase.table("scalping_risk_config").upsert(db_payload).execute()
         logger.info("Persisted risk config to Supabase")

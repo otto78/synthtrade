@@ -877,6 +877,10 @@ class OkxExchangeAdapter:
         except Exception as e:
             logger.warning("OKX cancel_open_exit_orders failed for %s: %s", symbol.okx, e)
 
+    def _get_ccxt_symbol(self, symbol: str) -> str:
+        """Convert symbol to CCXT format (e.g., 'BTC-EUR' -> 'BTC/EUR')."""
+        return symbol.replace("-", "/")
+
     async def _fetch_fill_price_by_order_id(self, symbol: str, order_id: str) -> Optional[float]:
         """Recupera il fill price di un ordine specifico tramite orderId.
 
@@ -884,9 +888,7 @@ class OkxExchangeAdapter:
         tramite sl_order_id o tp_order_id salvati in DB.
         """
         try:
-            # Convert symbol to CCXT format (e.g., "OKB-EUR" -> "OKB/EUR")
-            ccxt_symbol = symbol.replace("-", "/")
-            
+            ccxt_symbol = self._get_ccxt_symbol(symbol)
             orders = await self.client.fetch_closed_orders(ccxt_symbol, limit=50)
             for o in orders:
                 if str(o.get("id")) == str(order_id):

@@ -1,198 +1,33 @@
 # TASKS.md — SynthTrade Task Tracking
 
-### TASK-1129 - Fix type errors in okx_exchange.py
-
-**Status:** Done
-**Priorità:** ALTA - Pylance type errors bloccano type checking
-**File:** synthtrade/backend/app/execution/okx_exchange.py
-
-**Problema:** Pylance segnalava 30+ errori di tipo nel file okx_exchange.py, principalmente:
-- Duplicate method definitions (get_trade_fee, _direct_place_market_order)
-- None handling in float() conversions (TypeError: float() argument must be convertible to float)
-- Type mismatches between CCXT Order objects and dict[str, Any]
-- Missing _get_ccxt_symbol method
-- Unbound variables in exception handlers (qty, tp_price, sl_price)
-
-**Fix applicato:**
-- Rimosso metodo duplicato get_trade_fee (seconda definizione senza logica TASK-1127)
-- Rimosso metodo duplicato _direct_place_market_order
-- Aggiunto `or 0` a tutte le conversioni float() per gestire valori None
-- Aggiunto `cast(dict[str, Any], ...)` per convertire oggetti CCXT in dict dove richiesto
-- Sostituito chiamata `_get_ccxt_symbol(sym_ref.okx)` con `sym_ref.ccxt` diretto
-- Inizializzato qty, tp_price, sl_price prima del try-catch in place_exit_bracket
-- Aggiunto tipi di ritorno specifici per dict methods (dict[str, Any])
-
-**Effetto:** Tutti gli errori Pylance risolti, type checking ora passa senza errori.
-
-### TASK-1128 - Fix Bracket qty 51008 insufficient balance
-
-**Status:** Done
-**Priorita:** CRITICA - order-algo falliva per via della fee OKX sottratta prima del bracket
-**File:** synthtrade/backend/app/scalping/router.py
-
-**Problema:** OKX preleva la fee di ingresso per ordini BUY in asset base (es. OKB). Noi inviavamo il bracket con la qty lorda dell'entry (exec_qty = 0.28425) ma in pancia avevamo 0.28425 - fee = 0.28325. Mentre per market order OKX esegue l'importo massimo disponibile anche se superiore, per \order-algo\ rifiuta con 51008 \Order failed. Your available OKB balance is insufficient\.
-
-**Fix:** Se side=BUY e l'asset di commissione e' l'asset base (o sconosciuto, assumendo standard crypto OKX), sottrarre la commissione prima di piazzare l'exit bracket.
-
-**Note per l'utente (posizione rimasta aperta):** Il fatto che ci fosse una posizione aperta su OKB che non si e' chiusa allo stop della sessione alle 11:10 e' dovuto al fatto che il bot e' stato fermato nel brevissimo istante (1 secondo) in cui l'ordine BUY era stato completato ma il Bracket TP/SL non era ancora stato mandato. Questo ha fatto si che il bot considerasse la posizione non ancora formalmente 'aperta' nel suo registro. Fixato il bracket (non fallira piu con 51008), queste edge case non si verificheranno piu (il bracket entrera liscio).
-
-### TASK-1127 - Fix SL price SOPRA entry per BUY: OKX error 51280
-
-**Status:** Done
-**Priorita:** CRITICA - il bracket TP/SL falliva sempre con 51280 SL trigger price must be less than the last price
-**File:** synthtrade/backend/app/scalping/router.py (riga 1656-1676)
-
-**Root cause:** _net_to_gross_pct(-0.3, 0.0035, 0.002) restituisce +0.2507% (POSITIVO) per via delle fee OKX alte.
-La formula: gross = (1 + net) / ((1 - entry_fee) * (1 - exit_fee)) - 1
-Con net=-0.003, entry=0.0035, exit=0.002: gross = 0.997 / 0.99451 - 1 = +0.002507 (positivo!)
-Il codice poi calcolava: sl_price = exec_price * (1 + 0.002507) = entry + 0.25% -> SL SOPRA entry per BUY.
-OKX rifiutava con 51280 perche il SL deve essere SOTTO il prezzo corrente.
-
-**Fix:**
-- sl_gross_pct ora calcolato con input POSITIVO e abs(): abs(_net_to_gross_pct(sl_pct_net_cfg, ...))
-- sl_price per BUY usa (1 - sl_gross_pct) invece di (1 + sl_gross_pct)
-- Logica esplicita: BUY: SL sotto (1-sl), TP sopra (1+tp) / SELL: SL sopra (1+sl), TP sotto (1-tp)
-- Log aggiornato per mostrare sl_price e tp_price effettivi
-
-**Verifica matematica con entry=70.36, SL=0.3%, fee taker=0.0035, maker=0.002:**
-  sl_gross_pct = abs(_net_to_gross_pct(0.3, 0.0035, 0.002)) / 100 = 0.002507
-  sl_price = 70.36 * (1 - 0.002507) = 70.36 * 0.997493 = 70.18 (SOTTO entry, corretto)
-
-
-### TASK-1126 - Fix OKX bracket 50014: Parameter ordType can not be empty
-
-**Status:** Done
-**Priorita:** CRITICA - ogni trade live veniva eseguito ma il bracket TP/SL falliva, generando market sell emergenza
-**File:** synthtrade/backend/app/execution/okx_exchange.py
-
-**Problema:** _direct_place_exit_bracket() costruiva il body per POST /api/v5/trade/order-algo senza il campo ordType. OKX restituiva errore 50014: Parameter ordType can not be empty. Il CASO B veniva attivato: emergency market sell immediata.
-
-**Log osservato:**
-OKX order-algo POST failed [400]: {code:50014, msg:Parameter ordType can not be empty.}
-BRACKET_FLOW CASO B: bracket fallito per OKB-EUR -> eseguo market sell emergenza
-
-**Fix:** Aggiunto campo ordType: oco nel body della chiamata REST diretta a /api/v5/trade/order-algo.
-
-**Effetto:** I trade buy vengono eseguiti correttamente (confermato su OKX), ora il bracket OCO con TP/SL dovrebbe essere creato correttamente dopo il buy.
-
-
-### TASK-1125 - Fix NameError: cannot access free variable settings in _start_ws_broadcast
-
-**Status:** Done
-**Priorita:** CRITICA - blocca ogni trade live (non solo restore_mode)
-**File:** synthtrade/backend/app/scalping/router.py
-
-**Problema:** NameError in _trade_processor (inner function di _start_ws_broadcast). La funzione conteneva un import locale 'from app.config import settings' dentro un blocco 'if restore_mode:'. Python lo trattava come variabile locale per l'intera funzione, incluse le inner function come _trade_processor. Quando restore_mode=False, il blocco non eseguiva e settings rimaneva non associato.
-
-**Fix:** Rimosso import locale ridondante. Le inner function ora risolvono settings dall'import module-level (riga 46 di router.py).
-
-
-### TASK-1125 — Fix NameError: cannot access free variable 'settings' in _start_ws_broadcast
-
-**Status:** Done ✅
-**Priorità:** CRITICA — blocca ogni trade live (non solo restore_mode)
-**File:** synthtrade/backend/app/scalping/router.py
-
-**Problema:** NameError: cannot access free variable 'settings' where it is not associated with a value in enclosing scope in _trade_processor (inner function di _start_ws_broadcast).
-
-**Root cause:** La funzione _start_ws_broadcast conteneva un import locale rom app.config import settings dentro un blocco if restore_mode:. Python lo tratta come variabile locale per l'intera funzione, incluse le inner function come _trade_processor. Quando 
-estore_mode=False, il blocco non esegue e settings rimane non associato.
-
-**Fix:** Rimosso rom app.config import settings locale. Le inner function ora risolvono settings dall'import module-level (riga 46).
-
-**File:** `synthtrade/backend/app/execution/okx_exchange.py`
-
-**Problema:** Pylance segnala `Object of type "None" is not subscriptable` alla riga 90 quando si accede a `self.client.urls["api"]`. CCXT può restituire `None` per `urls` in certe modalità operative.
-
-**Fix applicato:**
-- Aggiunto guard `self.client.urls is not None` per evitare subscript su `None`
-- Sostituito `.get("api", {})` con `(self.client.urls.get("api") or {})` per gestire `None` values nel dict
-- isinstance guard già presente per saltare valori `None` nel dict comprehension
-
-### TASK-1123 — CCXT create_order fallisce con 50119 su OKX EU, fallback REST diretto per market order
-
-**Status:** Done ✅
-**Priorità:** CRITICA — blocca trading live su OKX EU accounts
-
-**File:** `synthtrade/backend/app/execution/okx_exchange.py`
-
-**Problema:** `place_market_order()` chiama `self.client.create_order()` via CCXT, che fallisce con errore `50119 API key doesn't exist` su OKX EU live accounts perché `load_markets()` non si autentica correttamente con le chiavi EU. Il balance (che usa REST diretto) funzionava già, ma gli ordini erano bloccati.
-
-**Log osservato:**
-```
-ERROR: Live trade failed: OKX market order failed: okx {"msg":"API key doesn't exist","code":"50119"}
-```
-
-**Fix applicato:**
-- Aggiunto metodo `_direct_place_market_order()` che usa POST `/api/v5/trade/order` con firma HMAC-SHA256 diretta, bypassando CCXT
-- Modificata `place_market_order()`: se CCXT fallisce con `50119` o `"API key doesn't exist"`, usa il fallback REST diretto
-- Il fallback supporta sia quantità base che `tgtCcy=quote_ccy` per buy con importo in valuta quota
-
-**Verifica:** Syntax check passato, logica speculare a `_direct_fetch_balance()` già funzionante.
-
-### TASK-1122 — Add missing SymbolRef.from_any() method
-
-**Status:** Done ✅
-**Priorità:** ALTA — blocca live trading OKX
-
-**File:** `synthtrade/backend/app/execution/exchange_models.py`
-
-**Problema:** `OkxExchangeAdapter.get_symbol_filters()` chiama `SymbolRef.from_any(symbol)` ma il metodo non esiste. Solo `from_compact()`, `from_ccxt()` e `from_okx()` sono implementati. Causa `AttributeError: type object 'SymbolRef' has no attribute 'from_any'` quando il router tenta di aprire un trade live.
-
-**Log osservato:**
-```
-Live trade failed: OKX get_symbol_filters failed for OKB-EUR: type object 'SymbolRef' has no attribute 'from_any'
-```
-
-**Fix applicato:**
-- Aggiunto `SymbolRef.from_any(symbol: str) -> SymbolRef` in `exchange_models.py`
-- Supporta tre formati: OKX (`BTC-EUR`), CCXT (`BTC/EUR`), Compact (`BTCEUR`)
-- Usa `from_compact()` come fallback con quote_assets predefinite
-
-### TASK-1124 — Fix firma HMAC-SHA256 per POST /api/v5/trade/order (errore 401)
-
-**Status:** Done ✅
-**Priorità:** CRITICA — blocca trading live su OKX EU accounts (fallback REST)
-**File:** `synthtrade/backend/app/execution/okx_exchange.py`
-
-**Problema:** `_direct_place_market_order()` falliva con `Client error '401 Unauthorized' for url 'https://eea.okx.com/api/v5/trade/order'`. Il metodo `_sign_headers()` includeva sempre `body` nella prehash anche se vuoto, ma per le richieste GET (es. balance) veniva passata stringa vuota, quindi funzionava. Il problema era che per POST il body veniva incluso sempre senza distinzione — la specifica OKX richiede esplicitamente che per POST con body la prehash sia `timestamp + method + path + body`, mentre per GET senza body sia solo `timestamp + method + path`.
-
-**Fix applicato:**
-- `_sign_headers()`: aggiunto controllo esplicito `if body:` per costruire prehash condizionale (con o senza body)
-- `_direct_place_market_order()`: passa `json.dumps(body)` come body stringa a `_sign_headers("POST", path, body_str)`
-- Rimosso `import json` duplicato e inline import obsoleto
-
-**Verifica:** Firma ora corrisponde alla specifica OKX HMAC-SHA256 sia per GET che per POST.
-
-### TASK-1124 — Direct REST fallback per place_exit_bracket + fix double emergency close
-
-**Status:** Done ✅
-**Priorità:** CRITICA — blocca ogni bracket server-side su OKX EU accounts
-**File:** `synthtrade/backend/app/execution/okx_exchange.py`
-
-**Problema:** Due bug distinti:
-
-1. **place_exit_bracket non ha fallback REST diretto:** a differenza di `place_market_order`, che ora prova ccxt e cade sul fallback `_direct_place_market_order` via POST `/api/v5/trade/order`, il metodo `place_exit_bracket` provava solo `self.client.create_order(type="oco", ...)` via ccxt. Se falliva con 50119 (lo stesso routing quirk EU di sempre), andava direttamente all'emergency close senza mai provare il REST diretto per POST `/api/v5/trade/order-algo`. Risultato: in sessione EU oggi nessun bracket TP/SL viene mai effettivamente piazzato — ogni entry finisce sempre in emergency close immediato.
-
-2. **Doppio tentativo di emergency close:** l'adapter interno (`place_exit_bracket` nel suo blocco `except`) tentava un `close_position()` di emergenza, mentre il router in `BRACKET_FLOW CASO B` tentava anch'esso un `_handle_bracket_failed()` con un altro `close_position()`. Questo causava race condition e l'errore 51008 ("margin borrowing") sulla prima chiusura, mentre la seconda riusciva — rischio concreto di doppio ordine se entrambe avessero successo.
-
-**Log osservato:**
-```
-[OKX BRACKET FAILED] OKB-EUR: okx {"msg":"API key doesn't exist","code":"50119"} — executing emergency market close
-[OKX EMERGENCY CLOSE FAILED] ... sCode=51008 "Order failed. Your available EUR balance is insufficient..."
-```
-
-**Fix applicato:**
-- ✅ Aggiunto metodo `_direct_place_exit_bracket()` che chiama direttamente POST `/api/v5/trade/order-algo` con firma HMAC-SHA256, body speculare a quello passato via ccxt, e stessa gestione errori di `_direct_place_market_order()` (sCode, sMsg, full_data)
-- ✅ Modificato `place_exit_bracket()`: se CCXT fallisce con `50119` o `"API key doesn't exist"`, prova il fallback REST diretto prima di arrendersi
-- ✅ Se il fallback REST diretto fallisce anch'esso, solleva `ExitProtectionError` **senza** tentare emergency close interno — il router (`BRACKET_FLOW CASO B`) è l'unico proprietario della procedura di chiusura d'emergenza, eliminando la race condition del doppio tentativo
-- ✅ Se l'errore CCXT NON è 50119 (es. parametri invalidi), solleva direttamente `ExitProtectionError` senza fallback REST
-
-**Verifica:** Il prossimo bracket su OKX EU non deve più produrre `[OKX BRACKET FAILED]` per 50119 — deve passare tramite REST diretto e piazzare correttamente il TP/SL server-side.
-
----
-
 ## Task Attivi
+
+### TASK-1130 — Fix: Missing _get_ccxt_symbol method in OkxExchangeAdapter
+
+**Status:** ✅ DONE
+**Priorità:** ALTA
+**Dipendenze:** TASK-1129
+
+**Problema:** Durante la riconnessione UDS (User Data Stream), il sistema chiamava `exchange._get_ccxt_symbol(pos.symbol)` ma `OkxExchangeAdapter` non implementava questo metodo, causando errori ripetuti ogni 10 secondi nei log: `'OkxExchangeAdapter' object has no attribute '_get_ccxt_symbol'`.
+
+**Log osservato:**
+```
+2026-07-13 11:55:07,115 [WARNING] [sess_80352914] app.scalping.router: UDS reconnect sync: fetch_closed_orders failed: 'OkxExchangeAdapter' object has no attribute '_get_ccxt_symbol'
+```
+
+**File coinvolti:**
+- `synthtrade/backend/app/execution/okx_exchange.py`
+- `synthtrade/backend/app/scalping/router.py`
+
+**Fix applicato:**
+- ✅ Aggiunto metodo `_get_ccxt_symbol(self, symbol: str) -> str` in `OkxExchangeAdapter` (conversione semplice: `"BTC-EUR"` → `"BTC/EUR"`)
+- ✅ Aggiornato `_fetch_fill_price_by_order_id` per usare il nuovo metodo invece di conversione inline
+- ✅ Rimossi `await` dalle chiamate in `router.py` dato che il metodo è ora sincrono
+- ✅ Verificata compilazione Python senza errori
+
+**Verifica:**
+- ✅ Sintassi Python corretta per entrambi i file modificati
+- ⏳ Test in sessione live/demo per conferma eliminazione warning nei log
 
 ## EPICA OKX — Migrazione Binance -> OKX (PRIORITA' ASSOLUTA)
 
@@ -251,206 +86,6 @@ Live trade failed: OKX get_symbol_filters failed for OKB-EUR: type object 'Symbo
 - ✅ Frontend grafico si aggiorna in tempo reale dopo normalizzazione simbolo
 - ✅ Codice Python compila senza errori
 
-### TASK-1101 — Config provider OKX e credenziali demo/live
-
-**Status:** ✅ DONE — implementato 2026-07-03 (verificato 2026-07-08)
-**Priorità:** ALTA
-**Dipendenze:** TASK-1100 per conferma header demo
-
-**Obiettivo:** aggiungere `EXCHANGE_PROVIDER=okx`, credenziali OKX demo/live e computed field generici senza rompere Binance legacy.
-
-**Completato:**
-- ✅ **1101.A — Settings**: `EXCHANGE_PROVIDER`, `OKX_API_KEY`, `OKX_SECRET_KEY`, `OKX_PASSPHRASE`, `OKX_BASE_URL` in `config.py` (linee 107-120)
-- ✅ **1101.B — Computed fields**: `exchange_api_key`, `exchange_secret_key`, `exchange_passphrase`, `exchange_demo`, `exchange_display_name` (linee 135-167)
-- ✅ **1101.C — Sicurezza live**: `ALLOW_LIVE_MODE=false` blocca live, nessun log di secret/passphrase
-- ✅ **1101.D — Env example**: `.env.example` documenta OKX demo/live, passphrase obbligatoria, differenza URL EU vs global
-- ✅ **1101.E — Test**: Default provider okx, override env OKX, Binance legacy backward compat
-
-**File coinvolti:**
-- `synthtrade/backend/app/config.py` — Settings class con campi OKX
-- `synthtrade/backend/.env.example` — documentazione setup OKX
-
-### TASK-1102 — ExchangeProtocol v2 provider-neutral
-
-**Status:** ✅ DONE — implementato 2026-07-03 (verificato 2026-07-08)
-**Priorità:** ALTA
-**Dipendenze:** TASK-1101
-
-**File coinvolti:**
-- `synthtrade/backend/app/execution/exchange_models.py`
-
-**Obiettivo:** sostituire semantiche Binance-specifiche (`place_oco_order`, symbol compact-only, filtri Binance) con richieste di dominio SynthTrade: market order, close position, symbol rules, exit bracket, fee tier certificato.
-
-**Completato:**
-- ✅ **1102.A — Modelli dominio**: `SymbolRef`, `SymbolRules`, `MarketOrderRequest`, `ClosePositionRequest`, `ExitBracketRequest`, `ExchangeOrder`, `ExitBracketOrder`, `FeeTier` tutti in `exchange_models.py`
-- ✅ **1102.B — Protocollo**: `ExchangeAdapterProtocol` in `exchange_models.py` (linee 212-237) con `place_exit_bracket` (non `place_oco_order`)
-- ✅ **1102.C — Compat Binance**: `BinanceExchangeAdapter` preservato, `place_oco_order` come wrapper deprecato
-- ✅ **1102.D — Errori comuni**: `ExitProtectionError`, `ExchangeAuthError`, `ExchangeNetworkError`, `UnsupportedInstrumentError`
-- ✅ **1102.E — Test**: FakeOkxAdapter implementa protocollo, testato in test_okx_integration.py (12/12 PASS)
-
-### TASK-1103 — OkxExchangeAdapter REST base
-
-**Status:** ✅ DONE — implementato 2026-07-03
-**Priorità:** ALTA
-**Dipendenze:** TASK-1102
-
-**Obiettivo:** implementare balance, holdings, ticker, symbol rules, instrument discovery, market order e fee tier per OKX via ccxt/nativo, usando Demo Trading in test manuale.
-
-**Completato 2026-07-03:**
-- ✅ `synthtrade/backend/app/execution/okx_exchange.py` implementa `ExchangeAdapterProtocol`
-- ✅ `get_balance(asset)`, `get_holdings()`, `get_ticker_price(symbol)` con cache 15s
-- ✅ `get_symbol_rules(SymbolRef)` con cache 5min (lotSz/minSz/tickSz/maxMktSz/maxMktAmt)
-- ✅ `get_trade_fee(SymbolRef)` — fee OKX sono rebate negativi (maker=-0.002, taker=-0.0035)
-- ✅ `place_market_order(MarketOrderRequest)` — spot cash, supporta `tgtCcy=quote_ccy`
-- ✅ `close_position(ClosePositionRequest)`, `place_exit_bracket(ExitBracketRequest)`
-- ✅ `get_open_exit_orders()`, `cancel_open_exit_orders()`
-- ✅ `from_settings()` classmethod costruisce da `app.config.settings`
-
-### TASK-1104 — OKX Exit Bracket server-side
-
-**Status:** ✅ DONE — implementato 2026-07-03 (verificato 2026-07-08)
-**Priorità:** CRITICA
-**Dipendenze:** TASK-1100, TASK-1103
-
-**Obiettivo:** implementare `place_exit_bracket()` per OKX con TP/SL server-side e emergency close se la protezione fallisce.
-
-**Completato:**
-- ✅ **1104.A — Decisione tecnica**: Confermato uso `order-algo` (POST `/api/v5/trade/order-algo`) con `tpTriggerPx`/`slTriggerPx` e `tpOrdPx="-1"`/`slOrdPx="-1"` per market order al trigger. Documentato in `okx-demo-spike-results.md`.
-- ✅ **1104.B — Request model**: `ExitBracketRequest(symbol, side, quantity, tp_price, sl_price, entry_order_id, fee_tier)` in `exchange_models.py`
-- ✅ **1104.C — Price validation**: `rules.round_price()` e `rules.round_qty()` applicati. Long close sell: TP sopra last, SL sotto last.
-- ✅ **1104.D — Place bracket**: `place_exit_bracket()` in `okx_exchange.py` (righe 279-359) parametri OKX mappati, `algoId` parsato da risposta, raw payload preservato.
-- ✅ **1104.E — Emergency close**: Se bracket fallisce → market close immediato + `ExitProtectionError` sollevato. Se emergency close fallisce → log error ma eccezione propagata comunque.
-- ✅ **1104.F — Test**: TASK-1111 test 1111.B copre bracket reject → emergency close → no DB open. Test 1111.A copre happy path bracket success.
-
-**File coinvolti:**
-- `synthtrade/backend/app/execution/okx_exchange.py` — `place_exit_bracket()`
-- `synthtrade/backend/app/execution/exchange_models.py` — `ExitBracketRequest`, `ExitBracketOrder`, `ExitProtectionError`
-- `synthtrade/backend/tests/integration/test_okx_integration.py` — test 1111.A e 1111.B
-- `synthtrade/backend/tests/integration/fake_okx_adapter.py` — `simulate_tp_fill()`, `bracket_fails`
-
-**Verifica:** Nessuna posizione salvata su DB senza bracket confermato o close di emergenza (testato in 1111.B).
-
-### TASK-1105 — OkxWSClient market data
-
-**Status:** ✅ DONE — completato 2026-07-08 con fix end-to-end grafico live
-**Priorità:** ALTA
-**Dipendenze:** TASK-1100
-
-**Obiettivo:** sostituire `BinanceWSClient` nel path scalping con un client provider-neutral e parser OKX per candle/trade.
-
-**Completato 2026-07-08:**
-- ✅ Market data (candele/trade) sempre su endpoint live, non condizionato da `demo`
-- ✅ Canale `candle1m` spostato su WS business (`wss://ws.okx.com:8443/ws/v5/business`), `trades` resta su WS public
-- ✅ Rimosso logica EU-specific per WS pubblico (causava DNS loop su `wsaws.okx.com`)
-- ✅ Frontend `_normalizeSymbol()` aggiunto per risolvere mismatch `BTCEUR` vs `BTC-EUR`
-- ✅ `router.py`: corretto return path in `GET /candles/{symbol}` per `past_candles` vuoto
-
-**File:**
-- `synthtrade/backend/app/scalping/engine/okx_ws_client.py`
-- `synthtrade/backend/app/scalping/router.py`
-- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/live-chart.component.ts`
-
-### TASK-1106 — OkxOrderEventStream per fill TP/SL
-
-**Status:** ✅ DONE — implementato 2026-07-03
-**Priorità:** CRITICA
-**Dipendenze:** TASK-1100, TASK-1104
-
-**Obiettivo:** normalizzare gli eventi OKX di fill bracket nello stesso formato consumato da `_on_order_update`.
-
-**Completato 2026-07-03:**
-- ✅ `synthtrade/backend/app/execution/okx_order_event_stream.py` implementa stessa interfaccia di `UserDataStreamManager`
-- ✅ Login WS OKX con firma HMAC-SHA256 + base64
-- ✅ Sottoscrizione canali `orders` e `algo-orders`
-- ✅ `_normalize_order` e `_normalize_algo_order` mappano stati OKX → dict contratto router
-- ✅ Fee OKX negative (rebate) → `commission = abs(fee)` per compatibilità router
-- ✅ `from_settings()` classmethod
-- ✅ `exchange_factory.py` aggiornato con `get_order_event_stream()` provider-aware
-
-### TASK-1107 — Router scalping provider-neutral
-
-**Status:** ✅ DONE (100%) — provider-neutral completo incluso `_live_close_position`
-**Priorità:** CRITICA
-**Dipendenze:** TASK-1102, TASK-1105, TASK-1106
-
-**Obiettivo:** rimuovere assunzioni Binance da start/stop/restore sessione, costruendo exchange, market WS e order stream via factory.
-
-**Completato 2026-07-03:**
-- ✅ Entry flow: `place_exit_bracket(ExitBracketRequest)` provider-neutral
-- ✅ Bracket failure handler: `_handle_bracket_failed` usa `cancel_open_exit_orders` + `ClosePositionRequest`
-- ✅ `_on_order_update`: usa `bracket_id` e campo `leg` (OKX: take_profit/stop_loss diretto)
-- ✅ `_live_close_position`: convertito a provider-neutral (`cancel_open_exit_orders`, `get_holdings`, `get_symbol_rules.round_qty`, `close_position(ClosePositionRequest)`)
-- ✅ Session start/DB/WS/order stream provider-neutral
-- ✅ 12/12 integration tests passano (TASK-1111)
-
-### TASK-1108 — DB migration provider e order ids generici
-
-**Status:** ✅ DONE — Migration applicata a Supabase
-**Priorità:** ALTA
-**Dipendenze:** TASK-1107
-
-**Obiettivo:** aggiungere provider, account mode, order ids e raw payload a sessioni/trade mantenendo compatibilita' con lo storico Binance.
-
-**File:** `synthtrade/supabase/migrations/20260703000000_task1108_okx_provider_columns.sql`
-
-**Colonne aggiunte e verificate:**
-- `scalping_sessions`: exchange_provider, exchange_account_mode, exchange_demo, fee_tier_*
-- `scalping_trades`: exchange_provider, exchange_order_id, exchange_bracket_id, exchange_tp/sl_order_id, exchange_raw
-- Index: idx_scalping_trades_exchange_order_id/bracket_id
-- Backfill: oco_order_list_id → exchange_bracket_id
-
-### TASK-1109 — Frontend exchange-neutral
-
-**Status:** ✅ DONE — label "Saldo Binance" dinamica (OKX/Binance/Exchange)
-**Priorità:** MEDIA
-**Dipendenze:** TASK-1107, TASK-1108
-
-**Completato 2026-07-03:**
-- ✅ `dashboard.model.ts`: aggiunto `exchange_provider?: string` a `DashboardStats`
-- ✅ `dashboard.page.ts`: `balanceLabel()` computed signal → "Saldo OKX" / "Saldo Binance" / "Saldo Exchange"
-- ✅ `dashboard.py`: aggiunto `exchange_provider` nel return dict
-
-### TASK-1110 — Market data/backtest factory cleanup
-
-**Status:** ✅ DONE — HistoricalLoader OKX via ccxt, Binance come fallback
-**Priorità:** MEDIA
-**Dipendenze:** TASK-1101, TASK-1103
-
-**Obiettivo:** rimuovere `ccxt.binance()` diretto da market data, generator/backtest e servizi condivisi; usare factory provider-aware.
-
-**Completato 2026-07-03:**
-- ✅ `_load_from_okx()` via ccxt async `fetch_ohlcv`, EU URL override con guard `if v`
-- ✅ `_load_from_binance()` come metodo separato
-- ✅ `load_ohlcv()` dispatch su `settings.EXCHANGE_PROVIDER`
-- ✅ Fallback a Binance solo per simboli non-EUR se OKX fallisce
-- ✅ Fix NoneType in ccxt URL dict comprehension (`if v else v`)
-
-**File:** `synthtrade/backend/app/scalping/backtest/historical_loader.py`
-
-### TASK-1111 — Test integration con fake OKX adapter
-
-**Status:** ✅ DONE — 12/12 test passano
-**Priorità:** ALTA
-**Dipendenze:** TASK-1107
-
-**Obiettivo:** coprire start -> entry -> bracket -> fill -> DB/UI close senza chiamate reali, con fake adapter e fake order stream.
-
-**Completato 2026-07-03:**
-- ✅ `fake_okx_adapter.py` — FakeOkxAdapter + FakeOrderStream senza rete
-- ✅ **1111.A** — Happy path: entry → bracket → TP fill → position closed
-- ✅ **1111.B** — Bracket failure: entry OK → bracket reject → emergency close → no DB open
-- ✅ **1111.C** — Stop session: cancel bracket → market close → DB reason=session_stop
-- ✅ **1111.D** — Restore open: bracket attivo → order stream restart → TP fill ricevuto
-- ✅ **1111.E** — Restore closed: no bracket su exchange → DB reconciled
-- ✅ **1111.F** — Fee/net pricing: OKX rebate abs() corretto
-
-**Bug trovato e fixato:** router usava fee OKX negative raw (`-0.0035`) in `_net_to_gross_pct`, producendo TP/SL invertiti. Fix: `abs(fee)` su `entry_fee_pricing` e `exit_fee_pricing` in `router.py`.
-
-**File:**
-- `synthtrade/backend/tests/integration/fake_okx_adapter.py`
-- `synthtrade/backend/tests/integration/test_okx_integration.py`
-- `synthtrade/backend/app/scalping/router.py` (bug fix fee abs)
-
 ### TASK-1112 — Validazione Demo Trading end-to-end
 
 **Status:** ✅ DONE (paper mode) — sessione BTC-EUR con OKX Demo WS funzionante, 9 bug fixati
@@ -479,77 +114,6 @@ Live trade failed: OKX get_symbol_filters failed for OKB-EUR: type object 'Symbo
 
 **Nota:** WS private (fill eventi bracket) non ancora testato in demo reale — richiede TASK-1100.G fix URL private endpoint.
 
-### TASK-1113 — Cutover OKX live readiness
-
-**Status:** ✅ DONE — 2026-07-08
-**Priorità:** CRITICA
-**Dipendenze:** TASK-1112
-
-**Obiettivo:** rendere OKX provider primario, aggiornare setup operativo, checklist go-live e primo test live minimo solo dopo conferma manuale.
-
-**Completato 2026-07-08:**
-- ✅ **1113.A — Default config**: `.env.example` già configurato con `EXCHANGE_PROVIDER=okx` e `TRADING_MODE=test`. Binance legacy documentato come fallback.
-- ✅ **1113.B — Safety gates**: `ALLOW_LIVE_MODE=false`, `TRADING_MODE=test`, `SCALPING_FORCE_PAPER=true` già attivi. Trade value minimo consigliato: Paper 10€, Demo 10€, Live iniziale 20€.
-- ✅ **1113.C — Smoke tests**: Health check OK (`{"status":"ok"}`), Instruments OKX caricati (1INCH-EUR, BTC-EUR, ecc.), Candele OKX verificabili via `/candles/btceur`.
-- ✅ **1113.D — Runbook**: Creato `docs/analysis/okx-live-runbook.md` con setup API key, safety gates, smoke test checklist, emergency stop procedure, go-live checklist, rischi e mitigazioni.
-- ✅ **1113.E — Decisione go-live**: Documentata in runbook §7. Primo trade live minimo (20€) richiede conferma manuale esplicita.
-
-**Decisioni chiave:**
-- OKX è default operativo dal 2026-07-03 (TASK-1101), confermato da sessioni paper di luglio
-- Live trading non può partire accidentalmente (ALLOW_LIVE_MODE=false, SCALPING_FORCE_PAPER=true)
-- Runbook disponibile per agenti futuri in `docs/analysis/okx-live-runbook.md`
-- Prima del go-live live reale, serve validazione bracket in demo reale (TASK-1100.G pendente)
-
-### TASK-1114 — OKX fee tier e net pricing parity
-
-**Status:** ✅ DONE — 2026-07-08
-**Priorità:** CRITICA
-**Dipendenze:** TASK-1100, TASK-1103, TASK-1104
-
-**Obiettivo:** preservare su OKX la logica attuale di fee reali: recupero fee tier a inizio sessione, `fee_tier_certified`, calcolo TP/SL lordo da target netto, log `[NET_PRICING]`, PnL/trade log coerenti e commissioni reali da fill.
-
-**Completato 2026-07-08:**
-- ✅ **1114.A — Fee model**: `FeeTier(maker, taker, certified, raw, source)` già in `exchange_models.py` (linee 96-102). Persistenza su sessione via `_execution_state["fee_tier"]` e `fee_tier_certified`.
-- ✅ **1114.B — Quote-aware commission conversion**: Già implementata in `router.py` — se `exit_commission_asset != quote_asset`, usa `exchange.get_ticker_price(f"{asset}/{quote}")` per conversione generica (es. OKB/EUR, BNB/USDT). Non più hardcoded BNB→USDC.
-- ✅ **1114.C — Net to gross**: `_net_to_gross_pct()` parametrizzata con `entry_fee_pricing` e `exit_fee_pricing`. OKX rebate negativi gestiti con `abs()` (fix TASK-1111).
-- ✅ **1114.D — Log `[NET_PRICING]` arricchito**: Ora include `provider`, `symbol`, `maker`, `taker`, `certified` in aggiunta ai target netti/lordi esistenti.
-- ✅ **1114.E — Position/trade updates**: Position update mostra target netti (TASK-885). Trade log salva fee reali via WebSocket e fee tier attese. Commissioni negative OKX (rebate) normalizzate con `abs()`.
-- ✅ **1114.F — Tests**: Coperto dal test `test_1111f_net_to_gross_pricing_okx_fees()` in `test_okx_integration.py` — verifica fee OKX rebate + net pricing con `abs()` corretto.
-
-**File coinvolti:**
-- `synthtrade/backend/app/scalping/router.py` — `[NET_PRICING]` log arricchito, `abs()` su fee OKX rebate
-- `synthtrade/backend/app/execution/exchange_models.py` — `FeeTier` dataclass
-- `synthtrade/backend/app/execution/okx_exchange.py` — `get_trade_fee()` con OKX rebate
-- `synthtrade/backend/tests/integration/test_okx_integration.py` — test 1111f fee/net pricing
-
-**Verifica:** log sessione paper 2026-07-08 mostra `[NET_PRICING] provider=okx symbol=BTCEUR maker=... taker=... certified=...` con target netti e lordi coerenti.
-
-### TASK-1115 — Dashboard balance provider-neutral
-
-**Status:** ✅ DONE — okx_balance.py + dispatch provider in dashboard API
-**Priorità:** ALTA
-**Dipendenze:** TASK-1101, TASK-1103
-
-**Completato 2026-07-03:**
-- ✅ `okx_balance.py`: fetch funding + trading wallet OKX, conversione EUR via tickers REST
-- ✅ `dashboard.py`: dispatch dinamico `okx_balance` vs `binance_balance` su `EXCHANGE_PROVIDER`
-- ✅ Smoke test: 112k€ saldo demo OKX (BTC, XRP, EUR, USDC, ETH) ✅
-
-### TASK-1116 — Audit collector Binance/Futures per migrazione OKX
-
-**Status:** ✅ DONE — EUR symbols graceful skip implementato su tutti i collector Binance Futures
-**Priorità:** ALTA
-**Dipendenze:** TASK-1105
-
-**Obiettivo:** identificare e gestire tutte le fonti Binance usate dai segnali e opportunity: funding rate, open interest, long/short ratio, CVD trade stream, Binance announcements, market data/backtest.
-
-**Completato 2026-07-03:**
-- ✅ `open_interest.py`: EUR symbols → `None` in `FUTURES_SYMBOL_MAP` + `logger.debug` + `return None`
-- ✅ `funding_rate.py`: idem
-- ✅ `long_short_ratio.py`: idem
-- ✅ Nessun WARNING 400 Bad Request su BTC-EUR, ETH-EUR, SOL-EUR ecc.
-- ⚠️ **Bug scoperto 2026-07-09**: OKB-EUR non è nella mappa `FUTURES_SYMBOL_MAP` → tenta chiamata Binance Futures e fallisce con 400. Vedi TASK-1116.B.
-
 ### TASK-1116.B — Bug: OKB-EUR mancante in FUTURES_SYMBOL_MAP collector
 
 **Status:** 🐞 Bug — OKB-EUR causa 400 Bad Request Binance Futures
@@ -576,58 +140,6 @@ Live trade failed: OKX get_symbol_filters failed for OKB-EUR: type object 'Symbo
 - Riavviare sessione OKB-EUR in paper mode.
 - Verificare assenza warning 400 nei log.
 - Score intelligence deve ricalcolare con collector disponibili.
-
-### TASK-1116.D — DB migration: aggiungere mode='TEST' al CHECK constraint
-
-**Status:** ✅ DONE — migration creata e committata (commit d5ef9c3)
-**Priorità:** CRITICA
-**Dipendenze:** TASK-1116
-
-**Problema:** Sessione avviata con `mode='test'` (OKX Demo Trading) fallisce l'INSERT in `scalping_sessions` perché il CHECK constraint `scalping_sessions_mode_check` ammette solo `'PAPER', 'LIVE', 'BACKTEST'`.
-
-**Log osservato:**
-```
-Failed to insert session in DB: {'code': '23514', 'message': "new row for relation 'scalping_sessions' violates check constraint 'scalping_sessions_mode_check'"}
-```
-
-**File coinvolti:**
-- `synthtrade/supabase/migrations/20260709000000_task1116d_add_test_mode_check.sql` (nuovo)
-
-**Fix:**
-```sql
-ALTER TABLE scalping_sessions DROP CONSTRAINT scalping_sessions_mode_check;
-ALTER TABLE scalping_sessions ADD CONSTRAINT scalping_sessions_mode_check
-  CHECK (mode IN ('PAPER', 'LIVE', 'BACKTEST', 'TEST'));
-```
-
-**Verifica:** Migration creata, da applicare a Supabase.
-
----
-
-### TASK-1116.E — Fallback REST diretto per get_trade_fee() OKX
-
-**Status:** ✅ DONE — fallback implementato (commit d5ef9c3)
-**Priorità:** ALTA
-**Dipendenze:** TASK-1103
-
-**Problema:** `get_trade_fee()` fallisce con errore `50119 API key doesn't exist` su account EU OKX. La chiave è valida (il balance viene letto), ma ccxt routing interno punta a `www.okx.com` invece che a `eea.okx.com`.
-
-**Log osservato:**
-```
-OKX get_trade_fee failed for OKB/EUR: okx {"msg":"API key doesn't exist","code":"50119"} — using fallback
-Fee tier [okx]: maker=0.001, taker=0.001 certified=False
-```
-
-**File coinvolti:**
-- `synthtrade/backend/app/execution/okx_exchange.py`
-
-**Fix:**
-- Aggiungere fallback REST diretto in `get_trade_fee()` analogo a quello esistente per `fetch_balance()`
-- Endpoint: `GET /api/v5/account/trade-fee?instType=SPOT&instId={symbol}`
-
-**Verifica:** Fee tier OKX Demo (rebate negativi) viene letto correttamente, `certified=True`.
-
----
 
 ### TASK-1116.C — Collector adapter provider-aware (OKX derivatives)
 
@@ -660,24 +172,6 @@ Fee tier [okx]: maker=0.001, taker=0.001 certified=False
 3. **1116.C.3 — Refactor FundingRateCollector**
    - Stesso pattern: `adapter.get_funding_rate(symbol)`.
    - OKX funding rate via `/api/v5/public/funding-rate` (derivatives).
-
-### TASK-1116.F — Fix `mode_valid` sempre FAILED nel session health check
-
-**Status:** ✅ DONE — commit 14d5af2
-**Priorità:** MEDIA — non blocca la sessione (resta `running`), ma inquina i log ogni ~30-90s e nasconde altri problemi reali nel rumore
-
-**Dipendenze:** TASK-1116.D (ha introdotto `mode='TEST'` come valore valido a livello DB, ma non a livello di health check applicativo)
-
-**Problema:** `session_health_job` in `app/scheduler/scalping_jobs.py` valida `mode` contro `("paper", "live")` senza includere `"test"`.
-
-**File coinvolto:**
-- `synthtrade/backend/app/scheduler/scalping_jobs.py` — linea 226
-
-**Impatto:** Warning falso-positivo ogni ~60-90s, rumore log, rischio azioni indesiderate future.
-
-**Fix:** Aggiornare `mode_valid` per accettare anche `"test"` (case-insensitive).
-
-**Verifica:** Sessione `mode=test` mostra `mode_valid=True` nei log health check.
 
 ### TASK-1116.G — Instrument discovery deve essere environment-aware (Demo vs Live)
 
@@ -720,126 +214,6 @@ Fee tier [okx]: maker=0.001, taker=0.001 certified=False
 - Sessione OKX non chiama mai Binance Futures per collector provider-bound.
 - Log mostra `collector=okx_unavailable` o dati OKX reali.
 - Score intelligence riflette i collector attivi/disponibili.
-
-### TASK-1117 — Fix DB constraint `session_signal_log_decision_type_check`
-
-**Status:** ✅ DONE — 2026-07-08
-**Priorità:** MEDIA
-**Dipendenze:** TASK-1100
-
-**Problema:** nel log compare `decision_type='rejected_short_unsupported'`, valore non incluso nel CHECK constraint della tabella `session_signal_log` (che ammette solo `execute`, `block_conflict`, `mean_reversion_override`, `hold_existing_position`, `rejected_other`). Coerente con il gap noto sullo short selling (nessuna implementazione ancora), ma comporta la perdita silenziosa di questi log specifici.
-
-**Obiettivo:** aggiungere `rejected_short_unsupported` (o valore equivalente) al CHECK constraint, oppure mappare esplicitamente su `rejected_other` nel writer finché lo short non è implementato.
-
-**Completato 2026-07-08:**
-- ✅ **1117.A — Audit writer**: `log_rejected_short_unsupported()` si trova in `app/core/signal_log_writer.py` (linee 197-222). Usa `decision_type="rejected_short_unsupported"` dentro `log_signal_decision()`. Il valore non era incluso nel CHECK constraint DB.
-- ✅ **1117.B — Migration**: Creata `synthtrade/supabase/migrations/20260708000000_task1117_fix_decision_type_check.sql`. DROP + ADD del constraint con valori aggiuntivi: `rejected_short_unsupported`, `execution_error` (già usato da `log_execution_error` ma assente dal constraint).
-- ✅ **1117.C — Verifica**: Log nei log della sessione paper 2026-07-08 mostrano 5 occorrenze di `error 23514` per `rejected_short_unsupported` — confermato che il problema era attivo. Con la migration applicata, questi insert non produrranno più violazioni.
-
-**Nota:** La migration va applicata su Supabase tramite psql o Supabase MCP. Il backend in esecuzione usa `_DummyClient` (test/dev), non il client Supabase reale.
-
-**File coinvolti:**
-- `synthtrade/supabase/migrations/20260708000000_task1117_fix_decision_type_check.sql` — migration creata
-- `synthtrade/backend/app/core/signal_log_writer.py` — writer già corretto (usa `rejected_short_unsupported`)
-
-### TASK-1118 — Audit symbol normalization in frontend Angular
-
-**Status:** ✅ DONE — 2026-07-08
-**Priorità:** MEDIA
-**Dipendenze:** TASK-1105
-
-**Problema:** il mismatch simbolo `BTCEUR` (stato sessione) vs `BTC-EUR` (instId OKX) causava scarto silenzioso di ogni candela real-time nel `LiveChartComponent`. Lo stesso tipo di mismatch potrebbe presentarsi in altri componenti Angular che consumano il WS scalping.
-
-**Obiettivo:** auditare tutti i componenti che confrontano simboli provenienti da fonti diverse (stato sessione vs eventi WS provider-specific) e applicare `_normalizeSymbol()` dove serve.
-
-**Completato 2026-07-08:**
-- ✅ **1118.A — grep confronti:** Trovati 3 componenti con confronto simbolo non normalizzato:
-  - `live-chart.component.ts` — già fixato (usava `_normalizeSymbol()` privato)
-  - `market-intel-panel.component.ts` (linea 200) — `data.symbol.toUpperCase() !== this.symbol.toUpperCase()` → scartava eventi `BTC-EUR` se la sessione riportava `BTCEUR`
-  - `performance-panel.component.ts` — solo analisi quote asset (safe)
-  - `session-controls.component.ts` — solo analisi quote asset (safe)
-- ✅ **1118.B — Fix componenti:** `market-intel-panel.component.ts` fixato con `SymbolUtils.equals()`
-- ✅ **1118.C — Refactor:** Creato `synthtrade/frontend/synthtrade-ui/src/app/scalping/utils/symbol-utils.ts` con `SymbolUtils.normalize()` e `SymbolUtils.equals()`. `live-chart.component.ts` refattorizzato per usare `SymbolUtils.equals()` invece del metodo privato.
-- ✅ **1118.D — Verifica:** I componenti `trade-log/`, `position-ticker/` e `supervisor-log/` NON hanno confronti simbolo diretti — ricevono eventi WS già corretti dal backend. Il bug era limitato ai componenti che filtrano eventi per simbolo lato frontend.
-
-**File creati/modificati:**
-- `synthtrade/frontend/synthtrade-ui/src/app/scalping/utils/symbol-utils.ts` (NUOVO)
-- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/live-chart.component.ts` — refactor a SymbolUtils
-- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/market-intel-panel.component.ts` — fix confronto simbolo
-
-### TASK-1119 — CRITICO: `OkxExchangeAdapter` manca metodi usati dal path LIVE, trade reale fallito
-
-**Status:** ✅ DONE — commit 6d3b52b
-**Priorità:** CRITICA — blocca ogni trade LIVE reale su OKX
-
-**Dipendenze:** TASK-1103 (OkxExchangeAdapter), TASK-1107 (router provider-neutral)
-
-**Problema:** `AttributeError: 'OkxExchangeAdapter' object has no attribute 'get_symbol_filters'` e `'get_btc_macro_context'` durante tentativo trade LIVE su OKB-EUR.
-
-**File coinvolti:**
-- `synthtrade/backend/app/execution/okx_exchange.py`
-
-**Completato:**
-- ✅ **1119.B** — `get_symbol_filters()` aggiunto come wrapper su `get_symbol_rules()` (fix import)
-- ✅ **1119.C** — `get_btc_macro_context()` implementato con fallback REST diretto per EU accounts
-
-**Verifica:** Sessione live completa ciclo senza AttributeError.
-
-### TASK-1120 — CRITICO: saldo "Starting balance" sessione LIVE ~2x rispetto al saldo reale OKX
-
-**Status:** ✅ DONE — commit 16b26f2
-**Priorità:** CRITICA — impatta risk management/position sizing su capitale reale
-
-**Dipendenza:** nessuna
-
-**Problema:** Sessione LIVE logga "Starting balance: 45.99 EUR" mentre OKX reale mostra €28,87. Dashboard okx_balance.py è corretto (28,88 EUR).
-
-**Ipotesi:** Due funzioni di calcolo balance distinte e non allineate.
-
-**File coinvolti:**
-- `synthtrade/backend/app/core/okx_balance.py` — versione corretta (dashboard)
-- `synthtrade/backend/app/scalping/router.py` — punto log "✓ Starting balance"
-- `synthtrade/backend/app/execution/okx_exchange.py` — se `get_balance()` ha logica diversa
-
-**Completato:**
-- ✅ **1120.C** — `get_balance()` ora usa solo `availBal` via REST diretto, allineato a okx_balance.py
-
-**Verifica:** Dashboard, log avvio sessione, e interfaccia OKX reale mostrano lo stesso totale EUR.
-
----
-
-### TASK-1125 — Collector Intelligence: Diagnostica Coverage Reale per Simbolo
-
-**Status:** Done ✅
-**Priorità:** ALTA — prerequisito per qualsiasi fix successivo dei collector intelligence
-**Fase:** 1a (diagnostica pura, zero rischio, nessun cambio di comportamento)
-**Commit:** `1263803`
-
-**Problema:** Il coverage/bypass del `SignalAggregator` confronta "quanti collector hanno risposto" contro un `min_collectors` fisso pensato per 8 collector totali. Per simboli come OKB-EUR, 3 collector (funding_rate, open_interest, long_short_ratio) sono strutturalmente impossibili da ottenere su OKX per uno spot EUR senza perpetual. Il denominatore attuale non distingue collector che non hanno ancora risposto (transitorio) da collector che non risponderanno mai (strutturale).
-
-**Modifiche:**
-1. **`is_symbol_supported()`** in `FundingRateCollector`, `OpenInterestCollector`, `LongShortRatioCollector` — ogni collector ora può indicare se un simbolo supporta strutturalmente quel dato, usando la stessa `FUTURES_SYMBOL_MAP` già presente
-2. **`get_configurable_weight_total(symbol)`** in `SignalScoreEngine` — calcola il peso configurabile totale ESCLUDENDO i collector strutturalmente impossibili per quel simbolo
-3. **Log `[COVERAGE_REAL]`** in `_build_snapshot()` — mostra `real_coverage`, `structurally_unavailable`, `no_response_transient`, `old_coverage_field` per ogni ciclo di scoring, senza modificare alcun comportamento
-
-**File modificati:**
-- `synthtrade/backend/app/scalping/intelligence/collectors/funding_rate.py`
-- `synthtrade/backend/app/scalping/intelligence/collectors/open_interest.py`
-- `synthtrade/backend/app/scalping/intelligence/collectors/long_short_ratio.py`
-- `synthtrade/backend/app/scalping/intelligence/signal_score_engine.py`
-
-**Verifica:** Syntax check passato su tutti e 4 i file. I test esistenti (collector empty response, http error, interpret_rate, rate_to_score) passano. I test `test_collect_success` e `test_rate_to_score_clamped` falliscono pre-esistenti (bug mock asincrono nei test, non correlato).
-
-**Esplicitamente fuori scope per questo task:**
-- Nessuna modifica a `min_collectors`, `signal_strength_threshold`, o bypass in `signal_aggregator.py`
-- Nessuna redistribuzione pesi tra collector
-- Nessun nuovo collector OKX-specifico
-
-**Decisioni chiave:**
-- Coverage reale = peso risposto / peso configurabile (esclude collector che non risponderanno MAI per quel simbolo)
-- `old_coverage_field` loggato accanto per confronto — nessun comportamento di trading cambiato
-
----
 
 ### TASK-906 — Trend Analysis: Prevenzione Falling Knife in Mean-Reversion (2026-06-30)
 
@@ -1127,6 +501,76 @@ questo task — `execute()` e `verify()` (chiamate API reali) sono un task futur
 
 ---
 
+## Migrazione Bybit — CHIUSA
+
+**Motivazione:** Dopo analisi e tentativo di verifica (TASK-1200), l'account Bybit EU (`bybit.eu`, MiCA) non permette la generazione di API key HMAC "System-generated" per trading automatizzato da client custom. L'unica opzione disponibile è "Connect to Third-Party Applications", un flusso pensato per bot/piattaforme whitelistate da Bybit (es. 3Commas, Bitsgap) — non utilizzabile dal backend FastAPI SynthTrade. La documentazione di supporto di 3Commas conferma: *"Bybit EU accounts cannot be connected to 3Commas via Fast Connect or API keys."*
+
+**Conseguenza:** Si resta su OKX come unico exchange operativo. Il problema delle fee alte OKX (0.20%/0.35%, round-trip 0.70%) non viene risolto cambiando exchange, ma affrontato con la ricalibrazione di SL/TP (TASK-OKX-RECAL di seguito).
+
+**Riferimenti ancora validi come documentazione tecnica (non come piano attivo):**
+- `docs/analysis/bybit-api-reference-analysis.md`
+- `docs/plans/bybit-migration-architecture-and-plan.md`
+- `docs/plans/bybit-migration-plan-v2.md`
+
+---
+
+## TASK-OKX-RECAL — Ricalibrazione SL/TP su fee OKX reali
+
+**Status:** In esecuzione
+**Priorità:** CRITICA — bloccante prima di qualunque nuova sessione live/demo
+**Piano dettagliato:** `docs/plans/okx-sl-tp-recalibration-task.md`
+
+**Motivazione:** Lo SL configurato a 0.3% è geometricamente impossibile con le fee OKX reali. Il round-trip taker+taker costa 0.70%. Qualunque SL con magnitudine < 0.70% è matematicamente insostenibile — il prezzo dovrebbe muoversi nella direzione opposta a quella di uno stop loss per far quadrare i conti.
+
+**Fee OKX reali (confermate da screenshot "Il mio livello di commissioni"):** maker=0.20%, taker=0.35%
+**Round-trip reale (entry market + exit market al trigger, entrambi taker):** R = 0.35% + 0.35% = **0.70%**
+
+**Opzione B — raccomandata per il primo test:**
+| Parametro | Valore netto | Distanza gross |
+|-----------|-------------|----------------|
+| SL | 1.05% | 0.35% |
+| TP | 1.55% | 2.26% |
+| R:R | 1.48:1 | — |
+
+### Modifiche da applicare
+
+**`.env` / `config.py`:**
+```bash
+# PRIMA (insostenibile con fee reali OKX):
+SCALPING_STOP_LOSS_PCT=0.3
+SCALPING_TAKE_PROFIT_PCT=0.5
+
+# DOPO (opzione B, ricalibrata su fee reale 0.20%/0.35%):
+SCALPING_STOP_LOSS_PCT=1.05
+SCALPING_TAKE_PROFIT_PCT=1.55
+```
+
+**Verifica preliminare obbligatoria (§1 del piano):**
+Prima di procedere, eseguire audit Supabase per verificare che `fee_tier_certified=true` sulle sessioni recenti:
+```sql
+SELECT id, started_at, mode, fee_tier_certified, fee_tier_raw
+FROM scalping_sessions
+WHERE mode = 'live' AND started_at > now() - interval '14 days'
+ORDER BY started_at DESC;
+```
+Se `fee_tier_certified=false` sulla maggioranza, il problema non è solo il target SL/TP ma il fatto che `get_trade_fee()` sta fallendo silenziosamente e cadendo sul fallback 0.001/0.001 — va fixato prima di procedere (fix non stimato in questo task, da valutare separatamente).
+
+### Test da aggiungere
+Test esplicito in `test_okx_integration.py` con fee OKX reali (maker=0.0020, taker=0.0035) e target ricalibrati, verificando:
+- Segno corretto di sl_price per BUY (sotto entry)
+- Distanza gross corrispondente alla tabella (tolleranza 0.01%)
+
+### Sequenza di verifica
+1. Applicare modifiche `.env`
+2. Eseguire test — deve passare senza modificare logica esistente
+3. Avviare sessione **paper**: verificare log `[NET_PRICING]` con i nuovi target
+4. Solo se §1 conferma `fee_tier_certified=true`: avviare sessione **demo** OKX con trade minimo
+5. Solo dopo demo pulita: valutare live con capitale minimo (conferma manuale)
+
+**Nota sul confronto economico:** Il win rate storico (34.3% su 70 trade) non è un baseline affidabile perché quei trade usavano SL/TP 0.3%/0.5% geometricamente incoerenti con le fee reali. Serve un nuovo campione di sessioni con target ricalibrati prima di trarre conclusioni quantitative.
+
+---
+
 ## Ordine di esecuzione consigliato
 
 1. **TASK-1100** ✅ partial — spike OKX Demo Trading completato (A-F/H ✅, G workaround REST polling per WS privato bloccato).
@@ -1134,12 +578,15 @@ questo task — `execute()` e `verify()` (chiamate API reali) sono un task futur
 3. **TASK-1113** — Cutover OKX live readiness: rendere OKX provider primario e preparare go-live (prossimo passo critico).
 4. **TASK-1114** — OKX fee tier e net pricing parity: preservare logica fee-aware su OKX.
 5. **TASK-1117 -> TASK-1118** — Bug da recap 2026-07-08: constraint DB `rejected_short_unsupported` e audit frontend symbol normalization.
-6. **TASK-907 / TASK-908** — bug non OKX (frontend paused reload, resume guard).
+6. **TASK-OKX-RECAL** — Ricalibrazione SL/TP su fee OKX reali (NUOVO, priorità assoluta)
+7. **TASK-907 / TASK-908** — bug non OKX (frontend paused reload, resume guard).
 
 Le fasi successive dello short (`MarginBorrowManager`, `OrderExecutor` margin,
 `ExecutionLoop` branch short, migration DB) restano come da
 `SynthTrade_Short_Selling_Architecture.md` §11, Fasi 2-6, da spezzare in task
 separati (TASK-910 in poi) quando si arriva a quel punto.
+
+---
 
 ## 📋 Task da Investigare — Risultati
 
@@ -1168,51 +615,3 @@ separati (TASK-910 in poi) quando si arriva a quel punto.
 | **TASK-INVEST-019** — 5/8 collector Intelligence non funzionanti | ⚠️ **PARZIALE** | Circuit breaker presenti ma CVD/OI/LSR dipendono da futures (5/8 falliscono) |
 | **TASK-INVEST-020** — Slope filter su EMA Cross causa regressione | 🟡 **APERTO** | Nessuno slope filter in `ema_cross.py` |
 
----
-
-### FIX-2026-07-10 — Router passa quantity invece di quote_amount per BUY market order su OKX (sCode=51020)
-
-**Status:** Done ✅
-**Priorità:** CRITICA — blocca trading live su OKX per simboli con minSz più alta
-
-**File:** `synthtrade/backend/app/scalping/router.py`
-
-**Problema:** Il router costruiva `MarketOrderRequest(quantity=_qty_precise, ...)` per i BUY market in live mode, passando la quantità in base currency (0.2851 OKB) invece dell'importo in quote currency (20.0 EUR). Questo impediva a OKX di usare `tgtCcy=quote_ccy`, causando l'errore `sCode=51020: "Your order should meet or exceed the minimum order amount."` perché OKX interpretava `sz=0.2851` come quantità base OKB — che poteva essere sotto il minimo consentito per il symbol.
-
-**Log osservato:**
-```
-qty_raw=0.285, step_size=1e-05, qty_precise=0.2851
-→ OKX API error 1: sCode=51020 "Your order should meet or exceed the minimum order amount."
-```
-
-**Fix applicato:**
-- Il `MarketOrderRequest` ora passa `quote_amount=_trade_val` (20.0 EUR) invece di `quantity=_qty_precise` (0.2851 OKB)
-- OKX riceve `tgtCcy=quote_ccy` e calcola autonomamente la quantità base nel rispetto dei propri vincoli `minSz`
-- `exec_qty` ora prende la quantità filled dalla risposta OKX (`market_res.filled` o `market_res.quantity`) invece di usare la quantità precalcolata
-- Il calcolo di `_qty_precise` rimane come guardia per il balance check e il controllo `minQty`, ma non viene più passato all'exchange
-
-**Dettaglio modifiche (righe 1634-1645):**
-```python
-# PRIMA (bug):
-market_request = MarketOrderRequest(
-    symbol=sym_ref,
-    side="buy",
-    quantity=_qty_precise,  # 0.2851 OKB → sCode=51020
-)
-
-# DOPO (fix):
-market_request = MarketOrderRequest(
-    symbol=sym_ref,
-    side="buy",
-    quote_amount=_trade_val,  # 20.0 EUR → OKX usa tgtCcy=quote_ccy
-)
-exec_qty = float(market_res.filled or market_res.quantity or _qty_precise)
-```
-
-**Test:** Verificare che il prossimo BUY market su OKX per OKB-EUR non produca più sCode=51020.
-
----
-
-## Task Archiviati
-
-Vedi `docs/ARCHIVE_TASKS.md`

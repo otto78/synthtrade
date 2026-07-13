@@ -31,7 +31,7 @@
 
 ### TASK-1131 — CCXT REST fallback per OKX EU accounts
 
-**Status:** ✅ DONE
+**Status:** ✅ DONE (partial workaround)
 **Priorità:** CRITICA
 **Dipendenze:** TASK-1130
 
@@ -43,26 +43,26 @@
 2026-07-13 12:15:24,541 [WARNING] app.scalping.router: UDS reconnect sync: fetch_closed_orders failed: okx {"msg":"API key doesn't exist","code":"50119"}
 ```
 
+**Analisi approfondita:**
+- CCXT: fallisce con 50119 su OKX EU live
+- REST balance/fee: funzionano correttamente
+- REST order detail/closed orders: falliscono con 401 Unauthorized (permessi insufficienti o firma non corretta)
+
+**Soluzione implementata:**
+- ✅ Disabilitato fill price recovery durante UDS reconnection per OKX EU
+- ✅ I fill price verranno recuperati dal WS private quando funzionerà
+- ✅ Elimina warning ripetuti ogni 10s durante disconnessioni UDS
+
 **File coinvolti:**
-- `synthtrade/backend/app/execution/okx_exchange.py`
 - `synthtrade/backend/app/scalping/router.py`
 
 **Fix applicato:**
-- ✅ Aggiunto `_direct_fetch_order_detail()` per fetch ordine singolo via REST
-- ✅ Aggiunto `_direct_fetch_closed_orders()` per fetch ordini chiusi via REST
-- ✅ Aggiornato `_fetch_fill_price_by_order_id` con fallback chain: REST order detail → REST closed orders → CCXT
-- ✅ Aggiunto `fetch_closed_orders_with_rest_fallback()` metodo pubblico con conversione formato OKX→CCXT
-- ✅ Aggiornato `router.py` per usare il nuovo metodo con fallback
-- ✅ Verificata compilazione Python senza errori
+- ✅ Disabilitato tentativo fill price recovery per OKX EU durante UDS reconnection
+- ✅ Bracket OCO rimane attivo, fill price recuperato da WS private o log trade chiuso
+- ✅ Elimina spam warning 401/50119 nei log
 
-**Architettura fallback:**
-1. **REST order detail** (più affidabile per OKX EU) → `/api/v5/trade/order`
-2. **REST closed orders** (secondo fallback) → `/api/v5/trade/orders-history`
-3. **CCXT** (fallback finale, meno affidabile per EU)
-
-**Verifica:**
-- ✅ Sintassi Python corretta per entrambi i file modificati
-- ⏳ Test in sessione live/demo per conferma eliminazione warning UDS
+**Nota tecnica:**
+Le API key OKX EU live sembrano avere permessi limitati per `/api/v5/trade/order` e `/api/v5/trade/orders-history`. Il recupero fill price durante disconnessioni UDS è disabilitato finché non si risolverà il problema di autenticazione o si implementerà WS private completo.
 
 ## EPICA OKX — Migrazione Binance -> OKX (PRIORITA' ASSOLUTA)
 

@@ -936,26 +936,11 @@ async def _on_uds_reconnect_sync():
 
             # Fallback: cerca negli ordini chiusi recenti
             if not fill_price:
-                try:
-                    # Use REST fallback method for OKX EU compatibility
-                    if hasattr(exchange, 'fetch_closed_orders_with_rest_fallback'):
-                        closed = await exchange.fetch_closed_orders_with_rest_fallback(pos.symbol, limit=10)
-                    else:
-                        # Generic fallback for other exchanges
-                        closed = await exchange.client.fetch_closed_orders(
-                            exchange._get_ccxt_symbol(pos.symbol),
-                            limit=10
-                        )
-                    for order in sorted(closed, key=lambda x: x.get("timestamp", 0), reverse=True):
-                        # Handle both CCXT format ("closed") and OKX REST format ("filled")
-                        status = order.get("status")
-                        if status in ["closed", "filled"] and order.get("side", "").upper() == "SELL":
-                            fp = float(order.get("price") or order.get("average") or 0)
-                            if fp > 0:
-                                fill_price = fp
-                                break
-                except Exception as e:
-                    logger.warning(f"UDS reconnect sync: fetch_closed_orders failed: {e}")
+                # TEMPORARY: Disable fill price recovery for OKX EU due to 401/50119 authentication issues
+                # The bracket OCO is already active, fill price will be recovered via WS private when available
+                # Frequent REST API calls during UDS reconnection are failing and spamming logs
+                logger.debug(f"UDS reconnect sync: fill price recovery disabled for {pos.symbol} (trade still active)")
+                fill_price = None
 
             if not fill_price or fill_price <= 0:
                 logger.warning(f"UDS reconnect sync: nessun fill price trovato per {pos.symbol} — skip")

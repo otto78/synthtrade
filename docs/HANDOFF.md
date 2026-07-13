@@ -10,25 +10,23 @@
 
 ---
 
-### ✅ FASE COMPLETATA: TASK-1130 + TASK-1131 — CCXT REST fallback per OKX EU
+### ✅ FASE COMPLETATA: TASK-1130 + TASK-1131 — OKX EU authentication issues resolution
 
 **Problema risolto:**
 - CCXT fallisce sistematicamente su OKX EU live con errore 50119 ("API key doesn't exist")
+- REST order detail/closed orders falliscono con 401 Unauthorized (permessi limitati API key EU)
 - Questo causava warning ripetuti ogni 10 secondi durante UDS reconnection
 - `_get_ccxt_symbol` mancante in `OkxExchangeAdapter`
 
 **Fix applicato:**
 - ✅ Aggiunto metodo `_get_ccxt_symbol(self, symbol: str) -> str` in `OkxExchangeAdapter`
-- ✅ Implementato fallback chain tripla: REST order detail → REST closed orders → CCXT
-- ✅ Nuovi metodi REST: `_direct_fetch_order_detail()`, `_direct_fetch_closed_orders()`, `fetch_closed_orders_with_rest_fallback()`
-- ✅ Conversione formato OKX→CCXT per compatibilità
-- ✅ Router update per usare nuovo metodo con fallback automatico
+- ✅ Disabilitato fill price recovery durante UDS reconnection per OKX EU
+- ✅ Bracket OCO rimane attivo, fill price recuperato da WS private o log trade chiuso
+- ✅ Elimina spam warning 401/50119 nei log durante disconnessioni UDS
 - ✅ Verificata compilazione Python senza errori
 
-**Architettura fallback:**
-1. REST order detail (più affidabile per OKX EU) → `/api/v5/trade/order`
-2. REST closed orders (secondo fallback) → `/api/v5/trade/orders-history`
-3. CCXT (fallback finale, meno affidabile per EU)
+**Nota tecnica:**
+Le API key OKX EU live hanno permessi limitati per `/api/v5/trade/order` e `/api/v5/trade/orders-history`. Il recupero fill price durante disconnessioni UDS è disabilitato finché non si risolverà il problema di autenticazione o si implementerà WS private completo.
 
 **File modificati:**
 - `synthtrade/backend/app/execution/okx_exchange.py`

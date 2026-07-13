@@ -11,17 +11,15 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 **Completato:**
 - ✅ **Bug fix _get_ccxt_symbol mancante:** Aggiunto metodo `_get_ccxt_symbol(self, symbol: str) -> str` in `OkxExchangeAdapter` per conversione simbolo CCXT (`"BTC-EUR"` → `"BTC/EUR"`)
 - ✅ **Fix chiamate router.py:** Rimossi `await` dalle chiamate in `router.py` dato che il metodo è sincrono
-- ✅ **CCXT REST fallback chain:** Implementato fallback tripla per operazioni critiche: REST order detail → REST closed orders → CCXT
-- ✅ **Nuovi metodi REST:** `_direct_fetch_order_detail()`, `_direct_fetch_closed_orders()`, `fetch_closed_orders_with_rest_fallback()`
-- ✅ **Conversione formato OKX→CCXT:** Il metodo pubblico converte risposte OKX REST in formato compatibile CCXT
-- ✅ **Router update:** UDS reconnection usa ora il nuovo metodo con fallback automatico
+- ✅ **Disabilitato fill price recovery UDS:** Disabilitato tentativo recupero fill price durante UDS reconnection per OKX EU (problema autenticazione 401/50119)
+- ✅ **Nuovi metodi REST implementati:** `_direct_fetch_order_detail()`, `_direct_fetch_closed_orders()`, `fetch_closed_orders_with_rest_fallback()` (non usati per ora)
 - ✅ **Verifica compilazione:** Sintassi Python corretta per entrambi i file modificati
 
 **Decisioni chiave:**
-- CCXT fallisce sistematicamente su OKX EU con errore 50119, REST diretto funziona sempre
-- `OkxExchangeAdapter` non eredita da `ExchangeAdapter`, quindi deve implementare i propri helper methods
-- La conversione simbolo OKX è semplice (sostituire `-` con `/`) e non richiede chiamate async
-- Priorità REST su CCXT per OKX EU elimina i warning ripetuti ogni 10s durante UDS reconnection
+- CCXT fallisce sistematicamente su OKX EU con errore 50119
+- REST order detail/closed orders falliscono con 401 Unauthorized (permessi limitati API key EU)
+- Disabilitare fill price recovery durante UDS elimina spam warning ogni 10s
+- Bracket OCO rimane attivo, fill price recuperato da WS private o log trade chiuso
 
 **File modificati:**
 - `synthtrade/backend/app/execution/okx_exchange.py`

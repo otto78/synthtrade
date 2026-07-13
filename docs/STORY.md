@@ -11,14 +11,14 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 **Completato:**
 - ✅ **Bug fix _get_ccxt_symbol mancante:** Aggiunto metodo `_get_ccxt_symbol(self, symbol: str) -> str` in `OkxExchangeAdapter` per conversione simbolo CCXT (`"BTC-EUR"` → `"BTC/EUR"`)
 - ✅ **Fix chiamate router.py:** Rimossi `await` dalle chiamate in `router.py` dato che il metodo è sincrono
-- ✅ **Disabilitato fill price recovery UDS:** Disabilitato tentativo recupero fill price durante UDS reconnection per OKX EU (problema autenticazione 401/50119)
-- ✅ **Nuovi metodi REST implementati:** `_direct_fetch_order_detail()`, `_direct_fetch_closed_orders()`, `fetch_closed_orders_with_rest_fallback()` (non usati per ora)
+- ✅ **Completamente disabilitato fill price recovery UDS:** Disabilitato tutti i metodi REST e CCXT per fill price recovery durante UDS reconnection per OKX EU (problema autenticazione 401/50119)
+- ✅ **Disabilitati metodi REST:** `_direct_fetch_order_detail()`, `_direct_fetch_closed_orders()`, `fetch_closed_orders_with_rest_fallback()`, `_fetch_fill_price_by_order_id()`
 - ✅ **Verifica compilazione:** Sintassi Python corretta per entrambi i file modificati
 
 **Decisioni chiave:**
 - CCXT fallisce sistematicamente su OKX EU con errore 50119
 - REST order detail/closed orders falliscono con 401 Unauthorized (permessi limitati API key EU)
-- Disabilitare fill price recovery durante UDS elimina spam warning ogni 10s
+- Completamente disabilitare fill price recovery durante UDS elimina completamente spam warning
 - Bracket OCO rimane attivo, fill price recuperato da WS private o log trade chiuso
 
 **File modificati:**

@@ -20,13 +20,14 @@
 
 **Fix applicato:**
 - ✅ Aggiunto metodo `_get_ccxt_symbol(self, symbol: str) -> str` in `OkxExchangeAdapter`
-- ✅ Disabilitato fill price recovery durante UDS reconnection per OKX EU
+- ✅ Completamente disabilitato fill price recovery durante UDS reconnection per OKX EU
+- ✅ Disabilitati tutti i metodi REST fallback (`_direct_fetch_order_detail`, `_direct_fetch_closed_orders`, `fetch_closed_orders_with_rest_fallback`, `_fetch_fill_price_by_order_id`)
 - ✅ Bracket OCO rimane attivo, fill price recuperato da WS private o log trade chiuso
-- ✅ Elimina spam warning 401/50119 nei log durante disconnessioni UDS
+- ✅ Elimina completamente spam warning 401/50119 nei log durante disconnessioni UDS
 - ✅ Verificata compilazione Python senza errori
 
 **Nota tecnica:**
-Le API key OKX EU live hanno permessi limitati per `/api/v5/trade/order` e `/api/v5/trade/orders-history`. Il recupero fill price durante disconnessioni UDS è disabilitato finché non si risolverà il problema di autenticazione o si implementerà WS private completo.
+Le API key OKX EU live hanno permessi limitati per `/api/v5/trade/order` e `/api/v5/trade/orders-history`. Il recupero fill price durante disconnessioni UDS è completamente disabilitato finché non si risolverà il problema di autenticazione o si implementerà WS private completo.
 
 **File modificati:**
 - `synthtrade/backend/app/execution/okx_exchange.py`

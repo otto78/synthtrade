@@ -31,7 +31,7 @@
 
 ### TASK-1131 — CCXT REST fallback per OKX EU accounts
 
-**Status:** ✅ DONE (partial workaround)
+**Status:** ✅ DONE (workaround completo)
 **Priorità:** CRITICA
 **Dipendenze:** TASK-1130
 
@@ -49,20 +49,23 @@
 - REST order detail/closed orders: falliscono con 401 Unauthorized (permessi insufficienti o firma non corretta)
 
 **Soluzione implementata:**
-- ✅ Disabilitato fill price recovery durante UDS reconnection per OKX EU
-- ✅ I fill price verranno recuperati dal WS private quando funzionerà
-- ✅ Elimina warning ripetuti ogni 10s durante disconnessioni UDS
+- ✅ Completamente disabilitato fill price recovery durante UDS reconnection per OKX EU
+- ✅ Disabilitati tutti i metodi REST fallback (`_direct_fetch_order_detail`, `_direct_fetch_closed_orders`, `fetch_closed_orders_with_rest_fallback`)
+- ✅ Disabilitato `_fetch_fill_price_by_order_id` completamente
+- ✅ I fill price verranno recuperati dal WS private quando funzionerà o dal log trade chiuso
+- ✅ Elimina completamente warning 401/50119 nei log
 
 **File coinvolti:**
+- `synthtrade/backend/app/execution/okx_exchange.py`
 - `synthtrade/backend/app/scalping/router.py`
 
 **Fix applicato:**
-- ✅ Disabilitato tentativo fill price recovery per OKX EU durante UDS reconnection
+- ✅ Disabilitato tutti i tentativi REST per fill price recovery
 - ✅ Bracket OCO rimane attivo, fill price recuperato da WS private o log trade chiuso
-- ✅ Elimina spam warning 401/50119 nei log
+- ✅ Elimina completamente spam warning 401/50119 nei log
 
 **Nota tecnica:**
-Le API key OKX EU live sembrano avere permessi limitati per `/api/v5/trade/order` e `/api/v5/trade/orders-history`. Il recupero fill price durante disconnessioni UDS è disabilitato finché non si risolverà il problema di autenticazione o si implementerà WS private completo.
+Le API key OKX EU live hanno permessi limitati per `/api/v5/trade/order` e `/api/v5/trade/orders-history`. Il recupero fill price durante disconnessioni UDS è completamente disabilitato finché non si risolverà il problema di autenticazione o si implementerà WS private completo.
 
 ## EPICA OKX — Migrazione Binance -> OKX (PRIORITA' ASSOLUTA)
 

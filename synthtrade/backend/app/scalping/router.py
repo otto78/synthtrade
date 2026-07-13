@@ -922,29 +922,10 @@ async def _on_uds_reconnect_sync():
         open_orders = await exchange.get_open_orders(pos.symbol)
         if not open_orders:
             # OCO eseguito durante la disconnessione!
-            logger.info(f"🔄 UDS riconnesso: OCO già eseguito per {pos.symbol} durante la disconnessione — recupero fill price")
-
-            fill_price: Optional[float] = None
-
-            # Prova prima con orderId specifici se disponibili (più affidabile)
-            for order_id in [pos.tp_order_id, pos.sl_order_id]:
-                if order_id:
-                    fp = await exchange._fetch_fill_price_by_order_id(pos.symbol, order_id)
-                    if fp and fp > 0:
-                        fill_price = fp
-                        break
-
-            # Fallback: cerca negli ordini chiusi recenti
-            if not fill_price:
-                # TEMPORARY: Disable fill price recovery for OKX EU due to 401/50119 authentication issues
-                # The bracket OCO is already active, fill price will be recovered via WS private when available
-                # Frequent REST API calls during UDS reconnection are failing and spamming logs
-                logger.debug(f"UDS reconnect sync: fill price recovery disabled for {pos.symbol} (trade still active)")
-                fill_price = None
-
-            if not fill_price or fill_price <= 0:
-                logger.warning(f"UDS reconnect sync: nessun fill price trovato per {pos.symbol} — skip")
-                return
+            # TEMPORARY: Skip fill price recovery for OKX EU due to 401/50119 authentication issues
+            # The bracket OCO is already active, fill price will be recovered via WS private when available
+            logger.info(f"UDS reconnect sync: fill price recovery skipped for {pos.symbol} (OKX EU auth issues)")
+            return
 
             entry_f = float(pos.entry_price)
             qty_f = float(pos.quantity)

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import httpx
 import logging
 from app.ai.schemas import ModelResponse
@@ -36,7 +37,7 @@ class ModelClient:
         key_show = f"{self.api_key[:6]}...{self.api_key[-4:]}" if len(self.api_key) > 10 else "***"
         logger.info(f"[ModelClient] Initialized with API Key: {key_show} and {len(cascade_models)} cascade models")
 
-    @async_retry(max_retries=3, backoff_base=2.0, exceptions=(httpx.TimeoutException, httpx.HTTPStatusError))
+    @async_retry(max_retries=3, backoff_base=2.0, exceptions=(httpx.TimeoutException, httpx.HTTPStatusError, KeyError, IndexError, TypeError))
     async def _call_model(self, model: str, system: str, user: str) -> ModelResponse:
         if not self.api_key:
             logger.error(f"[ModelClient] API Key is empty! Cannot call {model}")
@@ -56,16 +57,27 @@ class ModelClient:
         }
 
         async with httpx.AsyncClient(timeout=self.timeout) as http:
+            resp = None
             try:
                 resp = await http.post(f"{self.api_base_url}/chat/completions",
                                         headers=headers, json=body)
                 resp.raise_for_status()
                 data = resp.json()
+                # Validate response structure — API may return error JSON with HTTP 200
+                if "choices" not in data or not isinstance(data["choices"], list) or len(data["choices"]) == 0:
+                    error_detail = data.get("error", {}).get("message", str(data))
+                    logger.warning(f"[ModelClient] Malformed response from {model}: {error_detail}")
+                    raise ModelClientError(f"Malformed response: no valid 'choices' in response")
+                choice = data["choices"][0]
+                if "message" not in choice or "content" not in choice["message"]:
+                    raise ModelClientError(f"Malformed response: choice missing 'message.content'")
                 return ModelResponse(
-                    content=data["choices"][0]["message"]["content"],
+                    content=choice["message"]["content"],
                     model=data.get("model", model),
                     tokens_used=data.get("usage", {}).get("total_tokens", 0),
                 )
+            except (KeyError, IndexError, TypeError) as e:
+                raise ModelClientError(f"Malformed response from {model}: {e}") from e
             except httpx.HTTPStatusError as e:
                 code = e.response.status_code
                 if code == 429:
@@ -79,6 +91,10 @@ class ModelClient:
                     # Re-raise per trigger del decoratore
                     raise e
                 raise ModelClientError(f"HTTP {code} on {model}") from e
+            except json.JSONDecodeError as e:
+                body_preview = resp.text[:500] if resp is not None else "N/A"
+                logger.warning(f"[ModelClient] Invalid JSON from {model}: {e}. Body: {body_preview}")
+                raise ModelClientError(f"Invalid JSON response from {model}") from e
 
     async def call_with_fallback(self, system: str, user: str) -> ModelResponse:
         all_models = self.cascade_models + [self.fallback_model]

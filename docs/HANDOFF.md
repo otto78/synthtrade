@@ -59,9 +59,9 @@
 Il TP è stato eseguito su OKX ma il sistema non lo ha rilevato. La posizione è rimasta "aperta" in memoria e il frontend mostrava ancora la posizione attiva. Allo stop della sessione, il sistema ha chiuso a mercato una posizione già chiusa, ottenendo PnL -0.70% (solo le fee round-trip).
 
 ### Root Cause
-1. **`okx_order_event_stream.py`**: Il REST polling guardava solo `/api/v5/trade/orders-algo-pending`, ma quando il TP/SL viene eseguito, l'ordine va nello **history** (`/api/v5/trade/orders-algo-history`). Il sistema non lo rilevava mai.
+1. **`okx_order_event_stream.py`**: Il REST polling guardava solo `/api/v5/trade/orders-algo-pending`, ma quando il TP/SL viene eseguito, l'ordine va nello **history**. L'endpoint `/api/v5/trade/orders-algo-history` con `ordType=oco` restituisce 400 su OKX EU (limite API key), quindi il sistema non lo rilevava mai.
 
-2. **`main.py`**: Durante il restore sessione, quando il bilancio è sotto `minQty`, il sistema chiudeva la posizione con `exit_price=entry_price` (PnL 0), invece di recuperare il fill price reale dagli ordini algo history.
+2. **`main.py`**: Durante il restore sessione, quando il bilancio è sotto `minQty`, il sistema chiudeva la posizione con `exit_price=entry_price` (PnL 0), invece di recuperare il fill price reale.
 
 3. **`router.py`**: Il `_on_uds_reconnect_sync` non controllava gli ordini algo history per trovare eventuali TP/SL eseguiti durante la disconnessione.
 
@@ -69,15 +69,18 @@ Il TP è stato eseguito su OKX ma il sistema non lo ha rilevato. La posizione è
 
 | File | Modifica |
 |------|----------|
-| `okx_order_event_stream.py` | Agggiunto seeding e polling di `/api/v5/trade/orders-algo-history` nel loop principale |
-| `okx_exchange.py` | Agggiunto metodo `get_algo_orders_history()` per recuperare ordini algo storici |
-| `exchange_models.py` | Agggiunto `get_algo_orders_history` al protocollo ExchangeAdapterProtocol |
-| `router.py` | Agggiunto controllo algo history nel `_on_uds_reconnect_sync` |
-| `main.py` | Agggiunta logica per recuperare fill price dagli ordini algo history quando il bilancio è sotto minQty durante restore |
+| `okx_order_event_stream.py` | Usa `orders-history` con `state=filled` invece di `orders-algo-history` (che fallisce su OKX EU). Agggiunto stato "filled" a `_normalize_algo_order`. |
+| `okx_exchange.py` | Agggiunto metodo `get_algo_orders_history()` con fallback a `orders-history` e `fills` endpoint. |
+| `exchange_models.py` | Agggiunto `get_algo_orders_history` al protocollo ExchangeAdapterProtocol. |
+| `router.py` | Agggiunto controllo algo history nel `_on_uds_reconnect_sync`. |
+| `main.py` | Agggiunta logica per recuperare fill price dagli ordini history/fills quando il bilancio è sotto minQty durante restore, con fallback a ticker price. |
 
 ### Verifica
 - Riavviare il backend
 - Avviare una sessione live
+- Attendere che il TP/SL venga eseguito
+- Verificare che i log mostrino `algo history: found filled bracket` o `fills fallback` e la posizione venga chiusa correttamente
+- Controllare che il PnL sia calcolato correttamente (non solo le fee)
 - Attendere che il TP/SL venga eseguito
 - Verificare che i log mostrino `algo history: found filled bracket` e la posizione venga chiusa correttamente
 - Controllare che il PnL sia calcolato correttamente (non solo le fee)

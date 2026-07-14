@@ -162,7 +162,11 @@ export class MarketIntelPanelComponent implements OnInit, OnDestroy {
   private _rawScore: number | null = null;
 
   /** Symbol shown in template — updated from active session */
+<<<<<<< Updated upstream
   symbol: string = 'OKBEUR';
+=======
+  symbol: string = 'BNBUSDC';
+>>>>>>> Stashed changes
   private sub = new Subscription();
 
   constructor(

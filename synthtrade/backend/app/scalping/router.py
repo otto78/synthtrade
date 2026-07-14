@@ -18,6 +18,7 @@ Endpoints:
 import asyncio
 import json
 import logging
+import math
 import uuid
 import math
 from datetime import datetime, timezone
@@ -1176,6 +1177,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
         restore_mode: If True, this is a session restore at startup — skips operations
                       that are only valid for a fresh session start (e.g. DB insert).
     """
+<<<<<<< Updated upstream
     session = _execution_state["session"]
     logger.info(
         f">>> _start_ws_broadcast() ENTERED for {symbol} | "
@@ -1185,6 +1187,10 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
 
     is_testnet = session.get("mode") != "live"
     guard = _execution_state.get("session_load_guard")
+=======
+    logger.info(f">>> _start_ws_broadcast: START for symbol={symbol}")
+    is_testnet = _execution_state["session"].get("mode") != "live"
+>>>>>>> Stashed changes
 
     # Create pipeline components FIRST (before WS client)
     candle_buffer = CandleBuffer()
@@ -1202,6 +1208,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     _execution_state["cvd_calculator"] = cvd_calculator
 
     _session_mode = _execution_state["session"].get("mode", "paper")
+    logger.info(f">>> _start_ws_broadcast: _session_mode={_session_mode}")
     execution_loop = ExecutionLoop(
         symbol=symbol,
         candle_buffer=candle_buffer,
@@ -1215,11 +1222,10 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     # Must be False in live mode so the full intelligence + technical filter applies.
     execution_loop.paper_mode = (_session_mode != "live")
     _execution_state["loop"] = execution_loop
-    logger.info(f"ExecutionLoop paper_mode={execution_loop.paper_mode} for {symbol} (mode={_session_mode})")
+    logger.info(f">>> _start_ws_broadcast: ExecutionLoop created, paper_mode={execution_loop.paper_mode}")
 
     # Warm up the candle buffer with historical candles BEFORE starting WS client.
-    # This prevents: (1) WS handshake timeout from event loop being busy, and
-    # (2) the buffer being empty when the first WS closed candle arrives.
+    logger.info(f">>> _start_ws_broadcast: starting warmup...")
     try:
         from app.scalping.backtest.historical_loader import HistoricalLoader
         loader = HistoricalLoader()
@@ -1231,6 +1237,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 if hasattr(c, "timestamp") and hasattr(c, "open"):
                     candle_buffer.add(c)
                     loaded_count += 1
+<<<<<<< Updated upstream
             # Non broadcastare le candele storiche via WS - il frontend usa HTTP /candles/{symbol}
             logger.info(
                 f"Successfully loaded {loaded_count} historical candles for {symbol} "
@@ -1293,16 +1300,76 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 except Exception as forced_err:
                     logger.warning(f"First forced process_candle failed (non-fatal): {forced_err}")
             
+=======
+                # Broadcast each historical candle to frontend WS clients
+                await broadcast_scalping_event("candle", {
+                    "symbol": symbol,
+                    "open": float(c.open),
+                    "high": float(c.high),
+                    "low": float(c.low),
+                    "close": float(c.close),
+                    "volume": float(c.volume),
+                    "timestamp": c.timestamp.isoformat() if hasattr(c.timestamp, 'isoformat') else str(c.timestamp),
+                })
+            logger.info(f"Successfully loaded and broadcast {loaded_count} historical candles for {symbol}. Buffer size: {len(candle_buffer)}, ready: {candle_buffer.is_ready(50)}")
+
+            # IMMEDIATE PIPELINE KICKSTART: process the last closed candle through the execution loop
+            # to generate a signal RIGHT AWAY (not wait 30s for the watchdog cycle).
+            # This is critical for LIVE mode where no mock generator exists.
+            if past_candles and len(candle_buffer) >= 50:
+                last_c = past_candles[-1]
+                if hasattr(last_c, "timestamp") and hasattr(last_c, "close"):
+                    try:
+                        kickstart_candle = Candle(
+                            symbol=symbol.upper(),
+                            open=Decimal(str(last_c.open)),
+                            high=Decimal(str(last_c.high)),
+                            low=Decimal(str(last_c.low)),
+                            close=Decimal(str(last_c.close)),
+                            volume=Decimal(str(last_c.volume)),
+                            timestamp=last_c.timestamp if hasattr(last_c.timestamp, 'isoformat') else datetime.now(timezone.utc),
+                            closed=True,
+                        )
+                        kickstart_decision = await execution_loop.process_candle(kickstart_candle)
+                        if kickstart_decision and kickstart_decision.execute:
+                            logger.info(f"KICKSTART DECISION -> {kickstart_decision.reason} at {last_c.close}")
+                            await broadcast_scalping_event("signal", {
+                                "symbol": symbol.upper(),
+                                "type": "BUY" if kickstart_decision.confidence > 0 else "SELL",
+                                "price": float(kickstart_candle.close),
+                                "confidence": abs(kickstart_decision.confidence),
+                                "reason": f"KICKSTART: {kickstart_decision.reason}",
+                            })
+                        else:
+                            logger.info(f"KICKSTART no decision (buffer warm, waiting for WS data)")
+                    except Exception as ks_e:
+                        logger.debug(f"Kickstart process_candle non-critical error: {ks_e}")
+>>>>>>> Stashed changes
         else:
             logger.warning(f"No historical candles returned for {symbol}, buffer will warm up live.")
     except Exception as warmup_err:
         logger.error(f"Could not warm up candle buffer with historical data: {warmup_err}", exc_info=True)
 
+<<<<<<< Updated upstream
     # TASK-1107: provider-neutral WS client via factory (OKX or Binance)
     from app.execution.exchange_factory import build_ws_client
     client = build_ws_client(symbols=[symbol])
+=======
+    # Now start the BinanceWS client (after warmup so handshake is not blocked)
+    # Use a background task with timeout so the pipeline doesn't hang if Binance WS is unreachable.
+    client = BinanceWSClient(symbols=[symbol], testnet=is_testnet)
+>>>>>>> Stashed changes
     _execution_state["ws_client"] = client
-    await client.start()
+    try:
+        await asyncio.wait_for(client.start(), timeout=10.0)
+        logger.info(f"BinanceWSClient connected successfully for {symbol}")
+    except asyncio.TimeoutError:
+        logger.warning(
+            f"Binance WS connection timed out for {symbol} after 10s. "
+            f"Pipeline will run with mock data and reconnect on next watchdog cycle."
+        )
+    except Exception as ws_e:
+        logger.warning(f"Binance WS connection failed for {symbol}: {ws_e}. Running with mock data only.")
 
     if guard:
         guard.complete_phase("pipeline_phase")
@@ -1316,13 +1383,26 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
         If warmup failed (e.g. REST timeout), force-reload candles here
         so the buffer is ready for signal generation.
         """
+<<<<<<< Updated upstream
         nonlocal client
+=======
+        # Fetch WS client reference from shared state each loop iteration.
+        # This avoids Pylance's "possibly unbound" error since `client` is defined
+        # after this closure in the parent _start_ws_broadcast scope,
+        # and the watchdog also reassigns it (line ~684).
+        _ws_client_ref = _execution_state.get("ws_client")
+>>>>>>> Stashed changes
         _first_candle = True
         _last_event_time = datetime.now(timezone.utc)
         
-        while _execution_state["session"]["status"] != "idle" and not client._stop_event.is_set():
+        while _execution_state["session"]["status"] != "idle" and (_ws_client_ref is None or not _ws_client_ref._stop_event.is_set()):
+            # Refresh client reference from state every iteration in case watchdog restarted it
+            _ws_client_ref = _execution_state.get("ws_client")
+            if _ws_client_ref is None:
+                await asyncio.sleep(0.1)
+                continue
             try:
-                event = await asyncio.wait_for(client.candle_queue.get(), timeout=1.0)
+                event = await asyncio.wait_for(_ws_client_ref.candle_queue.get(), timeout=1.0)
                 _last_event_time = datetime.now(timezone.utc)
             except asyncio.TimeoutError:
                 if _execution_state["session"]["status"] == "idle":
@@ -1333,6 +1413,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                 # Force-reload historical candles via REST to keep the pipeline alive,
                 # and restart the WS client connection.
                 stale_seconds = (datetime.now(timezone.utc) - _last_event_time).total_seconds()
+<<<<<<< Updated upstream
 
                 # LOG every 30s when no data received (reduced level: candles arrive via REST poller
                 # every ~55s, so this is expected and not an error)
@@ -1343,6 +1424,9 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     )
                 
                 if stale_seconds > 180:  # 3 minutes
+=======
+                if stale_seconds > 30:  # 30 seconds — was 180s, reduced for LIVE mode
+>>>>>>> Stashed changes
                     logger.warning(
                         f">>> CANDLE_PROC WATCHDOG: No data for {stale_seconds:.0f}s. "
                         f"Force-reloading candles via REST API..."
@@ -1350,6 +1434,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     _last_event_time = datetime.now(timezone.utc)  # reset to avoid spamming
                     
                     # Load fresh candles via REST API directly into the buffer
+                    fresh_candles = []
                     try:
                         from app.scalping.backtest.historical_loader import HistoricalLoader
                         loader = HistoricalLoader()
@@ -1373,6 +1458,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     except Exception as rest_e:
                         logger.error(f">>> CANDLE_PROC WATCHDOG: REST reload failed: {rest_e}")
                     
+<<<<<<< Updated upstream
                     # TASK-907: Full WS and tasks restart
                     try:
                         if not client._stop_event.is_set():
@@ -1408,6 +1494,70 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                             
                             # Esci da questo `_candle_processor` così muore pulito, il nuovo prenderà il suo posto.
                             break
+=======
+                    # ACTIVE PIPELINE: even without WS data, process the latest closed candle
+                    # through the execution loop to generate signals from REST-loaded data.
+                    if fresh_candles and len(execution_loop._candle_buffer) >= 50:
+                        latest_c = fresh_candles[-1]
+                        if hasattr(latest_c, "timestamp") and hasattr(latest_c, "close"):
+                            try:
+                                import random
+                                candle_for_proc = Candle(
+                                    symbol=symbol.upper(),
+                                    open=Decimal(str(latest_c.open)),
+                                    high=Decimal(str(latest_c.high)),
+                                    low=Decimal(str(latest_c.low)),
+                                    close=Decimal(str(latest_c.close)),
+                                    volume=Decimal(str(latest_c.volume)),
+                                    timestamp=latest_c.timestamp if hasattr(latest_c.timestamp, 'isoformat') else datetime.now(timezone.utc),
+                                    closed=True,
+                                )
+                                decision = await execution_loop.process_candle(candle_for_proc)
+                                if decision and decision.execute:
+                                    logger.info(f">>> WATCHDOG DECISION APPROVED -> {decision.reason}")
+                                    pm = _execution_state["position_manager"]
+                                    side = "BUY" if decision.confidence > 0 else "SELL"
+                                    _mode = _execution_state["session"].get("mode", "paper")
+                                    if not pm.has_open():
+                                        if not _check_daily_loss():
+                                            _trade_val = float(_execution_state["session"].get("trade_value", 10.0))
+                                            if _mode == "live":
+                                                exchange = _execution_state.get("exchange")
+                                                if exchange:
+                                                    await broadcast_scalping_event("signal", {
+                                                        "symbol": symbol.upper(),
+                                                        "type": side,
+                                                        "price": float(candle_for_proc.close),
+                                                        "confidence": abs(decision.confidence),
+                                                        "reason": f"WATCHDOG: {decision.reason}",
+                                                    })
+                                                    logger.info(f">>> WATCHDOG SIGNAL for LIVE: {side} @ {candle_for_proc.close}")
+                                            else:
+                                                _qty = Decimal(str(round(_trade_val / float(candle_for_proc.close), 6)))
+                                                pos_obj = pm.open_position(symbol=symbol.upper(), side=side, entry_price=Decimal(str(candle_for_proc.close)), quantity=_qty)
+                                                await broadcast_scalping_event("position", {
+                                                    "symbol": pos_obj.symbol, "side": pos_obj.side,
+                                                    "entry_price": float(pos_obj.entry_price), "current_price": float(candle_for_proc.close),
+                                                    "quantity": float(pos_obj.quantity), "pnl": 0.0, "pnl_pct": 0.0,
+                                                })
+                                                logger.info(f">>> WATCHDOG PAPER TRADE: {side} @ {candle_for_proc.close}")
+                            except Exception as proc_e:
+                                logger.warning(f">>> WATCHDOG: process_candle error: {proc_e}")
+                    
+                    # Try to reconnect the Binance WS client
+                    # Use _execution_state["ws_client"] to avoid closure on outer `client` variable
+                    _current_client = _execution_state.get("ws_client")
+                    try:
+                        if _current_client is not None and not _current_client._stop_event.is_set():
+                            logger.info(">>> CANDLE_PROC WATCHDOG: Restarting WS client...")
+                            asyncio.create_task(_current_client.stop(), name="ws-stop-watchdog")
+                            await asyncio.sleep(2)
+                            if _execution_state["session"]["status"] == "running":
+                                new_client = BinanceWSClient(symbols=[symbol], testnet=is_testnet)
+                                _execution_state["ws_client"] = new_client
+                                await new_client.start()
+                                logger.info(">>> CANDLE_PROC WATCHDOG: WS client restarted")
+>>>>>>> Stashed changes
                     except Exception as ws_e:
                         logger.error(f">>> CANDLE_PROC WATCHDOG: WS restart failed: {ws_e}")
 
@@ -1654,6 +1804,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     # 1. Get exact symbol filters for precision
                                     filters = await exchange.get_symbol_filters(event.symbol.upper())
                                     
+<<<<<<< Updated upstream
                                     # 2. Compute exact quantity
                                     min_notional = float(filters.get("minNotional", 5.0))
                                     if _trade_val < min_notional:
@@ -1662,6 +1813,24 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     _qty_raw = _trade_val / float(event.close)
                                     step_size = float(filters["stepSize"])
                                     _qty_precise = round(math.floor(_qty_raw / step_size) * step_size, 8)
+=======
+                                    # 2. Compute exact quantity with minNotional safety
+                                    current_price = float(event.close)
+                                    step_size = float(filters["stepSize"])
+                                    min_notional = float(filters.get("minNotional", 10.0))
+                                    min_qty = float(filters["minQty"])
+                                    qty_raw = _trade_val / current_price
+                                    
+                                    # Tronca per difetto allo step size
+                                    qty_floor = qty_raw - (qty_raw % step_size)
+                                    
+                                    # Arrotonda per eccesso se il valore nozionale è sotto minNotional (con margine 2%)
+                                    if qty_floor * current_price < min_notional * 1.02:
+                                        qty_ceil = math.ceil(qty_raw / step_size) * step_size
+                                        _qty_precise = qty_ceil
+                                    else:
+                                        _qty_precise = qty_floor
+>>>>>>> Stashed changes
                                     
                                     # 3. Check real free balance in quote asset BEFORE placing order
                                     try:
@@ -1670,29 +1839,49 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                         bal_free = ccxt_bal.get("free", {})
                                         quote_asset = filters.get("quoteAsset", "USDT")
                                         
-                                        free_quote = float(bal_free.get(quote_asset, 0.0))
-                                        total_quote = float(bal_total.get(quote_asset, 0.0))
+                                        # ── FIX-2026-06-08: Normalize LD tokens (LDUSDC → USDC) and
+                                        # use _select_preferred_quote_balance() to find the best available
+                                        # quote balance, matching the logic used at session start.
+                                        # Without this, USDC held in LD (Locked Deposit) format would
+                                        # show as free=0.0 / total=0.0 and block valid trades.
+                                        normalized_total = _normalize_binance_total_balance(bal_total)
+                                        normalized_free = _normalize_binance_total_balance(bal_free)
                                         
+                                        total_quote = _select_preferred_quote_balance(normalized_total, quote_asset) or 0.0
+                                        free_quote = _select_preferred_quote_balance(normalized_free, quote_asset) or 0.0
+                                        
+                                        # Safety cap: limita qty_precise al 98% del free balance disponibile
+                                        # Questo evita "Insufficient funds" da Binance per via delle commissioni (0.1% taker).
+                                        # Se il ceil per minNotional supera il balance disponibile, usa il floor invece.
+                                        max_qty_by_balance = (free_quote * 0.98) / current_price
+                                        max_qty_floor = max_qty_by_balance - (max_qty_by_balance % step_size)
+                                        if _qty_precise > max_qty_floor:
+                                            logger.warning(
+                                                f"Safety cap: qty_precise={_qty_precise} exceeds available balance "
+                                                f"(free={free_quote} * 0.98 / price={current_price} = {max_qty_floor}). "
+                                                f"Capping to {max_qty_floor}"
+                                            )
+                                            _qty_precise = max_qty_floor
+                                        
+                                        if _qty_precise < min_qty:
+                                            logger.error(
+                                                f"Quantity too small after safety cap: {_qty_precise} < {min_qty}. "
+                                                f"Insufficient balance to meet minQty. free_balance={free_quote:.2f}"
+                                            )
+                                            await broadcast_scalping_event("error", {
+                                                "code": "QTY_TOO_SMALL",
+                                                "message": f"Trade quantity {_qty_precise} below minimum {min_qty} even after balance cap. Insufficient balance.",
+                                            })
+                                            continue
+
                                         logger.info(
                                             f"LIVE BALANCE: {quote_asset} free={free_quote} total={total_quote} "
                                             f"trade_cost={_qty_precise * float(event.close):.2f}"
                                         )
-                                        
-                                        if free_quote < _qty_precise * float(event.close):
-                                            logger.error(
-                                                f"Insufficient {quote_asset} in SPOT wallet. "
-                                                f"free={free_quote} (available for trading) vs total={total_quote} (includes Earn/Funding). "
-                                                f"Please move funds from Earn to Spot wallet."
-                                            )
-                                            await broadcast_scalping_event("error", {
-                                                "code": "INSUFFICIENT_SPOT_BALANCE",
-                                                "message": f"Insufficient {quote_asset} in Spot wallet (free={free_quote:.2f}, total={total_quote:.2f}). Move funds from Earn to Spot.",
-                                            })
-                                            continue
                                     except Exception as bal_e:
                                         logger.warning(f"Balance check failed (non-blocking): {bal_e}")
                                     
-                                    logger.info(f"LIVE TRADE CALC: symbol={event.symbol}, trade_value={_trade_val}, price={event.close}, qty_raw={_qty_raw}, step_size={step_size}, qty_precise={_qty_precise}, min_qty={filters['minQty']}")
+                                    logger.info(f"LIVE TRADE CALC: symbol={event.symbol}, trade_value={_trade_val}, price={event.close}, qty_raw={qty_raw}, step_size={step_size}, qty_precise={_qty_precise}, min_qty={filters['minQty']}")
                                     
                                     if _qty_precise < float(filters["minQty"]):
                                         logger.error(f"Quantity too small: {_qty_precise} < {filters['minQty']} - TRADE BLOCKED")
@@ -2134,9 +2323,13 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     async def _trade_processor():
         """Consume trade_queue and broadcast + update PnL + feed CVD."""
         _cvd = _execution_state.get("cvd_calculator")
-        while _execution_state["session"]["status"] != "idle" and not client._stop_event.is_set():
+        while _execution_state["session"]["status"] != "idle":
+            _ws_ref = _execution_state.get("ws_client")
+            if _ws_ref is None or _ws_ref._stop_event.is_set():
+                await asyncio.sleep(0.1)
+                continue
             try:
-                event = await asyncio.wait_for(client.trade_queue.get(), timeout=1.0)
+                event = await asyncio.wait_for(_ws_ref.trade_queue.get(), timeout=1.0)
             except asyncio.TimeoutError:
                 if _execution_state["session"]["status"] == "idle":
                     break
@@ -2250,7 +2443,11 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
 
     async def _intelligence_processor():
         """Poll intelligence and broadcast."""
-        while _execution_state["session"]["status"] != "idle" and not client._stop_event.is_set():
+        while _execution_state["session"]["status"] != "idle":
+            _ws_ref = _execution_state.get("ws_client")
+            if _ws_ref is None or _ws_ref._stop_event.is_set():
+                await asyncio.sleep(0.1)
+                continue
             if _execution_state["session"]["status"] == "running":
                 try:
                     snapshot = await signal_engine.get_snapshot()
@@ -2862,8 +3059,10 @@ async def control_session(control: Dict) -> Dict:
     """Control session: start, stop, pause, resume."""
     session = _execution_state["session"]
     action = control.get("action")
+    logger.info(f"[control_session] action={action} control={control}")
 
     if action == "start":
+<<<<<<< Updated upstream
         guard = _execution_state.get("session_load_guard")
         if guard:
             guard.reset()
@@ -2948,6 +3147,22 @@ async def control_session(control: Dict) -> Dict:
 
         # ── Set session state (balance is verified) ───────────────────────────
         _sync_session_load_guard()
+=======
+        # GUARD: prevent duplicate broadcast start if session was restored by lifespan
+        # When the backend restarts, lifespan() restores the session AND starts the WS broadcast.
+        # If the user then clicks "start" from the frontend, this guard prevents a second
+        # _start_ws_broadcast() which would create duplicate WS connections and processor tasks.
+        if _execution_state.get("ws_client") is not None and session.get("status") == "running":
+            logger.warning(
+                "[control_session] Duplicate start blocked: WS broadcast already running "
+                "for session %s. Frontend will reconnect automatically.",
+                session.get("session_id"),
+            )
+            return session.copy()
+
+        active_symbol = control.get("symbol", session.get("symbol", "BTCUSDT"))
+        logger.info(f"[control_session] start: symbol={active_symbol} mode={control.get('mode')} strategy={control.get('strategy')}")
+>>>>>>> Stashed changes
         session["status"] = "running"
         session["session_id"] = f"sess_{uuid.uuid4().hex[:8]}"
         session["mode"] = control.get("mode", session.get("mode", "paper"))
@@ -2956,9 +3171,15 @@ async def control_session(control: Dict) -> Dict:
         session["trade_value"] = float(control.get("trade_value", session.get("trade_value", 10.0)))
         session["started_at"] = _now()
         session["stopped_at"] = None
+<<<<<<< Updated upstream
         # Clear any previous error state from failed start attempts
         session["error_code"] = None
         session["error_message"] = None
+=======
+        logger.info(f"[control_session] session updated: status={session['status']} mode={session['mode']} symbol={session['symbol']}")
+        
+        # Reset trade history and position manager for the new session
+>>>>>>> Stashed changes
         _execution_state["trade_history"] = []
         _execution_state["position_manager"] = PositionManager()
         
@@ -2995,6 +3216,7 @@ async def control_session(control: Dict) -> Dict:
         # Start WS client + ExecutionLoop pipeline
         async def _start_with_error_logging():
             """Wrapper that logs any exception from _start_ws_broadcast."""
+            logger.info(">>> START_WITH_ERROR_LOGGING: entering _start_with_error_logging")
             try:
                 await _start_ws_broadcast(active_symbol.lower())
                 
@@ -3057,8 +3279,16 @@ async def control_session(control: Dict) -> Dict:
             _start_with_error_logging(),
             name=f"scalping-ws-{active_symbol}",
         )
+        logger.info(f"[control_session] task created: name=scalping-ws-{active_symbol} done={task.done()} cancelled={task.cancelled()}")
         # Log exception if task fails silently
-        task.add_done_callback(lambda t: logger.error(f"Scalping broadcast task crashed: {t.exception()}") if t.exception() else None)
+        def _on_task_done(t):
+            if t.exception():
+                logger.error(f"Scalping broadcast task CRASHED: {t.exception()}", exc_info=True)
+            elif t.cancelled():
+                logger.warning("Scalping broadcast task was CANCELLED")
+            else:
+                logger.info("Scalping broadcast task completed normally")
+        task.add_done_callback(_on_task_done)
         
         # ── SESSION LOGGING: attach session_id to all logs + start capture ──
         SessionContextFilter.set_session_id(session["session_id"])

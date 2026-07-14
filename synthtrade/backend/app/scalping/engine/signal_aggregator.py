@@ -218,11 +218,19 @@ class SignalAggregator:
                     ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
                 )
 
+<<<<<<< Updated upstream
         # ── Caso 2: COLLECTOR SUFFICIENTI MA SCORE NEUTRALE → BLOCCO ──
         if abs(market_score.total) < 5.0:
             reason = (
                 f"intelligence neutrale "
                 f"({num_collectors_responded} collectors, score={market_score.total:.1f}){trend_str}"
+=======
+        # Se lo score non e' tradeable, blocca (solo in modalità normale)
+        if not market_score.tradeable:
+            reason = (
+                f"score {market_score.total:.1f} non tradeable "
+                f"(bias={market_score.bias}, soglia={self._min_confidence})"
+>>>>>>> Stashed changes
             )
             logger.warning(f"{RED}🔴 BLOCK: {symbol} {reason}{RESET}")
             return ExecutionDecision(
@@ -232,6 +240,7 @@ class SignalAggregator:
                 ta_patterns=ta_patterns, vol_anomaly=vol_anomaly
             )
 
+<<<<<<< Updated upstream
         # ── Caso 3: SCORE ≥ 5.0 → filtro soglia ────────────────────────
         if not market_score.tradeable:
             from app.scalping.config_loader import get_scalping_config
@@ -252,17 +261,35 @@ class SignalAggregator:
 
         # ── Mean-reversion bypass per strategie ranging ─────────────────
         MEAN_REVERSION_STRATEGIES = ("rsi_bollinger", "stoch_rsi_bb_squeeze")
+=======
+        # ── Mean-reversion bypass per strategie ranging ──────────────────────
+        # In regime ranging, strategie come rsi_bollinger generano SELL quando il
+        # prezzo tocca la banda superiore di Bollinger (mean-reversion). Questo
+        # non è uno short direzionale ma una chiusura del range. Bloccare questi
+        # SELL perché il bias intelligence è bullish impedisce qualsiasi trade
+        # in ranging — BNB sale, tocca BB superiore, genera SELL, ma viene bloccato.
+        # Lo stesso vale per BUY su BB inferiore con bias bearish.
+        MEAN_REVERSION_STRATEGIES = ("rsi_bollinger", "stoch_rsi_bb_squeeze")
+
+        # Verifica allineamento bias intelligence vs segnale tecnico
+>>>>>>> Stashed changes
         bias = market_score.bias
 
         if bias == "bullish" and technical.type not in ("BUY",):
+<<<<<<< Updated upstream
             if technical.type == "SELL" and technical.source and any(
                 technical.source.startswith(s) for s in MEAN_REVERSION_STRATEGIES
             ):
+=======
+            # Permetti SELL da mean-reversion in ranging (chiusura range, non short)
+            if technical.type == "SELL" and technical.source in MEAN_REVERSION_STRATEGIES:
+>>>>>>> Stashed changes
                 logger.info(
                     f"⚡ MEAN-REVERSION SELL permesso (source={technical.source}) "
                     f"nonostante bias={bias} — chiusura range, non short direzionale"
                 )
             else:
+<<<<<<< Updated upstream
                 reason = f"conflitto intelligence-tecnico: bias={bias}, segnale={technical.type}{trend_str}"
                 logger.info(f"{RED}🔴 BLOCK: {symbol} {reason}{RESET}")
                 return ExecutionDecision(
@@ -303,6 +330,28 @@ class SignalAggregator:
                     is_mean_reversion_override=False
                 )
 
+=======
+                reason = f"conflitto intelligence-tecnico: bias={bias}, segnale={technical.type}"
+                logger.warning(f"{RED}🔴 BLOCK: {symbol} {reason}{RESET}")
+                return ExecutionDecision(
+                    execute=False,
+                    reason=reason,
+                )
+        if bias == "bearish" and technical.type not in ("SELL", "CLOSE"):
+            # Permetti BUY da mean-reversion in ranging (chiusura range, non long)
+            if technical.type == "BUY" and technical.source in MEAN_REVERSION_STRATEGIES:
+                logger.info(
+                    f"⚡ MEAN-REVERSION BUY permesso (source={technical.source}) "
+                    f"nonostante bias={bias} — chiusura range, non long direzionale"
+                )
+            else:
+                reason = f"conflitto intelligence-tecnico: bias={bias}, segnale={technical.type}"
+                logger.warning(f"{RED}🔴 BLOCK: {symbol} {reason}{RESET}")
+                return ExecutionDecision(
+                    execute=False,
+                    reason=reason,
+                )
+>>>>>>> Stashed changes
         if bias == "neutral":
             reason = "bias intelligence neutrale, no trade"
             logger.warning(f"{YELLOW}🟡 SKIP: {symbol} {reason} (score={market_score.total:.1f}){RESET}")

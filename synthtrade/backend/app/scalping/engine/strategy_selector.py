@@ -18,11 +18,19 @@ class StrategySelector:
     """
 
     _regime_strategy_map = {
+<<<<<<< Updated upstream
         "trending_up": "ema_cross",              # Follow the trend
         "trending_down": "ema_cross",            # Follow the trend
         "ranging": "rsi_bollinger",              # Mean reversion per ranging
         "volatile": "stoch_rsi_bb_squeeze",      # Cattura breakout da volatilità
         "unknown": "momentum_base",              # Default sicuro
+=======
+        "trending_up": "ema_cross",          # Follow the trend
+        "trending_down": "ema_cross",        # Follow the trend
+        "ranging": "rsi_bollinger",          # Mean reversion per ranging
+        "volatile": "stoch_rsi_bb_squeeze",  # Cattura breakout da volatilità
+        "unknown": "momentum_base",          # Default sicuro
+>>>>>>> Stashed changes
     }
 
     def select(self, regime: MarketRegime) -> Optional[AbstractScalpingStrategy]:

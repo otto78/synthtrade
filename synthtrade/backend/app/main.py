@@ -540,6 +540,7 @@ async def lifespan(app: FastAPI):
 
     # Avvia scheduler solo dopo restore (e warmup pipeline se attivo)
     try:
+<<<<<<< Updated upstream
         from app.scalping.router import _execution_state
         guard = _execution_state.get("session_load_guard")
         if guard and guard.monitor_data.get("state") == "loading":
@@ -547,9 +548,78 @@ async def lifespan(app: FastAPI):
             try:
                 await asyncio.wait_for(guard._ready_event.wait(), timeout=30.0)
             except asyncio.TimeoutError:
+=======
+        db = get_supabase()
+        active_sessions = db.table("scalping_sessions").select("*").eq("status", "running").limit(1).execute()
+        if active_sessions.data:
+            from app.scalping.router import _execution_state, _start_ws_broadcast
+            sess = active_sessions.data[0]
+
+            session_mode = sess.get("mode", "paper").lower()
+            global_mode = getattr(settings, 'TRADING_MODE', 'test')
+
+            # MODE CONSISTENCY CHECK: only restore session if mode matches global mode
+            if session_mode != global_mode:
+>>>>>>> Stashed changes
                 logger.warning(
                     "Session load guard not ready after 30s — starting scheduler anyway"
                 )
+<<<<<<< Updated upstream
+=======
+                try:
+                    db.table("scalping_sessions").update({
+                        "status": "stopped",
+                        "stopped_at": datetime.utcnow().isoformat()
+                    }).eq("id", sess.get("id")).execute()
+                except Exception:
+                    pass
+            else:
+                restored_symbol = sess.get("symbol", "BTCUSDT")
+                _execution_state["session"]["session_id"] = sess.get("id")
+                _execution_state["session"]["status"] = "running"
+                _execution_state["session"]["mode"] = session_mode
+                _execution_state["session"]["strategy"] = sess.get("strategy", "scalping_v2")
+                _execution_state["session"]["symbol"] = restored_symbol
+                _execution_state["session"]["db_session_id"] = sess.get("id")
+                _execution_state["session"]["started_at"] = sess.get("started_at")
+                # Restore paper_balance from session (not from DB which may be stale)
+                _execution_state["session"]["paper_balance"] = sess.get("paper_balance", 10000.0)
+                # Restore trade_value from DB (important: don't lose user-set value)
+                db_trade_value = sess.get("trade_value")
+                if db_trade_value is not None:
+                    _execution_state["session"]["trade_value"] = float(db_trade_value)
+                logger.info(
+                    "Restored active scalping session from DB: %s (%s / %s) trade_value=%s",
+                    sess.get("id"), restored_symbol, session_mode,
+                    _execution_state["session"].get("trade_value"),
+                )
+
+                # START WS BROADCAST PIPELINE — this is critical!
+                # Without this, the session shows "running" but produces no candle/trade/log events,
+                # leaving the frontend with stale data and no visible activity.
+                try:
+                    await _start_ws_broadcast(restored_symbol.lower())
+                    logger.info("WS broadcast pipeline restarted for restored session: %s", restored_symbol)
+
+                    # Start SupervisorScheduler (same as _start_with_error_logging does for fresh sessions)
+                    from app.scalping.supervisor.supervisor_scheduler import SupervisorScheduler
+                    supervisor = SupervisorScheduler(symbol=restored_symbol, interval_seconds=45)
+                    supervisor.set_execution_loop(_execution_state["loop"])
+                    supervisor.start()
+                    _execution_state["supervisor_scheduler"] = supervisor
+                    logger.info("Supervisor scheduler started for restored session")
+                except Exception as broadcast_e:
+                    logger.error(
+                        "Failed to restart WS broadcast for restored session %s: %s",
+                        restored_symbol, broadcast_e, exc_info=True,
+                    )
+                    # Reset session to idle so frontend doesn't show a stuck "running" state
+                    _execution_state["session"]["status"] = "idle"
+                    _execution_state["session"]["session_id"] = None
+                    _execution_state["session"]["started_at"] = None
+        else:
+            logger.info("No active session found in DB")
+>>>>>>> Stashed changes
     except Exception as e:
         logger.debug("Session load guard wait skipped: %s", e)
 

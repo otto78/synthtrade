@@ -91,7 +91,12 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('chartContainer', { static: true })
   chartContainer!: ElementRef<HTMLDivElement>;
 
+<<<<<<< Updated upstream
   currentSymbol = 'BTC-EUR';
+=======
+  @Input() symbol: string = 'BNBUSDC';
+
+>>>>>>> Stashed changes
   lastPrice = 0;
   loading = false;
 

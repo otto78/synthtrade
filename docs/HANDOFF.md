@@ -41,12 +41,19 @@
 
 ### 🎯 Priorità Operative
 
-1. **TASK-OKX-RECAL:** Verifica fee_tier_certified su DB, poi sessione paper per validare nuovi SL/TP ricalibrati
-2. **TASK-1150:** Whale enable + verifica sentiment (quick win, zero rischio)
-3. ~~**TASK-1151:** OrderBookImbalanceCollector (massimo impatto per OKB-EUR)~~ ✅ Done (14/07/2026)
-4. ~~**TASK-1152:** SpreadCollector (collector + modello; wiring OFF)~~ ✅ Done (14/07/2026)
-5. ~~**TASK-1153:** CollectorAdapter provider-aware (per BTC/ETH perpetual)~~ ✅ Done (14/07/2026, commit `1f0b364`)
-6. **TASK-1100.G:** Investigare WS private OKX EEA (opzionale, workaround operativo)
+1. ~~**TASK-OKX-RECAL:** SL 1.05% / TP 1.55% in `backend/.env`~~ ✅ Done (14/07/2026)
+2. ~~**TASK-1150:** Whale enable + verifica sentiment~~ ✅ Done (14/07/2026)
+3. ~~**TASK-1151:** OrderBookImbalanceCollector~~ ✅ Done (14/07/2026) + regression fix pomeriggio
+4. ~~**TASK-1152:** SpreadCollector (wiring OFF)~~ ✅ Done (14/07/2026)
+5. ~~**TASK-1153:** CollectorAdapter provider-aware~~ ✅ Done (14/07/2026, commit `1f0b364`)
+6. ~~**TASK-1154:** SentimentCollector OKX sources~~ ✅ Done (14/07/2026, no API key required)
+7. ~~**Merge conflict repo-wide (37 blocchi / 8 file)**~~ ✅ Risolti a favore di "Updated upstream" (14/07 pomeriggio); backend importabile
+8. ~~**TASK-1158:** Spike equivalente OKX Long/Short Ratio~~ ✅ Done (14/07): OKX HA endpoint rubik; `OKX_PERPETUAL_MAP["OKB"]=None` è un bug
+9. **TASK-1158-impl:** fix mappa `OKB→OKB-USDT-SWAP` + `LongShortRatioCollector` provider-aware OKX
+10. **TASK-1157:** verifica CVD grace period OKB-EUR dopo 100 trade
+11. **TASK-1155/1156:** Whale/On-chain OKX sources
+12. **TASK-1159:** ricalibrazione pesi dopo 2-3 sessioni reali
+13. **TASK-1100.G:** WS private OKX EEA (opzionale, workaround REST polling operativo)
 
 **File modificati:**
 - Nessuno - stato originale ripristinato
@@ -153,9 +160,9 @@ Le API key OKX EU live hanno permessi limitati per `/api/v5/trade/order` e `/api
 | Collector | Stato | Problema |
 |-----------|-------|----------|
 | Fear & Greed | 🟢 Funzionante | Nessuno |
-| Long/Short Ratio | 🟢 Hardcoded Binance | Non provider-aware (TASK-1153) |
-| Open Interest | 🟢 Hardcoded Binance | Non provider-aware (TASK-1153) |
-| Funding Rate | 🔴 Non funzionante | Hardcoded Binance, EUR pairs = skip |
+| Long/Short Ratio | 🟡 Provider-aware da fare | OKX HA endpoint rubik (`/api/v5/rubik/stat/contracts/long-short-account-ratio`, `ccy`) verificato per OKB (TASK-1158). Collector oggi ritorna ancora `None` su OKX (ramo hard-coded da rimuovere) |
+| Open Interest | 🟡 Bloccato da bug mappa | `OKX_PERPETUAL_MAP["OKB"]=None` è errato: `OKB-USDT-SWAP` esiste (OI ~16.4M USD verificato). Correggere a `"OKB-USDT-SWAP"` per sbloccare OI/funding/LSR su OKB |
+| Funding Rate | 🟡 Bloccato da bug mappa | Stesso bug `OKX_PERPETUAL_MAP["OKB"]=None`; `OKB-USDT-SWAP` esiste → correggere mappa (TASK-1153) |
 | CVD | 🔴 Grace period | 100 trade da monitorare (TASK-1157) |
 | Sentiment | 🟢 Funzionante (TASK-1154) | RSS fallback free + key in .env; fallback neutrale se tutte le fonti falliscono, cache 5 min |
 | Whale Alert | 🟡 Abilitato (TASK-1150) | Attivo su BTC/LTC (Blockchair); su OKB-EUR ritorna None → serve Whale Alert API (TASK-1154) |
@@ -164,6 +171,10 @@ Le API key OKX EU live hanno permessi limitati per `/api/v5/trade/order` e `/api
 | Spread | 🟡 Collezionato (TASK-1152) | Pubblico (/market/ticker); NON direzionale; **ora visibile nella lista diagnostico collector** (1 riga `spread` con status), ma wiring INTENZIONALMENTE OFF → non entra nel punteggio |
 
 **Totale:** 3/9 collezionati attivi (OBI pesato, Spread non pesato, Sentiment) + whale su BTC/LTC = 4/9
+
+> ⚠️ **Fix applicati 14/07 (pomeriggio):**
+> 1. **Merge conflict repo-wide risolti (37 blocchi su 8 file).** `signal_score_engine.py`, `router.py` (9), `supervisor_scheduler.py` (8), `signal_aggregator.py` (4), `supervisor_client.py` (2), `rsi_bollinger.py` (2), `main.py` (2), `strategy_selector.py` (1) erano committati con conflitti (`<<<<<<< Updated upstream` / `>>>>>>> Stashed changes`) → il backend non importava. Risolti tutti a favore di **Updated upstream** (coerente con l'epic collector e i log `[COVERAGE_REAL]` osservati). "Stashed changes" = WIP locale più vecchio, recuperabile via `git stash list` (`stash@{0}`). 2 test di `signal_aggregator` aggiornati al comportamento upstream (confidence 70/30, wording "threshold"). **Verificare in sessione reale prima del restart.**
+> 2. **`order_book_imbalance.py` + `spread.py` (TASK-1151 regression fix).** I collector passavano `self.symbol` (= `OKBEUR`, uppercase senza dash) a OKX `/market/books` e `/market/ticker`, ma OKX richiede `OKB-EUR` → `code!=0` → `None` in produzione (OBI mostrava `NONE` nonostante TASK-1151 "Done"). Ora normalizzano via `_normalize_okx_symbol()` (es. `OKBEUR → OKB-EUR`). Aggiunto test di regressione `test_collect_normalizes_compact_symbol_to_okx_instid`.
 
 **Formato log diagnostico collector (`[COLLECTORS_DIAG_TEMP]`):** da TASK-1152 il log è **multi-riga, una riga per collector** (`symbol | collector | active | status`) per leggibilità a colpo d'occhio. È **temporaneo** (appesantisce i log) → da ricompattare in unica riga quando il debug non serve più. Lo `spread` compare in lista con `status=OK/NONE/ERROR` pur restando `wiring OFF`.
 

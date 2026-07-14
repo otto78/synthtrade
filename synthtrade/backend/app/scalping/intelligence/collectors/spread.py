@@ -26,6 +26,7 @@ from typing import Optional
 import httpx
 
 from app.scalping.models.intelligence import SpreadSnapshot
+from app.scalping.engine.okx_ws_client import _normalize_okx_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -63,10 +64,15 @@ class SpreadCollector:
         if not self._cb.is_available():
             return None
 
+        # Normalizza il simbolo nel formato instId OKX (es. OKBEUR -> OKB-EUR).
+        # L'engine passa self.symbol gia' uppercase-senza-dash (es. "OKBEUR");
+        # OKX richiede il dash per l'endpoint /market/ticker, altrimenti code!=0.
+        inst_id = _normalize_okx_symbol(symbol)
+
         for attempt in range(self._max_retries):
             try:
                 async with httpx.AsyncClient(timeout=self._timeout) as client:
-                    params = {"instId": symbol}
+                    params = {"instId": inst_id}
                     response = await client.get(OKX_TICKER_URL, params=params)
                     response.raise_for_status()
 
@@ -100,11 +106,11 @@ class SpreadCollector:
                     logger.info(
                         "[COLLECTORS_DIAG_TEMP] spread symbol=%s spread_pct=%.4f "
                         "rolling_avg=%.4f ratio=%.2f anomalous=%s (wiring OFF)",
-                        symbol, spread_pct, rolling_avg, ratio, is_anomalous,
+                        inst_id, spread_pct, rolling_avg, ratio, is_anomalous,
                     )
 
                     return SpreadSnapshot(
-                        symbol=symbol,
+                        symbol=inst_id,
                         bid=bid,
                         ask=ask,
                         mid_price=mid,

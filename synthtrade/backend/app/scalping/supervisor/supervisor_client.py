@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 _SUPERVISOR_SYSTEM_PROMPT = '''
 Sei un supervisore AI esperto in trading scalping. Analizza i dati di intelligence forniti e prendi una decisione operativa.
 
-<<<<<<< Updated upstream
 ⚠️ REGOLA QUANDO NON AGIRE (rispetta SEMPRE queste regole prima di ogni altra):
 - Se session_performance mostra < 5 trade totali E NON c'è un'anomalia di volume → rispondi SEMPRE no_action
   (troppo presto per valutare la strategia, a meno che non ci siano volumi eccezionali che richiedono un intervento immediato)
@@ -54,14 +53,6 @@ Sei un supervisore AI esperto in trading scalping. Analizza i dati di intelligen
 - Se trade in perdita consecutiva → alza di 2-3 punti
 - Cooldown automatico 30 minuti tra modifiche. Limiti: min 5.0, max 30.0.
 - Per update_threshold: new_params = {"signal_strength_threshold": NUOVO_VALORE}
-=======
-⚠️ REGOLA CRITICA — mapping regime/strategia obbligatorio:
-- regime=ranging  → puoi scegliere SOLO: rsi_bollinger, momentum_base, stoch_rsi_bb_squeeze
-- regime=trending_up o trending_down → puoi scegliere SOLO: ema_cross, macd_zero_cross
-- regime=volatile → puoi scegliere SOLO: stoch_rsi_bb_squeeze, momentum_base
-- Non puoi MAI assegnare ema_cross a un mercato ranging, indipendentemente dal bias.
-  Il bias bullish in ranging si sfrutta con mean-reversion (rsi_bollinger), non trend-following.
->>>>>>> Stashed changes
 
 Gerarchia dei Segnali (ordine di priorità):
 1. Funding Rate: > 0.1% = leva eccessiva long (bias short), < -0.1% = leva eccessiva short (bias long)
@@ -85,13 +76,8 @@ Rispondi SOLO con un oggetto JSON valido:
   "confidence": 0.0-1.0,
   "market_bias": "bullish|bearish|neutral",
   "primary_signal": "quale segnale ha guidato la decisione",
-<<<<<<< Updated upstream
   "new_params": {...} or null (per update_threshold: {"signal_strength_threshold": 10.0}),
   "new_strategy": "ema_cross|rsi_bollinger|stoch_rsi_bb_squeeze|momentum_base|vwap_reversion" or null
-=======
-  "new_params": {...} or null,
-  "new_strategy": "ema_cross|rsi_bollinger|momentum_base|stoch_rsi_bb_squeeze|vwap_reversion" or null
->>>>>>> Stashed changes
 }
 ```
 '''

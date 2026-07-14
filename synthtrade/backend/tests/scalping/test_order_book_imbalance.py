@@ -41,6 +41,24 @@ class TestOrderBookImbalanceCollector:
         assert abs(result.imbalance) < 1e-6
 
     @pytest.mark.asyncio
+    async def test_collect_normalizes_compact_symbol_to_okx_instid(self):
+        """Regression (TASK-1151): lo stream passa self.symbol in formato
+        uppercase-senza-dash (es. OKBEUR). Il collector DEVE normalizzarlo in
+        OKB-EUR prima della chiamata a /market/books, altrimenti OKX ritorna
+        code!=0 e il collector torna None in produzione (bug silenzioso)."""
+        book = {"bids": [["100.0", "10.0"]], "asks": [["100.1", "10.0"]]}
+        resp = _mock_response("0", [book])
+
+        fake = AsyncMock(return_value=resp)
+        collector = OrderBookImbalanceCollector()
+        with patch("httpx.AsyncClient.get", fake):
+            result = await collector.collect("OKBEUR")
+
+        assert result is not None
+        assert fake.call_args.kwargs["params"]["instId"] == "OKB-EUR"
+        assert result.symbol == "OKB-EUR"
+
+    @pytest.mark.asyncio
     async def test_fetch_success_bid_heavy(self):
         """Molto piu' liquidita' bid -> imbalance vicino a +1."""
         book = {

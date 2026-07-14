@@ -66,17 +66,7 @@ class RSIBollingerStrategy(AbstractScalpingStrategy):
         candles: List[Candle],
         indicators: Optional[dict] = None,
     ) -> TechnicalSignal:
-<<<<<<< Updated upstream
         """Valuta RSI e BB per segnale di timing con soglie dinamiche."""
-=======
-        """Valuta RSI e BB per segnale di timing.
-
-        Soglie calibrate per mercato ranging a bassa volatilità:
-        - RSI oversold 38 (era 30) — cattura mean-reversion anche su range stretti
-        - RSI overbought 62 (era 70) — simmetrico
-        - BB tolleranza 1.5% (era 1%) — più spazio in volumi laterali
-        """
->>>>>>> Stashed changes
         if len(candles) < 20:
             return TechnicalSignal(type="NONE", confidence=0.0)
 
@@ -87,7 +77,6 @@ class RSIBollingerStrategy(AbstractScalpingStrategy):
         bb_lower = ind.get("bb_lower", 0)
         bb_upper = ind.get("bb_upper", 0)
 
-<<<<<<< Updated upstream
         # Calcola soglie dinamiche basate su ATR%
         atr_pct = _calculate_atr_percent(candles)
         
@@ -128,22 +117,6 @@ class RSIBollingerStrategy(AbstractScalpingStrategy):
                 type="SELL",
                 confidence=confidence,
                 source=f"{self.name}(atr={atr_pct:.2f}%)",
-=======
-        # Oversold: RSI sotto soglia e prezzo vicino BB bassa
-        if rsi < 38 and close <= bb_lower * 1.015:
-            return TechnicalSignal(
-                type="BUY",
-                confidence=0.6,  # Confidence leggermente ridotta per evitare falsi
-                source=self.name,
-            )
-
-        # Overbought: RSI sopra soglia e prezzo vicino BB alta
-        if rsi > 62 and close >= bb_upper * 0.985:
-            return TechnicalSignal(
-                type="SELL",
-                confidence=0.6,
-                source=self.name,
->>>>>>> Stashed changes
             )
 
         return TechnicalSignal(type="NONE", confidence=0.0)

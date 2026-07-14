@@ -127,7 +127,7 @@ class TestSignalAggregator:
 
         assert result.execute is False
         assert result.reason is not None
-        assert "soglia" in result.reason.lower()
+        assert "threshold" in result.reason.lower()
 
     def test_blocks_neutral(self):
         """Bias neutrale blocca il trade."""
@@ -179,5 +179,6 @@ class TestSignalAggregator:
 
         result = self.aggregator.should_execute(technical, score)
 
-        # signal_strength/100 = 0.8, technical = 0.9 -> media = 0.85
-        assert result.confidence == pytest.approx(0.85, rel=0.01)
+        # upstream weighting: 70% tecnico / 30% intelligence
+        # signal_strength/100 = 0.8, technical = 0.9 -> 0.8*0.3 + 0.9*0.7 = 0.87
+        assert result.confidence == pytest.approx(0.87, rel=0.01)

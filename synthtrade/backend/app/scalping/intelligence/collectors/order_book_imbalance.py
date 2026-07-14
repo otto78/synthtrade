@@ -22,6 +22,7 @@ from typing import Optional
 import httpx
 
 from app.scalping.models.intelligence import OrderBookImbalance
+from app.scalping.engine.okx_ws_client import _normalize_okx_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +48,15 @@ class OrderBookImbalanceCollector:
         if not self._cb.is_available():
             return None
 
+        # Normalizza il simbolo nel formato instId OKX (es. OKBEUR -> OKB-EUR).
+        # L'engine passa self.symbol gia' uppercase-senza-dash (es. "OKBEUR");
+        # OKX richiede il dash per l'endpoint /market/books, altrimenti code!=0.
+        inst_id = _normalize_okx_symbol(symbol)
+
         for attempt in range(self._max_retries):
             try:
                 async with httpx.AsyncClient(timeout=self._timeout) as client:
-                    params = {"instId": symbol, "sz": str(self._depth)}
+                    params = {"instId": inst_id, "sz": str(self._depth)}
                     response = await client.get(OKX_BOOKS_URL, params=params)
                     response.raise_for_status()
 
@@ -75,7 +81,7 @@ class OrderBookImbalanceCollector:
 
                     imbalance = float((bid_depth - ask_depth) / (bid_depth + ask_depth))
                     return OrderBookImbalance(
-                        symbol=symbol,
+                        symbol=inst_id,
                         bid_depth=bid_depth,
                         ask_depth=ask_depth,
                         imbalance=imbalance,

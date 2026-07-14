@@ -1,10 +1,6 @@
 """SignalScoreEngine — aggrega tutti i collector in uno score normalizzato.
 
-<<<<<<< Updated upstream
 Pesi configurabili (relativi; somma non vincolata a 1.0 — l'engine normalizza):
-=======
-Pesi configurabili (somma = 1.0):
->>>>>>> Stashed changes
   funding_rate:     0.20  (segnale contrarian affidabile)
   cvd:              0.20  (pressione reale di mercato)
   open_interest:    0.15  (contesto esposizione)
@@ -13,10 +9,7 @@ Pesi configurabili (somma = 1.0):
   whale:            0.10  (movimenti on-chain massicci)
   sentiment:        0.05  (news, rumoroso su simboli non-BTC/ETH)
   onchain:          0.0   (escluso: richiede Dune query IDs)
-<<<<<<< Updated upstream
   order_book_imbalance: 0.15  (TASK-1151, peso provvisorio; da ricalibrare in Fase 6)
-=======
->>>>>>> Stashed changes
 
 Il SignalScoreEngine:
   1. Chiama ogni collector in parallelo
@@ -62,18 +55,12 @@ from app.scalping.intelligence.collectors.order_book_imbalance import OrderBookI
 from app.scalping.intelligence.collectors.spread import SpreadCollector
 from app.config import settings
 
-<<<<<<< Updated upstream
 # Pesi normalizzati per ogni fonte (relativi; la somma NON deve essere 1.0).
 # OnChain rimosso (richiede Dune query IDs, non utile per scalping intraday)
 # Sentiment ridotto perche' rumoroso su simboli non-BTC/ETH
 # order_book_imbalance aggiunto in TASK-1151 con peso provvisorio (da ricalibrare in Fase 6).
 # NOTA: i pesi sono relativi; l'engine normalizza dividendo per il total_weight risposto,
 # quindi aggiungere un peso provvisorio > 1.0 non altera il contributo dei collector esistenti.
-=======
-# Pesi normalizzati per ogni fonte (somma = 1.0)
-# OnChain rimosso (richiede Dune query IDs, non utile per scalping intraday)
-# Sentiment ridotto perche' rumoroso su simboli non-BTC/ETH
->>>>>>> Stashed changes
 DEFAULT_WEIGHTS: Dict[str, float] = {
     "funding_rate": 0.20,
     "cvd": 0.20,
@@ -83,10 +70,7 @@ DEFAULT_WEIGHTS: Dict[str, float] = {
     "whale": 0.10,
     "sentiment": 0.05,
     "onchain": 0.0,
-<<<<<<< Updated upstream
     "order_book_imbalance": 0.15,  # TASK-1151 (peso provvisorio)
-=======
->>>>>>> Stashed changes
 }
 
 
@@ -317,20 +301,7 @@ class SignalScoreEngine:
         collector_tasks.append(self._spread.collect(self.symbol))
 
         try:
-<<<<<<< Updated upstream
             results = await asyncio.gather(*collector_tasks, return_exceptions=True)
-=======
-            results = await asyncio.gather(
-                self._funding_rate.collect(futures_symbol),
-                self._open_interest.collect(futures_symbol),
-                self._long_short.collect(futures_symbol),
-                self._fear_greed.collect(),
-                self._sentiment.collect(self.symbol),
-                self._whale.collect(self.symbol),
-                self._onchain.collect(self.symbol),
-                return_exceptions=True
-            )
->>>>>>> Stashed changes
         except asyncio.CancelledError:
             logger.debug("get_snapshot cancelled (shutdown)")
             return MarketIntelSnapshot(symbol=self.symbol)
@@ -421,7 +392,6 @@ class SignalScoreEngine:
         # (meno di 100 trades accumulati) per non falsare lo score con CVD=0
         trades_count = 0  # default per logging e grace period
         if cvd_data is not None:
-<<<<<<< Updated upstream
             trades_count = getattr(self._cvd_calculator, '_trades_since_reset', 0) if self._cvd_calculator else 0
             if trades_count < 100 and self._cvd_calculator is not None:
                 logger.debug(
@@ -436,14 +406,6 @@ class SignalScoreEngine:
                 breakdown["cvd"] = round(cvd_score, 2)
                 weighted_score += cvd_score * self.weights.get("cvd", 0.20)
                 total_weight += self.weights.get("cvd", 0.20)
-=======
-            cvd_score = CVDCalculator.cvd_to_score(
-                cvd_data.cvd, Decimal("1000")
-            )
-            breakdown["cvd"] = round(cvd_score, 2)
-            weighted_score += cvd_score * self.weights.get("cvd", 0.20)
-            total_weight += self.weights.get("cvd", 0.20)
->>>>>>> Stashed changes
 
         # Open Interest — usa baseline rolling dinamica invece di valore fisso
         if oi is not None:
@@ -490,7 +452,6 @@ class SignalScoreEngine:
             onchain_score = OnChainCollector.onchain_to_score(onchain)
             breakdown["onchain"] = round(onchain_score, 2)
             # Peso 0.0: non contribuisce a weighted_score ne' a total_weight
-<<<<<<< Updated upstream
 
         # Order Book Imbalance — sempre supportato su spot OKX (incluso OKB-EUR)
         if obi is not None:
@@ -498,8 +459,6 @@ class SignalScoreEngine:
             breakdown["order_book_imbalance"] = round(obi_score, 2)
             weighted_score += obi_score * self.weights.get("order_book_imbalance", 0.15)
             total_weight += self.weights.get("order_book_imbalance", 0.15)
-=======
->>>>>>> Stashed changes
 
         # Normalizza lo score se non tutti i collector hanno risposto
         if total_weight > 0:
@@ -510,7 +469,6 @@ class SignalScoreEngine:
         # I collector restituiscono già un valore scalato [-100..+100]
         total = max(-100.0, min(100.0, round(normalized_score, 1)))
 
-<<<<<<< Updated upstream
         # Determina bias e tradeable — soglia letta da config loader runtime (aggiornabile da Supervisor)
         # NOTA: la soglia viene riletta a ogni get_snapshot() dal config loader, che fa merge
         # settings.env + override DB. Questo permette al Supervisor di modificare la soglia
@@ -553,20 +511,6 @@ class SignalScoreEngine:
 
         # Gate 1: Skip se coverage insufficiente (meno del 50% dei dati disponibili)
         if coverage < 0.5:
-=======
-        # Determina bias con soglia scalata alla coverage dei collector
-        # coverage = somma pesi collector che hanno risposto (0..1)
-        # Con coverage=1.0 (tutti): soglia=threshold
-        # Con coverage=0.30 (3 collector): soglia=threshold * 0.30 = ~4.5
-        coverage = total_weight
-        effective_threshold = self.threshold * coverage
-
-        if total >= effective_threshold:
-            bias = "bullish"
-        elif total <= -effective_threshold:
-            bias = "bearish"
-        else:
->>>>>>> Stashed changes
             bias = "neutral"
             tradeable = False
             effective_threshold = runtime_threshold  # per debug log
@@ -584,7 +528,6 @@ class SignalScoreEngine:
             
             tradeable = abs(total) >= effective_threshold and bias != "neutral"
 
-<<<<<<< Updated upstream
         # DEBUG: log dettagliato per diagnosticare scala reale dei collector
         logger.debug(
             "[ScoreEngine DEBUG] id=%s raw_scores=%s | weighted_sum=%.4f | total_weight=%.4f | "
@@ -619,17 +562,6 @@ class SignalScoreEngine:
         
         # Calcola trend
         trend_5m, velocity, trend_direction = self._calculate_trend(computed_at)
-=======
-        # Tradeable con la stessa soglia scalata
-        tradeable = abs(total) >= effective_threshold and bias != "neutral"
-
-        logger.debug(
-            f"[ScoreEngine] {self.symbol} total={total:.1f} "
-            f"coverage={coverage:.2f} eff_threshold={effective_threshold:.1f} "
-            f"bias={bias} tradeable={tradeable} "
-            f"collectors={list(breakdown.keys())}"
-        )
->>>>>>> Stashed changes
 
         signal_score = SignalScore(
             total=total,

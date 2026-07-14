@@ -149,6 +149,26 @@ class WhaleData(BaseModel):
     collected_at: datetime = Field(default_factory=_utcnow)
 
 
+class OrderBookImbalance(BaseModel):
+    """Order Book Imbalance da OKX public market data (endpoint /market/books).
+
+    Funziona su qualsiasi coppia spot OKX (incluso OKB-EUR) perché non dipende
+    da un mercato futures.
+
+    imbalance = (bid_depth - ask_depth) / (bid_depth + ask_depth)
+      > 0 -> piu liquidita' bid -> pressione rialzista
+      < 0 -> piu liquidita' ask -> pressione ribassista
+    """
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str
+    bid_depth: Decimal = Field(..., description="Somma delle quantità sui primi N livelli bid")
+    ask_depth: Decimal = Field(..., description="Somma delle quantità sui primi N livelli ask")
+    imbalance: float = Field(..., ge=-1.0, le=1.0, description="Imbalance normalizzato: -1.0 (solo ask) a +1.0 (solo bid)")
+    timestamp: datetime
+    collected_at: datetime = Field(default_factory=_utcnow)
+
+
 # ──────────────────────────────────────────────
 # Score aggregato
 # ──────────────────────────────────────────────
@@ -201,5 +221,6 @@ class MarketIntelSnapshot(BaseModel):
     onchain: Optional[OnChainData] = None
     sentiment: Optional[SentimentData] = None
     whale: Optional[WhaleData] = None
+    order_book_imbalance: Optional[OrderBookImbalance] = None
     signal_score: Optional[SignalScore] = None
     snapshot_at: datetime = Field(default_factory=_utcnow)

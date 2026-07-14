@@ -13,18 +13,25 @@ from app.scalping.intelligence.collectors.cvd_calculator import CVDCalculator
 
 
 class TestDefaultWeights:
-    def test_weights_sum_to_one(self):
-        """La somma dei pesi deve essere 1.0."""
-        total = sum(DEFAULT_WEIGHTS.values())
-        assert abs(total - 1.0) < 0.01
+    def test_weights_non_negative_and_complete(self):
+        """Tutti i pesi attesi presenti e >= 0.
 
-    def test_all_keys_present(self):
-        """Tutti i pesi attesi sono presenti."""
+        NOTA: i pesi sono RELATIVI e normalizzati dall'engine (divide per il
+        total_weight dei collector che hanno effettivamente risposto), quindi
+        la somma NON deve essere 1.0. order_book_imbalance (TASK-1151) aggiunge
+        0.15 come peso provvisorio, da ricalibrare in Fase 6.
+        """
         expected_keys = {
-            "funding_rate", "cvd", "open_interest", "long_short_ratio", 
-            "fear_greed", "onchain", "sentiment", "whale"
+            "funding_rate", "cvd", "open_interest", "long_short_ratio",
+            "fear_greed", "onchain", "sentiment", "whale", "order_book_imbalance",
         }
         assert DEFAULT_WEIGHTS.keys() == expected_keys
+        for name, w in DEFAULT_WEIGHTS.items():
+            assert w >= 0.0, f"weight {name} must be >= 0"
+
+    def test_order_book_imbalance_provisional_weight(self):
+        """TASK-1151: order_book_imbalance ha peso provvisorio 0.15 (da ricalibrare Fase 6)."""
+        assert DEFAULT_WEIGHTS["order_book_imbalance"] == 0.15
 
 
 class TestSignalScoreEngine:

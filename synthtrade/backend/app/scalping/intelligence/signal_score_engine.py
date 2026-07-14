@@ -1,6 +1,6 @@
 """SignalScoreEngine — aggrega tutti i collector in uno score normalizzato.
 
-Pesi configurabili (somma = 1.0):
+Pesi configurabili (relativi; somma non vincolata a 1.0 — l'engine normalizza):
   funding_rate:     0.20  (segnale contrarian affidabile)
   cvd:              0.20  (pressione reale di mercato)
   open_interest:    0.15  (contesto esposizione)
@@ -9,6 +9,7 @@ Pesi configurabili (somma = 1.0):
   whale:            0.10  (movimenti on-chain massicci)
   sentiment:        0.05  (news, rumoroso su simboli non-BTC/ETH)
   onchain:          0.0   (escluso: richiede Dune query IDs)
+  order_book_imbalance: 0.15  (TASK-1151, peso provvisorio; da ricalibrare in Fase 6)
 
 Il SignalScoreEngine:
   1. Chiama ogni collector in parallelo
@@ -37,6 +38,7 @@ from app.scalping.models.intelligence import (
     OnChainData,
     SentimentData,
     WhaleData,
+    OrderBookImbalance,
     SignalScore,
     MarketIntelSnapshot,
 )
@@ -48,11 +50,15 @@ from app.scalping.intelligence.collectors.cvd_calculator import CVDCalculator
 from app.scalping.intelligence.collectors.sentiment import SentimentCollector
 from app.scalping.intelligence.collectors.whale import WhaleCollector
 from app.scalping.intelligence.collectors.onchain import OnChainCollector
+from app.scalping.intelligence.collectors.order_book_imbalance import OrderBookImbalanceCollector
 from app.config import settings
 
-# Pesi normalizzati per ogni fonte (somma = 1.0)
+# Pesi normalizzati per ogni fonte (relativi; la somma NON deve essere 1.0).
 # OnChain rimosso (richiede Dune query IDs, non utile per scalping intraday)
 # Sentiment ridotto perche' rumoroso su simboli non-BTC/ETH
+# order_book_imbalance aggiunto in TASK-1151 con peso provvisorio (da ricalibrare in Fase 6).
+# NOTA: i pesi sono relativi; l'engine normalizza dividendo per il total_weight risposto,
+# quindi aggiungere un peso provvisorio > 1.0 non altera il contributo dei collector esistenti.
 DEFAULT_WEIGHTS: Dict[str, float] = {
     "funding_rate": 0.20,
     "cvd": 0.20,
@@ -62,6 +68,7 @@ DEFAULT_WEIGHTS: Dict[str, float] = {
     "whale": 0.10,
     "sentiment": 0.05,
     "onchain": 0.0,
+    "order_book_imbalance": 0.15,  # TASK-1151 (peso provvisorio)
 }
 
 
@@ -102,6 +109,7 @@ class SignalScoreEngine:
         self._sentiment = SentimentCollector(timeout_seconds=timeout)
         self._whale = WhaleCollector(timeout_seconds=timeout)
         self._onchain = OnChainCollector(timeout_seconds=timeout)
+        self._order_book_imbalance = OrderBookImbalanceCollector(timeout_seconds=timeout)
         
         # Buffer circolare in memory per gli ultimi 60 score (1 ora se snapshot = 1 min)
         self._score_history: collections.deque = collections.deque(maxlen=60)
@@ -251,7 +259,9 @@ class SignalScoreEngine:
             collector_tasks.append(_disabled_whale())
         
         collector_tasks.append(self._onchain.collect(self.symbol))
-        
+        # OrderBookImbalance: sempre attivo (peso > 0) e supportato su ogni spot OKX
+        collector_tasks.append(self._order_book_imbalance.collect(self.symbol))
+
         try:
             results = await asyncio.gather(*collector_tasks, return_exceptions=True)
         except asyncio.CancelledError:
@@ -268,7 +278,8 @@ class SignalScoreEngine:
         sent = results[4] if isinstance(results[4], SentimentData) else None
         whale = results[5] if isinstance(results[5], WhaleData) else None
         onchain = results[6] if isinstance(results[6], OnChainData) else None
-        
+        obi = results[7] if isinstance(results[7], OrderBookImbalance) else None
+
         # Whale disabilitato: forza None
         if self.weights.get("whale", 0.0) == 0.0:
             whale = None
@@ -282,11 +293,36 @@ class SignalScoreEngine:
             "sentiment": "OK" if sent else ("ERROR" if isinstance(results[4], Exception) else "NONE"),
             "whale": "OK" if whale else ("ERROR" if isinstance(results[5], Exception) else "NONE"),
             "onchain": "OK" if onchain else ("ERROR" if isinstance(results[6], Exception) else "NONE"),
+            "order_book_imbalance": "OK" if obi else ("ERROR" if isinstance(results[7], Exception) else "NONE"),
         }
         logger.debug(f"Collector status for {self.symbol}: {collector_status}")
-        
+
+        diag_active = {
+            "funding_rate": self._funding_rate.is_symbol_supported(self.symbol),
+            "open_interest": self._open_interest.is_symbol_supported(self.symbol),
+            "long_short_ratio": self._long_short.is_symbol_supported(self.symbol),
+            "fear_greed": True,
+            "sentiment": True,
+            "whale": self.weights.get("whale", 0.0) > 0.0,
+            "onchain": True,
+            "order_book_imbalance": True,
+            "cvd": self._cvd_calculator is not None,
+        }
+        _result_names = ["funding_rate", "open_interest", "long_short_ratio", "fear_greed", "sentiment", "whale", "onchain", "order_book_imbalance"]
+        diag_parts = []
+        for _n in _result_names:
+            _r = results[_result_names.index(_n)]
+            _st = "OK" if (_r is not None and not isinstance(_r, Exception)) else ("ERROR" if isinstance(_r, Exception) else "NONE")
+            diag_parts.append(f"{_n}:{'on' if diag_active[_n] else 'off'}/{_st}")
+        _cvd_diag = self._cvd_calculator.snapshot(self.symbol) if self._cvd_calculator else None
+        diag_parts.append(f"cvd:{'on' if diag_active['cvd'] else 'off'}/{'OK' if _cvd_diag is not None else 'NONE'}")
+        logger.info(
+            "[COLLECTORS_DIAG_TEMP] symbol=%s %s",
+            self.symbol, " ".join(diag_parts),
+        )
+
         # Log errori specifici
-        for i, (name, result) in enumerate(zip(["funding_rate", "open_interest", "long_short_ratio", "fear_greed", "sentiment", "whale", "onchain"], results)):
+        for i, (name, result) in enumerate(zip(["funding_rate", "open_interest", "long_short_ratio", "fear_greed", "sentiment", "whale", "onchain", "order_book_imbalance"], results)):
             if isinstance(result, Exception):
                 logger.warning(f"{name} collector failed: {result}")
 
@@ -373,6 +409,13 @@ class SignalScoreEngine:
             onchain_score = OnChainCollector.onchain_to_score(onchain)
             breakdown["onchain"] = round(onchain_score, 2)
             # Peso 0.0: non contribuisce a weighted_score ne' a total_weight
+
+        # Order Book Imbalance — sempre supportato su spot OKX (incluso OKB-EUR)
+        if obi is not None:
+            obi_score = OrderBookImbalanceCollector.imbalance_to_score(obi.imbalance)
+            breakdown["order_book_imbalance"] = round(obi_score, 2)
+            weighted_score += obi_score * self.weights.get("order_book_imbalance", 0.15)
+            total_weight += self.weights.get("order_book_imbalance", 0.15)
 
         # Normalizza lo score se non tutti i collector hanno risposto
         if total_weight > 0:

@@ -8,6 +8,7 @@ from app.scalping.intelligence.collectors.cvd_calculator import CVDCalculator
 from app.scalping.intelligence.collectors.sentiment import SentimentCollector
 from app.scalping.intelligence.collectors.whale import WhaleCollector
 from app.scalping.intelligence.collectors.onchain import OnChainCollector
+from app.scalping.intelligence.collectors.order_book_imbalance import OrderBookImbalanceCollector
 
 __all__ = [
     "FundingRateCollector",
@@ -18,4 +19,5 @@ __all__ = [
     "SentimentCollector",
     "WhaleCollector",
     "OnChainCollector",
+    "OrderBookImbalanceCollector",
 ]

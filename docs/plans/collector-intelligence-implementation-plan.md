@@ -40,7 +40,7 @@ Fornisce il log `[COVERAGE_REAL]` in `signal_score_engine.py` con `real_coverage
 
 ### TASK-1150 — Abilitare whale collector + verificare sentiment su OKX
 
-**Status:** Pending
+**Status:** ✅ Done (14/07/2026)
 **Priorità:** 🔴 Alta — zero rischio, zero codice nuovo
 **Stima:** 30 minuti
 **Dipendenze:** nessuna
@@ -48,14 +48,18 @@ Fornisce il log `[COVERAGE_REAL]` in `signal_score_engine.py` con `real_coverage
 **Obiettivo:** Il collector `whale` (Whale Alert RSS + Blockchair, TASK-804) è già implementato e indipendente dall'exchange, ma disabilitato di default. Il collector `sentiment` (CryptoCompare + NewsAPI, TASK-804) è anch'esso indipendente dall'exchange ma non è mai stato riverificato con OKX attivo — nei log notturni del 29-30/06 risultava intermittente per un problema DNS locale, non dell'endpoint.
 
 **Modifiche:**
-1. In `.env`: `SCALPING_WHALE_ENABLED=true`
+1. In `synthtrade/backend/.env`: `SCALPING_WHALE_ENABLED=true`
 2. Verificare in log se la sola fonte Blockchair (senza `WHALE_ALERT_API_KEY`) produce dati utilizzabili, o se serve la key
 3. Avviare una sessione paper/demo e osservare per 30-60 minuti se `sentiment` risponde regolarmente o se il problema DNS del 29-30/06 persiste
 
-**Verifica di completamento:**
-- Log mostra righe `whale` con valore popolato (non più sempre `None`)
-- `[COVERAGE_REAL]` (TASK-1125) mostra un aumento del `configurable_total` e, se whale risponde, del `responded_weight`
-- Se `sentiment` risulta ancora intermittente, aprire nota separata per robustezza DNS/retry — non bloccante per questo task
+**Verifica di completamento (risultati live 14/07/2026):**
+- `SCALPING_WHALE_ENABLED=true` applicato in `synthtrade/backend/.env` (verificato a runtime: `settings.scalping.SCALPING_WHALE_ENABLED == True`).
+- Whale collector (Blockchair, no key): risponde con dati reali per BTC/LTC (`large_transfer_volume` popolato, es. BTC `volume≈992297`), ma per il simbolo operativo **OKB-EUR ritorna `None`** (OKB non è una chain supportata — BTC/LTC/ETH/BNB — e il fallback news CryptoCompare per categoria `okb` trova 0 headline con keyword "whale"). → La sola fonte Blockchair **non è sufficiente per OKB-EUR**: conferma la necessità di TASK-1154/1155 (Whale Alert API a pagamento) per coprire il simbolo reale.
+- `[COVERAGE_REAL]` su OKB-EUR: `configurable_total` passa da **0.40 → 0.50** (whale ora nel denominatore). `responded_weight` non sale su OKB-EUR perché whale=None → whale resta in `no_response_transient` finché non risponde.
+- Sentiment: risponde regolarmente (score=0.0, `news_count=10`, source=`cryptocompare+newsapi+rss`). Il problema DNS del 29-30/06 **non si ripresenta** → nessuna nota separata di robustezza richiesta per questo task.
+- Nessun errore/eccezione propagata dallo ScoreEngine con whale abilitato.
+
+**Nota per fase successiva:** il whale collector abilitato aumenta la coverage potenziale ma, su OKB-EUR, contribuisce 0 allo score reale fino a quando non viene aggiunta una fonte whale-aware per OKB (vedi TASK-1154/1155).
 
 ---
 
@@ -65,10 +69,19 @@ Questi due collector funzionano su **qualunque** coppia spot OKX, incluso il sim
 
 ### TASK-1151 — OrderBookImbalanceCollector
 
-**Status:** Pending
+**Status:** ✅ Done (14/07/2026)
 **Priorità:** 🔴 Alta
 **Stima:** 3-4 ore
 **Dipendenze:** nessuna
+
+**Note di completamento:**
+- Collector implementato in `collectors/order_book_imbalance.py` (usa `/market/books`, pubblico, nessuna auth).
+- Modello `OrderBookImbalance` (`models/intelligence.py:152`): `imbalance` clampato a [-1, +1].
+- Wiring in `SignalScoreEngine`: peso provvisorio **0.15** in `DEFAULT_WEIGHTS`; `is_symbol_supported` sempre True (funziona su ogni spot OKX, incluso OKB-EUR).
+- Log diagnostico `[COLLECTORS_DIAG_TEMP]` mostra `order_book_imbalance:on/OK` su OKB-EUR.
+- Verifica live OKB-EUR: `imbalance ≈ -0.26` (più liquidità ask al momento del test) → coerente col segno.
+- Test: `tests/scalping/test_order_book_imbalance.py` (16 test, tutti verdi) + fix `test_signal_score_engine.py::TestDefaultWeights` (pesi relativi, somma non vincolata a 1.0).
+- Regressioni introdotte e risolte: `test_weights_sum_to_one`/`test_all_keys_present` aggiornati all'invariante "pesi relativi normalizzati". Suite scalping: **0 nuove regressioni** (48 fail pre-esistenti invariati, 184 pass).
 
 **Endpoint:** `GET https://eea.okx.com/api/v5/market/books?instId={instId}&sz=20` — pubblico, nessuna autenticazione.
 
@@ -101,18 +114,18 @@ class OrderBookImbalanceSnapshot(BaseModel):
 ```
 
 #### Red — Test
-- [ ] `test_fetch_success_balanced_book` — bid_depth ≈ ask_depth → imbalance ≈ 0
-- [ ] `test_fetch_success_bid_heavy` — bid_depth >> ask_depth → imbalance vicino a +1
-- [ ] `test_fetch_success_ask_heavy` — ask_depth >> bid_depth → imbalance vicino a -1
-- [ ] `test_fetch_empty_book` — book vuoto → `None` con log
-- [ ] `test_fetch_http_error` — 4xx/5xx → `None` con log, nessuna eccezione propagata
-- [ ] `test_imbalance_to_score_clamped` — 5 casi ai limiti (-1, -0.5, 0, 0.5, 1) → score in [-100, 100]
-- [ ] `test_is_symbol_supported_always_true`
+- [x] `test_fetch_success_balanced_book` — bid_depth ≈ ask_depth → imbalance ≈ 0
+- [x] `test_fetch_success_bid_heavy` — bid_depth >> ask_depth → imbalance vicino a +1
+- [x] `test_fetch_success_ask_heavy` — ask_depth >> bid_depth → imbalance vicino a -1
+- [x] `test_fetch_empty_book` — book vuoto → `None` con log
+- [x] `test_fetch_http_error` — 4xx/5xx → `None` con log, nessuna eccezione propagata
+- [x] `test_imbalance_to_score_clamped` — 5 casi ai limiti (-1, -0.5, 0, 0.5, 1) → score in [-100, 100]
+- [x] `test_is_symbol_supported_always_true`
 
 #### Green — Implementazione
-- [ ] File `synthtrade/backend/app/scalping/intelligence/collectors/order_book_imbalance.py`
-- [ ] Wiring in `SignalScoreEngine.WEIGHTS` con peso provvisorio (es. 0.15) — da ricalibrare in Fase 6
-- [ ] Nessuna dipendenza da futures o da altri collector
+- [x] File `synthtrade/backend/app/scalping/intelligence/collectors/order_book_imbalance.py`
+- [x] Wiring in `SignalScoreEngine.WEIGHTS` con peso provvisorio (0.15) — da ricalibrare in Fase 6
+- [x] Nessuna dipendenza da futures o da altri collector
 
 **Verifica di completamento:** in sessione su OKB-EUR, il collector risponde con dati reali (non `None`); l'`imbalance` calcolato confrontato a mano con lo stato dell'order book visibile su OKX UI nello stesso istante è coerente in segno.
 
@@ -306,7 +319,7 @@ Con 10-30 trade/giorno invece di centinaia, la cadenza naturale di alcuni collec
 |------|-------------|------|----------|------------|
 | TASK-1119/1125 | — | 0 | ✅ Done | — |
 | TASK-1150 | (invariato) | 1 | 🔴 Alta | nessuna |
-| TASK-1151 | (invariato) | 2 | 🔴 Alta | nessuna |
+| TASK-1151 | (invariato) | 2 | ✅ Done | nessuna |
 | TASK-1152 | (invariato) | 2 | 🟡 Media | nessuna |
 | TASK-1153 | TASK-1116.C, TASK-COLLECTOR-001 | 3 | 🟡 Media | TASK-1116.B (done) |
 | TASK-1154 | TASK-COLLECTOR-002 | 4 | 🟡 Media | TASK-1150 |

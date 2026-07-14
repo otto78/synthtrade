@@ -333,6 +333,19 @@ async def _restore_scalping_session(db) -> None:
                                     except Exception as hist_e:
                                         logger.warning("Could not fetch algo history for fill price: %s", hist_e)
                                 
+                                # Fallback: use current ticker price if algo history unavailable
+                                if not fill_price and bracket_id:
+                                    try:
+                                        ticker_price = await adapter.get_ticker_price(symbol)
+                                        if ticker_price and ticker_price > 0:
+                                            fill_price = ticker_price
+                                            logger.info(
+                                                "Using ticker price as fill approximation: %s @ %s",
+                                                symbol, ticker_price,
+                                            )
+                                    except Exception as ticker_e:
+                                        logger.warning("Could not fetch ticker price for fill approximation: %s", ticker_e)
+                                
                                 if trade_id:
                                     # Calculate PnL if we have fill price
                                     if fill_price and fill_price > 0:
@@ -345,13 +358,17 @@ async def _restore_scalping_session(db) -> None:
                                         pnl = gross_pnl - total_fees
                                         pnl_pct = (pnl / (entry_price * quantity)) * 100 if entry_price > 0 else 0
                                         
+                                        # Determine reason: if we got fill from algo history, we know TP/SL
+                                        # If we used ticker price fallback, we can't determine the reason
+                                        reason = "take_profit" if side == "BUY" and fill_price > entry_price else ("stop_loss" if side == "BUY" and fill_price < entry_price else "external_close")
+                                        
                                         db.table("scalping_trades").update({
                                             "status": "closed",
                                             "exit_price": fill_price,
                                             "pnl": round(pnl, 2),
                                             "pnl_pct": round(pnl_pct, 2),
                                             "exit_time": datetime.now(timezone.utc).isoformat(),
-                                            "signal_reason": "take_profit" if side == "BUY" and fill_price > entry_price else "stop_loss",
+                                            "signal_reason": reason,
                                         }).eq("id", trade_id).execute()
                                     else:
                                         # No fill price available - use entry price as fallback

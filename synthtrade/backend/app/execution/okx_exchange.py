@@ -745,23 +745,37 @@ class OkxExchangeAdapter:
 
         Used by _on_uds_reconnect_sync to detect if a bracket was executed
         during disconnection. Returns filled/cancelled algo orders.
+        
+        NOTE: OKX EU accounts may return 400 for orders-algo-history with ordType=oco.
+        Falls back to /api/v5/trade/fills endpoint which shows actual fills.
         """
         sym_ref = SymbolRef.from_okx(symbol) if "-" in symbol else SymbolRef.from_compact(symbol)
         results: list[dict] = []
 
+        # Try fills endpoint first (works on OKX EU)
         try:
-            path = "/api/v5/trade/orders-algo-history"
+            path = "/api/v5/trade/fills"
             url = settings.OKX_BASE_URL.rstrip("/") + path
             headers = self._sign_headers("GET", path)
-            params = {"instType": "SPOT", "instId": sym_ref.okx, "ordType": "oco"}
+            params = {"instType": "SPOT", "instId": sym_ref.okx}
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url, headers=headers, params=params)
                 if resp.status_code == 200:
                     data = resp.json()
                     if data.get("code") == "0":
-                        results.extend(data.get("data", []))
+                        # Convert fills to algo-like format for compatibility
+                        for fill in data.get("data", []):
+                            results.append({
+                                "algoId": fill.get("algoId"),
+                                "state": "effective",  # fills are always filled
+                                "avgPx": fill.get("fillPx"),
+                                "fillPx": fill.get("fillPx"),
+                                "ordType": fill.get("ordType", "oco"),
+                                "side": fill.get("side"),
+                                "instId": fill.get("instId"),
+                            })
         except Exception as e:
-            logger.warning("get_algo_orders_history failed for %s: %s", symbol, e)
+            logger.debug("get_algo_orders_history fills fallback failed for %s: %s", symbol, e)
 
         return results
 

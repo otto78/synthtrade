@@ -1329,6 +1329,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
         nonlocal client
         _first_candle = True
         _last_event_time = datetime.now(timezone.utc)
+        _ws_client_ref = None  # init before loop: assigned inside the body each iteration
         
         while _execution_state["session"]["status"] != "idle" and (_ws_client_ref is None or not _ws_client_ref._stop_event.is_set()):
             # Refresh client reference from state every iteration in case watchdog restarted it

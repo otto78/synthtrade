@@ -225,13 +225,17 @@ class OkxOrderEventStream:
         seen_algos = set()
         
         # Seed con ordini storici esistenti (non emetterli)
+        # NOTE: On OKX EU, algo orders (TP/SL) appear in orders-history with algoId populated
         try:
-            resp = await self._rest_request("GET", "/api/v5/trade/orders-history", params={"instType": "SPOT"})
+            resp = await self._rest_request("GET", "/api/v5/trade/orders-history", params={"instType": "SPOT", "state": "filled"})
             for item in resp.get("data", []):
                 oid = item.get("ordId")
-                if oid:
+                aid = item.get("algoId")
+                if oid and not aid:
                     seen_orders.add(oid)
-            logger.info("OKX REST polling: seeded %d historical orders", len(seen_orders))
+                if aid:
+                    seen_algos.add(aid)
+            logger.info("OKX REST polling: seeded %d historical orders, %d algo orders", len(seen_orders), len(seen_algos))
         except Exception as e:
             logger.warning("OKX REST polling: seed orders failed: %s", e)
         
@@ -244,11 +248,6 @@ class OkxOrderEventStream:
             logger.info("OKX REST polling: seeded %d pending algo orders", len(seen_algos))
         except Exception as e:
             logger.warning("OKX REST polling: seed pending algo failed: %s", e)
-        
-        # Seed also completed algo orders (TP/SL fills go here after execution)
-        # NOTE: orders-algo-history with ordType=oco returns 400 on OKX EU
-        # We'll seed this in the main loop using the adapter method instead
-        logger.info("OKX REST polling: skipping algo history seed (will use adapter fallback)")
         
         while self._running:
             try:
@@ -263,38 +262,34 @@ class OkxOrderEventStream:
                             await self._emit(norm)
                 
                 # 2. Fetch recently completed orders (filled/cancelled)
-                resp_hist = await self._rest_request("GET", "/api/v5/trade/orders-history", params={"instType": "SPOT"})
+                # NOTE: On OKX EU, algo orders (TP/SL) appear in orders-history with algoId populated
+                # We need to check both regular orders and algo orders in one call
+                resp_hist = await self._rest_request("GET", "/api/v5/trade/orders-history", params={"instType": "SPOT", "state": "filled"})
                 for item in resp_hist.get("data", []):
                     ord_id = item.get("ordId")
-                    if ord_id and ord_id not in seen_orders:
+                    algo_id = item.get("algoId")
+                    
+                    # Regular order (non-algo)
+                    if ord_id and ord_id not in seen_orders and not algo_id:
                         seen_orders.add(ord_id)
                         norm = self._normalize_order(item)
                         if norm:
                             await self._emit(norm)
-                
-                # 3. Fetch algo orders pending/active
-                resp_algo = await self._rest_request(
-                    "GET", 
-                    "/api/v5/trade/orders-algo-pending", 
-                    params={"instType": "SPOT", "ordType": "oco"}
-                )
-                for item in resp_algo.get("data", []):
-                    algo_id = item.get("algoId")
+                    
+                    # Algo order (TP/SL bracket)
                     if algo_id and algo_id not in seen_algos:
                         seen_algos.add(algo_id)
                         norm = self._normalize_algo_order(item)
                         if norm:
                             await self._emit(norm)
                 
-                # 4. Fetch filled orders with algoId (TP/SL fills appear here on OKX EU)
-                # NOTE: orders-algo-history returns 400 on OKX EU, but filled algo orders
-                # appear in orders-history with algoId field populated
-                resp_algo_filled = await self._rest_request(
+                # 3. Fetch algo orders pending/active (still need this for in-flight orders)
+                resp_algo = await self._rest_request(
                     "GET", 
-                    "/api/v5/trade/orders-history", 
-                    params={"instType": "SPOT", "state": "filled"}
+                    "/api/v5/trade/orders-algo-pending", 
+                    params={"instType": "SPOT", "ordType": "oco"}
                 )
-                for item in resp_algo_filled.get("data", []):
+                for item in resp_algo.get("data", []):
                     algo_id = item.get("algoId")
                     if algo_id and algo_id not in seen_algos:
                         seen_algos.add(algo_id)

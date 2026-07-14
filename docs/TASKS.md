@@ -232,7 +232,8 @@
 
 ### TASK-1150 — Abilitare whale collector + verificare sentiment su OKX
 
-**Status:** Pending — *supersede TASK-1116.C per la parte whale enable*
+**Status:** Done ✅  
+**Completato:** 2026-07-14
 **Priorità:** 🔴 Alta — zero rischio, zero codice nuovo
 **Stima:** 30 minuti
 **Dipendenze:** nessuna

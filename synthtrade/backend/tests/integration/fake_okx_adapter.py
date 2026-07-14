@@ -228,6 +228,18 @@ class FakeOkxAdapter:
             del self.open_brackets[bid]
         self.cancelled_orders.append(symbol)
 
+    # ── Intelligence collector adapters (TASK-1153) ─────────────────────────────
+    # Read-only perpetual data consumed by OpenInterestCollector / FundingRateCollector
+    # when EXCHANGE_PROVIDER=okx. Configurable so tests can assert OKX-native calls.
+
+    async def get_open_interest(self, base_asset: str) -> Optional[float]:
+        self.calls.append(f"get_open_interest({base_asset})")
+        return getattr(self, "open_interest_value", None)
+
+    async def get_funding_rate(self, base_asset: str) -> Optional[float]:
+        self.calls.append(f"get_funding_rate({base_asset})")
+        return getattr(self, "funding_rate_value", None)
+
     # ── Test helpers ─────────────────────────────────────────────────────────
 
     def reset_calls(self) -> None:

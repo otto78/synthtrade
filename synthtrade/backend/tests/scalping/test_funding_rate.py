@@ -19,7 +19,7 @@ class TestFundingRateCollector:
 
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json = AsyncMock(return_value=[
+        mock_response.json = MagicMock(return_value=[
             {
                 "symbol": "BTCUSDT",
                 "fundingRate": "0.0001",
@@ -45,7 +45,7 @@ class TestFundingRateCollector:
 
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json = AsyncMock(return_value=[
+        mock_response.json = MagicMock(return_value=[
             {
                 "symbol": "BTCUSDT",
                 "fundingRate": "-0.0005",
@@ -68,7 +68,7 @@ class TestFundingRateCollector:
 
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json = AsyncMock(return_value=[])
+        mock_response.json = MagicMock(return_value=[])
         mock_response.raise_for_status = MagicMock()
 
         collector = FundingRateCollector()
@@ -131,6 +131,6 @@ class TestFundingRateCollector:
         assert score == 0.0
 
     def test_rate_to_score_clamped(self):
-        """Score non supera +/- 25."""
+        """Raw score non supera +/- 100 (il peso 0.20 lo scala dopo in engine)."""
         score = FundingRateCollector.rate_to_score(Decimal("0.002"))
-        assert -25.0 <= score <= 25.0
+        assert -100.0 <= score <= 100.0

@@ -94,6 +94,7 @@ class SignalScoreEngine:
         weights: Optional[Dict[str, float]] = None,
         threshold: Optional[float] = None,
         timeout: float = 10.0,
+        adapter: Optional[object] = None,
     ):
         if threshold is None:
             threshold = settings.scalping.SCALPING_SIGNAL_STRENGTH_THRESHOLD
@@ -103,10 +104,15 @@ class SignalScoreEngine:
             self.weights["whale"] = 0.0
         self.threshold = threshold
 
+        # Adapter provider-aware (TASK-1153): passato ai 3 collector futures
+        # (funding_rate/open_interest/long_short) per usare endpoint nativi OKX
+        # invece di Binance quando EXCHANGE_PROVIDER=okx.
+        self._adapter = adapter
+
         # Istanzia collector
-        self._funding_rate = FundingRateCollector(timeout_seconds=timeout)
-        self._open_interest = OpenInterestCollector(timeout_seconds=timeout)
-        self._long_short = LongShortRatioCollector(timeout_seconds=timeout)
+        self._funding_rate = FundingRateCollector(timeout_seconds=timeout, adapter=adapter)
+        self._open_interest = OpenInterestCollector(timeout_seconds=timeout, adapter=adapter)
+        self._long_short = LongShortRatioCollector(timeout_seconds=timeout, adapter=adapter)
         self._fear_greed = FearGreedCollector(timeout_seconds=timeout)
         self._sentiment = SentimentCollector(timeout_seconds=timeout)
         self._whale = WhaleCollector(timeout_seconds=timeout)
@@ -133,6 +139,7 @@ class SignalScoreEngine:
         weights: Optional[Dict[str, float]] = None,
         threshold: Optional[float] = None,
         timeout: float = 10.0,
+        adapter: Optional[object] = None,
     ) -> "SignalScoreEngine":
         """Factory method: ritorna istanza singleton per simbolo.
         
@@ -141,14 +148,32 @@ class SignalScoreEngine:
         
         Se una istanza per questo simbolo esiste già, la ritorna.
         Altrimenti crea una nuova e la registra nel global registry.
+
+        TASK-1153: se `adapter` non è fornito e `EXCHANGE_PROVIDER == "okx"`,
+        risolve l'adapter nativo via exchange factory così i 3 collector futures
+        (funding_rate/open_interest/long_short) chiamano endpoint OKX invece di
+        Binance. In caso di errore di risoluzione, degrada a None (fallback
+        legacy Binance) senza rompere lo scoring.
         """
         normalized = symbol.upper()
         if normalized not in cls._instances:
+            if adapter is None and settings.EXCHANGE_PROVIDER.lower() == "okx":
+                try:
+                    from app.core.exchange_factory import get_adapter
+                    adapter = get_adapter()
+                except Exception as e:
+                    logger.warning(
+                        "SignalScoreEngine: adapter resolution failed (futures collectors "
+                        "fall back to Binance legacy): %s",
+                        e,
+                    )
+                    adapter = None
             cls._instances[normalized] = cls(
                 symbol=symbol,  # Mantiene il case originale per compatibilità interna
                 weights=weights,
                 threshold=threshold,
-                timeout=timeout
+                timeout=timeout,
+                adapter=adapter,
             )
             logger.info(f"[SignalScoreEngine] Created singleton instance for {normalized} (id={id(cls._instances[normalized])})")
         instance = cls._instances[normalized]

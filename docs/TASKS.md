@@ -277,12 +277,24 @@
 
 ### TASK-1153 — CollectorAdapter provider-aware per funding_rate / open_interest / long_short_ratio
 
-**Status:** Pending — *supersede TASK-1116.C, TASK-COLLECTOR-001*
+**Status:** Done ✅ — *supersede TASK-1116.C, TASK-COLLECTOR-001*
+**Completato:** 2026-07-14
 **Priorità:** 🟡 Media (impatto nullo su OKB-EUR, alto se si opera su BTC/ETH)
 **Stima:** 4-5 ore
 **Dipendenze:** TASK-1116.B (già fatto)
 
 **Obiettivo:** Rendi i 3 collector provider-aware invece di hardcoded Binance Futures. Per OKB-EUR restano strutturalmente assenti per design.
+
+**Modifiche (su working tree, da committare con TASK-1153):**
+- `_provider_maps.py`: `OKX_PERPETUAL_MAP` (BTC→BTC-USDT-SWAP, ETH→ETH-USDT-SWAP, OKB→None) + `extract_base_asset()`.
+- `okx_exchange.py`: adapter methods `get_open_interest(inst_id)` / `get_funding_rate(inst_id)`.
+- `open_interest.py` / `funding_rate.py` / `long_short_ratio.py`: accettano `adapter` opzionale; se provider=okx e perpetual esiste → endpoint nativi OKX, altrimenti graceful skip (OKB=None → `active=off`; long/short sempre unsupported su OKX, TASK-1158).
+- `signal_score_engine.py`: parametro `adapter` in `__init__` e `get_or_create` (risolve l'adapter via `get_adapter()` quando `EXCHANGE_PROVIDER=okx`, degrade a None su errore).
+- `fake_okx_adapter.py`: adapter fake per test (`get_open_interest`/`get_funding_rate` + tracciamento `self.calls`).
+
+**Test:** `tests/scalping/test_collector_provider_aware.py` (14 test, verdi) — path OKX-native, BTC-EUR active=on, OKB-EUR=None, binance legacy invariato, reweight score.
+
+**Note:** `funding_rate.py` aveva un bug reale (uso di `timezone` non importato nel ramo OKX → `NameError` a runtime su BTC-EUR) corretto in questo task. I test pre-esistenti `test_funding_rate.py`/`test_open_interest.py`/`test_long_short_ratio.py` (7 failure) usano un mock `.json()` `AsyncMock` errato (httpx `.json()` è sincrono) e restano da sistemare (fuori scope, vedi fix successivo).
 
 **File coinvolti:**
 - `synthtrade/backend/app/scalping/intelligence/collectors/open_interest.py`

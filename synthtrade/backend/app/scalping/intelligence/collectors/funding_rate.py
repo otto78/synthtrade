@@ -10,12 +10,17 @@ Funding Rate negativo  -> gli short pagano i long (overleveraged short) -> bias 
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
 import httpx
 
+from app.config import settings
+from app.scalping.intelligence.collectors._provider_maps import (
+    OKX_PERPETUAL_MAP,
+    extract_base_asset,
+)
 from app.scalping.models.intelligence import FundingRate
 
 logger = logging.getLogger(__name__)
@@ -52,21 +57,35 @@ class FundingRateCollector:
         ~0%    = equilibrio
       < -0.05% = moderatamente ribassista
       < -0.10% = fortemente overleveraged short (contrarian long)
+
+    TASK-1153: provider-aware. Se viene passato un adapter e
+    `settings.EXCHANGE_PROVIDER == "okx"`, usa l'endpoint nativo OKX
+    (`adapter.get_funding_rate`) invece di Binance. Per simboli senza
+    perpetual OKX (es. OKB) ritorna None senza alcuna chiamata di rete.
+    Se `adapter is None`, il comportamento legacy Binance è invariato.
     """
 
-    def __init__(self, timeout_seconds: float = 10.0, max_retries: int = 3):
+    def __init__(self, timeout_seconds: float = 10.0, max_retries: int = 3, adapter: Optional[object] = None):
         self._timeout = timeout_seconds
         self._max_retries = max_retries
+        self._adapter = adapter
         from app.scalping.intelligence.collectors.circuit_breaker import CollectorCircuitBreaker
         self._cb = CollectorCircuitBreaker("funding_rate")
 
     def is_symbol_supported(self, symbol: str) -> bool:
         """True se il simbolo può strutturalmente avere funding rate.
 
-        Usa la stessa FUTURES_SYMBOL_MAP del collect(). Se il simbolo
-        non è nella mappa, ritorna True in modo conservativo.
+        OKX provider: il dato esiste solo per base asset con perpetual USDT-SWAP
+        (vedi OKX_PERPETUAL_MAP). Per base asset non mappati ritorna False in
+        modo conservativo.
+        Legacy Binance: usa la stessa FUTURES_SYMBOL_MAP del collect().
         """
         sym_upper = symbol.upper()
+        if self._adapter is not None and settings.EXCHANGE_PROVIDER.lower() == "okx":
+            base = extract_base_asset(sym_upper)
+            if base in OKX_PERPETUAL_MAP:
+                return OKX_PERPETUAL_MAP[base] is not None
+            return False
         if sym_upper not in FUTURES_SYMBOL_MAP:
             return True
         return FUTURES_SYMBOL_MAP[sym_upper] is not None
@@ -74,6 +93,38 @@ class FundingRateCollector:
     async def collect(self, symbol: str = "BTCUSDT") -> Optional[FundingRate]:
         if not self._cb.is_available():
             return None
+
+        # ── OKX provider-aware path (TASK-1153) ──
+        if self._adapter is not None and settings.EXCHANGE_PROVIDER.lower() == "okx":
+            base = extract_base_asset(symbol.upper())
+            inst_id = OKX_PERPETUAL_MAP.get(base)
+            if inst_id is None:
+                logger.debug(
+                    "FundingRateCollector: skipping %s (base=%s) — no OKX perpetual "
+                    "(structurally_unavailable)",
+                    symbol, base,
+                )
+                return None
+            try:
+                rate = await self._adapter.get_funding_rate(base)
+            except Exception as e:
+                logger.warning("FundingRateCollector OKX fetch failed for %s: %s", symbol, e)
+                rate = None
+            if rate is None:
+                return None
+
+            logger.debug(
+                "FundingRate (okx_native) for %s: rate=%.6f (proxy via %s)",
+                symbol, float(rate), inst_id,
+            )
+            return FundingRate(
+                symbol=symbol.upper(),
+                rate=Decimal(str(rate)),
+                timestamp=datetime.now(timezone.utc),
+                next_funding_time=None,
+            )
+
+        # ── Legacy Binance path (unchanged) ──
         futures_symbol = FUTURES_SYMBOL_MAP.get(symbol.upper(), symbol.upper())
 
         if futures_symbol is None:

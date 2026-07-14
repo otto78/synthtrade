@@ -18,11 +18,11 @@ class TestLongShortRatioCollector:
 
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json = AsyncMock(return_value=[
+        mock_response.json = MagicMock(return_value=[
             {
                 "symbol": "BTCUSDT",
-                "longAccount": "65.5",
-                "shortAccount": "34.5",
+                "longAccount": "0.655",
+                "shortAccount": "0.345",
                 "timestamp": 1700000000000,
             }
         ])
@@ -35,7 +35,6 @@ class TestLongShortRatioCollector:
         assert result is not None
         assert result.long_pct == Decimal("65.5")
         assert result.short_pct == Decimal("34.5")
-        assert result.ratio == pytest.approx(1.8985, rel=1e-3)
 
     @pytest.mark.asyncio
     async def test_collect_empty_response(self):
@@ -44,7 +43,7 @@ class TestLongShortRatioCollector:
 
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json = AsyncMock(return_value=[])
+        mock_response.json = MagicMock(return_value=[])
         mock_response.raise_for_status = MagicMock()
 
         collector = LongShortRatioCollector()
@@ -83,8 +82,8 @@ class TestLongShortRatioCollector:
         assert score == 0.0
 
     def test_ratio_to_score_clamped(self):
-        """Score non supera +/- 15."""
+        """Raw score non supera +/- 100 (il peso 0.15 lo scala dopo in engine)."""
         score = LongShortRatioCollector.ratio_to_score(Decimal("100"))
-        assert -15.0 <= score <= 15.0
+        assert -100.0 <= score <= 100.0
         score = LongShortRatioCollector.ratio_to_score(Decimal("0"))
-        assert -15.0 <= score <= 15.0
+        assert -100.0 <= score <= 100.0

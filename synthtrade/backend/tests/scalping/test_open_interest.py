@@ -17,7 +17,7 @@ class TestOpenInterestCollector:
 
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json = AsyncMock(return_value={
+        mock_response.json = MagicMock(return_value={
             "symbol": "BTCUSDT",
             "openInterest": "987654321.000",
             "time": 1700000000000,
@@ -67,9 +67,9 @@ class TestOpenInterestCollector:
         assert score == 0.0
 
     def test_oi_to_score_clamped(self):
-        """Score non supera +/- 15."""
+        """Raw score non supera +/- 100 (il peso 0.15 lo scala dopo in engine)."""
         score = OpenInterestCollector.oi_to_score(Decimal("100000"), Decimal("1000"))
-        assert -15.0 <= score <= 15.0
+        assert -100.0 <= score <= 100.0
 
     def test_asset_extraction(self):
         """Asset estratto automaticamente dal simbolo."""

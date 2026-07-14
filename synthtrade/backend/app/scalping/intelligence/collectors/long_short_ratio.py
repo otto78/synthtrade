@@ -16,6 +16,7 @@ from typing import Optional
 
 import httpx
 
+from app.config import settings
 from app.scalping.models.intelligence import LongShortRatio
 
 BINANCE_LS_URL = "https://fapi.binance.com/futures/data/globalLongShortAccountRatio"
@@ -41,20 +42,31 @@ FUTURES_SYMBOL_MAP = {
 
 
 class LongShortRatioCollector:
-    """Collettore Long/Short Ratio da Binance Futures."""
+    """Collettore Long/Short Ratio da Binance Futures.
 
-    def __init__(self, timeout_seconds: float = 10.0, max_retries: int = 3):
+    TASK-1153 / TASK-1158: OKX non ha un endpoint equivalente confermato per il
+    long/short ratio. Con provider OKX, `is_symbol_supported` ritorna sempre
+    False e `collect` ritorna None senza alcuna chiamata di rete (in attesa di
+    TASK-1158). Con adapter=None il comportamento legacy Binance è invariato.
+    """
+
+    def __init__(self, timeout_seconds: float = 10.0, max_retries: int = 3, adapter: Optional[object] = None):
         self._timeout = timeout_seconds
         self._max_retries = max_retries
+        self._adapter = adapter
         from app.scalping.intelligence.collectors.circuit_breaker import CollectorCircuitBreaker
         self._cb = CollectorCircuitBreaker("long_short_ratio")
 
     def is_symbol_supported(self, symbol: str) -> bool:
         """True se il simbolo può strutturalmente avere long/short ratio.
 
-        Usa la stessa FUTURES_SYMBOL_MAP del collect(). Se il simbolo
-        non è nella mappa, ritorna True in modo conservativo.
+        OKX provider: nessun endpoint equivalente confermato (TASK-1158) ->
+        sempre False, indipendentemente dal simbolo.
+        Legacy Binance: usa la stessa FUTURES_SYMBOL_MAP del collect(). Se il
+        simbolo non è nella mappa, ritorna True in modo conservativo.
         """
+        if self._adapter is not None and settings.EXCHANGE_PROVIDER.lower() == "okx":
+            return False
         sym_upper = symbol.upper()
         if sym_upper not in FUTURES_SYMBOL_MAP:
             return True
@@ -62,6 +74,15 @@ class LongShortRatioCollector:
 
     async def collect(self, symbol: str = "BTCUSDT", period: str = "5m") -> Optional[LongShortRatio]:
         if not self._cb.is_available():
+            return None
+
+        # OKX provider: nessun endpoint equivalente (TASK-1158) -> no rete
+        if self._adapter is not None and settings.EXCHANGE_PROVIDER.lower() == "okx":
+            logger.debug(
+                "LongShortRatioCollector: skipping %s — no OKX equivalent endpoint "
+                "(awaiting TASK-1158)",
+                symbol,
+            )
             return None
 
         # Mappa USDC → USDT per i futures perpetual

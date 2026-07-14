@@ -36,6 +36,7 @@ from app.execution.exchange_models import (
     UnsupportedInstrumentError,
 )
 from app.execution.exchange import ExchangeOrderError
+from app.scalping.intelligence.collectors._provider_maps import OKX_PERPETUAL_MAP
 
 logger = logging.getLogger(__name__)
 
@@ -224,6 +225,79 @@ class OkxExchangeAdapter:
                 logger.warning("get_ticker_price(%s) stale cache fallback: %s", symbol, e)
                 return cached["price"]
             raise ExchangeOrderError(f"OKX ticker fetch failed for {symbol}: {e}") from e
+
+    # ── Futures perpetual read-only (TASK-1153) ───────────────────────────────
+    # Funding rate / Open Interest exist ONLY on USDT perpetual futures (SWAP).
+    # The perpetual is quoted in USDT, NOT in EUR, so these data reflect sentiment
+    # on the base asset (BTC/ETH) and are used as a PROXY for the EUR pair — never
+    # presented as literal BTC-EUR data. Consumed by the intelligence collectors.
+
+    async def get_open_interest(self, base_asset: str) -> Optional[float]:
+        """Open interest (USD) for the base asset's USDT perpetual SWAP.
+
+        Used by OpenInterestCollector when EXCHANGE_PROVIDER=okx.
+        Returns None if no perpetual exists for the base asset, or on any error.
+        """
+        inst_id = OKX_PERPETUAL_MAP.get(base_asset.upper())
+        if not inst_id:
+            return None
+        path = f"/api/v5/public/open-interest?instType=SWAP&instId={inst_id}"
+        url = settings.OKX_BASE_URL.rstrip("/") + path
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                data = resp.json()
+                if data.get("code") != "0":
+                    logger.warning(
+                        "OKX open-interest API error %s: %s", data.get("code"), data.get("msg")
+                    )
+                    return None
+                items = data.get("data") or []
+                if not items:
+                    return None
+                entry = items[0]
+                for key in ("oiUsd", "oiCcy", "oi"):
+                    value = entry.get(key)
+                    if value not in (None, ""):
+                        return float(value)
+                return None
+        except Exception as e:
+            logger.warning("OkxExchangeAdapter.get_open_interest(%s) failed: %s", base_asset, e)
+            return None
+
+    async def get_funding_rate(self, base_asset: str) -> Optional[float]:
+        """Current funding rate for the base asset's USDT perpetual SWAP.
+
+        Used by FundingRateCollector when EXCHANGE_PROVIDER=okx.
+        Returns None if no perpetual exists for the base asset, or on any error.
+        """
+        inst_id = OKX_PERPETUAL_MAP.get(base_asset.upper())
+        if not inst_id:
+            return None
+        path = f"/api/v5/public/funding-rate?instId={inst_id}"
+        url = settings.OKX_BASE_URL.rstrip("/") + path
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                data = resp.json()
+                if data.get("code") != "0":
+                    logger.warning(
+                        "OKX funding-rate API error %s: %s", data.get("code"), data.get("msg")
+                    )
+                    return None
+                items = data.get("data") or []
+                if not items:
+                    return None
+                entry = items[0]
+                rate = entry.get("fundingRate")
+                if rate in (None, ""):
+                    return None
+                return float(rate)
+        except Exception as e:
+            logger.warning("OkxExchangeAdapter.get_funding_rate(%s) failed: %s", base_asset, e)
+            return None
 
     # ── Symbol rules ──────────────────────────────────────────────────────────
 

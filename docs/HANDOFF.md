@@ -131,9 +131,11 @@ Le API key OKX EU live hanno permessi limitati per `/api/v5/trade/order` e `/api
 | Whale Alert | 🟡 Abilitato (TASK-1150) | Attivo su BTC/LTC (Blockchair); su OKB-EUR ritorna None → serve Whale Alert API (TASK-1154) |
 | On-Chain | 🔴 Non funzionante | Dipende da Dune API key (TASK-1156) |
 | Order Book Imbalance | 🟢 Funzionante (TASK-1151) | Pubblico, nessuna auth; peso provvisorio 0.15; attivo su ogni spot OKX (incluso OKB-EUR) |
-| Spread | 🟡 Collezionato (TASK-1152) | Pubblico (/market/ticker); NON direzionale; wiring INTENZIONALMENTE OFF (flag cautela, non pesato) |
+| Spread | 🟡 Collezionato (TASK-1152) | Pubblico (/market/ticker); NON direzionale; **ora visibile nella lista diagnostico collector** (1 riga `spread` con status), ma wiring INTENZIONALMENTE OFF → non entra nel punteggio |
 
 **Totale:** 2/9 collezionati attivi (OBI pesato, Spread non pesato) + whale su BTC/LTC = 3/9
+
+**Formato log diagnostico collector (`[COLLECTORS_DIAG_TEMP]`):** da TASK-1152 il log è **multi-riga, una riga per collector** (`symbol | collector | active | status`) per leggibilità a colpo d'occhio. È **temporaneo** (appesantisce i log) → da ricompattare in unica riga quando il debug non serve più. Lo `spread` compare in lista con `status=OK/NONE/ERROR` pur restando `wiring OFF`.
 
 **Piano consolidato:** `docs/plans/collector-intelligence-implementation-plan.md` — TASK-1150→1159
 

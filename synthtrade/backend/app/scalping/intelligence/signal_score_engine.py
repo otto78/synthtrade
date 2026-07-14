@@ -39,6 +39,7 @@ from app.scalping.models.intelligence import (
     SentimentData,
     WhaleData,
     OrderBookImbalance,
+    SpreadSnapshot,
     SignalScore,
     MarketIntelSnapshot,
 )
@@ -51,6 +52,7 @@ from app.scalping.intelligence.collectors.sentiment import SentimentCollector
 from app.scalping.intelligence.collectors.whale import WhaleCollector
 from app.scalping.intelligence.collectors.onchain import OnChainCollector
 from app.scalping.intelligence.collectors.order_book_imbalance import OrderBookImbalanceCollector
+from app.scalping.intelligence.collectors.spread import SpreadCollector
 from app.config import settings
 
 # Pesi normalizzati per ogni fonte (relativi; la somma NON deve essere 1.0).
@@ -110,6 +112,9 @@ class SignalScoreEngine:
         self._whale = WhaleCollector(timeout_seconds=timeout)
         self._onchain = OnChainCollector(timeout_seconds=timeout)
         self._order_book_imbalance = OrderBookImbalanceCollector(timeout_seconds=timeout)
+        # TASK-1152: SpreadCollector attivo e loggato, ma NON cablato nel punteggio
+        # (wiring OFF). Il risultato viene usato solo per il diagnostico.
+        self._spread = SpreadCollector(timeout_seconds=timeout)
         
         # Buffer circolare in memory per gli ultimi 60 score (1 ora se snapshot = 1 min)
         self._score_history: collections.deque = collections.deque(maxlen=60)
@@ -261,6 +266,10 @@ class SignalScoreEngine:
         collector_tasks.append(self._onchain.collect(self.symbol))
         # OrderBookImbalance: sempre attivo (peso > 0) e supportato su ogni spot OKX
         collector_tasks.append(self._order_book_imbalance.collect(self.symbol))
+        # Spread: collector chiamato per il diagnostico (TASK-1152, wiring OFF).
+        # Il risultato (results[8]) NON entra nello score, ma compare nella lista
+        # dei collector per verificarne il funzionamento a colpo d'occhio.
+        collector_tasks.append(self._spread.collect(self.symbol))
 
         try:
             results = await asyncio.gather(*collector_tasks, return_exceptions=True)
@@ -284,47 +293,52 @@ class SignalScoreEngine:
         if self.weights.get("whale", 0.0) == 0.0:
             whale = None
 
-        # Log dettagliato per debugging collector failures
-        collector_status = {
-            "funding_rate": "OK" if fr else ("ERROR" if isinstance(results[0], Exception) else "NONE"),
-            "open_interest": "OK" if oi else ("ERROR" if isinstance(results[1], Exception) else "NONE"),
-            "long_short_ratio": "OK" if ls_result else ("ERROR" if isinstance(results[2], Exception) else "NONE"),
-            "fear_greed": "OK" if fg else ("ERROR" if isinstance(results[3], Exception) else "NONE"),
-            "sentiment": "OK" if sent else ("ERROR" if isinstance(results[4], Exception) else "NONE"),
-            "whale": "OK" if whale else ("ERROR" if isinstance(results[5], Exception) else "NONE"),
-            "onchain": "OK" if onchain else ("ERROR" if isinstance(results[6], Exception) else "NONE"),
-            "order_book_imbalance": "OK" if obi else ("ERROR" if isinstance(results[7], Exception) else "NONE"),
-        }
-        logger.debug(f"Collector status for {self.symbol}: {collector_status}")
+        # ──────────────────────────────────────────────────────────────
+        # DIAGNOSTICO COLLECTOR — formato multi-riga (UNO per collector)
+        # Temporaneo (TASK-1152): piu' leggibile a colpo d'occhio tra i log.
+        # Da ricompattare in unica riga quando il debug non serve piu'.
+        # ──────────────────────────────────────────────────────────────
+        _diag = [
+            ("funding_rate", self._funding_rate.is_symbol_supported(self.symbol), results[0]),
+            ("open_interest", self._open_interest.is_symbol_supported(self.symbol), results[1]),
+            ("long_short_ratio", self._long_short.is_symbol_supported(self.symbol), results[2]),
+            ("fear_greed", True, results[3]),
+            ("sentiment", True, results[4]),
+            ("whale", self.weights.get("whale", 0.0) > 0.0, results[5]),
+            ("onchain", True, results[6]),
+            ("order_book_imbalance", True, results[7]),
+            # Spread: collector attivo e loggato ma NON cablato nel punteggio
+            # (TASK-1152 wiring OFF). Compare in lista per verificarne il
+            # funzionamento, senza influenzare lo score.
+            ("spread", True, results[8]),
+        ]
+        for _name, _active, _res in _diag:
+            if isinstance(_res, Exception):
+                _status = "ERROR"
+            elif _res is None:
+                _status = "NONE"
+            else:
+                _status = "OK"
+            logger.info(
+                "[COLLECTORS_DIAG_TEMP] symbol=%-10s | collector=%-20s | active=%-3s | status=%s",
+                self.symbol, _name, "on" if _active else "off", _status,
+            )
 
-        diag_active = {
-            "funding_rate": self._funding_rate.is_symbol_supported(self.symbol),
-            "open_interest": self._open_interest.is_symbol_supported(self.symbol),
-            "long_short_ratio": self._long_short.is_symbol_supported(self.symbol),
-            "fear_greed": True,
-            "sentiment": True,
-            "whale": self.weights.get("whale", 0.0) > 0.0,
-            "onchain": True,
-            "order_book_imbalance": True,
-            "cvd": self._cvd_calculator is not None,
-        }
-        _result_names = ["funding_rate", "open_interest", "long_short_ratio", "fear_greed", "sentiment", "whale", "onchain", "order_book_imbalance"]
-        diag_parts = []
-        for _n in _result_names:
-            _r = results[_result_names.index(_n)]
-            _st = "OK" if (_r is not None and not isinstance(_r, Exception)) else ("ERROR" if isinstance(_r, Exception) else "NONE")
-            diag_parts.append(f"{_n}:{'on' if diag_active[_n] else 'off'}/{_st}")
-        _cvd_diag = self._cvd_calculator.snapshot(self.symbol) if self._cvd_calculator else None
-        diag_parts.append(f"cvd:{'on' if diag_active['cvd'] else 'off'}/{'OK' if _cvd_diag is not None else 'NONE'}")
+        _cvd_snap = self._cvd_calculator.snapshot(self.symbol) if self._cvd_calculator else None
         logger.info(
-            "[COLLECTORS_DIAG_TEMP] symbol=%s %s",
-            self.symbol, " ".join(diag_parts),
+            "[COLLECTORS_DIAG_TEMP] symbol=%-10s | collector=%-20s | active=%-3s | status=%s",
+            self.symbol, "cvd", "on" if self._cvd_calculator is not None else "off",
+            "OK" if _cvd_snap is not None else "NONE",
         )
 
-        # Log errori specifici
-        for i, (name, result) in enumerate(zip(["funding_rate", "open_interest", "long_short_ratio", "fear_greed", "sentiment", "whale", "onchain", "order_book_imbalance"], results)):
-            if isinstance(result, Exception):
-                logger.warning(f"{name} collector failed: {result}")
+        # Log errori specifici (incl. spread, index 8)
+        _all_names = [
+            "funding_rate", "open_interest", "long_short_ratio", "fear_greed",
+            "sentiment", "whale", "onchain", "order_book_imbalance", "spread",
+        ]
+        for i, name in enumerate(_all_names):
+            if i < len(results) and isinstance(results[i], Exception):
+                logger.warning(f"{name} collector failed: {results[i]}")
 
         # CVD dall'accumulatore interno (se collegato)
         # NOTA: CVD calculator viene collegato dal router via _set_cvd_calculator().

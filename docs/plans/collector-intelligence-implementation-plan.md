@@ -145,6 +145,12 @@ Il collector calcola, logga (`[COLLECTORS_DIAG_TEMP] spread ...`) e ritorna `Spr
 ma non influenza le decisioni finché non si decide gate-vs-peso in `signal_aggregator.py`.
 Injectabile via config in futuro senza refactor del collector.
 
+**Visibilità in diagnostico (aggiornamento):** lo `SpreadCollector` è ora istanziato e
+chiamato in `SignalScoreEngine._build_snapshot` (risultato `results[8]`) e compare nella
+lista diagnostico `COLLECTORS_DIAG_TEMP` con la sua riga `spread`, pur restando `wiring OFF`
+(non entra nello score). Il log diagnostico è stato riformattato in **multi-riga** (una riga
+per collector: `symbol | collector | active | status`) per leggibilità temporanea.
+
 **Endpoint:** `GET https://eea.okx.com/api/v5/market/ticker?instId={instId}` — già usato altrove nell'adapter (`get_ticker_price`), nessuna nuova connessione.
 
 **Logica:**

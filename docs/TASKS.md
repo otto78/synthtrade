@@ -145,9 +145,11 @@
 
 ### TASK-1116.C — Collector adapter provider-aware (OKX derivatives)
 
-**Status:** Pending
-**Priorità:** ALTA
+**Status:** ⚠️ Superseded — il lavoro è stato consolidato in TASK-1153 (vedi EPICA COLLECTOR INTELLIGENCE CONSOLIDATA sotto)
+**Priorità:** —
 **Dipendenze:** TASK-1116.B
+
+**Nota:** Questo task è stato assorbito nel nuovo piano consolidato `docs/plans/collector-intelligence-implementation-plan.md` (TASK-1153). Non avviare implementazioni basate su questa sezione.
 
 **Obiettivo:** rendere i collector (open_interest, funding_rate, long_short_ratio) provider-aware invece di hardcoded Binance Futures. Quando `EXCHANGE_PROVIDER=okx`, usare endpoint OKX derivatives (se disponibili) o graceful skip con log esplicito.
 
@@ -219,118 +221,133 @@
 
 ---
 
-## EPICA COLLECTOR IMPROVEMENT — Intelligence non funzionante
+## EPICA COLLECTOR INTELLIGENCE — Consolidata (piano unico)
 
 **Status:** In Planning
 **Priorità:** CRITICA
-**Motivazione:** Senza collector funzionanti, l'intelligence non può calcolare segnali per il supervisor.
+**Piano:** `docs/plans/collector-intelligence-implementation-plan.md`
+**Motivazione:** 5/8 collector non funzionanti (Funding Rate, CVD, Sentiment, Whale, On-Chain). Senza dati di mercato, SignalScoreEngine lavora con solo 3 collector. Questo profilo è inaccettabile nel nuovo contesto micro-swing (SL/TP 1,05%/1,55%, 10-30 trade/giorno).
 
-**Problema:** 5/8 collector non funzionanti (Funding Rate, CVD, Sentiment, Whale, On-Chain). Senza dati di mercato, SignalScoreEngine lavora con solo 3 collector.
+**Nota:** I vecchi task TASK-1116.C e TASK-COLLECTOR-001→005 sono **Superseded**. Il lavoro descritto vive ora nei TASK-1150→1159 del piano consolidato.
 
-### TASK-COLLECTOR-001 — Provider-aware collector base (Funding Rate + Open Interest + Long/Short)
+### TASK-1150 — Abilitare whale collector + verificare sentiment su OKX
+
+**Status:** Pending — *supersede TASK-1116.C per la parte whale enable*
+**Priorità:** 🔴 Alta — zero rischio, zero codice nuovo
+**Stima:** 30 minuti
+**Dipendenze:** nessuna
+
+**Obiettivo:** Il collector `whale` (Whale Alert RSS + Blockchair, TASK-804) è già implementato e indipendente dall'exchange, ma disabilitato di default. Il collector `sentiment` (CryptoCompare + NewsAPI, TASK-804) è anch'esso indipendente dall'exchange ma non è mai stato riverificato con OKX attivo.
+
+**Modifiche:**
+1. In `.env`: `SCALPING_WHALE_ENABLED=true`
+2. Verificare in log se la sola fonte Blockchair (senza `WHALE_ALERT_API_KEY`) produce dati utilizzabili
+3. Avviare una sessione paper/demo e osservare per 30-60 minuti se `sentiment` risponde regolarmente
+
+**Verifica di completamento:**
+- Log mostra righe `whale` con valore popolato (non più sempre `None`)
+- `[COVERAGE_REAL]` (TASK-1125) mostra un aumento del `configurable_total` e, se whale risponde, del `responded_weight`
+
+### TASK-1151 — OrderBookImbalanceCollector
 
 **Status:** Pending
-**Priorità:** CRITICA
-**Dipendenze:** TASK-1116.C
+**Priorità:** 🔴 Alta
+**Stima:** 3-4 ore
+**Dipendenze:** nessuna
 
-**Obiettivo:** Rendi i collector provider-aware invece di hardcoded Binance Futures.
+**Obiettivo:** Nuovo collector exchange-agnostico che calcola lo squilibrio bid/ask dall'order book pubblico OKX. Funziona su qualunque coppia spot OKX, incluso OKB-EUR.
+
+**File:** `synthtrade/backend/app/scalping/intelligence/collectors/order_book_imbalance.py`
+
+**Endpoint:** `GET https://eea.okx.com/api/v5/market/books?instId={instId}&sz=20`
+
+### TASK-1152 — SpreadCollector
+
+**Status:** Pending
+**Priorità:** 🟡 Media
+**Stima:** 2 ore
+**Dipendenze:** nessuna
+
+**Obiettivo:** Nuovo collector exchange-agnostico che calcola lo spread relativo come proxy di liquidità/incertezza.
+
+**File:** `synthtrade/backend/app/scalping/intelligence/collectors/spread.py`
+
+**Endpoint:** `GET https://eea.okx.com/api/v5/market/ticker?instId={instId}`
+
+### TASK-1153 — CollectorAdapter provider-aware per funding_rate / open_interest / long_short_ratio
+
+**Status:** Pending — *supersede TASK-1116.C, TASK-COLLECTOR-001*
+**Priorità:** 🟡 Media (impatto nullo su OKB-EUR, alto se si opera su BTC/ETH)
+**Stima:** 4-5 ore
+**Dipendenze:** TASK-1116.B (già fatto)
+
+**Obiettivo:** Rendi i 3 collector provider-aware invece di hardcoded Binance Futures. Per OKB-EUR restano strutturalmente assenti per design.
 
 **File coinvolti:**
 - `synthtrade/backend/app/scalping/intelligence/collectors/open_interest.py`
 - `synthtrade/backend/app/scalping/intelligence/collectors/funding_rate.py`
 - `synthtrade/backend/app/scalping/intelligence/collectors/long_short_ratio.py`
 - `synthtrade/backend/app/scalping/intelligence/signal_score_engine.py`
+- `synthtrade/backend/app/execution/okx_exchange.py`
 
-**Sottotask:**
-1. **COLLECTOR-001.1 — CollectorAdapter interface**
-   - Definire interfaccia read-only: `get_open_interest(symbol)`, `get_funding_rate(symbol)`, `get_long_short_ratio(symbol, period)`
-   - Implementare in `OkxExchangeAdapter` o `None` se non disponibile
+### TASK-1154 — Sentiment collector: fallback affidabile
 
-2. **COLLECTOR-001.2 — Refactor FundingRateCollector**
-   - Accettare `adapter` opzionale in `__init__`
-   - Se `adapter` fornito e provider=okx → chiamare `adapter.get_funding_rate()`
-   - OKX funding rate via `/api/v5/public/funding-rate-history` (perpetual futures)
-   - Per EUR pairs, usare USDT pairs come proxy (BTC-EUR → BTC-USDT)
+**Status:** Pending — *supersede TASK-COLLECTOR-002*
+**Priorità:** 🟡 Media
+**Dipendenze:** TASK-1150 (verifica preliminare già fatta)
 
-3. **COLLECTOR-001.3 — Refactor OpenInterestCollector**
-   - Stesso pattern: `adapter.get_open_interest(symbol)`
-   - OKX open interest via `/api/v5/public/open-interest`
-
-4. **COLLECTOR-001.4 — Refactor LongShortRatioCollector**
-   - OKX non ha long/short ratio → graceful skip con log `UNAVAILABLE`
-
-5. **COLLECTOR-001.5 — SignalScoreEngine wiring**
-   - Passare `adapter` ai collector in `get_or_create()` o costruttore
-   - Leggere `settings.EXCHANGE_PROVIDER`
-
-6. **COLLECTOR-001.6 — Test**
-   - Fake adapter con `get_open_interest` mockato
-   - Sessione OKX con collector OKX (o skip) → nessun 400 Binance
-
-### TASK-COLLECTOR-002 — Sentiment collector fallback affidabile
-
-**Status:** Pending
-**Priorità:** ALTA
-**Dipendenze:** TASK-COLLECTOR-001
-
-**Obiettivo:** Implementare fallback funzionante quando API key mancano.
+**Obiettivo:** Implementare fallback robusto quando API key mancano o sorgenti sono intermittenti.
 
 **File:** `synthtrade/backend/app/scalping/intelligence/collectors/sentiment.py`
 
-**Problemi:**
-- NewsAPI richiede API key
-- CryptoCompare richiede API key
-- RSS feeds potrebbero essere bloccati
+### TASK-1155 — Whale collector: fonti OKX-compatibili
 
-**Soluzione:**
-- Priorità: CryptoCompare (con key) → NewsAPI (con key) → RSS (fallback)
-- Aggiungere fallback testuale semplice basato su keyword "bull/bear"
-- Cache 5 minuti per evitare rate limit
+**Status:** Pending — *supersede TASK-COLLECTOR-003, parzialmente coperto da TASK-1150*
+**Priorità:** 🟢 Bassa
+**Dipendenze:** TASK-1150
 
-### TASK-COLLECTOR-003 — Whale collector OKX
-
-**Status:** Pending
-**Priorità:** MEDIA
-**Dipendenze:** TASK-COLLECTOR-001
-
-**Obiettivo:** Implementare fonti whale affidabili.
+**Obiettivo:** Se dopo TASK-1150 il solo Blockchair risulta insufficiente, aggiungere Whale Alert API come opzione a pagamento.
 
 **File:** `synthtrade/backend/app/scalping/intelligence/collectors/whale.py`
 
-**Soluzione:**
-- Usare Blockchair per BTC/LTC (gratuito)
-- Aggiungere Whale Alert API come opzione (se API key disponibile)
-- Implementare fallback su CryptoCompare news con keyword "whale"
+### TASK-1156 — On-chain collector: fallback Blockchair
 
-### TASK-COLLECTOR-004 — On-Chain collector con Blockchair
+**Status:** Pending — *supersede TASK-COLLECTOR-004*
+**Priorità:** 🟢 Bassa
+**Dipendenze:** nessuna
 
-**Status:** Pending
-**Priorità:** MEDIA
-**Dipendenze:** TASK-COLLECTOR-001
-
-**Obiettivo:** Rendi funzionante con fonti gratuite.
+**Obiettivo:** Rendi funzionante con fonti gratuite. Per simboli EUR non-BTC/ETH, usare dati BTC/ETH come proxy macro.
 
 **File:** `synthtrade/backend/app/scalping/intelligence/collectors/onchain.py`
 
-**Soluzione:**
-- Priorità: Dune (con key) → Blockchair (gratuito)
-- Per OKX EUR pairs, usare dati BTC/ETH come proxy macro
-- Aggiungere fallback su CryptoCompare per dati di rete
+### TASK-1157 — Verifica CVD grace period
 
-### TASK-COLLECTOR-005 — CVD collector verifica grace period
+**Status:** Pending — *supersede TASK-COLLECTOR-005*
+**Priorità:** 🟡 Media
+**Dipendenze:** nessuna
 
-**Status:** Pending
-**Priorità:** BASSA
-**Dipendenze:** TASK-COLLECTOR-001
-
-**Obiettivo:** Verificare se CVD funziona dopo 100 trade.
+**Obiettivo:** Verificare se CVD funziona dopo 100 trade su OKB-EUR.
 
 **File:** `synthtrade/backend/app/scalping/intelligence/collectors/cvd_calculator.py`
 
-**Azioni:**
-- Monitorare log per "CVD grace period"
-- Verificare se dopo warmup inizia a contribuire
-- Aggiungere fallback su OKX public trades se necessario
+### TASK-1158 — Spike: esiste un equivalente OKX per Long/Short Ratio?
+
+**Status:** Pending
+**Priorità:** 🟢 Bassa
+**Stima:** 1 ora (solo verifica documentale/empirica, no implementazione)
+**Dipendenze:** nessuna
+
+**Obiettivo:** Verificare su docs-v5 OKX se esiste un endpoint equivalente al long/short ratio Binance. Se esiste, aprire task dedicato. Se non esiste, documentarlo esplicitamente come strutturalmente assente.
+
+### TASK-1159 — Ricalibrazione pesi SignalScoreEngine + nota cadenza micro-swing
+
+**Status:** Pending — *bloccata finché le Fasi 1-5 non sono attive per almeno 2-3 sessioni reali*
+**Priorità:** 🔴 Alta
+**Dipendenze:** TASK-1150, 1151, 1152, 1153, 1154, 1157
+
+**Obiettivo:** Redistribuire i pesi in `SignalScoreEngine.WEIGHTS` su numeri osservati dai log reali, non su placeholder.
+
+**Nota:** Con 10-30 trade/giorno, il CVD potrebbe perdere peso relativo a favore di segnali più strutturali come Order Book Imbalance su finestre più larghe. Decisione da prendere solo dopo dati raccolti.
 
 ---
 

@@ -19,9 +19,9 @@ Regola esplicita ripresa dal resto del progetto: **"one change at a time"** — 
 ## Sequenza delle fasi
 
 ```
-Fase 0 (fatta, TASK-1125) → Fase 1 (TASK-1120) → Fase 2 (TASK-1121, 1122)
-    → Fase 3 (TASK-1140) → Fase 4 (TASK-1141, 1142, 1143) → Fase 5 (TASK-1144, 1145.C)
-    → Fase 6 (TASK-1145, ricalibrazione pesi)
+Fase 0 (fatta, TASK-1125) → Fase 1 (TASK-1150) → Fase 2 (TASK-1151, 1152)
+    → Fase 3 (TASK-1153) → Fase 4 (TASK-1154, 1155, 1156) → Fase 5 (TASK-1157, 1158)
+    → Fase 6 (TASK-1159, ricalibrazione pesi)
 ```
 
 Le Fasi 2 e 4 sono internamente parallelizzabili (task indipendenti tra loro). La Fase 6 non può iniziare finché le precedenti non hanno prodotto almeno 2-3 sessioni reali di log da cui leggere i numeri.
@@ -38,7 +38,7 @@ Fornisce il log `[COVERAGE_REAL]` in `signal_score_engine.py` con `real_coverage
 
 ## Fase 1 — Quick win a zero rischio
 
-### TASK-1120 — Abilitare whale collector + verificare sentiment su OKX
+### TASK-1150 — Abilitare whale collector + verificare sentiment su OKX
 
 **Status:** Pending
 **Priorità:** 🔴 Alta — zero rischio, zero codice nuovo
@@ -63,7 +63,7 @@ Fornisce il log `[COVERAGE_REAL]` in `signal_score_engine.py` con `real_coverage
 
 Questi due collector funzionano su **qualunque** coppia spot OKX, incluso il simbolo attualmente in uso, perché non dipendono da un mercato futures. Sono il miglior rapporto sforzo/beneficio per colmare il vuoto lasciato da funding_rate/open_interest/long_short_ratio.
 
-### TASK-1121 — OrderBookImbalanceCollector
+### TASK-1151 — OrderBookImbalanceCollector
 
 **Status:** Pending
 **Priorità:** 🔴 Alta
@@ -118,7 +118,7 @@ class OrderBookImbalanceSnapshot(BaseModel):
 
 ---
 
-### TASK-1122 — SpreadCollector
+### TASK-1152 — SpreadCollector
 
 **Status:** Pending
 **Priorità:** 🟡 Media
@@ -157,7 +157,7 @@ class SpreadCollector:
 
 ## Fase 3 — Provider-aware refactor (funding/OI/long-short)
 
-### TASK-1140 — CollectorAdapter provider-aware per funding_rate / open_interest / long_short_ratio
+### TASK-1153 — CollectorAdapter provider-aware per funding_rate / open_interest / long_short_ratio
 
 **Status:** Pending — *supersede TASK-1116.C e TASK-COLLECTOR-001*
 **Priorità:** 🟡 Media (impatto nullo su OKB-EUR, alto se in futuro si opera su BTC-EUR/ETH-EUR)
@@ -197,7 +197,7 @@ class SpreadCollector:
 2. **Refactor dei 3 collector**: accettano `adapter: ExchangeAdapterProtocol | None = None` nel costruttore
    - Se `adapter` fornito e `settings.EXCHANGE_PROVIDER == "okx"`: estrarre base asset dal symbol, guardare `OKX_PERPETUAL_MAP`, se non-`None` chiamare `adapter.get_open_interest(base_asset)`; se `None`, comportamento identico a oggi (unavailable, nessuna chiamata Binance)
    - Se `adapter=None`: fallback Binance legacy invariato
-   - `Long/Short Ratio`: OKX non ha endpoint equivalente confermato — mantenere `is_symbol_supported() = False` sempre per provider OKX, in attesa di TASK-1145.C
+   - `Long/Short Ratio`: OKX non ha endpoint equivalente confermato — mantenere `is_symbol_supported() = False` sempre per provider OKX, in attesa di TASK-1158
 3. **SignalScoreEngine wiring**: passare `adapter` ai collector in `get_or_create()`, leggendo `settings.EXCHANGE_PROVIDER`
 
 **Acceptance criteria:**
@@ -209,11 +209,11 @@ class SpreadCollector:
 
 ## Fase 4 — Affidabilità dei collector esistenti ma fragili
 
-### TASK-1141 — Sentiment collector: fallback affidabile
+### TASK-1154 — Sentiment collector: fallback affidabile
 
 **Status:** Pending — *supersede TASK-COLLECTOR-002*
 **Priorità:** 🟡 Media
-**Dipendenze:** TASK-1120 (verifica preliminare già fatta)
+**Dipendenze:** TASK-1150 (verifica preliminare già fatta)
 
 **Problemi noti:** NewsAPI e CryptoCompare richiedono API key; RSS feed potrebbero essere bloccati o intermittenti (problema DNS già osservato).
 
@@ -231,27 +231,27 @@ class SpreadCollector:
 - [ ] `test_cache_prevents_repeated_calls_within_5min`
 - [ ] `test_dns_failure_logs_compact_warning_not_full_traceback`
 
-### TASK-1142 — Whale collector: fonti OKX-compatibili
+### TASK-1155 — Whale collector: fonti OKX-compatibili
 
-**Status:** Pending — *supersede TASK-COLLECTOR-003, parzialmente coperto da TASK-1120*
+**Status:** Pending — *supersede TASK-COLLECTOR-003, parzialmente coperto da TASK-1150*
 **Priorità:** 🟢 Bassa
-**Dipendenze:** TASK-1120
+**Dipendenze:** TASK-1150
 
-**Obiettivo:** se dopo TASK-1120 il solo Blockchair (no API key) risulta insufficiente, aggiungere Whale Alert API come opzione a pagamento, con fallback su CryptoCompare news filtrato per keyword "whale".
+**Obiettivo:** se dopo TASK-1150 il solo Blockchair (no API key) risulta insufficiente, aggiungere Whale Alert API come opzione a pagamento, con fallback su CryptoCompare news filtrato per keyword "whale".
 
-### TASK-1143 — On-chain collector: fallback Blockchair
+### TASK-1156 — On-chain collector: fallback Blockchair
 
 **Status:** Pending — *supersede TASK-COLLECTOR-004*
 **Priorità:** 🟢 Bassa
 **Dipendenze:** nessuna
 
-**Soluzione:** priorità Dune (con key) → Blockchair (gratuito, no key). Per simboli EUR non-BTC/ETH, usare dati BTC/ETH come proxy macro con la stessa cautela di documentazione già applicata in TASK-1140.
+**Soluzione:** priorità Dune (con key) → Blockchair (gratuito, no key). Per simboli EUR non-BTC/ETH, usare dati BTC/ETH come proxy macro con la stessa cautela di documentazione già applicata in TASK-1153.
 
 ---
 
 ## Fase 5 — Verifiche mirate
 
-### TASK-1144 — Verifica CVD grace period
+### TASK-1157 — Verifica CVD grace period
 
 **Status:** Pending — *supersede TASK-COLLECTOR-005*
 **Priorità:** 🟡 Media
@@ -264,23 +264,23 @@ class SpreadCollector:
 
 **Output atteso:** una nota in questo piano (o task successivo) con il numero reale di minuti/ore necessari a superare il grace period su OKB-EUR — non un'ipotesi.
 
-### TASK-1145.C — Spike: esiste un equivalente OKX per Long/Short Ratio?
+### TASK-1158 — Spike: esiste un equivalente OKX per Long/Short Ratio?
 
-**Status:** Pending — *stesso contenuto già presente come TASK-1124 nel piano precedente, rinumerato per coerenza*
+**Status:** Pending — *stesso contenuto già presente come TASK-1124 nel piano precedente (ora TASK-1158), rinumerato per coerenza*
 **Priorità:** 🟢 Bassa
 **Stima:** 1 ora (solo verifica documentale/empirica, no implementazione)
 
-**Obiettivo:** verificare su `docs-v5` OKX aggiornata se esiste una famiglia di endpoint tipo `rubik/stat` equivalente al long/short ratio Binance. Se esiste, aprire un task di implementazione dedicato (probabilmente dentro TASK-1140). Se non esiste, documentarlo esplicitamente come strutturalmente assente per design — non lasciarlo "da fare" a tempo indeterminato.
+**Obiettivo:** verificare su `docs-v5` OKX aggiornata se esiste una famiglia di endpoint tipo `rubik/stat` equivalente al long/short ratio Binance. Se esiste, aprire un task di implementazione dedicato (probabilmente dentro TASK-1153). Se non esiste, documentarlo esplicitamente come strutturalmente assente per design — non lasciarlo "da fare" a tempo indeterminato.
 
 ---
 
 ## Fase 6 — Ricalibrazione pesi (solo a valle di dati reali)
 
-### TASK-1145 — Ricalibrazione pesi SignalScoreEngine + nota cadenza micro-swing
+### TASK-1159 — Ricalibrazione pesi SignalScoreEngine + nota cadenza micro-swing
 
 **Status:** Pending
 **Priorità:** 🔴 Alta, ma **bloccata** finché le Fasi 1-5 non sono attive per almeno 2-3 sessioni reali
-**Dipendenze:** TASK-1120, 1121, 1122, 1140, 1141, 1144 (tutte, anche solo parzialmente osservate)
+**Dipendenze:** TASK-1150, 1151, 1152, 1153, 1154, 1157 (tutte, anche solo parzialmente osservate)
 
 **Perché aspettare:** i pesi provvisori assegnati nelle fasi precedenti (es. 0,15 per Order Book Imbalance) sono placeholder. Assegnare pesi definitivi "a intuito" prima di aver visto il comportamento reale ripete esattamente l'errore già commesso in passato con la soglia `signal_strength_threshold` (cambiata 5 volte in una sessione senza meccanismo di decadimento, vedi `supervisor-analysis.md`).
 
@@ -305,18 +305,18 @@ Con 10-30 trade/giorno invece di centinaia, la cadenza naturale di alcuni collec
 | Task | Sostituisce | Fase | Priorità | Dipendenze |
 |------|-------------|------|----------|------------|
 | TASK-1119/1125 | — | 0 | ✅ Done | — |
-| TASK-1120 | (invariato) | 1 | 🔴 Alta | nessuna |
-| TASK-1121 | (invariato) | 2 | 🔴 Alta | nessuna |
-| TASK-1122 | (invariato) | 2 | 🟡 Media | nessuna |
-| TASK-1140 | TASK-1116.C, TASK-COLLECTOR-001 | 3 | 🟡 Media | TASK-1116.B (done) |
-| TASK-1141 | TASK-COLLECTOR-002 | 4 | 🟡 Media | TASK-1120 |
-| TASK-1142 | TASK-COLLECTOR-003 | 4 | 🟢 Bassa | TASK-1120 |
-| TASK-1143 | TASK-COLLECTOR-004 | 4 | 🟢 Bassa | nessuna |
-| TASK-1144 | TASK-COLLECTOR-005 | 5 | 🟡 Media | nessuna |
-| TASK-1145.C | TASK-1124 (piano precedente) | 5 | 🟢 Bassa | nessuna |
-| TASK-1145 | — | 6 | 🔴 Alta (bloccata) | 1120, 1121, 1122, 1140, 1141, 1144 |
+| TASK-1150 | (invariato) | 1 | 🔴 Alta | nessuna |
+| TASK-1151 | (invariato) | 2 | 🔴 Alta | nessuna |
+| TASK-1152 | (invariato) | 2 | 🟡 Media | nessuna |
+| TASK-1153 | TASK-1116.C, TASK-COLLECTOR-001 | 3 | 🟡 Media | TASK-1116.B (done) |
+| TASK-1154 | TASK-COLLECTOR-002 | 4 | 🟡 Media | TASK-1150 |
+| TASK-1155 | TASK-COLLECTOR-003 | 4 | 🟢 Bassa | TASK-1150 |
+| TASK-1156 | TASK-COLLECTOR-004 | 4 | 🟢 Bassa | nessuna |
+| TASK-1157 | TASK-COLLECTOR-005 | 5 | 🟡 Media | nessuna |
+| TASK-1158 | TASK-1124 (piano precedente) | 5 | 🟢 Bassa | nessuna |
+| TASK-1159 | — | 6 | 🔴 Alta (bloccata) | 1150, 1151, 1152, 1153, 1154, 1157 |
 
-**Da marcare esplicitamente `Superseded` in `docs/TASKS.md`:** TASK-1116.C, TASK-COLLECTOR-001, TASK-COLLECTOR-002, TASK-COLLECTOR-003, TASK-COLLECTOR-004, TASK-COLLECTOR-005, e il vecchio TASK-1124 di `collector-abbondanza-piano-okx.md` (rinominato TASK-1145.C qui per evitare confusione con la numerazione già usata altrove).
+**Da marcare esplicitamente `Superseded` in `docs/TASKS.md`:** TASK-1116.C, TASK-COLLECTOR-001, TASK-COLLECTOR-002, TASK-COLLECTOR-003, TASK-COLLECTOR-004, TASK-COLLECTOR-005, e il vecchio TASK-1124 di `collector-abbondanza-piano-okx.md` (rinominato TASK-1158 qui per evitare confusione con la numerazione già usata altrove).
 
 ---
 

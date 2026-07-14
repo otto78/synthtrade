@@ -1,5 +1,10 @@
 # Collector Intelligence — Piano Recupero Abbondanza su OKX
 
+> ⚠️ **DEPRECATO — 14 luglio 2026**
+> Questo piano è stato consolidato in `docs/plans/collector-intelligence-implementation-plan.md`.
+> I task originali di questo file sono ora confluiti in **TASK-1150→1159** nel piano consolidato.
+> Non avviare task da questo file: usare il piano consolidato come fonte di verità.
+
 **Contesto:** segue `TASK-1119_collector-coverage-diagnostica.md`. Quel task misura
 il problema; questi task lo risolvono aggiungendo collector reali, non ridistribuendo
 pesi a intuito.

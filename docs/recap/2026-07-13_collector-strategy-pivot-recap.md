@@ -55,7 +55,7 @@ Fonte: `docs/HANDOFF.md` (ultimo aggiornamento 2026-07-13), `docs/TASKS.md` TASK
 
 I due piani si sovrappongono parzialmente (entrambi trattano il refactor provider-aware di funding_rate/open_interest/long_short_ratio) ma non si citano a vicenda e usano numerazioni diverse — rischio concreto di duplicare lavoro o di implementare due volte la stessa interfaccia con forme diverse.
 
-**Azione presa in questa sessione:** consolidato tutto in un unico piano — `docs/plans/collector-intelligence-implementation-plan.md` — con una numerazione unica (TASK-1120→1125 mantenuti come già noti e compatibili, nuovi task da TASK-1140 in poi per evitare collisione con TASK-1126-1129 già usati per altri fix OKX nel changelog). TASK-1116.C e TASK-COLLECTOR-001→005 vanno marcati come **superseded** dal nuovo piano.
+**Azione presa in questa sessione:** consolidato tutto in un unico piano — `docs/plans/collector-intelligence-implementation-plan.md` — con una numerazione unica (TASK-1150→1159 mantenuti come già noti e compatibili, nuovi task da TASK-1153 in poi per evitare collisione con TASK-1126-1129 già usati per altri fix OKX nel changelog). TASK-1116.C e TASK-COLLECTOR-001→005 vanno marcati come **superseded** dal nuovo piano.
 
 ---
 
@@ -86,8 +86,8 @@ Quando Order Book Imbalance e Spread saranno implementati, il componente Angular
 
 1. Questo recap
 2. `docs/analysis/collector-intelligence-analysis.md` — versione aggiornata, sostituisce la precedente
-3. `docs/plans/collector-intelligence-implementation-plan.md` — piano consolidato pronto per l'implementazione (TASK-1120→1145)
+3. `docs/plans/collector-intelligence-implementation-plan.md` — piano consolidato pronto per l'implementazione (TASK-1150→1159)
 
 ## 7. Prossimo passo immediato
 
-Iniziare da TASK-1120 (quick win, zero rischio) nel piano consolidato — verificare in log che il coverage reale (TASK-1125, già attivo) salga dopo l'attivazione di whale, poi procedere in sequenza. Nessuna sessione live con size significative dovrebbe partire prima che almeno le Fasi 1-2 del piano consolidato siano attive, dato il rischio per-trade più alto introdotto dal pivot micro-swing.
+Iniziare da TASK-1150 (quick win, zero rischio) nel piano consolidato — verificare in log che il coverage reale (TASK-1125, già attivo) salga dopo l'attivazione di whale, poi procedere in sequenza. Nessuna sessione live con size significative dovrebbe partire prima che almeno le Fasi 1-2 del piano consolidato siano attive, dato il rischio per-trade più alto introdotto dal pivot micro-swing.

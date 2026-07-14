@@ -4,9 +4,11 @@
 
 ### Da: Devin -> prossima sessione
 
-**Data:** 2026-07-13 14:30 (aggiornato)
+**Data:** 2026-07-13 14:30 (aggiornato 2026-07-14)
 
-**Contesto:** Stato corrente sistema OKX EU live + revert TASK-1130/1131
+**Contesto:** Stato corrente sistema OKX EU live + revert TASK-1130/1131 + consolidamento piano Collector Intelligence
+
+**Nota di consolidamento (14/07/2026):** Il piano Collector Intelligence è stato consolidato in un unico piano (`docs/plans/collector-intelligence-implementation-plan.md`) con task rinumerati TASK-1150→1159 per evitare collisioni con task già completati (TASK-1120→1124 erano usati per fix OKX precedenti). I vecchi TASK-1116.C e TASK-COLLECTOR-001→005 sono Superseded.
 
 ---
 
@@ -35,13 +37,15 @@
 
 - **TASK-1100.G (WS private OKX EEA):** WebSocket private endpoint bloccato con errore 60032 su account EU. Workaround: REST polling per fill events (operativo ma non ideale).
 - **TASK-1116.B (Bug OKB-EUR):** OKB-EUR mancante in FUTURES_SYMBOL_MAP collector → fix aggiunto mapping.
-- **TASK-1116.C (Collector adapter):** Collector hardcoding Binance → deve diventare provider-aware per OKX derivatives.
+- **TASK-1116.C (Collector adapter):** Superseded — il lavoro è ora in TASK-1153 nel piano consolidato `docs/plans/collector-intelligence-implementation-plan.md`.
 
 ### 🎯 Priorità Operative
 
 1. **TASK-OKX-RECAL:** Verifica fee_tier_certified su DB, poi sessione paper per validare nuovi SL/TP ricalibrati
-2. **TASK-1100.G:** Investigare WS private OKX EEA (opzionale, workaround operativo)
-3. **TASK-1116.C:** Rendere collector provider-aware per OKX derivatives
+2. **TASK-1150:** Whale enable + verifica sentiment (quick win, zero rischio)
+3. **TASK-1151:** OrderBookImbalanceCollector (massimo impatto per OKB-EUR)
+4. **TASK-1153:** CollectorAdapter provider-aware (per BTC/ETH perpetual)
+5. **TASK-1100.G:** Investigare WS private OKX EEA (opzionale, workaround operativo)
 
 **File modificati:**
 - Nessuno - stato originale ripristinato
@@ -102,32 +106,32 @@ Le API key OKX EU live hanno permessi limitati per `/api/v5/trade/order` e `/api
 
 - **TASK-1100.G (WS private OKX EEA):** WebSocket private endpoint bloccato con errore 60032 su account EU. Workaround: REST polling per fill events (operativo ma non ideale).
 - **TASK-1116.B (Bug OKB-EUR):** OKB-EUR mancante in FUTURES_SYMBOL_MAP collector → fix aggiunto mapping.
-- **TASK-1116.C (Collector adapter):** Collector hardcoding Binance → deve diventare provider-aware per OKX derivatives.
+- **TASK-1116.C (Collector adapter):** Superseded — il lavoro è ora in TASK-1153 nel piano consolidato `docs/plans/collector-intelligence-implementation-plan.md`.
 
 ### 🎯 Priorità Operative
 
-1. **TASK-COLLECTOR-001:** Provider-aware collector base (Funding Rate + Open Interest + Long/Short) — CRITICA
-2. **TASK-COLLECTOR-002:** Sentiment collector fallback affidabile — ALTA
-3. **TASK-COLLECTOR-003:** Whale collector OKX — MEDIA
-4. **TASK-COLLECTOR-004:** On-Chain collector con Blockchair — MEDIA
-5. **TASK-COLLECTOR-005:** CVD collector verifica grace period — BASSA
-6. **TASK-OKX-RECAL:** Verifica fee_tier_certified su DB, poi sessione paper per validare nuovi SL/TP ricalibrati
-7. **TASK-1100.G:** Investigare WS private OKX EEA (opzionale, workaround operativo)
+1. **TASK-OKX-RECAL:** Verifica fee_tier_certified su DB, poi sessione paper per validare nuovi SL/TP ricalibrati
+2. **TASK-1150:** Whale enable + verifica sentiment (quick win, zero rischio)
+3. **TASK-1151:** OrderBookImbalanceCollector (massimo impatto per OKB-EUR)
+4. **TASK-1153:** CollectorAdapter provider-aware (per BTC/ETH perpetual)
+5. **TASK-1100.G:** Investigare WS private OKX EEA (opzionale, workaround operativo)
 
-### 📊 Stato Collector Intelligence
+### 📊 Stato Collector Intelligence (Consolidato TASK-1150→1159)
 
 | Collector | Stato | Problema |
 |-----------|-------|----------|
 | Fear & Greed | 🟢 Funzionante | Nessuno |
-| Long/Short Ratio | 🟢 Hardcoded Binance | Non provider-aware |
-| Open Interest | 🟢 Hardcoded Binance | Non provider-aware |
+| Long/Short Ratio | 🟢 Hardcoded Binance | Non provider-aware (TASK-1153) |
+| Open Interest | 🟢 Hardcoded Binance | Non provider-aware (TASK-1153) |
 | Funding Rate | 🔴 Non funzionante | Hardcoded Binance, EUR pairs = skip |
-| CVD | 🔴 Grace period | 100 trade da monitorare |
-| Sentiment | 🔴 Non funzionante | Dipende da API key |
-| Whale Alert | 🔴 Non funzionante | Fallback news poco affidabile |
-| On-Chain | 🔴 Non funzionante | Dipende da Dune API key |
+| CVD | 🔴 Grace period | 100 trade da monitorare (TASK-1157) |
+| Sentiment | 🔴 Non funzionante | Dipende da API key (TASK-1154) |
+| Whale Alert | 🔴 Disabilitato | Abilitare in TASK-1150 |
+| On-Chain | 🔴 Non funzionante | Dipende da Dune API key (TASK-1156) |
 
-**Totale:** 3/8 funzionanti = 37.5% capacità
+**Totale:** 1/8 funzionanti = 12.5% capacità (senza whale)
+
+**Piano consolidato:** `docs/plans/collector-intelligence-implementation-plan.md` — TASK-1150→1159
 
 ---
 

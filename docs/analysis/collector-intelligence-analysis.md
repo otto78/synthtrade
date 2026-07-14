@@ -28,7 +28,7 @@ Il sistema opera oggi su **OKB-EUR**, una coppia spot senza mercato perpetual/fu
 | CVD (Cumulative Volume Delta) | 🟡 Incerto — da verificare | 0,20-0,25 | dipende dal trade stream pubblico OKX WS; grace period 100 trade mai osservato confermato in una sessione live reale |
 | Funding Rate | 🔴 Strutturalmente assente (**per design, non bug**) | 0,10-0,20 | OKB non ha perpetual su nessun exchange — graceful skip già corretto da TASK-1116.B |
 | Open Interest | 🔴 Strutturalmente assente (**per design**) | 0,10-0,15 | idem |
-| Long/Short Ratio | 🔴 Strutturalmente assente (**per design**, probabile) | 0,10-0,15 | idem; inoltre non è mai stato verificato se OKX espone un equivalente nativo (spike mai eseguito, vedi TASK-1124/1145.C) |
+| Long/Short Ratio | 🔴 Strutturalmente assente (**per design**, probabile) | 0,10-0,15 | idem; inoltre non è mai stato verificato se OKX espone un equivalente nativo (spike mai eseguito, vedi TASK-1124/1158) |
 | Sentiment (news/social) | 🔴 Non funzionante | 0,05-0,10 | dipende da API key CryptoCompare/NewsAPI, mai riverificato con sessione OKX attiva |
 | Whale Alert | 🔴 Disabilitato di default | 0,10 | `SCALPING_WHALE_ENABLED=false`, mai attivato in produzione nonostante il codice esista da TASK-804 |
 | On-Chain Metrics | 🔴 Non funzionante | 0,00-0,10 | dipende da Dune API key; peso attuale 0 nello score |
@@ -76,14 +76,14 @@ Il codice esiste ed è wired al trade stream OKX pubblico. Manca solo la conferm
 
 | # | Azione | Impatto | Rischio | Rif. task |
 |---|--------|---------|---------|-----------|
-| 1 | Whale enable + verifica sentiment | Medio, costo quasi zero | Nessuno | TASK-1120 |
-| 2 | Order Book Imbalance Collector | Alto — copre il vuoto strutturale per spot-only | Basso | TASK-1121 |
-| 3 | Spread Collector | Medio | Basso | TASK-1122 |
-| 4 | CollectorAdapter provider-aware (funding/OI/long-short) | Alto per simboli con perpetual, nullo per OKB-EUR | Medio | TASK-1140 |
-| 5 | Affidabilità sentiment/whale/onchain (fallback robusti) | Medio | Basso | TASK-1141/1142/1143 |
-| 6 | Verifica CVD grace period | Medio — chiarisce un'incognita aperta da settimane | Nessuno (solo osservazione) | TASK-1144 |
-| 7 | Spike long/short ratio OKX | Basso — solo per chiudere la domanda aperta | Nessuno | TASK-1145.C |
-| 8 | Ricalibrazione pesi SignalScoreEngine | Alto — ma solo dopo dati reali da 1-7 | Medio se fatta a intuito, basso se fatta su log osservati | TASK-1145 |
+| 1 | Whale enable + verifica sentiment | Medio, costo quasi zero | Nessuno | TASK-1150 |
+| 2 | Order Book Imbalance Collector | Alto — copre il vuoto strutturale per spot-only | Basso | TASK-1151 |
+| 3 | Spread Collector | Medio | Basso | TASK-1152 |
+| 4 | CollectorAdapter provider-aware (funding/OI/long-short) | Alto per simboli con perpetual, nullo per OKB-EUR | Medio | TASK-1153 |
+| 5 | Affidabilità sentiment/whale/onchain (fallback robusti) | Medio | Basso | TASK-1154/1155/1156 |
+| 6 | Verifica CVD grace period | Medio — chiarisce un'incognita aperta da settimane | Nessuno (solo osservazione) | TASK-1157 |
+| 7 | Spike long/short ratio OKX | Basso — solo per chiudere la domanda aperta | Nessuno | TASK-1158 |
+| 8 | Ricalibrazione pesi SignalScoreEngine | Alto — ma solo dopo dati reali da 1-7 | Medio se fatta a intuito, basso se fatta su log osservati | TASK-1159 |
 
 ---
 
@@ -91,10 +91,10 @@ Il codice esiste ed è wired al trade stream OKX pubblico. Manca solo la conferm
 
 Fino a questa revisione esistevano due documenti di pianificazione paralleli e mai unificati:
 
-- `docs/plans/collector-abbondanza-piano-okx.md` (TASK-1120 → TASK-1124)
+- `docs/plans/collector-abbondanza-piano-okx.md` (TASK-1150 → TASK-1158)
 - `docs/TASKS.md`, sezione "EPICA COLLECTOR IMPROVEMENT" (TASK-COLLECTOR-001 → 005)
 
-Entrambi trattavano parzialmente lo stesso lavoro (refactor provider-aware dei collector futures-bound) con numerazioni diverse, senza incrociarsi. **Sono stati consolidati in un unico piano**: `docs/plans/collector-intelligence-implementation-plan.md`. I vecchi TASK-COLLECTOR-001→005 e TASK-1116.C vanno considerati `Superseded` — il lavoro descritto vive ora nei TASK-1140→1145 del piano consolidato.
+Entrambi trattavano parzialmente lo stesso lavoro (refactor provider-aware dei collector futures-bound) con numerazioni diverse, senza incrociarsi. **Sono stati consolidati in un unico piano**: `docs/plans/collector-intelligence-implementation-plan.md`. I vecchi TASK-COLLECTOR-001→005 e TASK-1116.C vanno considerati `Superseded` — il lavoro descritto vive ora nei TASK-1153→1159 del piano consolidato.
 
 ---
 
@@ -103,15 +103,15 @@ Entrambi trattavano parzialmente lo stesso lavoro (refactor provider-aware dei c
 | Task | Cosa | Stato | Priorità |
 |------|------|-------|----------|
 | TASK-1119/1125 | Diagnostica coverage reale per simbolo | ✅ Done | — (prerequisito già soddisfatto) |
-| TASK-1120 | Whale enable + verifica sentiment | Pending | 🔴 Alta — zero rischio |
-| TASK-1121 | OrderBookImbalanceCollector | Pending | 🔴 Alta |
-| TASK-1122 | SpreadCollector | Pending | 🟡 Media |
-| TASK-1140 | CollectorAdapter provider-aware (funding/OI/long-short) — *supersede TASK-1116.C, TASK-COLLECTOR-001* | Pending | 🟡 Media (nulla per OKB-EUR, alta se si opera su BTC/ETH) |
-| TASK-1141 | Sentiment reliability fallback — *supersede TASK-COLLECTOR-002* | Pending | 🟡 Media |
-| TASK-1142 | Whale collector fonti OKX-compatibili — *supersede TASK-COLLECTOR-003* | Pending | 🟢 Bassa (parzialmente coperto da TASK-1120) |
-| TASK-1143 | On-chain collector fallback Blockchair — *supersede TASK-COLLECTOR-004* | Pending | 🟢 Bassa |
-| TASK-1144 | Verifica CVD grace period — *supersede TASK-COLLECTOR-005* | Pending | 🟡 Media |
-| TASK-1145 | Ricalibrazione pesi + nota cadenza micro-swing | Pending | 🔴 Alta, ma solo a valle di 1120-1144 |
+| TASK-1150 | Whale enable + verifica sentiment | Pending | 🔴 Alta — zero rischio |
+| TASK-1151 | OrderBookImbalanceCollector | Pending | 🔴 Alta |
+| TASK-1152 | SpreadCollector | Pending | 🟡 Media |
+| TASK-1153 | CollectorAdapter provider-aware (funding/OI/long-short) — *supersede TASK-1116.C, TASK-COLLECTOR-001* | Pending | 🟡 Media (nulla per OKB-EUR, alta se si opera su BTC/ETH) |
+| TASK-1154 | Sentiment reliability fallback — *supersede TASK-COLLECTOR-002* | Pending | 🟡 Media |
+| TASK-1155 | Whale collector fonti OKX-compatibili — *supersede TASK-COLLECTOR-003* | Pending | 🟢 Bassa (parzialmente coperto da TASK-1150) |
+| TASK-1156 | On-chain collector fallback Blockchair — *supersede TASK-COLLECTOR-004* | Pending | 🟢 Bassa |
+| TASK-1157 | Verifica CVD grace period — *supersede TASK-COLLECTOR-005* | Pending | 🟡 Media |
+| TASK-1159 | Ricalibrazione pesi + nota cadenza micro-swing | Pending | 🔴 Alta, ma solo a valle di 1150-1157 |
 
 ---
 

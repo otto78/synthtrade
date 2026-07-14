@@ -44,9 +44,12 @@
 - **Piano:** `docs/architecture/supervisor-implementation-plan.md`
 - **Task aperti:** TASK-903 (isteresi RegimeDetector), TASK-904 (DB-driven StrategySelector)
 
-### Collector Intelligence — Fix
+### Collector Intelligence — Consolidata (TASK-1150→1159)
+- **Piano:** `docs/plans/collector-intelligence-implementation-plan.md`
 - **Analisi:** `docs/analysis/collector-intelligence-analysis.md`
-- **Obiettivo:** Portare dal 30% al 100% i collector funzionanti
+- **Recap:** `docs/recap/2026-07-13_collector-strategy-pivot-recap.md`
+- **Obiettivo:** Portare dal 30% al 100% i collector funzionanti su OKX
+- **Nota:** I vecchi task TASK-1116.C e TASK-COLLECTOR-001→005 sono superseded. Usare TASK-1150→1159 come fonte di verità.
 
 ### OCO / Fee / Dust — Verifiche
 - **Analisi:** `docs/analysis/oco-dust-fee-analysis.md`

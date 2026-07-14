@@ -76,6 +76,7 @@ class OkxOrderEventStream:
         self._secret = secret
         self._passphrase = passphrase
         self._demo = demo
+        self._eu = eu
 
         if demo:
             self._ws_url = _WS_DEMO
@@ -151,6 +152,13 @@ class OkxOrderEventStream:
         import websockets
 
         while self._running:
+            # TASK-XXXX: EU accounts (MiCA EEA license) cannot authenticate via WS private.
+            # Skip the ~1s login attempt entirely and go directly to REST polling.
+            if self._eu and not self._demo:
+                logger.info("OKX order stream: EU account detected — WS private not available by design. Falling back to REST polling.")
+                await self._start_polling()
+                break
+            
             try:
                 async with websockets.connect(self._ws_url, ping_interval=None) as ws:
                     # Login
@@ -191,7 +199,7 @@ class OkxOrderEventStream:
                     break
                 
                 if "60032" in str(exc):
-                    logger.warning("OKX WS private not available for this account (60032). Switching to REST polling fallback.")
+                    logger.info("OKX WS private not available for this account (60032) — REST polling fallback active. This is expected for EU accounts.")
                     await self._start_polling()
                     break
 

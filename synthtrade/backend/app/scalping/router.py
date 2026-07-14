@@ -855,7 +855,7 @@ async def _on_order_update(event: dict):
         # (Nota: l'ordine market di entrata non passa attraverso UDS, quindi non abbiamo
         # la commissione reale di entrata. Usiamo il fee tier come costo atteso.)
         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-        entry_fee_rate = _fee_tier_get("taker", 0.001)  # market order = taker
+        entry_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # market order = taker
         entry_commission = entry_f * qty_f * entry_fee_rate
         
         # Totale fee = entrata (attesa) + uscita (reale)
@@ -1052,12 +1052,12 @@ async def _close_position_and_record(pm, close_price: float, pos, reason: str = 
     else:
         # Fallback: usa fee tier per entrata (costo atteso)
         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-        entry_fee_rate = _fee_tier_get("taker", 0.001)  # market order = taker
+        entry_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # market order = taker
         entry_commission = entry_val * entry_fee_rate
     
     # Exit: usa fee tier (costo atteso, dato che non abbiamo la commissione reale di uscita in questo scenario)
     fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-    exit_fee_rate = _fee_tier_get("taker", 0.001)  # market order per chiusura manuale = taker
+    exit_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # market order per chiusura manuale = taker
     exit_commission = exit_val * exit_fee_rate
     
     total_fees = entry_commission + exit_commission
@@ -2003,12 +2003,12 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         else:
                             # Fallback: usa fee tier per entrata (costo atteso)
                             fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-                            entry_fee_rate = _fee_tier_get("taker", 0.001)  # market order = taker
+                            entry_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # market order = taker
                             entry_commission = entry_val * entry_fee_rate
                         
                         # Exit: usa fee tier (costo di chiusura atteso al tier corrente)
                         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-                        exit_fee_rate = _fee_tier_get("maker", 0.001)  # OCO orders = maker
+                        exit_fee_rate = _get_fee_rate(fee_tier, "maker", 0.001)  # OCO orders = maker
                         exit_commission = current_val * exit_fee_rate
                         
                         total_fees = entry_commission + exit_commission
@@ -2032,8 +2032,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         
                         # TASK-885: Calcola target netti TP/SL (fee tier round-trip)
                         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-                        entry_fee_rate = _fee_tier_get("taker", 0.001)  # market order = taker
-                        exit_fee_rate = _fee_tier_get("maker", 0.001)  # OCO orders = maker
+                        entry_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # market order = taker
+                        exit_fee_rate = _get_fee_rate(fee_tier, "maker", 0.001)  # OCO orders = maker
                         fee_round_trip = (entry_fee_rate + exit_fee_rate) * 100  # converti in percentuale
                         
                         # Calcola percentuali nette (sottrai fee round-trip dai target lordi)
@@ -2165,12 +2165,12 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     else:
                         # Fallback: usa fee tier per entrata (costo atteso)
                         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-                        entry_fee_rate = _fee_tier_get("taker", 0.001)  # market order = taker
+                        entry_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # market order = taker
                         entry_commission = entry_val * entry_fee_rate
                     
                     # Exit: usa fee tier (costo di chiusura atteso al tier corrente)
                     fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-                    exit_fee_rate = _fee_tier_get("maker", 0.001)  # OCO orders = maker
+                    exit_fee_rate = _get_fee_rate(fee_tier, "maker", 0.001)  # OCO orders = maker
                     exit_commission = current_val * exit_fee_rate
                     
                     total_fees = entry_commission + exit_commission
@@ -3428,12 +3428,12 @@ async def get_position() -> Optional[Dict]:
         else:
             # Fallback: usa fee tier per entrata (costo atteso)
             fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-            entry_fee_rate = _fee_tier_get("taker", 0.001)  # market order = taker
+            entry_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # market order = taker
             entry_commission = entry_val * entry_fee_rate
         
         # Exit: usa fee tier (costo di chiusura atteso al tier corrente)
         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-        exit_fee_rate = _fee_tier_get("maker", 0.001)  # OCO orders = maker
+        exit_fee_rate = _get_fee_rate(fee_tier, "maker", 0.001)  # OCO orders = maker
         exit_commission = current_val * exit_fee_rate
         
         total_fees = entry_commission + exit_commission
@@ -3449,8 +3449,8 @@ async def get_position() -> Optional[Dict]:
     sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3))
     tp_pct = float(risk_cfg.get("take_profit_pct", 0.5))
     fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-    entry_fee_rate = _fee_tier_get("taker", 0.001)  # market order = taker
-    exit_fee_rate = _fee_tier_get("maker", 0.001)  # OCO orders = maker
+    entry_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # market order = taker
+    exit_fee_rate = _get_fee_rate(fee_tier, "maker", 0.001)  # OCO orders = maker
     fee_round_trip = (entry_fee_rate + exit_fee_rate) * 100  # converti in percentuale
     
     # Calcola percentuali nette (sottrai fee round-trip dai target lordi)
@@ -3459,8 +3459,8 @@ async def get_position() -> Optional[Dict]:
 
     # TASK-1129: veri prezzi TP/SL piazzati su OKX (fallback a ricalcolo da pct
     # per posizioni pre-fix / restore senza questi campi).
-    _ef_p = _fee_tier_get("taker", 0.001)
-    _xf_p = _fee_tier_get("maker", 0.001)
+    _ef_p = _get_fee_rate(fee_tier, "taker", 0.001)
+    _xf_p = _get_fee_rate(fee_tier, "maker", 0.001)
     # TASK-1127: Fees are now positive for base level accounts
     sl_price_calc = _sl_price_from_entry(entry, pos.side, sl_pct, _ef_p, _xf_p)[0]
     tp_price_calc = entry * (1 + _net_to_gross_pct(tp_pct, _ef_p, _xf_p) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(tp_pct, _ef_p, _xf_p) / 100)

@@ -9,6 +9,7 @@ from app.scalping.intelligence.collectors.sentiment import SentimentCollector
 from app.scalping.intelligence.collectors.whale import WhaleCollector
 from app.scalping.intelligence.collectors.onchain import OnChainCollector
 from app.scalping.intelligence.collectors.order_book_imbalance import OrderBookImbalanceCollector
+from app.scalping.intelligence.collectors.spread import SpreadCollector
 
 __all__ = [
     "FundingRateCollector",
@@ -20,4 +21,5 @@ __all__ = [
     "WhaleCollector",
     "OnChainCollector",
     "OrderBookImbalanceCollector",
+    "SpreadCollector",
 ]

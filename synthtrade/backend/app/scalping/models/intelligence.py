@@ -169,6 +169,32 @@ class OrderBookImbalance(BaseModel):
     collected_at: datetime = Field(default_factory=_utcnow)
 
 
+class SpreadSnapshot(BaseModel):
+    """Bid/ask spread relativo da OKX public ticker (/market/ticker).
+
+    NON è direzionale: è un flag di affidabilità/cautela. Uno spread ampio
+    rispetto alla media mobile recente indica bassa liquidità / rischio di
+    slippage, non un bias direzionale (bullish/bearish).
+
+    spread_pct = (ask - bid) / mid_price * 100
+    ratio_vs_avg = spread_pct / rolling_avg_pct  (1.0 = nella norma)
+    """
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str
+    bid: Decimal = Field(..., description="Prezzo bid (miglior denaro)")
+    ask: Decimal = Field(..., description="Prezzo ask (miglior lettera)")
+    mid_price: Decimal = Field(..., description="(bid + ask) / 2")
+    spread_abs: Decimal = Field(..., description="ask - bid")
+    spread_pct: float = Field(..., description="(ask - bid) / mid * 100")
+    rolling_avg_pct: float = Field(..., description="Media mobile degli ultimi N campioni di spread_pct")
+    ratio_vs_avg: float = Field(..., description="spread_pct / rolling_avg_pct (1.0 = nella norma)")
+    is_anomalous: bool = Field(default=False, description="True se ratio_vs_avg >= soglia anomalia (es. 3.0)")
+    sample_count: int = Field(default=0, description="Numero di campioni nella finestra mobile")
+    timestamp: datetime
+    collected_at: datetime = Field(default_factory=_utcnow)
+
+
 # ──────────────────────────────────────────────
 # Score aggregato
 # ──────────────────────────────────────────────

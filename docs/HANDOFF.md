@@ -44,7 +44,8 @@
 1. **TASK-OKX-RECAL:** Verifica fee_tier_certified su DB, poi sessione paper per validare nuovi SL/TP ricalibrati
 2. **TASK-1150:** Whale enable + verifica sentiment (quick win, zero rischio)
 3. ~~**TASK-1151:** OrderBookImbalanceCollector (massimo impatto per OKB-EUR)~~ ✅ Done (14/07/2026)
-4. **TASK-1153:** CollectorAdapter provider-aware (per BTC/ETH perpetual)
+4. ~~**TASK-1152:** SpreadCollector (collector + modello; wiring OFF)~~ ✅ Done (14/07/2026)
+5. **TASK-1153:** CollectorAdapter provider-aware (per BTC/ETH perpetual)
 5. **TASK-1100.G:** Investigare WS private OKX EEA (opzionale, workaround operativo)
 
 **File modificati:**
@@ -113,7 +114,8 @@ Le API key OKX EU live hanno permessi limitati per `/api/v5/trade/order` e `/api
 1. **TASK-OKX-RECAL:** Verifica fee_tier_certified su DB, poi sessione paper per validare nuovi SL/TP ricalibrati
 2. **TASK-1150:** Whale enable + verifica sentiment (quick win, zero rischio)
 3. ~~**TASK-1151:** OrderBookImbalanceCollector (massimo impatto per OKB-EUR)~~ ✅ Done (14/07/2026)
-4. **TASK-1153:** CollectorAdapter provider-aware (per BTC/ETH perpetual)
+4. ~~**TASK-1152:** SpreadCollector (collector + modello; wiring OFF)~~ ✅ Done (14/07/2026)
+5. **TASK-1153:** CollectorAdapter provider-aware (per BTC/ETH perpetual)
 5. **TASK-1100.G:** Investigare WS private OKX EEA (opzionale, workaround operativo)
 
 ### 📊 Stato Collector Intelligence (Consolidato TASK-1150→1159)
@@ -129,8 +131,9 @@ Le API key OKX EU live hanno permessi limitati per `/api/v5/trade/order` e `/api
 | Whale Alert | 🟡 Abilitato (TASK-1150) | Attivo su BTC/LTC (Blockchair); su OKB-EUR ritorna None → serve Whale Alert API (TASK-1154) |
 | On-Chain | 🔴 Non funzionante | Dipende da Dune API key (TASK-1156) |
 | Order Book Imbalance | 🟢 Funzionante (TASK-1151) | Pubblico, nessuna auth; peso provvisorio 0.15; attivo su ogni spot OKX (incluso OKB-EUR) |
+| Spread | 🟡 Collezionato (TASK-1152) | Pubblico (/market/ticker); NON direzionale; wiring INTENZIONALMENTE OFF (flag cautela, non pesato) |
 
-**Totale:** 2/9 funzionanti = ~22% capacità (senza whale); con whale su BTC/LTC = 3/9
+**Totale:** 2/9 collezionati attivi (OBI pesato, Spread non pesato) + whale su BTC/LTC = 3/9
 
 **Piano consolidato:** `docs/plans/collector-intelligence-implementation-plan.md` — TASK-1150→1159
 

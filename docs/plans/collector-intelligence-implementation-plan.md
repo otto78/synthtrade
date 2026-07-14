@@ -133,10 +133,17 @@ class OrderBookImbalanceSnapshot(BaseModel):
 
 ### TASK-1152 — SpreadCollector
 
-**Status:** Pending
+**Status:** ✅ Done (collector + modello; wiring INTENZIONALMENTE DISATTIVATO) (14/07/2026)
 **Priorità:** 🟡 Media
 **Stima:** 2 ore
 **Dipendenze:** nessuna
+
+**Decisione di design (confermata con Andrea):** implementato SOLO il collector + modello.
+Nessun wiring nel weighted score (`SignalScoreEngine.DEFAULT_WEIGHTS` non contiene
+`spread`): lo spread è non-direzionale (flag di cautela), non un bias bullish/bearish.
+Il collector calcola, logga (`[COLLECTORS_DIAG_TEMP] spread ...`) e ritorna `SpreadSnapshot`,
+ma non influenza le decisioni finché non si decide gate-vs-peso in `signal_aggregator.py`.
+Injectabile via config in futuro senza refactor del collector.
 
 **Endpoint:** `GET https://eea.okx.com/api/v5/market/ticker?instId={instId}` — già usato altrove nell'adapter (`get_ticker_price`), nessuna nuova connessione.
 
@@ -155,14 +162,15 @@ class SpreadCollector:
 **Decisione di design da prendere prima di implementare (non assumere):** integrare nel weighted score come gli altri collector, oppure come moltiplicatore separato sul gate `tradeable` in `signal_aggregator.py`. Discutere con Andrea prima di scrivere il wiring finale — l'implementazione del collector stesso (calcolo spread + media mobile) è indipendente da questa decisione.
 
 #### Red — Test
-- [ ] `test_fetch_success_normal_spread`
-- [ ] `test_fetch_success_anomalous_spread_vs_rolling_avg`
-- [ ] `test_fetch_http_error`
-- [ ] `test_rolling_average_window_size` — verifica che la finestra sia effettivamente 20 campioni, non cresca illimitatamente
+- [x] `test_fetch_success_normal_spread`
+- [x] `test_fetch_success_anomalous_spread_vs_rolling_avg`
+- [x] `test_fetch_http_error`
+- [x] `test_rolling_average_window_size` — verifica che la finestra sia effettivamente 20 campioni, non cresca illimitatamente
 
 #### Green — Implementazione
-- [ ] File `synthtrade/backend/app/scalping/intelligence/collectors/spread.py`
-- [ ] Wiring **provvisoriamente disattivato** dal weighted score finché non si decide gate vs peso (vedi sopra) — il collector calcola e logga, non influenza ancora le decisioni
+- [x] File `synthtrade/backend/app/scalping/intelligence/collectors/spread.py`
+- [x] Modello `SpreadSnapshot` in `models/intelligence.py`
+- [x] Wiring **provvisoriamente disattivato** dal weighted score (come deciso sopra) — il collector calcola e logga, non influenza ancora le decisioni
 
 **Verifica di completamento:** spread calcolato confrontato con quello visibile su OKX UI; durante una finestra di bassa liquidità nota (notte, poco volume) lo spread relativo sale effettivamente.
 
@@ -320,7 +328,7 @@ Con 10-30 trade/giorno invece di centinaia, la cadenza naturale di alcuni collec
 | TASK-1119/1125 | — | 0 | ✅ Done | — |
 | TASK-1150 | (invariato) | 1 | 🔴 Alta | nessuna |
 | TASK-1151 | (invariato) | 2 | ✅ Done | nessuna |
-| TASK-1152 | (invariato) | 2 | 🟡 Media | nessuna |
+| TASK-1152 | (invariato) | 2 | ✅ Done (collector; wiring OFF) | nessuna |
 | TASK-1153 | TASK-1116.C, TASK-COLLECTOR-001 | 3 | 🟡 Media | TASK-1116.B (done) |
 | TASK-1154 | TASK-COLLECTOR-002 | 4 | 🟡 Media | TASK-1150 |
 | TASK-1155 | TASK-COLLECTOR-003 | 4 | 🟢 Bassa | TASK-1150 |

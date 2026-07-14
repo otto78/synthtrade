@@ -8,6 +8,7 @@ from app.scalping.models.intelligence import (
     SentimentData,
     WhaleData,
     OrderBookImbalance,
+    SpreadSnapshot,
     SignalScore,
     MarketIntelSnapshot,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "SentimentData",
     "WhaleData",
     "OrderBookImbalance",
+    "SpreadSnapshot",
     "SignalScore",
     "MarketIntelSnapshot",
     "Candle",

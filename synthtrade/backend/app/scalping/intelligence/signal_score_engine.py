@@ -322,11 +322,7 @@ class SignalScoreEngine:
         if self.weights.get("whale", 0.0) == 0.0:
             whale = None
 
-        # ──────────────────────────────────────────────────────────────
-        # DIAGNOSTICO COLLECTOR — formato multi-riga (UNO per collector)
-        # Temporaneo (TASK-1152): piu' leggibile a colpo d'occhio tra i log.
-        # Da ricompattare in unica riga quando il debug non serve piu'.
-        # ──────────────────────────────────────────────────────────────
+        # Stato per-collector compatto (una sola riga, vedi log [COLLECTORS] sotto).
         _diag = [
             ("funding_rate", self._funding_rate.is_symbol_supported(self.symbol), results[0]),
             ("open_interest", self._open_interest.is_symbol_supported(self.symbol), results[1]),
@@ -341,23 +337,23 @@ class SignalScoreEngine:
             # funzionamento, senza influenzare lo score.
             ("spread", True, results[8]),
         ]
+        _status_map = {}
         for _name, _active, _res in _diag:
-            if isinstance(_res, Exception):
-                _status = "ERROR"
+            if not _active:
+                _status_map[_name] = "OFF"
+            elif isinstance(_res, Exception):
+                _status_map[_name] = "ERROR"
             elif _res is None:
-                _status = "NONE"
+                _status_map[_name] = "NONE"
             else:
-                _status = "OK"
-            logger.info(
-                "[COLLECTORS_DIAG_TEMP] symbol=%-10s | collector=%-20s | active=%-3s | status=%s",
-                self.symbol, _name, "on" if _active else "off", _status,
-            )
-
+                _status_map[_name] = "OK"
         _cvd_snap = self._cvd_calculator.snapshot(self.symbol) if self._cvd_calculator else None
+        _status_map["cvd"] = "OK" if _cvd_snap is not None else "NONE"
+
         logger.info(
-            "[COLLECTORS_DIAG_TEMP] symbol=%-10s | collector=%-20s | active=%-3s | status=%s",
-            self.symbol, "cvd", "on" if self._cvd_calculator is not None else "off",
-            "OK" if _cvd_snap is not None else "NONE",
+            "[ScoreEngine][COLLECTORS] symbol=%s | %s",
+            self.symbol,
+            " ".join(f"{k}={v}" for k, v in _status_map.items()),
         )
 
         # Log errori specifici (incl. spread, index 8)

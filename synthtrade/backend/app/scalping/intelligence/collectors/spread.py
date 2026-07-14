@@ -103,8 +103,8 @@ class SpreadCollector:
                     ratio = (spread_pct / rolling_avg) if rolling_avg > 0 else 1.0
                     is_anomalous = ratio >= self._anomaly_ratio and self.sample_count >= 2
 
-                    logger.info(
-                        "[COLLECTORS_DIAG_TEMP] spread symbol=%s spread_pct=%.4f "
+                    logger.debug(
+                        "[COLLECTORS] spread symbol=%s spread_pct=%.4f "
                         "rolling_avg=%.4f ratio=%.2f anomalous=%s (wiring OFF)",
                         inst_id, spread_pct, rolling_avg, ratio, is_anomalous,
                     )

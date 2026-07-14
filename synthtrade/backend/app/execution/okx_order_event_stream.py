@@ -246,15 +246,9 @@ class OkxOrderEventStream:
             logger.warning("OKX REST polling: seed pending algo failed: %s", e)
         
         # Seed also completed algo orders (TP/SL fills go here after execution)
-        try:
-            resp = await self._rest_request("GET", "/api/v5/trade/orders-algo-history", params={"instType": "SPOT", "ordType": "oco"})
-            for item in resp.get("data", []):
-                aid = item.get("algoId")
-                if aid:
-                    seen_algos.add(aid)
-            logger.info("OKX REST polling: seeded %d historical algo orders", len(seen_algos))
-        except Exception as e:
-            logger.warning("OKX REST polling: seed algo history failed: %s", e)
+        # NOTE: orders-algo-history with ordType=oco returns 400 on OKX EU
+        # We'll seed this in the main loop using the adapter method instead
+        logger.info("OKX REST polling: skipping algo history seed (will use adapter fallback)")
         
         while self._running:
             try:
@@ -292,13 +286,15 @@ class OkxOrderEventStream:
                         if norm:
                             await self._emit(norm)
                 
-                # 4. Fetch algo orders history (TP/SL fills go here after execution)
-                resp_algo_hist = await self._rest_request(
+                # 4. Fetch filled orders with algoId (TP/SL fills appear here on OKX EU)
+                # NOTE: orders-algo-history returns 400 on OKX EU, but filled algo orders
+                # appear in orders-history with algoId field populated
+                resp_algo_filled = await self._rest_request(
                     "GET", 
-                    "/api/v5/trade/orders-algo-history", 
-                    params={"instType": "SPOT", "ordType": "oco"}
+                    "/api/v5/trade/orders-history", 
+                    params={"instType": "SPOT", "state": "filled"}
                 )
-                for item in resp_algo_hist.get("data", []):
+                for item in resp_algo_filled.get("data", []):
                     algo_id = item.get("algoId")
                     if algo_id and algo_id not in seen_algos:
                         seen_algos.add(algo_id)
@@ -446,15 +442,16 @@ class OkxOrderEventStream:
         Normalize OKX algo-orders channel payload (TP/SL bracket).
 
         OKX algo states: live, pause, partially_effective, effective, canceled, order_failed
-        We emit on: effective (filled), canceled.
+        We emit on: effective (filled), canceled, filled (from orders-history).
 
         algoClOrdId / algoId: bracket identifier
         tpOrdId / slOrdId: individual leg order IDs (UNVERIFIED: may not be in WS payload)
 
-        UNVERIFIED: full payload structure pending TASK-1100.G Demo spike.
+        NOTE: When called from orders-history (OKX EU fallback), state="filled" and algoId is populated.
         """
         state = item.get("state", "")
-        if state not in ("effective", "canceled", "order_failed"):
+        # Accept both algo states (effective) and regular order states (filled)
+        if state not in ("effective", "canceled", "order_failed", "filled"):
             return None
 
         inst_id = item.get("instId", "")
@@ -467,7 +464,7 @@ class OkxOrderEventStream:
         commission = abs(fee_raw)
         commission_asset = item.get("feeCcy") or item.get("fillFeeCcy")
 
-        status = "filled" if state == "effective" else "expired"
+        status = "filled" if state in ("effective", "filled") else "expired"
 
         # Determine leg from order type
         ord_type = item.get("ordType", "")

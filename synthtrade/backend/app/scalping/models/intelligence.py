@@ -114,6 +114,12 @@ class OnChainData(BaseModel):
     active_addresses: Optional[int] = Field(default=None, description="Indirizzi attivi nelle ultime 24h")
     transaction_count: Optional[int] = Field(default=None, description="Numero di transazioni nelle ultime 24h")
     hash_rate: Optional[Decimal] = Field(default=None, description="Hash rate della rete (se applicabile)")
+    price_change_24h_pct: Optional[float] = Field(
+        default=None, description="Variazione prezzo 24h (proxy macro da BTC/ETH)"
+    )
+    proxy_symbol: Optional[str] = Field(
+        default=None, description="Simbolo usato come proxy macro (es. 'BTC+ETH') se il simbolo non e' on-chain nativo"
+    )
     source: str = "combined"
     timestamp: datetime
     collected_at: datetime = Field(default_factory=_utcnow)

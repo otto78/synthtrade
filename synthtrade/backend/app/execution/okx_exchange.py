@@ -746,13 +746,13 @@ class OkxExchangeAdapter:
         Used by _on_uds_reconnect_sync to detect if a bracket was executed
         during disconnection. Returns filled/cancelled algo orders.
         
-        NOTE: OKX EU accounts may return 400 for orders-algo-history with ordType=oco.
+        NOTE: OKX EU accounts may have limited permissions on algo endpoints.
         Falls back to /api/v5/trade/fills endpoint which shows actual fills.
         """
         sym_ref = SymbolRef.from_okx(symbol) if "-" in symbol else SymbolRef.from_compact(symbol)
         results: list[dict] = []
 
-        # Try fills endpoint first (works on OKX EU)
+        # Try fills endpoint first (shows actual trade executions)
         try:
             path = "/api/v5/trade/fills"
             url = settings.OKX_BASE_URL.rstrip("/") + path
@@ -774,8 +774,36 @@ class OkxExchangeAdapter:
                                 "side": fill.get("side"),
                                 "instId": fill.get("instId"),
                             })
+                        if results:
+                            return results
         except Exception as e:
             logger.debug("get_algo_orders_history fills fallback failed for %s: %s", symbol, e)
+
+        # Fallback: try orders-history for any filled algo orders
+        try:
+            path = "/api/v5/trade/orders-history"
+            url = settings.OKX_BASE_URL.rstrip("/") + path
+            headers = self._sign_headers("GET", path)
+            params = {"instType": "SPOT", "instId": sym_ref.okx, "state": "filled"}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers=headers, params=params)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("code") == "0":
+                        for order in data.get("data", []):
+                            # Check if this is an algo order (has algoId)
+                            if order.get("algoId"):
+                                results.append({
+                                    "algoId": order.get("algoId"),
+                                    "state": "effective",
+                                    "avgPx": order.get("avgPx"),
+                                    "fillPx": order.get("fillPx"),
+                                    "ordType": order.get("ordType", "oco"),
+                                    "side": order.get("side"),
+                                    "instId": order.get("instId"),
+                                })
+        except Exception as e:
+            logger.debug("get_algo_orders_history orders-history fallback failed for %s: %s", symbol, e)
 
         return results
 

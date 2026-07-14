@@ -299,6 +299,43 @@ class OkxExchangeAdapter:
             logger.warning("OkxExchangeAdapter.get_funding_rate(%s) failed: %s", base_asset, e)
             return None
 
+    async def get_long_short_ratio(self, base_asset: str, period: str = "5m") -> Optional[float]:
+        """Long/Short account ratio for the base asset (OKX rubik endpoint).
+
+        Used by LongShortRatioCollector when EXCHANGE_PROVIDER=okx.
+        Endpoint is public (no auth):
+          GET /api/v5/rubik/stat/contracts/long-short-account-ratio?ccy=<BASE>&period=5m
+        Returns a RATIO (long/short), e.g. 2.45 ≈ 71% long / 29% short.
+        Returns None on any error or empty data.
+
+        Note: OKX returns a ratio, NOT separate long/short percentages like Binance.
+        The collector converts ratio -> long_pct/short_pct via ratio/(1+ratio).
+        """
+        path = f"/api/v5/rubik/stat/contracts/long-short-account-ratio?ccy={base_asset.upper()}&period={period}"
+        url = settings.OKX_BASE_URL.rstrip("/") + path
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                data = resp.json()
+                if data.get("code") != "0":
+                    logger.warning(
+                        "OKX long-short-ratio API error %s: %s", data.get("code"), data.get("msg")
+                    )
+                    return None
+                items = data.get("data") or []
+                if not items:
+                    return None
+                # items are [ts_ms, ratio] pairs, most recent first
+                latest = items[0]
+                ratio = latest[1] if isinstance(latest, (list, tuple)) and len(latest) > 1 else None
+                if ratio in (None, ""):
+                    return None
+                return float(ratio)
+        except Exception as e:
+            logger.warning("OkxExchangeAdapter.get_long_short_ratio(%s) failed: %s", base_asset, e)
+            return None
+
     # ── Symbol rules ──────────────────────────────────────────────────────────
 
     async def get_symbol_rules(self, symbol: SymbolRef) -> SymbolRules:

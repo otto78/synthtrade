@@ -62,14 +62,15 @@ class TestProviderAwareOpenInterest:
 
     @pytest.mark.asyncio
     async def test_okb_eur_returns_none_no_network_call(self, okx_provider):
+        # TASK-1158/1153 follow-up: OKB-USDT-SWAP exists -> OKB-EUR is now SUPPORTED.
+        # The collector calls the adapter; with no mock value it returns None.
         adapter = FakeOkxAdapter()
         collector = OpenInterestCollector(adapter=adapter)
         with _binance_blocking_patch():
             result = await collector.collect("OKB-EUR")
         assert result is None
-        assert collector.is_symbol_supported("OKB-EUR") is False
-        # OKB non ha perpetual -> nessuna chiamata adapter ne' rete
-        assert not any(c.startswith("get_open_interest") for c in adapter.calls)
+        assert collector.is_symbol_supported("OKB-EUR") is True
+        assert "get_open_interest(OKB)" in adapter.calls
 
     @pytest.mark.asyncio
     async def test_fake_adapter_get_open_interest_mocked(self, okx_provider):
@@ -127,13 +128,15 @@ class TestProviderAwareFundingRate:
 
     @pytest.mark.asyncio
     async def test_okb_eur_returns_none_no_network_call(self, okx_provider):
+        # TASK-1158/1153 follow-up: OKB-USDT-SWAP exists -> OKB-EUR is now SUPPORTED.
+        # The collector calls the adapter; with no mock value it returns None.
         adapter = FakeOkxAdapter()
         collector = FundingRateCollector(adapter=adapter)
         with _binance_blocking_patch():
             result = await collector.collect("OKB-EUR")
         assert result is None
-        assert collector.is_symbol_supported("OKB-EUR") is False
-        assert not any(c.startswith("get_funding_rate") for c in adapter.calls)
+        assert collector.is_symbol_supported("OKB-EUR") is True
+        assert "get_funding_rate(OKB)" in adapter.calls
 
     @pytest.mark.asyncio
     async def test_binance_legacy_unchanged(self, binance_provider):
@@ -155,14 +158,34 @@ class TestProviderAwareFundingRate:
 
 class TestProviderAwareLongShortRatio:
     @pytest.mark.asyncio
-    async def test_okx_always_unavailable_no_network_call(self, okx_provider):
+    async def test_okx_okb_uses_adapter_and_converts_ratio(self, okx_provider):
+        # TASK-1158: OKX rubik returns a RATIO (e.g. 2.45 ≈ 71% long / 29% short)
         adapter = FakeOkxAdapter()
+        adapter.long_short_ratio_value = 2.45
         collector = LongShortRatioCollector(adapter=adapter)
         with _binance_blocking_patch():
-            result = await collector.collect("BTC-EUR")
+            result = await collector.collect("OKB-EUR")
+        assert isinstance(result, LongShortRatio)
+        assert result.long_pct == pytest.approx(Decimal("71.0145"), abs=Decimal("0.01"))
+        assert result.short_pct == pytest.approx(Decimal("28.9855"), abs=Decimal("0.01"))
+        assert "get_long_short_ratio(OKB)" in adapter.calls
+
+    @pytest.mark.asyncio
+    async def test_okx_okb_symbol_supported(self, okx_provider):
+        collector = LongShortRatioCollector(adapter=FakeOkxAdapter())
+        # TASK-1158 fix: OKX_PERPETUAL_MAP["OKB"]="OKB-USDT-SWAP" -> supported
+        assert collector.is_symbol_supported("OKB-EUR") is True
+        assert collector.is_symbol_supported("BTC-EUR") is True
+        assert collector.is_symbol_supported("ETH-EUR") is True
+
+    @pytest.mark.asyncio
+    async def test_okx_ratio_none_returns_none(self, okx_provider):
+        adapter = FakeOkxAdapter()
+        adapter.long_short_ratio_value = None
+        collector = LongShortRatioCollector(adapter=adapter)
+        with _binance_blocking_patch():
+            result = await collector.collect("OKB-EUR")
         assert result is None
-        assert collector.is_symbol_supported("BTC-EUR") is False
-        assert not any(c.startswith("get_") for c in adapter.calls)
 
     @pytest.mark.asyncio
     async def test_binance_legacy_unchanged(self, binance_provider):
@@ -183,23 +206,21 @@ class TestProviderAwareLongShortRatio:
 
 
 class TestScoreReweightWhenUnavailable:
-    def test_okb_eur_excludes_futures_collectors(self, okx_provider):
+    def test_okb_eur_supports_futures_collectors_after_map_fix(self, okx_provider):
+        # TASK-1158/1153 follow-up: OKX_PERPETUAL_MAP["OKB"]="OKB-USDT-SWAP" exists,
+        # so funding_rate/open_interest/long_short_ratio are all now supported on OKB-EUR.
         engine = SignalScoreEngine(symbol="OKB-EUR", adapter=FakeOkxAdapter())
         total, excluded = engine.get_configurable_weight_total("OKB-EUR")
-        assert set(excluded) == {"funding_rate", "open_interest", "long_short_ratio"}
-        expected = (
-            sum(engine.weights.values())
-            - engine.weights["funding_rate"]
-            - engine.weights["open_interest"]
-            - engine.weights["long_short_ratio"]
-        )
-        assert total == pytest.approx(expected)
-
-    def test_btc_eur_funding_and_oi_supported_long_short_not(self, okx_provider):
-        engine = SignalScoreEngine(symbol="BTC-EUR", adapter=FakeOkxAdapter())
-        total, excluded = engine.get_configurable_weight_total("BTC-EUR")
-        # TASK-1153: BTC ha perpetual OKX -> funding_rate/open_interest attivi
         assert "funding_rate" not in excluded
         assert "open_interest" not in excluded
-        # TASK-1158: nessun endpoint OKX equivalente per long/short -> strutturalmente assente
-        assert "long_short_ratio" in excluded
+        assert "long_short_ratio" not in excluded
+        expected = sum(engine.weights.values())
+        assert total == pytest.approx(expected)
+
+    def test_btc_eur_all_perpetual_collectors_supported(self, okx_provider):
+        engine = SignalScoreEngine(symbol="BTC-EUR", adapter=FakeOkxAdapter())
+        total, excluded = engine.get_configurable_weight_total("BTC-EUR")
+        # TASK-1153 + TASK-1158: BTC ha perpetual OKX -> funding_rate/open_interest/long_short all attivi
+        assert "funding_rate" not in excluded
+        assert "open_interest" not in excluded
+        assert "long_short_ratio" not in excluded

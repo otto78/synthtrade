@@ -10,13 +10,17 @@ Documentazione API:
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
 import httpx
 
 from app.config import settings
+from app.scalping.intelligence.collectors._provider_maps import (
+    OKX_PERPETUAL_MAP,
+    extract_base_asset,
+)
 from app.scalping.models.intelligence import LongShortRatio
 
 BINANCE_LS_URL = "https://fapi.binance.com/futures/data/globalLongShortAccountRatio"
@@ -42,12 +46,14 @@ FUTURES_SYMBOL_MAP = {
 
 
 class LongShortRatioCollector:
-    """Collettore Long/Short Ratio da Binance Futures.
+    """Collettore Long/Short Ratio (Binance legacy + OKX provider-aware).
 
-    TASK-1153 / TASK-1158: OKX non ha un endpoint equivalente confermato per il
-    long/short ratio. Con provider OKX, `is_symbol_supported` ritorna sempre
-    False e `collect` ritorna None senza alcuna chiamata di rete (in attesa di
-    TASK-1158). Con adapter=None il comportamento legacy Binance è invariato.
+    TASK-1158 (2026-07-14): OKX HA l'endpoint rubik
+    (`/api/v5/rubik/stat/contracts/long-short-account-ratio`, `ccy`) che ritorna
+    un RATIO (long/short), non le % separate di Binance. Con provider OKX e adapter
+    valorizzato, il collector mappa lo spot `OKB-EUR` → `ccy=OKB`, chiama l'endpoint
+    e converte ratio→long/short% (`long_pct = ratio/(1+ratio)*100`).
+    Con adapter=None il comportamento legacy Binance è invariato.
     """
 
     def __init__(self, timeout_seconds: float = 10.0, max_retries: int = 3, adapter: Optional[object] = None):
@@ -60,12 +66,16 @@ class LongShortRatioCollector:
     def is_symbol_supported(self, symbol: str) -> bool:
         """True se il simbolo può strutturalmente avere long/short ratio.
 
-        OKX provider: nessun endpoint equivalente confermato (TASK-1158) ->
-        sempre False, indipendentemente dal simbolo.
+        OKX provider: il dato esiste solo per base asset con perpetual USDT-SWAP
+        (vedi OKX_PERPETUAL_MAP). Per base asset non mappati ritorna False in
+        modo conservativo.
         Legacy Binance: usa la stessa FUTURES_SYMBOL_MAP del collect(). Se il
         simbolo non è nella mappa, ritorna True in modo conservativo.
         """
         if self._adapter is not None and settings.EXCHANGE_PROVIDER.lower() == "okx":
+            base = extract_base_asset(symbol.upper())
+            if base in OKX_PERPETUAL_MAP:
+                return OKX_PERPETUAL_MAP[base] is not None
             return False
         sym_upper = symbol.upper()
         if sym_upper not in FUTURES_SYMBOL_MAP:
@@ -76,15 +86,43 @@ class LongShortRatioCollector:
         if not self._cb.is_available():
             return None
 
-        # OKX provider: nessun endpoint equivalente (TASK-1158) -> no rete
+        # ── OKX provider-aware path (TASK-1158) ──
         if self._adapter is not None and settings.EXCHANGE_PROVIDER.lower() == "okx":
-            logger.debug(
-                "LongShortRatioCollector: skipping %s — no OKX equivalent endpoint "
-                "(awaiting TASK-1158)",
-                symbol,
-            )
-            return None
+            base = extract_base_asset(symbol.upper())
+            inst_id = OKX_PERPETUAL_MAP.get(base)
+            if inst_id is None:
+                logger.debug(
+                    "LongShortRatioCollector: skipping %s (base=%s) — no OKX perpetual "
+                    "(structurally_unavailable)",
+                    symbol, base,
+                )
+                return None
+            try:
+                ratio = await self._adapter.get_long_short_ratio(base, period=period)
+            except Exception as e:
+                logger.warning("LongShortRatioCollector OKX fetch failed for %s: %s", symbol, e)
+                ratio = None
+            if ratio is None:
+                return None
 
+            # OKX returns a RATIO (long/short), not separate percentages.
+            long_pct = Decimal(str(ratio)) / (Decimal("1") + Decimal(str(ratio))) * Decimal("100")
+            short_pct = Decimal("100") - long_pct
+
+            logger.debug(
+                "LongShortRatio (okx_native) for %s: ratio=%.4f long=%.2f%% short=%.2f%% "
+                "(proxy via %s)",
+                symbol, float(ratio), float(long_pct), float(short_pct), inst_id,
+            )
+
+            return LongShortRatio(
+                symbol=symbol.upper(),
+                long_pct=long_pct,
+                short_pct=short_pct,
+                timestamp=datetime.now(timezone.utc),
+            )
+
+        # ── Legacy Binance path (unchanged) ──
         # Mappa USDC → USDT per i futures perpetual
         futures_symbol = FUTURES_SYMBOL_MAP.get(symbol.upper(), symbol.upper())
 

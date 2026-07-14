@@ -313,9 +313,9 @@
 **Obiettivo:** Rendi i 3 collector provider-aware invece di hardcoded Binance Futures. Per OKB-EUR restano strutturalmente assenti per design.
 
 **Modifiche (su working tree, da committare con TASK-1153):**
-- `_provider_maps.py`: `OKX_PERPETUAL_MAP` (BTC→BTC-USDT-SWAP, ETH→ETH-USDT-SWAP, OKB→None) + `extract_base_asset()`.
-- `okx_exchange.py`: adapter methods `get_open_interest(inst_id)` / `get_funding_rate(inst_id)`.
-- `open_interest.py` / `funding_rate.py` / `long_short_ratio.py`: accettano `adapter` opzionale; se provider=okx e perpetual esiste → endpoint nativi OKX, altrimenti graceful skip. **Nota (TASK-1158, 2026-07-14):** OKX HA l'endpoint LSR (`/api/v5/rubik/stat/contracts/long-short-account-ratio`, `ccy`), e `OKB-USDT-SWAP` esiste (quindi `OKX_PERPETUAL_MAP["OKB"]=None` è un bug). `long_short_ratio.py` oggi ritorna ancora `None` su OKX per via del ramo hard-coded, da rendere provider-aware.
+- `_provider_maps.py`: `OKX_PERPETUAL_MAP` (BTC→BTC-USDT-SWAP, ETH→ETH-USDT-SWAP, **OKB→OKB-USDT-SWAP** — il `None` era un bug, corretto 2026-07-14) + `extract_base_asset()`.
+- `okx_exchange.py`: adapter methods `get_open_interest(inst_id)` / `get_funding_rate(inst_id)` / `get_long_short_ratio(base_asset, period)` (rubik endpoint, ritorna ratio).
+- `open_interest.py` / `funding_rate.py` / `long_short_ratio.py`: accettano `adapter` opzionale; se provider=okx e perpetual esiste → endpoint nativi OKX, altrimenti graceful skip. **TASK-1158 implementato (2026-07-14):** `long_short_ratio.py` ora provider-aware OKX (rubik `ccy`, converte ratio→long/short% `ratio/(1+ratio)*100`, riusa `ratio_to_score`). `OKX_PERPETUAL_MAP["OKB"]="OKB-USDT-SWAP"` sblocca OI/funding/LSR su OKB.
 - `signal_score_engine.py`: parametro `adapter` in `__init__` e `get_or_create` (risolve l'adapter via `get_adapter()` quando `EXCHANGE_PROVIDER=okx`, degrade a None su errore).
 - `fake_okx_adapter.py`: adapter fake per test (`get_open_interest`/`get_funding_rate` + tracciamento `self.calls`).
 
@@ -402,12 +402,11 @@ percentuali separate `longAccount`/`shortAccount` di Binance. Conversione da app
 `funding_rate.py` e `open_interest.py` per OKB (ritornano `NONE` pur essendo disponibili).
 → Da correggere a `"OKB-USDT-SWAP"` (vedi task implementazione sotto).
 
-**Task di implementazione consigliato (fuori dallo spike):** rendere `LongShortRatioCollector`
-provider-aware per OKX: mappa spot `OKB-EUR` → `ccy=OKB`, chiama l'endpoint rubik, converti
-ratio→long/short%, riusa `ratio_to_score` esistente. Ricordarsi di:
-1. correggere `OKX_PERPETUAL_MAP["OKB"] = "OKB-USDT-SWAP"`;
-2. aggiornare `is_symbol_supported`/`collect` per il ramo OKX (oggi ritornano sempre `None`);
-3. test in `tests/scalping/test_collector_provider_aware.py` e `test_long_short_ratio.py`.
+**Implementazione (2026-07-14, completata):** `LongShortRatioCollector` reso provider-aware
+per OKX (ramo OKX in `is_symbol_supported`/`collect`); aggiunto `OkxExchangeAdapter.get_long_short_ratio`
+(endpoint rubik) + `get_long_short_ratio` a `FakeOkxAdapter`; corretto `OKX_PERPETUAL_MAP["OKB"]="OKB-USDT-SWAP"`.
+Conversione ratio→long/short% (`ratio/(1+ratio)*100`), riuso di `ratio_to_score`. Test aggiornati in
+`tests/scalping/test_collector_provider_aware.py` (OKB-EUR ora supporta anche LSR/OI/funding).
 
 ### TASK-1159 — Ricalibrazione pesi SignalScoreEngine + nota cadenza micro-swing
 

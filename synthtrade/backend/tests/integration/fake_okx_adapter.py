@@ -240,6 +240,10 @@ class FakeOkxAdapter:
         self.calls.append(f"get_funding_rate({base_asset})")
         return getattr(self, "funding_rate_value", None)
 
+    async def get_long_short_ratio(self, base_asset: str, period: str = "5m") -> Optional[float]:
+        self.calls.append(f"get_long_short_ratio({base_asset})")
+        return getattr(self, "long_short_ratio_value", None)
+
     # ── Test helpers ─────────────────────────────────────────────────────────
 
     def reset_calls(self) -> None:

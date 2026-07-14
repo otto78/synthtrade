@@ -12,7 +12,7 @@ Single source of truth shared by the intelligence collectors and OkxExchangeAdap
 OKX_PERPETUAL_MAP: dict[str, str | None] = {
     "BTC": "BTC-USDT-SWAP",
     "ETH": "ETH-USDT-SWAP",
-    "OKB": None,  # no perpetual on any exchange
+    "OKB": "OKB-USDT-SWAP",  # OKX has OKB-USDT-SWAP (OI ~16.4M USD, verified 2026-07-14)
 }
 
 

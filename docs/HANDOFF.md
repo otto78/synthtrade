@@ -76,14 +76,10 @@ Il TP è stato eseguito su OKX ma il sistema non lo ha rilevato. La posizione è
 | `main.py` | Agggiunta logica per recuperare fill price dagli ordini history/fills quando il bilancio è sotto minQty durante restore, con fallback a ticker price. |
 
 ### Verifica
-- Riavviare il backend
-- Avviare una sessione live
-- Attendere che il TP/SL venga eseguito
-- Verificare che i log mostrino `algo history: found filled bracket` o `fills fallback` e la posizione venga chiusa correttamente
-- Controllare che il PnL sia calcolato correttamente (non solo le fee)
-- Attendere che il TP/SL venga eseguito
-- Verificare che i log mostrino `algo history: found filled bracket` e la posizione venga chiusa correttamente
-- Controllare che il PnL sia calcolato correttamente (non solo le fee)
+- ✅ Backend riavviato, nessun errore 400 nei log di startup
+- ⏳ Attendere esecuzione TP/SL reale per verifica fill detection
+- ⏳ Verificare log mostrino `algo history: seeded X algo orders` e posizione chiusa correttamente
+- ⏳ Controllare PnL calcolato correttamente (non solo fee)
 
 ---
 

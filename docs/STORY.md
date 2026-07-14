@@ -4,6 +4,24 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.16 — 2026-07-14
+
+**Milestone:** Fix TP/SL fill detection OKX EU — Consolidamento polling loop
+
+**Completato:**
+- ✅ **TASK-1126:** Consolidato chiamate duplicate `orders-history` in un'unica richiesta con `state=filled`
+- ✅ **TASK-1126:** Seed iniziale ora include sia ordini regolari che algo orders (TP/SL)
+- ✅ **TASK-1126:** OKX EU: gli ordini algo appaiono in `orders-history` con `algoId` popolato
+- ✅ **TASK-1126:** Rimosso tentativo fallito di `orders-algo-history?ordType=oco` (400 su OKX EU)
+
+**Decisioni chiave:**
+- OKX EU accounts hanno permessi limitati su `orders-algo-history` → usare `orders-history?state=filled`
+- Unica chiamata riduce pressione rate limit
+- Seed iniziale cattura TP/SL già eseguiti prima del restart
+
+**File modificati:**
+- `synthtrade/backend/app/execution/okx_order_event_stream.py`
+
 ### v1.4.15 — 2026-07-13
 
 **Milestone:** Revert TASK-1130/1131 + Stato operativo sistema OKX EU live

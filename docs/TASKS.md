@@ -118,6 +118,31 @@
 
 **Nota:** WS private (fill eventi bracket) non ancora testato in demo reale — richiede TASK-1100.G fix URL private endpoint.
 
+### TASK-1126 — Fix: TP/SL fill detection su OKX EU accounts
+
+**Status:** ✅ DONE (2026-07-13)
+**Priorità:** CRITICA
+**Dipendenze:** TASK-1100
+
+**Problema:** OKX EU accounts hanno permessi limitati su `/api/v5/trade/orders-algo-history?ordType=oco` che ritorna 400 Bad Request. Questo causa TP/SL non rilevati, posizioni rimangono "open" dopo esecuzione, PnL calcolato solo su fees.
+
+**File coinvolti:**
+- `synthtrade/backend/app/execution/okx_order_event_stream.py`
+- `synthtrade/backend/app/execution/okx_exchange.py`
+- `synthtrade/backend/app/execution/exchange_models.py`
+- `synthtrade/backend/app/scalping/router.py`
+- `synthtrade/backend/app/main.py`
+
+**Fix implementato:**
+- Usare `/api/v5/trade/orders-history?state=filled` invece di `orders-algo-history`
+- OKX EU: gli ordini algo (TP/SL) appaiono in `orders-history` con `algoId` popolato
+- Consolidato chiamate duplicate in un'unica richiesta `orders-history?state=filled`
+- Seed iniziale include sia ordini regolari che algo orders
+
+**Verifica:**
+- ✅ Nessun errore 400 nei log di startup
+- ⏳ In attesa di esecuzione TP/SL reale per conferma fill detection
+
 ### TASK-1116.B — Bug: OKB-EUR mancante in FUTURES_SYMBOL_MAP collector
 
 **Status:** 🐞 Bug — OKB-EUR causa 400 Bad Request Binance Futures

@@ -1,11 +1,19 @@
 """SentimentCollector — recupera sentiment da NewsAPI, CryptoCompare e RSS feeds.
 
 Analizza titoli e frequenza news per determinare un bias di mercato.
+
+Fallback robusto (TASK-1154): ordine di priorita' esplicito
+  CryptoCompare (key opz.) -> NewsAPI (key opz.) -> RSS (free) -> fallback neutrale.
+- Cache 5 min per evitare rate-limit (NewsAPI/CryptoCompare sono molto restrittivi).
+- Log compatto: un solo warning per tipologia di errore consecutivo (es. DNS),
+  nessuno stack trace ripetuto ogni minuto.
+- Se TUTTE le sorgenti falliscono, ritorna un oggetto sentiment neutro (source="fallback")
+  invece di None, cosi' il collector non appare come "no response" a ogni hiccup di rete.
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import List, Optional
+import time
+from typing import Dict, List, Optional, Tuple
 import xml.etree.ElementTree as ET
 
 import httpx
@@ -22,9 +30,13 @@ RSS_FEEDS = [
     "https://cryptonews.com/feed/",
 ]
 
+CACHE_TTL_SEC = 300            # 5 minuti (TASK-1154: evita rate-limit)
+NEWS_TARGET = 10              # numero massimo di headline utili
+RSS_FALLBACK_THRESHOLD = 5    # sotto cui si attiva il fallback RSS
+
 
 class SentimentCollector:
-    """Collettore sentiment da NewsAPI e CryptoCompare."""
+    """Collettore sentiment con fallback multi-sorgente robusto (TASK-1154)."""
 
     def __init__(self, timeout_seconds: float = 10.0):
         self._timeout = timeout_seconds
@@ -32,59 +44,93 @@ class SentimentCollector:
         self._cryptocompare_key = settings.scalping.CRYPTOCOMPARE_API_KEY
         from app.scalping.intelligence.collectors.circuit_breaker import CollectorCircuitBreaker
         self._cb = CollectorCircuitBreaker("sentiment")
+        self._cache: Dict[str, Tuple[float, SentimentData]] = {}
+        self._last_error_signature: Optional[str] = None  # per log compatto
 
     async def collect(self, symbol: str = "BTC") -> Optional[SentimentData]:
         if not self._cb.is_available():
             return None
 
+        cache_key = self._cache_key(symbol)
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            ts, data = cached
+            if time.monotonic() - ts < CACHE_TTL_SEC:
+                return data
+
         # Rimuovi USDT se presente (es: BTCUSDT -> BTC)
         base_symbol = symbol.replace("USDT", "").replace("USD", "").upper()
-        
-        headlines = []
-        news_count = 0
-        
-        # 1. Raccogli da CryptoCompare (solo se API key configurata)
+
+        headlines: List[str] = []
+        sources: List[str] = []
+
+        # 1. CryptoCompare (con key) — priorita' massima
         if self._cryptocompare_key:
             cc_news = await self._fetch_cryptocompare(base_symbol)
-            for item in cc_news:
-                headlines.append(item.get("title", ""))
-                news_count += 1
-        
-        # 2. Raccogli da NewsAPI (se disponibile key)
-        if self._newsapi_key and news_count < 10:
+            if cc_news:
+                headlines.extend(item.get("title", "") for item in cc_news)
+                sources.append("cryptocompare")
+
+        # 2. NewsAPI (con key) — se servono ancora headline
+        if self._newsapi_key and len(headlines) < NEWS_TARGET:
             api_news = await self._fetch_newsapi(base_symbol)
-            for item in api_news:
-                headlines.append(item.get("title", ""))
-                news_count += 1
-        
-        # 3. Fallback gratuito: RSS feeds (sempre disponibili)
-        if news_count < 5:
+            if api_news:
+                headlines.extend(item.get("title", "") for item in api_news)
+                sources.append("newsapi")
+
+        # 3. RSS (free, sempre disponibile) — fallback se pochi dati
+        if len(headlines) < RSS_FALLBACK_THRESHOLD:
             rss_news = await self._fetch_rss_feeds()
-            for item in rss_news:
-                headlines.append(item.get("title", ""))
-                news_count += 1
+            if rss_news:
+                headlines.extend(item.get("title", "") for item in rss_news)
+                sources.append("rss")
+
+        # Filtra eventuali titoli vuoti
+        headlines = [h for h in headlines if h]
 
         if not headlines:
-            return None
+            # Tutte le sorgenti hanno fallito: fallback neutro (TASK-1154).
+            # Ritorna un oggetto neutro invece di None per non segnare il
+            # collector come "no response" ad ogni hiccup di rete.
+            self._reset_error_signature()
+            fallback = SentimentData(
+                symbol=symbol,
+                score=0.0,
+                news_count=0,
+                top_headlines=[],
+                source="fallback",
+            )
+            self._cache[cache_key] = (time.monotonic(), fallback)
+            logger.debug("[sentiment] tutte le sorgenti fallite per %s -> fallback neutro", symbol)
+            return fallback
 
-        # 4. Analisi semplificata del sentiment basata su keyword
-        sentiment_score = self._analyze_sentiment(headlines)
-
-        # Determina fonte
-        sources = []
-        if self._cryptocompare_key:
-            sources.append("cryptocompare")
-        if self._newsapi_key:
-            sources.append("newsapi")
-        sources.append("rss")
-        
-        return SentimentData(
+        result = SentimentData(
             symbol=symbol,
-            score=sentiment_score,
-            news_count=news_count,
+            score=self._analyze_sentiment(headlines),
+            news_count=len(headlines),
             top_headlines=headlines[:5],
-            source="+".join(sources)
+            source="+".join(sources) if sources else "rss",
         )
+        self._cache[cache_key] = (time.monotonic(), result)
+        self._reset_error_signature()
+        return result
+
+    def _cache_key(self, symbol: str) -> str:
+        return symbol.replace("USDT", "").replace("USD", "").upper()
+
+    def _log_compact(self, name: str, exc: Exception) -> None:
+        """Logga un warning una sola volta per tipologia di errore consecutivo.
+
+        Evita lo spam di stack trace DNS ripetuti (vedi recap 29-30/06 FearGreed).
+        """
+        sig = f"{name}:{type(exc).__name__}"
+        if sig == self._last_error_signature:
+            return
+        self._last_error_signature = sig
+        logger.warning("[sentiment] %s fetch fallito (%s): %s", name, type(exc).__name__, exc)
+
+    def _reset_error_signature(self) -> None:
+        self._last_error_signature = None
 
     async def _fetch_cryptocompare(self, symbol: str) -> List[dict]:
         """Fetch news da CryptoCompare."""
@@ -93,7 +139,7 @@ class SentimentCollector:
             headers = {}
             if self._cryptocompare_key:
                 headers["authorization"] = f"Apikey {self._cryptocompare_key}"
-                
+
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 response = await client.get(CRYPTOCOMPARE_NEWS_URL, params=params, headers=headers)
                 if response.status_code == 200:
@@ -103,7 +149,7 @@ class SentimentCollector:
                         return news_data[:10]
                     return []
         except Exception as e:
-            logger.warning("CryptoCompare fetch error: %s", e)
+            self._log_compact("cryptocompare", e)
         return []
 
     async def _fetch_newsapi(self, symbol: str) -> List[dict]:
@@ -122,7 +168,7 @@ class SentimentCollector:
                     data = response.json()
                     return data.get("articles", [])
         except Exception as e:
-            logger.warning("NewsAPI fetch error: %s", e)
+            self._log_compact("newsapi", e)
         return []
 
     async def _fetch_rss_feeds(self) -> List[dict]:
@@ -140,29 +186,29 @@ class SentimentCollector:
                             if title_elem is not None and title_elem.text:
                                 all_headlines.append({"title": title_elem.text})
             except Exception as e:
-                logger.warning("RSS fetch error for %s: %s", feed_url, e)
+                self._log_compact(f"rss:{feed_url}", e)
         return all_headlines[:10]
 
     def _analyze_sentiment(self, headlines: List[str]) -> float:
         """Analisi euristica del sentiment basata su keyword."""
         bullish_words = {"bull", "surge", "gain", "breakout", "rally", "growth", "positive", "high", "ath", "adoption", "buy", "support"}
         bearish_words = {"bear", "crash", "plummet", "drop", "sell", "negative", "low", "dump", "ban", "regulation", "scam", "hack", "resistance"}
-        
+
         total_score = 0.0
         for title in headlines:
             words = set(title.lower().split())
             bull_matches = len(words.intersection(bullish_words))
             bear_matches = len(words.intersection(bearish_words))
-            
+
             if bull_matches > bear_matches:
                 total_score += 0.2
             elif bear_matches > bull_matches:
                 total_score -= 0.2
-                
+
         # Normalizza tra -1 e 1
         if not headlines:
             return 0.0
-        
+
         avg_score = total_score / len(headlines)
         return max(-1.0, min(1.0, avg_score * 5))  # Amplifica un po' il segnale
 

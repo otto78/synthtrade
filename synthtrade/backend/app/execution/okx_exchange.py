@@ -740,6 +740,31 @@ class OkxExchangeAdapter:
 
         return results
 
+    async def get_algo_orders_history(self, symbol: str) -> list[dict[str, Any]]:
+        """Return algo orders history for a symbol (OCO/TP/SL fills).
+
+        Used by _on_uds_reconnect_sync to detect if a bracket was executed
+        during disconnection. Returns filled/cancelled algo orders.
+        """
+        sym_ref = SymbolRef.from_okx(symbol) if "-" in symbol else SymbolRef.from_compact(symbol)
+        results: list[dict] = []
+
+        try:
+            path = "/api/v5/trade/orders-algo-history"
+            url = settings.OKX_BASE_URL.rstrip("/") + path
+            headers = self._sign_headers("GET", path)
+            params = {"instType": "SPOT", "instId": sym_ref.okx, "ordType": "oco"}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers=headers, params=params)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("code") == "0":
+                        results.extend(data.get("data", []))
+        except Exception as e:
+            logger.warning("get_algo_orders_history failed for %s: %s", symbol, e)
+
+        return results
+
 
     # ── Exit bracket (TP/SL algo order) ──────────────────────────────────────
 

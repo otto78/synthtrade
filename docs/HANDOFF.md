@@ -45,11 +45,42 @@
 2. **TASK-1150:** Whale enable + verifica sentiment (quick win, zero rischio)
 3. ~~**TASK-1151:** OrderBookImbalanceCollector (massimo impatto per OKB-EUR)~~ ✅ Done (14/07/2026)
 4. ~~**TASK-1152:** SpreadCollector (collector + modello; wiring OFF)~~ ✅ Done (14/07/2026)
-5. **TASK-1153:** CollectorAdapter provider-aware (per BTC/ETH perpetual)
-5. **TASK-1100.G:** Investigare WS private OKX EEA (opzionale, workaround operativo)
+5. ~~**TASK-1153:** CollectorAdapter provider-aware (per BTC/ETH perpetual)~~ ✅ Done (14/07/2026, commit `1f0b364`)
+6. **TASK-1100.G:** Investigare WS private OKX EEA (opzionale, workaround operativo)
 
 **File modificati:**
 - Nessuno - stato originale ripristinato
+
+---
+
+## 🔥 FIX CRITICO: TP/SL Fill Detection OKX EU (14/07/2026)
+
+### Problema
+Il TP è stato eseguito su OKX ma il sistema non lo ha rilevato. La posizione è rimasta "aperta" in memoria e il frontend mostrava ancora la posizione attiva. Allo stop della sessione, il sistema ha chiuso a mercato una posizione già chiusa, ottenendo PnL -0.70% (solo le fee round-trip).
+
+### Root Cause
+1. **`okx_order_event_stream.py`**: Il REST polling guardava solo `/api/v5/trade/orders-algo-pending`, ma quando il TP/SL viene eseguito, l'ordine va nello **history** (`/api/v5/trade/orders-algo-history`). Il sistema non lo rilevava mai.
+
+2. **`main.py`**: Durante il restore sessione, quando il bilancio è sotto `minQty`, il sistema chiudeva la posizione con `exit_price=entry_price` (PnL 0), invece di recuperare il fill price reale dagli ordini algo history.
+
+3. **`router.py`**: Il `_on_uds_reconnect_sync` non controllava gli ordini algo history per trovare eventuali TP/SL eseguiti durante la disconnessione.
+
+### Fix Applicati
+
+| File | Modifica |
+|------|----------|
+| `okx_order_event_stream.py` | Agggiunto seeding e polling di `/api/v5/trade/orders-algo-history` nel loop principale |
+| `okx_exchange.py` | Agggiunto metodo `get_algo_orders_history()` per recuperare ordini algo storici |
+| `exchange_models.py` | Agggiunto `get_algo_orders_history` al protocollo ExchangeAdapterProtocol |
+| `router.py` | Agggiunto controllo algo history nel `_on_uds_reconnect_sync` |
+| `main.py` | Agggiunta logica per recuperare fill price dagli ordini algo history quando il bilancio è sotto minQty durante restore |
+
+### Verifica
+- Riavviare il backend
+- Avviare una sessione live
+- Attendere che il TP/SL venga eseguito
+- Verificare che i log mostrino `algo history: found filled bracket` e la posizione venga chiusa correttamente
+- Controllare che il PnL sia calcolato correttamente (non solo le fee)
 
 ---
 
@@ -115,8 +146,8 @@ Le API key OKX EU live hanno permessi limitati per `/api/v5/trade/order` e `/api
 2. **TASK-1150:** Whale enable + verifica sentiment (quick win, zero rischio)
 3. ~~**TASK-1151:** OrderBookImbalanceCollector (massimo impatto per OKB-EUR)~~ ✅ Done (14/07/2026)
 4. ~~**TASK-1152:** SpreadCollector (collector + modello; wiring OFF)~~ ✅ Done (14/07/2026)
-5. **TASK-1153:** CollectorAdapter provider-aware (per BTC/ETH perpetual)
-5. **TASK-1100.G:** Investigare WS private OKX EEA (opzionale, workaround operativo)
+5. ~~**TASK-1153:** CollectorAdapter provider-aware (per BTC/ETH perpetual)~~ ✅ Done (14/07/2026, commit `1f0b364`)
+6. **TASK-1100.G:** Investigare WS private OKX EEA (opzionale, workaround operativo)
 
 ### 📊 Stato Collector Intelligence (Consolidato TASK-1150→1159)
 
@@ -127,13 +158,13 @@ Le API key OKX EU live hanno permessi limitati per `/api/v5/trade/order` e `/api
 | Open Interest | 🟢 Hardcoded Binance | Non provider-aware (TASK-1153) |
 | Funding Rate | 🔴 Non funzionante | Hardcoded Binance, EUR pairs = skip |
 | CVD | 🔴 Grace period | 100 trade da monitorare (TASK-1157) |
-| Sentiment | 🔴 Non funzionante | Dipende da API key (TASK-1154) |
+| Sentiment | 🟢 Funzionante (TASK-1154) | RSS fallback free + key in .env; fallback neutrale se tutte le fonti falliscono, cache 5 min |
 | Whale Alert | 🟡 Abilitato (TASK-1150) | Attivo su BTC/LTC (Blockchair); su OKB-EUR ritorna None → serve Whale Alert API (TASK-1154) |
 | On-Chain | 🔴 Non funzionante | Dipende da Dune API key (TASK-1156) |
 | Order Book Imbalance | 🟢 Funzionante (TASK-1151) | Pubblico, nessuna auth; peso provvisorio 0.15; attivo su ogni spot OKX (incluso OKB-EUR) |
 | Spread | 🟡 Collezionato (TASK-1152) | Pubblico (/market/ticker); NON direzionale; **ora visibile nella lista diagnostico collector** (1 riga `spread` con status), ma wiring INTENZIONALMENTE OFF → non entra nel punteggio |
 
-**Totale:** 2/9 collezionati attivi (OBI pesato, Spread non pesato) + whale su BTC/LTC = 3/9
+**Totale:** 3/9 collezionati attivi (OBI pesato, Spread non pesato, Sentiment) + whale su BTC/LTC = 4/9
 
 **Formato log diagnostico collector (`[COLLECTORS_DIAG_TEMP]`):** da TASK-1152 il log è **multi-riga, una riga per collector** (`symbol | collector | active | status`) per leggibilità a colpo d'occhio. È **temporaneo** (appesantisce i log) → da ricompattare in unica riga quando il debug non serve più. Lo `spread` compare in lista con `status=OK/NONE/ERROR` pur restando `wiring OFF`.
 

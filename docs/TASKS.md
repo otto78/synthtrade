@@ -46,9 +46,11 @@
 
 ### TASK-1100 — OKX Demo Spike: auth, market order, exit bracket, WS fill
 
-**Status:** Partial ✅ — Sottotask E/F/H completati, G workaround implementato
+**Status:** ✅ DONE — tutti i sottotask A–H completati (14/07/2026)
 **Priorità:** CRITICA
 **Dipendenze:** API key OKX Demo Trading ✅
+
+**Nota 1100.G (14/07/2026):** chiuso come fatto. Il WS private OKX EEA non è disponibile (errore `60032` "API key doesn't exist") → il sistema usa il **REST polling di default** già implementato e operativo. Nessun lavoro aggiuntivo richiesto.
 
 **Obiettivo:** verificare empiricamente OKX Demo Trading prima di modificare il runtime live.
 
@@ -251,7 +253,7 @@
 
 ### TASK-1151 — OrderBookImbalanceCollector
 
-**Status:** Pending
+**Status:** ✅ Done (14/07/2026) — vedi piano consolidato `docs/plans/collector-intelligence-implementation-plan.md` §Fase 2
 **Priorità:** 🔴 Alta
 **Stima:** 3-4 ore
 **Dipendenze:** nessuna
@@ -264,7 +266,7 @@
 
 ### TASK-1152 — SpreadCollector
 
-**Status:** Pending
+**Status:** ✅ Done (14/07/2026) — collector+modello implementati; wiring INTENZIONALMENTE DISATTIVATO (vedi piano consolidato)
 **Priorità:** 🟡 Media
 **Stima:** 2 ore
 **Dipendenze:** nessuna
@@ -305,13 +307,16 @@
 
 ### TASK-1154 — Sentiment collector: fallback affidabile
 
-**Status:** Pending — *supersede TASK-COLLECTOR-002*
+**Status:** Done — *supersede TASK-COLLECTOR-002* (14/07/2026)
 **Priorità:** 🟡 Media
 **Dipendenze:** TASK-1150 (verifica preliminare già fatta)
 
 **Obiettivo:** Implementare fallback robusto quando API key mancano o sorgenti sono intermittenti.
 
 **File:** `synthtrade/backend/app/scalping/intelligence/collectors/sentiment.py`
+
+**Chiarimento dipendenza API key (14/07/2026):** TASK-1154 NON richiede di procurarsi alcuna API key.
+Il `SentimentCollector` (`sentiment.py`) ha già 3 fonti: CryptoCompare (key opzionale), NewsAPI (key opzionale) e RSS feed (gratuito, sempre disponibile → fallback finale). `backend/.env` contiene GIÀ `NEWSAPI_API_KEY` e `CRYPTOCOMPARE_API_KEY` (verificato), quindi oggi gira con tutte e tre le fonti (confermato in TASK-1150: `source=cryptocompare+newsapi+rss`). Lo scope di 1154 è rendere il fallback *robusto* (ordine di priorità, fallback keyword se tutto fallisce, cache 5 min, log compatto su errori DNS) — funziona anche a zero key (solo RSS). Si può avviare subito, senza cercare chiavi.
 
 ### TASK-1155 — Whale collector: fonti OKX-compatibili
 
@@ -514,8 +519,10 @@ del punto 2(b) sopra.
 
 ### TASK-908 — Hardcoded Resume Guard (no-short, regime bearish) (2026-06-30)
 
-**Status:** Pending
-**Priorità:** ALTA
+**Status:** Riservato per analisi (richiesta Andrea 14/07/2026) — non implementare ora
+**Priorità:** ALTA — *sospesa: da analizzare assieme a TASK-909*
+
+**Nota 14/07/2026:** per decisione di Andrea, questo task e TASK-909 restano *riservati per analisi* (non avviati ora). TASK-909 è archiviato come Done in `docs/ARCHIVE_TASKS.md:2533` (isolamento chiamate AI sincrone via `asyncio.to_thread`), ma è richiamato per rivalutazione.
 
 **Obiettivo:** impedire `resume_trading` quando `regime ∈ {trending_down}` con confidence
 alta, `allows_short = False` (o short non implementato) e nessuna posizione aperta —
@@ -665,8 +672,8 @@ questo task — `execute()` e `verify()` (chiamate API reali) sono un task futur
 
 ## TASK-OKX-RECAL — Ricalibrazione SL/TP su fee OKX reali
 
-**Status:** In esecuzione
-**Priorità:** CRITICA — bloccante prima di qualunque nuova sessione live/demo
+**Status:** ✅ Done (14/07/2026)
+**Priorità:** CRITICA (completata) — SL/TP ricalibrati su fee OKX reali (STOP_LOSS=1.05%, TAKE_PROFIT=1.55% in backend/.env)
 **Piano dettagliato:** `docs/plans/okx-sl-tp-recalibration-task.md`
 
 **Motivazione:** Lo SL configurato a 0.3% è geometricamente impossibile con le fee OKX reali. Il round-trip taker+taker costa 0.70%. Qualunque SL con magnitudine < 0.70% è matematicamente insostenibile — il prezzo dovrebbe muoversi nella direzione opposta a quella di uno stop loss per far quadrare i conti.

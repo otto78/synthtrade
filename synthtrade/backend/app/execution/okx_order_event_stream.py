@@ -241,9 +241,20 @@ class OkxOrderEventStream:
                 aid = item.get("algoId")
                 if aid:
                     seen_algos.add(aid)
+            logger.info("OKX REST polling: seeded %d pending algo orders", len(seen_algos))
+        except Exception as e:
+            logger.warning("OKX REST polling: seed pending algo failed: %s", e)
+        
+        # Seed also completed algo orders (TP/SL fills go here after execution)
+        try:
+            resp = await self._rest_request("GET", "/api/v5/trade/orders-algo-history", params={"instType": "SPOT", "ordType": "oco"})
+            for item in resp.get("data", []):
+                aid = item.get("algoId")
+                if aid:
+                    seen_algos.add(aid)
             logger.info("OKX REST polling: seeded %d historical algo orders", len(seen_algos))
         except Exception as e:
-            logger.warning("OKX REST polling: seed algo failed: %s", e)
+            logger.warning("OKX REST polling: seed algo history failed: %s", e)
         
         while self._running:
             try:
@@ -274,6 +285,20 @@ class OkxOrderEventStream:
                     params={"instType": "SPOT", "ordType": "oco"}
                 )
                 for item in resp_algo.get("data", []):
+                    algo_id = item.get("algoId")
+                    if algo_id and algo_id not in seen_algos:
+                        seen_algos.add(algo_id)
+                        norm = self._normalize_algo_order(item)
+                        if norm:
+                            await self._emit(norm)
+                
+                # 4. Fetch algo orders history (TP/SL fills go here after execution)
+                resp_algo_hist = await self._rest_request(
+                    "GET", 
+                    "/api/v5/trade/orders-algo-history", 
+                    params={"instType": "SPOT", "ordType": "oco"}
+                )
+                for item in resp_algo_hist.get("data", []):
                     algo_id = item.get("algoId")
                     if algo_id and algo_id not in seen_algos:
                         seen_algos.add(algo_id)

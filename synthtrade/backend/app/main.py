@@ -306,24 +306,63 @@ async def _restore_scalping_session(db) -> None:
                             min_qty = float(filters.get("minQty", 0.001))
 
                             if total_bal < min_qty:
-                                # Position already closed externally
+                                # Position already closed externally - try to get fill price from algo history
                                 logger.warning(
                                     "Open position %s %s found in DB but exchange balance below minQty. "
-                                    "Marking as closed.",
+                                    "Position was closed externally (TP/SL).",
                                     side, symbol,
                                 )
                                 trade_id = ot.get("id")
+                                bracket_id = ot.get("exchange_bracket_id") or ot.get("oco_order_list_id")
+                                
+                                # Try to get fill price from algo orders history
+                                fill_price = None
+                                if bracket_id:
+                                    try:
+                                        algo_history = await adapter.get_algo_orders_history(symbol)
+                                        for algo in algo_history:
+                                            if algo.get("algoId") == bracket_id:
+                                                algo_state = algo.get("state", "")
+                                                if algo_state == "effective":  # filled
+                                                    fill_price = float(algo.get("avgPx") or algo.get("fillPx") or 0)
+                                                    logger.info(
+                                                        "Found filled bracket %s in algo history @ %s",
+                                                        bracket_id, fill_price,
+                                                    )
+                                                    break
+                                    except Exception as hist_e:
+                                        logger.warning("Could not fetch algo history for fill price: %s", hist_e)
+                                
                                 if trade_id:
-                                    def _db_close():
+                                    # Calculate PnL if we have fill price
+                                    if fill_price and fill_price > 0:
+                                        gross_pnl = (fill_price - entry_price) * quantity if side == "BUY" else (entry_price - fill_price) * quantity
+                                        # Use fee tier for fee calculation
+                                        fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                                        entry_fee = float(fee_tier.get("taker", 0.001))
+                                        exit_fee = float(fee_tier.get("maker", 0.001))
+                                        total_fees = (entry_price * quantity * entry_fee) + (fill_price * quantity * exit_fee)
+                                        pnl = gross_pnl - total_fees
+                                        pnl_pct = (pnl / (entry_price * quantity)) * 100 if entry_price > 0 else 0
+                                        
+                                        db.table("scalping_trades").update({
+                                            "status": "closed",
+                                            "exit_price": fill_price,
+                                            "pnl": round(pnl, 2),
+                                            "pnl_pct": round(pnl_pct, 2),
+                                            "exit_time": datetime.now(timezone.utc).isoformat(),
+                                            "signal_reason": "take_profit" if side == "BUY" and fill_price > entry_price else "stop_loss",
+                                        }).eq("id", trade_id).execute()
+                                    else:
+                                        # No fill price available - use entry price as fallback
                                         db.table("scalping_trades").update({
                                             "status": "closed",
                                             "exit_price": float(entry_price),
                                             "pnl": 0.0,
                                             "pnl_pct": 0.0,
                                             "exit_time": datetime.now(timezone.utc).isoformat(),
-                                            "signal_reason": "stop_loss",
+                                            "signal_reason": "external_close_unknown_price",
                                         }).eq("id", trade_id).execute()
-                                    await asyncio.to_thread(_db_close)
                                 verified = False
                             else:
                                 logger.info(

@@ -926,13 +926,53 @@ async def _on_uds_reconnect_sync():
         return
 
     try:
-        open_orders = await exchange.get_open_orders(pos.symbol)
-        if not open_orders:
-            # OCO eseguito durante la disconnessione!
-            # TEMPORARY: Skip fill price recovery for OKX EU due to 401/50119 authentication issues
-            # The bracket OCO is already active, fill price will be recovered via WS private when available
-            logger.info(f"UDS reconnect sync: fill price recovery skipped for {pos.symbol} (OKX EU auth issues)")
-            return
+        # Check if bracket was executed during disconnection
+        # For OKX: check algo orders history for filled TP/SL
+        if settings.EXCHANGE_PROVIDER.lower() == "okx":
+            # Get algo orders history to find filled bracket orders
+            try:
+                algo_history = await exchange.get_algo_orders_history(pos.symbol)
+                for algo in algo_history:
+                    algo_state = algo.get("state", "")
+                    if algo_state == "effective":  # filled
+                        fill_price = float(algo.get("avgPx") or algo.get("fillPx") or 0)
+                        if fill_price > 0:
+                            # Determine which leg was filled
+                            ord_type = algo.get("ordType", "").lower()
+                            reason = "take_profit" if "tp" in ord_type else ("stop_loss" if "sl" in ord_type else "bracket_filled")
+                            
+                            logger.info(f"UDS reconnect sync: found filled bracket {algo.get('algoId')} for {pos.symbol} @ {fill_price} ({reason})")
+                            
+                            # Close position in memory with fill price
+                            _execution_state["position_manager"].close_position(Decimal(str(fill_price)))
+                            
+                            # Update DB
+                            await _update_closed_position_in_db(pos, fill_price, 0, 0, reason)
+                            
+                            # Refresh balance
+                            await _refresh_session_balance()
+                            
+                            # Broadcast UI
+                            await broadcast_scalping_event("trade_closed", {
+                                "symbol": pos.symbol,
+                                "side": pos.side,
+                                "entry_price": float(pos.entry_price),
+                                "exit_price": fill_price,
+                                "quantity": float(pos.quantity),
+                                "pnl": 0,
+                                "pnl_pct": 0,
+                                "signal_reason": reason,
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            })
+                            return
+            except Exception as algo_e:
+                logger.warning(f"UDS reconnect sync: algo history check failed: {algo_e}")
+        else:
+            # Binance legacy: check open orders
+            open_orders = await exchange.get_open_orders(pos.symbol)
+            if not open_orders:
+                # OCO executed during disconnection - try to get fill price from REST
+                logger.info(f"UDS reconnect sync: no open orders for {pos.symbol}, checking fills...")
 
     except Exception as e:
         logger.warning(f"UDS reconnect sync error (non-fatal): {e}")

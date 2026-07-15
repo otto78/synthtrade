@@ -33,6 +33,7 @@ import {
   Subscription,
   combineLatest,
   of,
+  timeout,
 } from 'rxjs';
 import {
   switchMap,
@@ -152,6 +153,7 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
           return this.http
             .get<CandleResponse[]>(`${this.API_BASE}/candles/${symbol}?limit=100`)
             .pipe(
+              timeout(15000),
               tap((candles) => this._applyCandles(symbol, candles)),
               catchError((err) => {
                 console.warn('[LiveChart] HTTP error loading candles for', symbol, err);

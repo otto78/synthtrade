@@ -145,8 +145,9 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
             return of(null);
           }
           this.loading = true;
-          // Pulisci il chart immediatamente
+          // Pulisci il chart e il prezzo immediatamente
           try { this.candleSeries.setData([]); } catch (_) {}
+          this.lastPrice = 0;
 
           return this.http
             .get<CandleResponse[]>(`${this.API_BASE}/candles/${symbol}?limit=100`)
@@ -189,7 +190,10 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
   // ─── Applica dati ricevuti dal backend ────────────────────────────────────
 
   private _applyCandles(symbol: string, candles: CandleResponse[] | null): void {
-    if (!candles || candles.length === 0 || !this.candleSeries || !this.chart) return;
+    if (!candles || candles.length === 0 || !this.candleSeries || !this.chart) {
+      this.lastPrice = 0;
+      return;
+    }
 
     try {
       // Ordina per timestamp crescente (oldest → newest)

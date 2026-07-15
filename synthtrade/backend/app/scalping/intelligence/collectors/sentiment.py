@@ -56,6 +56,7 @@ class SentimentCollector:
         if cached is not None:
             ts, data = cached
             if time.monotonic() - ts < CACHE_TTL_SEC:
+                self._cb.on_success()
                 return data
 
         # Rimuovi USDT se presente (es: BTCUSDT -> BTC)
@@ -101,6 +102,7 @@ class SentimentCollector:
                 source="fallback",
             )
             self._cache[cache_key] = (time.monotonic(), fallback)
+            self._cb.on_success()
             logger.debug("[sentiment] tutte le sorgenti fallite per %s -> fallback neutro", symbol)
             return fallback
 
@@ -112,6 +114,7 @@ class SentimentCollector:
             source="+".join(sources) if sources else "rss",
         )
         self._cache[cache_key] = (time.monotonic(), result)
+        self._cb.on_success()
         self._reset_error_signature()
         return result
 

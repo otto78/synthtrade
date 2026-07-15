@@ -101,6 +101,7 @@ class WhaleCollector:
         if not found_data:
             return None
 
+        self._cb.on_success()
         return WhaleData(
             symbol=symbol,
             whale_transaction_count=whale_count,

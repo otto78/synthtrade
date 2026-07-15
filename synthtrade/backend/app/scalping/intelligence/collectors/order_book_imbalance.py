@@ -80,6 +80,7 @@ class OrderBookImbalanceCollector:
                         return None
 
                     imbalance = float((bid_depth - ask_depth) / (bid_depth + ask_depth))
+                    self._cb.on_success()
                     return OrderBookImbalance(
                         symbol=inst_id,
                         bid_depth=bid_depth,

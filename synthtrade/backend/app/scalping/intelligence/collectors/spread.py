@@ -109,6 +109,7 @@ class SpreadCollector:
                         inst_id, spread_pct, rolling_avg, ratio, is_anomalous,
                     )
 
+                    self._cb.on_success()
                     return SpreadSnapshot(
                         symbol=inst_id,
                         bid=bid,

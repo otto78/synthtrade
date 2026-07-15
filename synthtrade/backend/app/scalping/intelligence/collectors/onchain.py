@@ -74,6 +74,7 @@ class OnChainCollector:
         if not dune_data and not blockchair_data:
             return None
 
+        self._cb.on_success()
         if is_proxy:
             source = "blockchair_proxy:" + "+".join(chains)
         elif dune_data:

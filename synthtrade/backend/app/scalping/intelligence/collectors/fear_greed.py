@@ -45,6 +45,7 @@ class FearGreedCollector:
         # Usa cache se valida
         if _cached_value is not None and _cached_at is not None:
             if datetime.now(timezone.utc) - _cached_at < _CACHE_TTL:
+                self._cb.on_success()
                 return FearGreedData(
                     value=_cached_value,
                     label=self._classify(_cached_value),
@@ -65,6 +66,7 @@ class FearGreedCollector:
                         _cached_value = value
                         _cached_at = datetime.now(timezone.utc)
                         logger.info("FearGreed aggiornato: %d (%s)", value, self._classify(value))
+                        self._cb.on_success()
                         return FearGreedData(
                             value=value,
                             label=self._classify(value),

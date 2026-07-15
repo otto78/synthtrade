@@ -101,6 +101,7 @@ class LongShortRatioCollector:
                 ratio = await self._adapter.get_long_short_ratio(base, period=period)
             except Exception as e:
                 logger.warning("LongShortRatioCollector OKX fetch failed for %s: %s", symbol, e)
+                self._cb.on_failure()
                 ratio = None
             if ratio is None:
                 return None
@@ -115,6 +116,7 @@ class LongShortRatioCollector:
                 symbol, float(ratio), float(long_pct), float(short_pct), inst_id,
             )
 
+            self._cb.on_success()
             return LongShortRatio(
                 symbol=symbol.upper(),
                 long_pct=long_pct,
@@ -154,6 +156,7 @@ class LongShortRatioCollector:
                     
                     logger.debug("Raw LS data for %s: long=%s, short=%s", symbol, long_val, short_val)
 
+                    self._cb.on_success()
                     return LongShortRatio(
                         symbol=symbol.upper(),
                         long_pct=long_val * 100,
@@ -166,6 +169,7 @@ class LongShortRatioCollector:
                     await asyncio.sleep(0.5 * (attempt + 1))  # Backoff
                     continue
                 logger.warning("LongShortRatioCollector error for %s: %s", symbol, e)
+                self._cb.on_failure()
                 return None
 
     @staticmethod

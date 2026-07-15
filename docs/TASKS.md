@@ -16,7 +16,7 @@
 
 ### TASK-1160 — Fix 5 NameErrors in router.py live trade path
 
-**Status:** Pending
+**Status:** ✅ Implemented (d6f056a + router.py edit, 16/07/2026)
 **Priorità:** 🔴 CRITICA
 **Effort stimato:** 1 ora
 **Dipendenze:** nessuna
@@ -34,16 +34,16 @@
 **File coinvolti:**
 - `synthtrade/backend/app/scalping/router.py` (lines 1808-1856)
 
-**Nota:** le ultime due funzioni inesistenti si trovano nel blocco CCXT-specifico (lines 1808-1823) che va eliminato interamente con il passaggio a TASK-1164 (REST-only). Questo task può essere risolto in due modi: (a) fix temporaneo delle 3 NameError rimanenti, oppure (b) integrazione diretta nel TASK-1164. Raccomandato: opzione (b).
+**Fix applicato:** Blocco balance check riscritto usando `adapter.get_holdings()` (REST) al posto di `exchange.client.fetch_balance()` (CCXT). Variabili `current_price`→`_current_price`, `min_qty`→`_min_qty` definite all'inizio del blocco. Log line `qty_raw` corretto in `_qty_raw`.
 
 **Acceptance Criteria:**
-- `python -m py_compile synthtrade/backend/app/scalping/router.py` OK
-- Nessun NameError nel path `_candle_processor` live trade
-- Test `test_okx_integration.py` passa
+- `python -m py_compile synthtrade/backend/app/scalping/router.py` OK ✅
+- Nessun NameError nel path `_candle_processor` live trade ✅
+- Test `test_okx_integration.py` passa ✅
 
 ### TASK-1161 — Fix circuit breaker on_success() mai chiamato (tutti i collector)
 
-**Status:** Pending
+**Status:** ✅ Implemented (16/07/2026)
 **Priorità:** 🔴 CRITICA
 **Effort stimato:** 2 ore
 **Dipendenze:** nessuna
@@ -81,61 +81,41 @@ async def collect(self, symbol: str) -> dict | None:
 
 ### TASK-1162 — Fix _sign_headers credenziali instance vs settings
 
-**Status:** Pending
+**Status:** ✅ Implemented (16/07/2026)
 **Priorità:** 🔴 CRITICA
 **Effort stimato:** 1 ora
 **Dipendenze:** nessuna
 
 **Problema:** `_sign_headers()` in `okx_exchange.py:127-143` è `@staticmethod` che legge `settings.exchange_secret_key` etc. Se l'adapter ha credenziali diverse da settings (es. multi-account), le REST call usano le credenziali sbagliate.
 
-**Fix:** convertire in metodo d'istanza:
-```python
-def _sign_headers(self, method: str, path: str, body: str = "") -> dict[str, str]:
-    timestamp = ...
-    sign_str = timestamp + method + path + body
-    signature = hmac.new(self._secret.encode(), sign_str.encode(), hashlib.sha256).digest()
-    return {
-        "OK-ACCESS-KEY": self._api_key,
-        "OK-ACCESS-SIGN": base64.b64encode(signature).decode(),
-        "OK-ACCESS-TIMESTAMP": timestamp,
-        "OK-ACCESS-PASSPHRASE": self._passphrase,
-    }
-```
+**Fix applicato:** convertito in metodo d'istanza, aggiunto `self._api_key/_secret/_passphrase` nel costruttore. Tutte le chiamate REST dirette usano ora le credenziali corrette dell'istanza.
 
 **File coinvolti:**
-- `synthtrade/backend/app/execution/okx_exchange.py` (lines 127-143)
+- `synthtrade/backend/app/execution/okx_exchange.py` (constructor + `_sign_headers`)
 
 **Acceptance Criteria:**
-- `_sign_headers` è metodo d'istanza, usa `self._api_key/secret/passphrase`
-- `@staticmethod` rimosso
-- Tutte le chiamate REST dirette passano correttamente
+- `_sign_headers` è metodo d'istanza, usa `self._api_key/secret/passphrase` ✅
+- `@staticmethod` rimosso ✅
+- Tutte le chiamate REST dirette passano correttamente ✅ (27/28 test passano, 1 pre-esistente)
 
 ### TASK-1163 — Fix OCO leg detection in order event stream
 
-**Status:** Pending
+**Status:** ✅ Implemented (16/07/2026)
 **Priorità:** 🔴 CRITICA
 **Effort stimato:** 2 ore
 **Dipendenze:** nessuna
 
 **Problema:** In `okx_order_event_stream.py:466`: `if "tp" in ord_type.lower()` — ma `ordType` per OCO è `"oco"`. Tutti gli ordini OCO ottengono `leg = "algo"` invece di `take_profit`/`stop_loss`. Il router non può distinguere TP fill da SL fill.
 
-**Fix:** leggere il campo `tpTriggerPx`/`slTriggerPx` dalla risposta OKX per determinare il leg:
-```python
-if algo_order.get("tpTriggerPx"):
-    leg = "take_profit"
-elif algo_order.get("slTriggerPx"):
-    leg = "stop_loss"
-else:
-    leg = "algo"
-```
+**Fix applicato:** legge `tpTriggerPx`/`slTriggerPx` dalla risposta OKX per determinare il leg, con fallback a `ordType` per ordini non-OCO.
 
 **File coinvolti:**
-- `synthtrade/backend/app/execution/okx_order_event_stream.py` (lines 448-470)
+- `synthtrade/backend/app/execution/okx_order_event_stream.py` (lines 464-471)
 
 **Acceptance Criteria:**
-- Un ordine OCO con `tpTriggerPx` popolato riceve `leg = "take_profit"`
-- Un ordine OCO con `slTriggerPx` popolato riceve `leg = "stop_loss"`
-- Il router `_on_order_update` gestisce correttamente entrambi i leg
+- Un ordine OCO con `tpTriggerPx` popolato riceve `leg = "take_profit"` ✅
+- Un ordine OCO con `slTriggerPx` popolato riceve `leg = "stop_loss"` ✅
+- Il router `_on_order_update` gestisce correttamente entrambi i leg ✅
 
 ### TASK-1164 — OKX adapter: rimuovere strato CCXT, REST-only (httpx)
 
@@ -293,7 +273,7 @@ Il fallback REST polling è operativo e gestisce gli eventi di fill senza errori
 
 ### TASK-1159 — Ricalibrazione pesi SignalScoreEngine
 
-**Status:** Pending — *proposta concreta pronta, da applicare e validare*
+**Status:** ✅ Committed (`d6f056a` 16/07/2026)
 **Priorità:** 🔴 CRITICA — il sistema è strutturalmente non-tradeable con i pesi attuali
 **Dipendenze:** TASK-1150, 1151, 1152, 1153, 1154
 **Effort:** 1 ora (cambio pesi) + 2-3 sessioni di validazione
@@ -336,7 +316,7 @@ DEFAULT_WEIGHTS = {
 
 ### TASK-1170 — Fix log diagnostico COLLECTORS: stampare s= anche per zero/None
 
-**Status:** Pending
+**Status:** ✅ Committed (`d6f056a` 16/07/2026)
 **Priorità:** 🔴 ALTA — prerequisito per TASK-1159
 **Effort:** 30 min
 **Dipendenze:** nessuna
@@ -363,7 +343,7 @@ f"{name}=OK(w={w},s={score})" if score is not None else f"{name}=NONE(w={w})"
 
 ### TASK-1171 — Trova istanza fantasma SignalScoreEngine per "BTCUSDT"
 
-**Status:** Pending
+**Status:** ✅ Committed (`d6f056a` 16/07/2026)
 **Priorità:** 🟡 Media — innocuo ma bug di wiring
 **Effort:** 1 ora
 **Dipendenze:** nessuna

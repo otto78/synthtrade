@@ -109,6 +109,7 @@ class OpenInterestCollector:
                 oi_usd = await self._adapter.get_open_interest(base)
             except Exception as e:
                 logger.warning("OpenInterestCollector OKX fetch failed for %s: %s", symbol, e)
+                self._cb.on_failure()
                 oi_usd = None
             if oi_usd is None:
                 return None
@@ -124,6 +125,7 @@ class OpenInterestCollector:
                 symbol, float(oi_usd), float(baseline), len(self._history[sym_key]),
             )
 
+            self._cb.on_success()
             return OpenInterest(
                 symbol=symbol.upper(),
                 value_usd=Decimal(str(oi_usd)),
@@ -166,6 +168,7 @@ class OpenInterestCollector:
                         symbol, float(oi_value), float(baseline), len(self._history[sym_key])
                     )
 
+                    self._cb.on_success()
                     return OpenInterest(
                         symbol=symbol.upper(),
                         value_usd=oi_value,
@@ -178,6 +181,7 @@ class OpenInterestCollector:
                     await asyncio.sleep(0.5 * (attempt + 1))  # Backoff
                     continue
                 logger.warning("OpenInterestCollector error for %s: %s", symbol, e)
+                self._cb.on_failure()
                 return None
 
     def get_baseline(self, symbol: str) -> Decimal:

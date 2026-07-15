@@ -109,6 +109,7 @@ class FundingRateCollector:
                 rate = await self._adapter.get_funding_rate(base)
             except Exception as e:
                 logger.warning("FundingRateCollector OKX fetch failed for %s: %s", symbol, e)
+                self._cb.on_failure()
                 rate = None
             if rate is None:
                 return None
@@ -117,6 +118,7 @@ class FundingRateCollector:
                 "FundingRate (okx_native) for %s: rate=%.6f (proxy via %s)",
                 symbol, float(rate), inst_id,
             )
+            self._cb.on_success()
             return FundingRate(
                 symbol=symbol.upper(),
                 rate=Decimal(str(rate)),
@@ -146,6 +148,7 @@ class FundingRateCollector:
                         return None
 
                     entry = data[0]
+                    self._cb.on_success()
                     return FundingRate(
                         symbol=symbol.upper(),
                         rate=Decimal(str(entry.get("fundingRate", "0"))),

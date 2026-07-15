@@ -4,6 +4,30 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.17 — 2026-07-15
+
+**Milestone:** Fix Change Detection prezzo live chart + EPICA AUDIT POST-OKX completamento
+
+**Completato:**
+- ✅ **TASK-1173:** Fix `LiveChartComponent` prezzo non si aggiorna — Change Detection mancante (`live-chart.component.ts`)
+- ✅ **TASK-1172:** Fix chart preview symbol blocked by stale session status (`live-chart.component.ts`)
+- ✅ **TASK-1164:** OKX adapter REST-only completo (`okx_exchange.py`)
+- ✅ **TASK-907:** Frontend PAUSED session bug fix (`trade-log.component.ts`, `performance-panel.component.ts`)
+- ✅ Broadcast race condition fix (`router.py`)
+- ✅ OKBEUR phantom engine fix (`router.py`)
+- ✅ POSITION_RECONCILE cashBal fix (`okx_exchange.py`)
+- ✅ Stale price on symbol switch fix (`live-chart.component.ts`)
+- ✅ Candle HTTP timeout fix (`live-chart.component.ts`)
+
+**Root cause TASK-1173:** Tutti gli altri componenti scalping usano `cdr.detectChanges()` dopo ogni mutazione di stato da WS. `LiveChartComponent` era l'unico senza — il prezzo veniva aggiornato nella memoria ma Angular non lo sapeva e non ridisegnava il template. Il click sulla select funzionava perché forzava un giro di change detection.
+
+**File modificati:**
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/live-chart.component.ts`
+- `synthtrade/backend/app/execution/okx_exchange.py`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/trade-log.component.ts`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/performance-panel.component.ts`
+- `synthtrade/backend/app/scalping/router.py`
+
 ### v1.4.16 — 2026-07-14
 
 **Milestone:** Fix TP/SL fill detection OKX EU — Consolidamento polling loop

@@ -2,6 +2,28 @@
 
 ## Ultimo Handoff
 
+### Da: OpenCode -> prossima sessione
+
+**Data:** 2026-07-15 16:07
+
+**Contesto:** Fix Change Detection prezzo live chart (TASK-1173) + review TASKS.md
+
+---
+
+### ✅ TASK-1173 — LiveChartComponent: prezzo non si aggiorna
+
+**Problema:** Il prezzo nel live chart non si aggiorna mai all'avvio. Lo spinner resta "pending" indefinitamente. Il prezzo appare solo quando l'utente clicca sulla select dei simboli (anche senza cambiarlo).
+
+**Root cause:** `LiveChartComponent` muta `lastPrice` e `loading` nei callback RxJS (WS e HTTP) ma non triggera Angular Change Detection. Il template usa `*ngIf="lastPrice > 0"` ma Angular non sa che la proprietà è cambiata.
+
+Tutti gli altri componenti scalping (`position-ticker`, `trade-log`, `session-controls`, `market-intel-panel`) usano `cdr.detectChanges()` dopo ogni mutazione di stato da WS. `LiveChartComponent` era l'unico senza.
+
+**Fix:** Iniettato `ChangeDetectorRef`, chiamato `this.cdr.detectChanges()` dopo ogni mutazione di `lastPrice` e `loading`.
+
+**File:** `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/live-chart.component.ts`
+
+---
+
 ### Da: Devin -> prossima sessione
 
 **Data:** 2026-07-13 14:30 (aggiornato 2026-07-14)

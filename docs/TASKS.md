@@ -1,6 +1,6 @@
 # TASKS.md — SynthTrade Task Tracking
 
-> **Aggiornato:** 2026-07-15. Task completati spostati in `docs/ARCHIVE_TASKS.md`.
+> **Aggiornato:** 2026-07-15 14:00. Task completati spostati in `docs/ARCHIVE_TASKS.md`.
 
 ---
 
@@ -369,6 +369,43 @@ f"{name}=OK(w={w},s={score})" if score is not None else f"{name}=NONE(w={w})"
 
 ---
 
+### TASK-1172 — Fix chart preview symbol blocked by stale session status
+
+**Status:** ✅ Implemented (15/07/2026)
+**Priorità:** 🟠 ALTA — il preview simbolo non funziona
+**Effort:** 30 min
+**Dipendenze:** nessuna
+
+**Problema:** In `live-chart.component.ts`, la logica `activeSymbol$` usa un approccio blacklist (`session?.status !== 'idle'`) per decidere se usare `session.symbol` oppure il `previewSymbol` selezionato dall'utente. Questo fallisce quando:
+1. La sessione ha `status: 'stopped'` (non `'idle'`) — il preview viene ignorato
+2. Un evento WS stale `session_restored` arriva dopo lo stop con `status: 'running'` — sovrascrive `session$` e il preview viene ignorato
+3. Qualsiasi stato diverso da `'idle'` blocca il preview
+
+**Sintomo:** L'utente seleziona un simbolo dal dropdown, il prezzo non si aggiorna nella chart. Cliccando di nuovo sulla select, si aggiorna (nel frattempo lo stato session si è corretto).
+
+**Fix:** Cambiare blacklist → whitelist: usare `session.symbol` SOLO quando `status === 'running' || status === 'paused'`. Qualsiasi altro stato (idle, stopped, errore, stale) lascia che il preview funzioni.
+
+```typescript
+// Prima (blacklist — fallisce per 'stopped', stale WS events):
+session?.status !== 'idle' && session?.symbol
+  ? session.symbol
+  : preview || 'BTC-EUR'
+
+// Dopo (whitelist — solo running/paused usano session.symbol):
+session?.status === 'running' || session?.status === 'paused'
+  ? session.symbol
+  : preview || 'BTC-EUR'
+```
+
+**File:** `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/live-chart.component.ts` (line 121-126)
+
+**Acceptance Criteria:**
+- Selezionare un simbolo dal dropdown aggiorna immediatamente la chart ✅
+- Con sessione running, la chart mostra il simbolo della sessione ✅
+- Con sessione stopped/idle, la chart mostra il preview selezionato ✅
+
+---
+
 ## Task pending (non OKX-specific)
 
 ### TASK-906 — Trend Analysis: Prevenzione Falling Knife in Mean-Reversion
@@ -507,6 +544,30 @@ Questo gestisce anche `'stopped'` per vedere storico dopo sessione finita.
 **Nota:** Il modello Binance Margin non è più il percorso primario. OKX usa un modello diverso con Trading Account/tdMode. Da ripianificare dopo migrazione OKX.
 
 **Riferimento:** `SynthTrade_Short_Selling_Architecture.md` §3, §11 Fasi 2-6.
+
+### TASK-1173 — LiveChartComponent: prezzo non si aggiorna (Angular Change Detection)
+
+**Status:** ✅ Implemented (15/07/2026)
+**Priorità:** 🔴 ALTA
+**Effort:** 30 min
+**Dipendenze:** nessuna
+
+**Problema:** Il prezzo nel live chart non si aggiorna mai all'avvio della pagina. Lo spinner resta "pending" indefinitamente. Il prezzo appare solo quando l'utente clicca sulla select dei simboli (anche senza cambiarlo).
+
+**Root cause:** `LiveChartComponent` muta `lastPrice` e `loading` nei callback RxJS (WS e HTTP) ma **non triggera Angular Change Detection**. Il template usa `*ngIf="lastPrice > 0"` ma Angular non sa che la proprietà è cambiata.
+
+Tutti gli altri componenti scalping (`position-ticker`, `trade-log`, `session-controls`, `market-intel-panel`, ecc.) usano `cdr.detectChanges()` dopo ogni mutazione di stato da WS. `LiveChartComponent` era l'unico senza.
+
+**Perché il click sulla select funziona:** Ogni DOM event (click) entra nella Angular zone → zone.js triggera change detection → Angular legge `lastPrice` già aggiornato e lo renderizza.
+
+**Fix:** Iniettare `ChangeDetectorRef`, chiamare `this.cdr.detectChanges()` dopo ogni mutazione:
+1. `switchMap` body — dopo `this.loading = true` + `this.lastPrice = 0`
+2. `finalize` callback — dopo `this.loading = false`
+3. `_applyCandles()` — dopo `this.lastPrice = chartData[...]`
+4. `_subscribeToWsCandles()` — dopo `this.lastPrice = candle.close`
+
+**File modificati:**
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/live-chart.component.ts`
 
 ---
 

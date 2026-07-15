@@ -13,6 +13,7 @@ import {
   AfterViewInit,
   ViewChild,
   ElementRef,
+  ChangeDetectorRef,
 } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import {
@@ -110,6 +111,7 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
     private ws: ScalpingWsService,
     private sessionApi: SessionApiService,
     private http: HttpClient,
+    private cdr: ChangeDetectorRef,
   ) {}
 
   ngOnInit(): void {
@@ -119,7 +121,7 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
       this.sessionApi.previewSymbol$,
     ]).pipe(
       map(([session, preview]) =>
-        (session?.status !== 'idle' && session?.symbol
+        (session?.status === 'running' || session?.status === 'paused'
           ? session.symbol
           : preview || 'BTC-EUR'
         ).toUpperCase()
@@ -149,6 +151,7 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
           // Pulisci il chart e il prezzo immediatamente
           try { this.candleSeries.setData([]); } catch (_) {}
           this.lastPrice = 0;
+          this.cdr.detectChanges();
 
           return this.http
             .get<CandleResponse[]>(`${this.API_BASE}/candles/${symbol}?limit=100`)
@@ -162,6 +165,7 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
               finalize(() => {
                 // Garantito: loading = false sia in successo che in errore
                 this.loading = false;
+                this.cdr.detectChanges();
               })
             );
         })
@@ -194,6 +198,7 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
   private _applyCandles(symbol: string, candles: CandleResponse[] | null): void {
     if (!candles || candles.length === 0 || !this.candleSeries || !this.chart) {
       this.lastPrice = 0;
+      this.cdr.detectChanges();
       return;
     }
 
@@ -226,6 +231,7 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
       this.candleSeries.setData(chartData);
       this.lastPrice = chartData[chartData.length - 1].close;
       this.chart.timeScale().scrollToRealTime();
+      this.cdr.detectChanges();
     } catch (err) {
       console.warn('[LiveChart] Error applying candle data:', err);
     }
@@ -254,6 +260,7 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
             });
             this.lastPrice = candle.close;
             this.chart.timeScale().scrollToRealTime();
+            this.cdr.detectChanges();
           } catch (_) {
             // chart rimosso/distrutto, ignora
           }

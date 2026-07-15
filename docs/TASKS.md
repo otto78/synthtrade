@@ -291,17 +291,98 @@ Il fallback REST polling è operativo e gestisce gli eventi di fill senza errori
 
 ## EPICA COLLECTOR INTELLIGENCE — Task pending
 
-### TASK-1159 — Ricalibrazione pesi SignalScoreEngine + nota cadenza micro-swing
+### TASK-1159 — Ricalibrazione pesi SignalScoreEngine
 
-**Status:** Pending — *reweight strutturale sbloccato ora; tuning su outcome richiede sessioni reali*
-**Priorità:** 🟠 Alta
+**Status:** Pending — *proposta concreta pronta, da applicare e validare*
+**Priorità:** 🔴 CRITICA — il sistema è strutturalmente non-tradeable con i pesi attuali
 **Dipendenze:** TASK-1150, 1151, 1152, 1153, 1154
+**Effort:** 1 ora (cambio pesi) + 2-3 sessioni di validazione
 
-**Obiettivo:** Redistribuire i pesi in `SignalScoreEngine.WEIGHTS` su numeri osservati dai log reali, non su placeholder.
+**Problema (confermato da sessione reale 48 cicli, ~50 min):** Lo score oscilla quasi sempre tra -4 e +6, mai vicino alla soglia 10.0. Causa: i collector "lenti" (funding -5.0, LSR -20, F&G +22.5) producono un drag fisso ≈ -0.43 che l'unico segnale dinamico (OBI, peso 0.15) non riesce a compensare.
 
-**Stato attuale (analisi 15/07):** I pesi sono statici in `DEFAULT_WEIGHTS`, nessun meccanismo runtime. I log `[COVERAGE_REAL]` già mostrano copertura per symbol. Possibile fare reweight strutturale ora (basato su affidabilità collector). Tuning basato su outcome richiede 2-3 sessioni reali. Serve anche un meccanismo per applicare pesi aggiornati (attualmente solo hardcoded).
+**Proposta di reweight (da sessione reale BTC-EUR):**
 
-**Nota:** Con 10-30 trade/giorno, il CVD potrebbe perdere peso relativo a favore di segnali più strutturali come Order Book Imbalance su finestre più larghe. Decisione da prendere solo dopo dati raccolti.
+```python
+DEFAULT_WEIGHTS = {
+    "order_book_imbalance": 0.30,   # 0.15 → 0.30 — unico segnale reattivo confermato
+    "funding_rate":         0.15,   # 0.20 → 0.15 — bias macro, ridotto
+    "long_short_ratio":     0.10,   # 0.15 → 0.10 — ridondante con funding_rate
+    "fear_greed":           0.10,   # 0.15 → 0.10 — contesto, non trigger per-candela
+    "cvd":                  0.15,   # 0.20 → 0.15 — ridotto provvisoriamente (vedi caveat)
+    "whale":                0.05,   # 0.10 → 0.05 — idem
+    "onchain":               0.05,   # invariato
+    "open_interest":        0.05,   # 0.15 → 0.05 — rumore puro nella sessione osservata
+    "spread":               0.00,   # invariato — wiring OFF
+    "sentiment":            0.00,   # 0.05 → 0.00 — zero varianza, peso morto
+}
+```
+
+**Verifica retroattiva (3 momenti reali della sessione):**
+
+| Timestamp | OBI reale | Score vecchio | Score nuovi pesi | Esito |
+|-----------|-----------|---------------|------------------|-------|
+| 11:19:04 | +37.5 | 5.8 (bloccato) | ~+11.4 | ✅ avrebbe superato soglia 10.0 |
+| 11:44:06 | -22.8 | -3.8 (bloccato) | ~-7.5 | raddoppiato avvicinamento |
+| 11:34:21 | +4.4 | -0.0 | ~+1.0 | resta neutro — nessun falso positivo |
+
+**Caveat (da non saltare):**
+1. Campione minuscolo — 1 sessione, 48 cicli. Validare su 2-3 sessioni con nuovi pesi attivi.
+2. **Prerequisito:** fixare log diagnostico `[ScoreEngine][COLLECTORS]` perché stampi `s=` anche quando valore è 0/None (vedi TASK-1170). Oggi non si può distinguere "contributo zero" da "bug nel log".
+3. Soglia (10.0) andrebbe rivalutata insieme ai pesi — con score range più ampio potrebbe dover salire.
+
+**File:** `synthtrade/backend/app/scalping/intelligence/signal_score_engine.py` (line 64-74, `DEFAULT_WEIGHTS`)
+
+---
+
+### TASK-1170 — Fix log diagnostico COLLECTORS: stampare s= anche per zero/None
+
+**Status:** Pending
+**Priorità:** 🔴 ALTA — prerequisito per TASK-1159
+**Effort:** 30 min
+**Dipendenze:** nessuna
+
+**Problema:** La riga `[ScoreEngine][COLLECTORS]` stampa `whale=OK(w=0.10)` senza `,s=...` — a differenza degli altri collector. Non si può distinguere "contributo zero reale" da "bug nel log che nasconde un valore". whale (0.10) e cvd (0.20) insieme pesano 0.30 su 1.20 (25% del budget) ma non si verifica se producono score.
+
+**File:** `synthtrade/backend/app/scalping/intelligence/signal_score_engine.py` — riga di log `[ScoreEngine][COLLECTORS]`
+
+**Fix:** stampare `s=` sempre, anche quando `score is None` o `score == 0`:
+```python
+# Prima (probabile):
+f"{name}=OK(w={w})" if score is not None else f"{name}=NONE"
+
+# Dopo:
+f"{name}=OK(w={w},s={score})" if score is not None else f"{name}=NONE(w={w})"
+```
+
+**Acceptance Criteria:**
+- La riga COLLECTORS mostra `s=` per ogni collector che risponde
+- Se whale/cvd restituiscono 0, si vede `whale=OK(w=0.05,s=0.0)` — non `whale=OK(w=0.05)`
+- Se restituiscono None, si vede `whale=NONE(w=0.05)`
+
+---
+
+### TASK-1171 — Trova istanza fantasma SignalScoreEngine per "BTCUSDT"
+
+**Status:** Pending
+**Priorità:** 🟡 Media — innocuo ma bug di wiring
+**Effort:** 1 ora
+**Dipendenze:** nessuna
+
+**Problema:** Ogni 10 min (supervisor tick) appare `[SignalScoreEngine] Created singleton instance for BTCUSDT` — la sessione è su BTC-EUR, non BTCUSDT. Secondo engine creato per simbolo sbagliato. Spreca una chiamata e nasconde un default hardcoded nel path del supervisor.
+
+**Indizi:**
+- `signal_score_engine.py` usa `get_or_create(symbol)` — qualcosa chiama `get_or_create("BTCUSDT")`
+- Il supervisor tick parte da `supervisor_scheduler.py` o `supervisor_context.py`
+- Probabile stringa hardcoded tipo `symbol = "BTCUSDT"` o `symbol = session.get("symbol", "BTCUSDT")`
+
+**File coinvolti (da verificare):**
+- `synthtrade/backend/app/scalping/supervisor/supervisor_scheduler.py`
+- `synthtrade/backend/app/scalping/supervisor/supervisor_context.py`
+- `synthtrade/backend/app/scalping/intelligence/signal_score_engine.py` (linea `get_or_create`)
+
+**Acceptance Criteria:**
+- Nessun `Created singleton instance for BTCUSDT` nei log dopo fix
+- Solo un engine creato per sessione, con il simbolo corretto
 
 ---
 

@@ -442,7 +442,7 @@ Se ≥20 → il task può partire. Se <20 → aspettare.
 
 ### TASK-907 — Bug Frontend: dati mancanti su reload con sessione PAUSED
 
-**Status:** Pending
+**Status:** ✅ Implemented (16/07/2026)
 **Priorità:** ALTA — fix 2 righe
 **Effort:** 30 min
 

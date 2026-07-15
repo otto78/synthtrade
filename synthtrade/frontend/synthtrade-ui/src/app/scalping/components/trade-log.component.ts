@@ -94,7 +94,7 @@ export class TradeLogComponent implements OnInit, OnDestroy {
         this.seenKeys.clear();
         this.cdr.markForCheck();
         this.cdr.detectChanges();
-      } else if (session.status === 'running') {
+      } else {
         // On fresh session (trades empty or seenKeys empty), clear and reload.
         // On session restore (reconnect/refresh), merge with dedup.
         if (this.trades.length === 0 || this.seenKeys.size === 0) {

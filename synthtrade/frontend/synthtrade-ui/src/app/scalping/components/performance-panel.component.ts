@@ -183,7 +183,7 @@ export class PerformancePanelComponent implements OnInit, OnDestroy {
         this.metrics = undefined;
         this.cdr.markForCheck();
         this.cdr.detectChanges();
-      } else if (session.status === 'running') {
+      } else {
         this.metrics = undefined;
         this.cdr.markForCheck();
         this.cdr.detectChanges();

@@ -55,22 +55,23 @@ from app.scalping.intelligence.collectors.order_book_imbalance import OrderBookI
 from app.scalping.intelligence.collectors.spread import SpreadCollector
 from app.config import settings
 
-# Pesi normalizzati per ogni fonte (relativi; la somma NON deve essere 1.0).
-# Sentiment ridotto perche' rumoroso su simboli non-BTC/ETH
-# order_book_imbalance aggiunto in TASK-1151 con peso provvisorio (da ricalibrare in Fase 6).
-# onchain: proxy macro BTC/ETH via Blockchair (TASK-1156), peso modesto per segnale indiretto.
-# NOTA: i pesi sono relativi; l'engine normalizza dividendo per il total_weight risposto,
-# quindi aggiungere un peso provvisorio > 1.0 non altera il contributo dei collector esistenti.
+# Pesi calibrati su sessione reale BTC-EUR (48 cicli, 15/07/2026, TASK-1159).
+# OBI è l'unico segnale reattivo confermato — peso raddoppiato.
+# Collector "lenti" (funding, LSR, FG) ridotti: producono drag fisso, non trigger per-candela.
+# sentiment/whale/cvd ridotti: contributo non verificabile o zero varianza osservata.
+# spread: wiring OFF, peso zero documentato.
+# NOTA: i pesi sono relativi; l'engine normalizza dividendo per total_weight risposto.
 DEFAULT_WEIGHTS: Dict[str, float] = {
-    "funding_rate": 0.20,
-    "cvd": 0.20,
-    "open_interest": 0.15,
-    "long_short_ratio": 0.15,
-    "fear_greed": 0.15,
-    "whale": 0.10,
-    "sentiment": 0.05,
-    "onchain": 0.05,  # TASK-1156: proxy macro BTC/ETH, peso modesto
-    "order_book_imbalance": 0.15,  # TASK-1151 (peso provvisorio)
+    "order_book_imbalance": 0.30,  #TASK-1159: 0.15→0.30 — unico segnale reattivo
+    "funding_rate": 0.15,          #TASK-1159: 0.20→0.15 — bias macro, ridotto
+    "cvd": 0.15,                   #TASK-1159: 0.20→0.15 — ridotto provvisoriamente
+    "long_short_ratio": 0.10,      #TASK-1159: 0.15→0.10 — ridondante con funding_rate
+    "fear_greed": 0.10,            #TASK-1159: 0.15→0.10 — contesto, non trigger
+    "whale": 0.05,                 #TASK-1159: 0.10→0.05 — contributo non verificabile
+    "open_interest": 0.05,         #TASK-1159: 0.15→0.05 — rumore puro osservato
+    "onchain": 0.05,               # invariato — proxy macro stabile
+    "sentiment": 0.00,             #TASK-1159: 0.05→0.00 — zero varianza osservata
+    "spread": 0.00,                # wiring OFF — peso zero documentato
 }
 
 
@@ -152,8 +153,7 @@ class SignalScoreEngine:
             elif name == "sentiment" and hasattr(result, "score"):
                 return SentimentCollector.sentiment_to_score(result.score)
             elif name == "whale" and hasattr(result, "recent_whale_activity"):
-                if result.recent_whale_activity:
-                    return WhaleCollector.whale_to_score(result)
+                return WhaleCollector.whale_to_score(result) if result.recent_whale_activity else 0.0
             elif name == "onchain" and hasattr(result, "price_change_24h_pct"):
                 return OnChainCollector.onchain_to_score(result)
             elif name == "order_book_imbalance" and hasattr(result, "imbalance"):
@@ -387,7 +387,14 @@ class SignalScoreEngine:
                     _status_parts.append(f"{_name}=OK(w={_w:.2f})")
         _cvd_snap = self._cvd_calculator.snapshot(self.symbol) if self._cvd_calculator else None
         _cvd_w = self.weights.get("cvd", 0.0)
-        _status_parts.append(f"cvd={'OK' if _cvd_snap is not None else 'NONE'}(w={_cvd_w:.2f})")
+        _cvd_s = None
+        if _cvd_snap is not None:
+            try:
+                _cvd_s = CVDCalculator.cvd_to_score(_cvd_snap.cvd, Decimal("1000"))
+            except Exception:
+                pass
+        _status_parts.append(f"cvd={'OK' if _cvd_snap is not None else 'NONE'}(w={_cvd_w:.2f}" +
+                            (f",s={_cvd_s:.1f})" if _cvd_s is not None else ")"))
 
         logger.info(
             "[ScoreEngine][COLLECTORS] symbol=%s | %s",

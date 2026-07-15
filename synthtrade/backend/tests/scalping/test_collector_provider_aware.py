@@ -214,7 +214,9 @@ class TestScoreReweightWhenUnavailable:
         assert "funding_rate" not in excluded
         assert "open_interest" not in excluded
         assert "long_short_ratio" not in excluded
-        expected = sum(engine.weights.values())
+        # whale è escluso per OKB-EUR (OKB è exchange token, nessun dato on-chain)
+        assert "whale" in excluded
+        expected = sum(engine.weights.values()) - engine.weights.get("whale", 0.0)
         assert total == pytest.approx(expected)
 
     def test_btc_eur_all_perpetual_collectors_supported(self, okx_provider):

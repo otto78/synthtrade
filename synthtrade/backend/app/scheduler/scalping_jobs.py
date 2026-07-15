@@ -172,7 +172,22 @@ async def supervisor_check_job() -> None:
     try:
         from app.scalping.supervisor.supervisor_scheduler import SupervisorScheduler
 
-        scheduler_sup = SupervisorScheduler()
+        # Legge il simbolo dalla sessione attiva (stesso pattern di intelligence_snapshot_job)
+        active_symbol = None
+        try:
+            from app.scalping.router import _execution_state
+            session_symbol = _execution_state.get("session", {}).get("symbol")
+            session_status = _execution_state.get("session", {}).get("status", "idle")
+            if session_symbol and session_status == "running":
+                active_symbol = session_symbol
+        except Exception:
+            pass
+
+        if not active_symbol:
+            logger.debug("Supervisor check job: no active session — skipping")
+            return
+
+        scheduler_sup = SupervisorScheduler(symbol=active_symbol)
         decision = await scheduler_sup.run_once()
         if decision:
             logger.info(

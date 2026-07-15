@@ -104,6 +104,10 @@ class OkxExchangeAdapter:
                     "x-simulated-trading": "1",
                 }
 
+        self._api_key = api_key
+        self._secret = secret
+        self._passphrase = passphrase
+
         self._rules_cache: dict[str, SymbolRules] = {}
         self._rules_cache_ts: dict[str, float] = {}
         self._rules_cache_ttl = 300  # 5 min
@@ -116,8 +120,9 @@ class OkxExchangeAdapter:
 
     # ── Balance ───────────────────────────────────────────────────────────────
 
-    @staticmethod
-    def _sign_headers(method: str, path: str, body: str = "") -> dict:
+    # Task-1162: instance method — uses self._api_key/_secret/_passphrase
+    # instead of settings (supports multi-account / custom credentials)
+    def _sign_headers(self, method: str, path: str, body: str = "") -> dict:
         """Firma le richieste OKX con il body incluso per POST."""
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
         if body:
@@ -126,16 +131,16 @@ class OkxExchangeAdapter:
             prehash = ts + method + path
         sig = base64.b64encode(
             hmac.new(
-                settings.exchange_secret_key.encode(),
+                self._secret.encode(),
                 prehash.encode(),
                 hashlib.sha256,
             ).digest()
         ).decode()
         headers = {
-            "OK-ACCESS-KEY": settings.exchange_api_key,
+            "OK-ACCESS-KEY": self._api_key,
             "OK-ACCESS-SIGN": sig,
             "OK-ACCESS-TIMESTAMP": ts,
-            "OK-ACCESS-PASSPHRASE": settings.exchange_passphrase,
+            "OK-ACCESS-PASSPHRASE": self._passphrase,
             "Content-Type": "application/json",
         }
         if settings.exchange_demo:

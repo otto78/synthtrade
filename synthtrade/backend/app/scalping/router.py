@@ -1804,56 +1804,43 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     step_size = float(filters["stepSize"])
                                     _qty_precise = round(math.floor(_qty_raw / step_size) * step_size, 8)
                                     
-                                    # 3. Check real free balance in quote asset BEFORE placing order
+                                    # 3. Check real free balance in quote asset BEFORE placing order (TASK-1160)
+                                    _current_price = float(event.close)
+                                    _min_qty = float(filters["minQty"])
                                     try:
-                                        ccxt_bal = await exchange.client.fetch_balance()
-                                        bal_total = ccxt_bal.get("total", {})
-                                        bal_free = ccxt_bal.get("free", {})
-                                        quote_asset = filters.get("quoteAsset", "USDT")
-                                        
-                                        # ── FIX-2026-06-08: Normalize LD tokens (LDUSDC → USDC) and
-                                        # use _select_preferred_quote_balance() to find the best available
-                                        # quote balance, matching the logic used at session start.
-                                        # Without this, USDC held in LD (Locked Deposit) format would
-                                        # show as free=0.0 / total=0.0 and block valid trades.
-                                        normalized_total = _normalize_binance_total_balance(bal_total)
-                                        normalized_free = _normalize_binance_total_balance(bal_free)
-                                        
-                                        total_quote = _select_preferred_quote_balance(normalized_total, quote_asset) or 0.0
-                                        free_quote = _select_preferred_quote_balance(normalized_free, quote_asset) or 0.0
-                                        
-                                        # Safety cap: limita qty_precise al 98% del free balance disponibile
-                                        # Questo evita "Insufficient funds" da Binance per via delle commissioni (0.1% taker).
-                                        # Se il ceil per minNotional supera il balance disponibile, usa il floor invece.
-                                        max_qty_by_balance = (free_quote * 0.98) / current_price
+                                        holdings = await exchange.get_holdings()
+                                        quote_asset = filters.get("quoteAsset", "EUR")
+                                        free_quote = holdings.get(quote_asset, 0.0)
+
+                                        max_qty_by_balance = (free_quote * 0.98) / _current_price
                                         max_qty_floor = max_qty_by_balance - (max_qty_by_balance % step_size)
                                         if _qty_precise > max_qty_floor:
                                             logger.warning(
                                                 f"Safety cap: qty_precise={_qty_precise} exceeds available balance "
-                                                f"(free={free_quote} * 0.98 / price={current_price} = {max_qty_floor}). "
+                                                f"(free={free_quote} * 0.98 / price={_current_price} = {max_qty_floor}). "
                                                 f"Capping to {max_qty_floor}"
                                             )
                                             _qty_precise = max_qty_floor
-                                        
-                                        if _qty_precise < min_qty:
+
+                                        if _qty_precise < _min_qty:
                                             logger.error(
-                                                f"Quantity too small after safety cap: {_qty_precise} < {min_qty}. "
+                                                f"Quantity too small after safety cap: {_qty_precise} < {_min_qty}. "
                                                 f"Insufficient balance to meet minQty. free_balance={free_quote:.2f}"
                                             )
                                             await broadcast_scalping_event("error", {
                                                 "code": "QTY_TOO_SMALL",
-                                                "message": f"Trade quantity {_qty_precise} below minimum {min_qty} even after balance cap. Insufficient balance.",
+                                                "message": f"Trade quantity {_qty_precise} below minimum {_min_qty} even after balance cap. Insufficient balance.",
                                             })
                                             continue
 
                                         logger.info(
-                                            f"LIVE BALANCE: {quote_asset} free={free_quote} total={total_quote} "
-                                            f"trade_cost={_qty_precise * float(event.close):.2f}"
+                                            f"LIVE BALANCE: {quote_asset} free={free_quote} "
+                                            f"trade_cost={_qty_precise * _current_price:.2f}"
                                         )
                                     except Exception as bal_e:
                                         logger.warning(f"Balance check failed (non-blocking): {bal_e}")
-                                    
-                                    logger.info(f"LIVE TRADE CALC: symbol={event.symbol}, trade_value={_trade_val}, price={event.close}, qty_raw={qty_raw}, step_size={step_size}, qty_precise={_qty_precise}, min_qty={filters['minQty']}")
+
+                                    logger.info(f"LIVE TRADE CALC: symbol={event.symbol}, trade_value={_trade_val}, price={event.close}, qty_raw={_qty_raw}, step_size={step_size}, qty_precise={_qty_precise}, min_qty={filters['minQty']}")
                                     
                                     if _qty_precise < float(filters["minQty"]):
                                         logger.error(f"Quantity too small: {_qty_precise} < {filters['minQty']} - TRADE BLOCKED")

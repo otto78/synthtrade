@@ -461,14 +461,22 @@ class OkxOrderEventStream:
 
         status = "filled" if state in ("effective", "filled") else "expired"
 
-        # Determine leg from order type
-        ord_type = item.get("ordType", "")
-        if "tp" in ord_type.lower():
+        # Determine leg: prefer tpTriggerPx/slTriggerPx (reliable for OCO,
+        # where ordType is "oco" and doesn't contain "tp"/"sl").
+        tp_trigger = item.get("tpTriggerPx")
+        sl_trigger = item.get("slTriggerPx")
+        if tp_trigger and str(tp_trigger) not in ("", "0", "0.0"):
             leg = "take_profit"
-        elif "sl" in ord_type.lower():
+        elif sl_trigger and str(sl_trigger) not in ("", "0", "0.0"):
             leg = "stop_loss"
         else:
-            leg = "algo"
+            ord_type = item.get("ordType", "")
+            if "tp" in ord_type.lower():
+                leg = "take_profit"
+            elif "sl" in ord_type.lower():
+                leg = "stop_loss"
+            else:
+                leg = "algo"
 
         return {
             "provider": "okx",

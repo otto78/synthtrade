@@ -57,15 +57,9 @@ import { ConfigService } from '../../core/services/config.service';
             <select [(ngModel)]="selectedStrategy" class="select">
               <option value="ema_cross">EMA Cross</option>
               <option value="rsi_bollinger">RSI con Bollinger</option>
-<<<<<<< Updated upstream
               <option value="stoch_rsi_bb_squeeze">Stoch RSI con Bollinger Bands Squeeze</option>
               <option value="vwap_reversion">VWAP Reversion</option>
               <option value="momentum_base">Momentum Base</option>
-=======
-              <option value="vwap_reversion">VWAP Reversion</option>
-              <option value="momentum_base">Momentum Base</option>
-              <option value="stoch_rsi_bb_squeeze">Stoch RSI con BB Squeeze</option>
->>>>>>> Stashed changes
               <option value="scalping_v2">Scalping</option>
             </select>
           </div>
@@ -460,12 +454,8 @@ import { ConfigService } from '../../core/services/config.service';
 })
 export class SessionControlsComponent implements OnInit {
   session: ScalpingSession | null = null;
-<<<<<<< Updated upstream
   sessionId: string | null = null;
   selectedSymbol = 'OKBEUR';
-=======
-  selectedSymbol = 'BNBUSDC';
->>>>>>> Stashed changes
   selectedStrategy = 'momentum_base';
   
   /** Trade value: restore from localStorage or default 100 */
@@ -643,15 +633,9 @@ export class SessionControlsComponent implements OnInit {
     const map: Record<string, string> = {
       ema_cross: 'EMA Cross',
       rsi_bollinger: 'RSI con Bollinger',
-<<<<<<< Updated upstream
       stoch_rsi_bb_squeeze: 'Stoch RSI con Bollinger Bands Squeeze',
       vwap_reversion: 'VWAP Reversion',
       momentum_base: 'Momentum Base',
-=======
-      vwap_reversion: 'VWAP Reversion',
-      momentum_base: 'Momentum Base',
-      stoch_rsi_bb_squeeze: 'Stoch RSI con BB Squeeze',
->>>>>>> Stashed changes
       scalping_v2: 'Scalping',
     };
     return map[s] ?? s;

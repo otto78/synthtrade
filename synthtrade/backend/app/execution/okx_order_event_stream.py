@@ -306,7 +306,7 @@ class OkxOrderEventStream:
                     break
                 await asyncio.sleep(0.2)
 
-    async def _rest_request(self, method: str, request_path: str, params: dict = None) -> dict:
+    async def _rest_request(self, method: str, request_path: str, params: dict | None = None) -> dict:
         import httpx
         import urllib.parse
         from datetime import datetime, timezone

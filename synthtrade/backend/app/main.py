@@ -171,28 +171,96 @@ async def _restore_scalping_session(db) -> None:
                 entry_price = ot.get("entry_price", 0)
                 quantity = ot.get("quantity", 0)
                 if entry_price and quantity and entry_price > 0 and quantity > 0:
-                    from decimal import Decimal
-                    pm = _execution_state["position_manager"]
-                    pos_obj = pm.open_position(
+                    # ── Reconcile with exchange BEFORE restoring in memory ──
+                    from app.scalping.router import (
+                        _reconcile_position_with_exchange,
+                        broadcast_scalping_event,
+                        _get_fee_rate,
+                    )
+                    bracket_id = ot.get("exchange_bracket_id") or ot.get("oco_order_list_id")
+                    reconcile = await _reconcile_position_with_exchange(
                         symbol=symbol_ot,
-                        side=side,
-                        entry_price=Decimal(str(entry_price)),
-                        quantity=Decimal(str(quantity)),
+                        pos_side=side,
+                        entry_price=float(entry_price),
+                        quantity=float(quantity),
+                        exchange=adapter,
+                        bracket_id=bracket_id,
                     )
-                    pos_obj.oco_order_list_id = ot.get("oco_order_list_id")
-                    pos_obj.sl_order_id = ot.get("sl_order_id")
-                    pos_obj.tp_order_id = ot.get("tp_order_id")
-                    # TASK-1129: ripristina i veri prezzi TP/SL dalla riga scalping_trades
-                    # (altrimenti il bug si ripresenta a ogni riavvio).
-                    if ot.get("tp_price"):
-                        pos_obj.tp_price = Decimal(str(ot["tp_price"]))
-                    if ot.get("sl_price"):
-                        pos_obj.sl_price = Decimal(str(ot["sl_price"]))
-                    has_open_position = True
-                    logger.info(
-                        "Open position restored from DB during startup: %s %s @ %s qty=%s",
-                        side, symbol_ot, entry_price, quantity,
-                    )
+                    if reconcile is not None:
+                        # Position was closed externally on exchange — update DB, skip restore
+                        trade_id = ot.get("id")
+                        if trade_id:
+                            fp = reconcile["fill_price"]
+                            gross_pnl = (
+                                (fp - float(entry_price)) * float(quantity)
+                                if side == "BUY"
+                                else (float(entry_price) - fp) * float(quantity)
+                            )
+                            fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                            entry_fee_r = _get_fee_rate(fee_tier, "taker", 0.001)
+                            exit_fee_r = _get_fee_rate(fee_tier, "maker", 0.001)
+                            total_fees = (
+                                (float(entry_price) * float(quantity) * entry_fee_r)
+                                + (fp * float(quantity) * exit_fee_r)
+                            )
+                            pnl = gross_pnl - total_fees
+                            pnl_pct = (
+                                (pnl / (float(entry_price) * float(quantity))) * 100
+                                if float(entry_price) > 0
+                                else 0
+                            )
+                            reason = reconcile["reason"]
+
+                            def _db_close_reconciled():
+                                db.table("scalping_trades").update({
+                                    "status": "closed",
+                                    "exit_price": fp,
+                                    "pnl": round(pnl, 2),
+                                    "pnl_pct": round(pnl_pct, 2),
+                                    "exit_time": datetime.now(timezone.utc).isoformat(),
+                                    "signal_reason": reason,
+                                }).eq("id", trade_id).execute()
+                            await asyncio.to_thread(_db_close_reconciled)
+
+                            await broadcast_scalping_event("position_reconciled_externally", {
+                                "symbol": symbol_ot,
+                                "side": side,
+                                "entry_price": float(entry_price),
+                                "exit_price": fp,
+                                "quantity": float(quantity),
+                                "pnl": round(pnl, 2),
+                                "pnl_pct": round(pnl_pct, 2),
+                                "source": reconcile["source"],
+                                "reason": reason,
+                            })
+                            logger.info(
+                                "[POSITION_RECONCILE] Startup: %s %s closed externally | "
+                                "fill=%.4f source=%s reason=%s pnl=%.2f",
+                                side, symbol_ot, fp, reconcile["source"], reason, pnl,
+                            )
+                        # has_open_position stays False — balance check will proceed normally
+                    else:
+                        # Position confirmed open on exchange — restore in memory
+                        from decimal import Decimal
+                        pm = _execution_state["position_manager"]
+                        pos_obj = pm.open_position(
+                            symbol=symbol_ot,
+                            side=side,
+                            entry_price=Decimal(str(entry_price)),
+                            quantity=Decimal(str(quantity)),
+                        )
+                        pos_obj.oco_order_list_id = ot.get("oco_order_list_id")
+                        pos_obj.sl_order_id = ot.get("sl_order_id")
+                        pos_obj.tp_order_id = ot.get("tp_order_id")
+                        if ot.get("tp_price"):
+                            pos_obj.tp_price = Decimal(str(ot["tp_price"]))
+                        if ot.get("sl_price"):
+                            pos_obj.sl_price = Decimal(str(ot["sl_price"]))
+                        has_open_position = True
+                        logger.info(
+                            "Open position restored from DB during startup: %s %s @ %s qty=%s",
+                            side, symbol_ot, entry_price, quantity,
+                        )
         except Exception as e:
             logger.warning(f"Could not check open positions during restore: {e}")
 
@@ -273,147 +341,6 @@ async def _restore_scalping_session(db) -> None:
 
     if session_mode == "live":
         guard.complete_phase("exchange_phase")
-
-# Step 7 — Restore open position from DB (if any trade with status='open' exists)
-    # Skip if we already restored in Step 6 (has_open_position is True)
-    if not has_open_position:
-        try:
-            def _db_op4():
-                return db.table("scalping_trades") \
-                    .select("*") \
-                    .eq("session_id", session_id) \
-                    .eq("status", "open") \
-                    .limit(1) \
-                    .execute()
-            open_trades = await asyncio.to_thread(_db_op4)
-            if open_trades.data:
-                ot = open_trades.data[0]
-                side = ot.get("side", "BUY")
-                entry_price = ot.get("entry_price", 0)
-                quantity = ot.get("quantity", 0)
-                symbol = ot.get("symbol", _execution_state["session"]["symbol"])
-                if entry_price and quantity and entry_price > 0 and quantity > 0:
-                    # Verify the position actually exists on the exchange
-                    verified = True
-                    if session_mode == "live" and _execution_state.get("exchange"):
-                        try:
-                            adapter = _execution_state["exchange"]
-                            filters = await adapter.get_symbol_filters(symbol)
-                            base_asset = filters.get("baseAsset", "")
-                            ccxt_bal = await adapter.client.fetch_balance()
-                            free_bal = float(ccxt_bal.get("free", {}).get(base_asset, 0))
-                            total_bal = float(ccxt_bal.get("total", {}).get(base_asset, 0))
-                            min_qty = float(filters.get("minQty", 0.001))
-
-                            if total_bal < min_qty:
-                                # Position already closed externally - try to get fill price from algo history
-                                logger.warning(
-                                    "Open position %s %s found in DB but exchange balance below minQty. "
-                                    "Position was closed externally (TP/SL).",
-                                    side, symbol,
-                                )
-                                trade_id = ot.get("id")
-                                bracket_id = ot.get("exchange_bracket_id") or ot.get("oco_order_list_id")
-                                
-                                # Try to get fill price from algo orders history
-                                fill_price = None
-                                if bracket_id:
-                                    try:
-                                        algo_history = await adapter.get_algo_orders_history(symbol)
-                                        for algo in algo_history:
-                                            if algo.get("algoId") == bracket_id:
-                                                algo_state = algo.get("state", "")
-                                                if algo_state == "effective":  # filled
-                                                    fill_price = float(algo.get("avgPx") or algo.get("fillPx") or 0)
-                                                    logger.info(
-                                                        "Found filled bracket %s in algo history @ %s",
-                                                        bracket_id, fill_price,
-                                                    )
-                                                    break
-                                    except Exception as hist_e:
-                                        logger.warning("Could not fetch algo history for fill price: %s", hist_e)
-                                
-                                # Fallback: use current ticker price if algo history unavailable
-                                if not fill_price and bracket_id:
-                                    try:
-                                        ticker_price = await adapter.get_ticker_price(symbol)
-                                        if ticker_price and ticker_price > 0:
-                                            fill_price = ticker_price
-                                            logger.info(
-                                                "Using ticker price as fill approximation: %s @ %s",
-                                                symbol, ticker_price,
-                                            )
-                                    except Exception as ticker_e:
-                                        logger.warning("Could not fetch ticker price for fill approximation: %s", ticker_e)
-                                
-                                if trade_id:
-                                    # Calculate PnL if we have fill price
-                                    if fill_price and fill_price > 0:
-                                        gross_pnl = (fill_price - entry_price) * quantity if side == "BUY" else (entry_price - fill_price) * quantity
-                                        # Use fee tier for fee calculation
-                                        fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-                                        entry_fee = float(fee_tier.get("taker", 0.001))
-                                        exit_fee = float(fee_tier.get("maker", 0.001))
-                                        total_fees = (entry_price * quantity * entry_fee) + (fill_price * quantity * exit_fee)
-                                        pnl = gross_pnl - total_fees
-                                        pnl_pct = (pnl / (entry_price * quantity)) * 100 if entry_price > 0 else 0
-                                        
-                                        # Determine reason: if we got fill from algo history, we know TP/SL
-                                        # If we used ticker price fallback, we can't determine the reason
-                                        reason = "take_profit" if side == "BUY" and fill_price > entry_price else ("stop_loss" if side == "BUY" and fill_price < entry_price else "external_close")
-                                        
-                                        db.table("scalping_trades").update({
-                                            "status": "closed",
-                                            "exit_price": fill_price,
-                                            "pnl": round(pnl, 2),
-                                            "pnl_pct": round(pnl_pct, 2),
-                                            "exit_time": datetime.now(timezone.utc).isoformat(),
-                                            "signal_reason": reason,
-                                        }).eq("id", trade_id).execute()
-                                    else:
-                                        # No fill price available - use entry price as fallback
-                                        db.table("scalping_trades").update({
-                                            "status": "closed",
-                                            "exit_price": float(entry_price),
-                                            "pnl": 0.0,
-                                            "pnl_pct": 0.0,
-                                            "exit_time": datetime.now(timezone.utc).isoformat(),
-                                            "signal_reason": "external_close_unknown_price",
-                                        }).eq("id", trade_id).execute()
-                                verified = False
-                            else:
-                                logger.info(
-                                    "Open position verified on exchange: total_balance=%.6f, free=%.6f %s",
-                                    total_bal, free_bal, base_asset,
-                                )
-                        except Exception as ord_e:
-                            logger.warning("Could not verify open orders during restore (non-blocking): %s", ord_e)
-
-                    if verified:
-                        from decimal import Decimal
-                        pm = _execution_state["position_manager"]
-                        pos_obj = pm.open_position(
-                            symbol=symbol,
-                            side=side,
-                            entry_price=Decimal(str(entry_price)),
-                            quantity=Decimal(str(quantity)),
-                        )
-                        pos_obj.oco_order_list_id = ot.get("oco_order_list_id")
-                        pos_obj.sl_order_id = ot.get("sl_order_id")
-                        pos_obj.tp_order_id = ot.get("tp_order_id")
-                        # TASK-1129: ripristina i veri prezzi TP/SL dalla riga scalping_trades
-                        # (altrimenti il bug si ripresenta a ogni riavvio).
-                        if ot.get("tp_price"):
-                            pos_obj.tp_price = Decimal(str(ot["tp_price"]))
-                        if ot.get("sl_price"):
-                            pos_obj.sl_price = Decimal(str(ot["sl_price"]))
-                        logger.info(
-                            "Open position restored from DB: %s %s @ %s qty=%s",
-                            side, symbol, entry_price, quantity,
-                        )
-        except Exception as e:
-            logger.error("Failed to restore open position from DB: %s", e, exc_info=True)
-            guard.fail(f"restore_position_failed: {type(e).__name__}: {e}")
 
     guard.complete_phase("position_phase")
 

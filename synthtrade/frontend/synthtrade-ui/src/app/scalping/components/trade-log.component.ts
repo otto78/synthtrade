@@ -118,11 +118,6 @@ export class TradeLogComponent implements OnInit, OnDestroy {
         this.cdr.detectChanges();
       })
     );
-<<<<<<< Updated upstream
-=======
-
-    // Step 3: No initial load — wait for active session via session$ subscription
->>>>>>> Stashed changes
   }
 
   ngOnDestroy(): void {

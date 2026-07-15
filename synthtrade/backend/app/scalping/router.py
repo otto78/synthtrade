@@ -66,6 +66,122 @@ def _get_fee_rate(fee_tier, rate_type: str, default: float = 0.001) -> float:
     else:
         return getattr(fee_tier, rate_type, default)
 
+
+async def _reconcile_position_with_exchange(
+    symbol: str,
+    pos_side: str,
+    entry_price: float,
+    quantity: float,
+    *,
+    exchange=None,
+    bracket_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Verify on the exchange whether a position is still open.
+
+    Returns None if the position is still alive (no action needed).
+    Returns a dict with fill_price, source, reason if the position was
+    closed externally (TP/SL hit while bot was offline).
+
+    Source priority: algo_history > ticker > entry_price_fallback.
+    """
+    _exchange = exchange or _execution_state.get("exchange")
+    if not _exchange:
+        logger.warning("[POSITION_RECONCILE] No exchange adapter available, skipping check")
+        return None
+
+    try:
+        sym_ref = SymbolRef.from_okx(symbol) if "-" in symbol else SymbolRef.from_compact(symbol)
+    except Exception:
+        sym_ref = SymbolRef.from_compact(symbol)
+
+    try:
+        rules = await _exchange.get_symbol_rules(sym_ref)
+        min_qty = float(rules.min_sz)
+        base_asset = sym_ref.base
+
+        total_bal = await _exchange.get_balance(base_asset)
+
+        if total_bal is not None and total_bal >= min_qty:
+            logger.info(
+                "[POSITION_RECONCILE] %s %s still open on exchange (balance=%.6f >= minQty=%.6f)",
+                pos_side, symbol, total_bal, min_qty,
+            )
+            return None
+
+        logger.info(
+            "[POSITION_RECONCILE] %s %s balance=%.6f < minQty=%.6f — position closed externally",
+            pos_side, symbol, total_bal or 0, min_qty,
+        )
+    except Exception as bal_e:
+        logger.warning("[POSITION_RECONCILE] Balance check failed: %s", bal_e)
+        return None
+
+    fill_price: Optional[float] = None
+    source = "entry_price_fallback"
+    reason = "external_close_unknown_price"
+
+    # Priority 1: algo orders history (most accurate)
+    if bracket_id:
+        try:
+            algo_history = await _exchange.get_algo_orders_history(symbol)
+            for algo in algo_history:
+                if algo.get("algoId") == bracket_id and algo.get("state") == "effective":
+                    fill_price = float(algo.get("avgPx") or algo.get("fillPx") or 0)
+                    if fill_price > 0:
+                        source = "algo_history"
+                        ord_type = algo.get("ordType", "").lower()
+                        if "tp" in ord_type:
+                            reason = "take_profit"
+                        elif "sl" in ord_type:
+                            reason = "stop_loss"
+                        else:
+                            reason = "bracket_filled"
+                        logger.info(
+                            "[POSITION_RECONCILE] Recovered fill from algo history: "
+                            "algoId=%s fill=%.4f reason=%s",
+                            bracket_id, fill_price, reason,
+                        )
+                        break
+        except Exception as hist_e:
+            logger.warning("[POSITION_RECONCILE] Algo history fetch failed: %s", hist_e)
+
+    # Priority 2: current ticker price (approximation)
+    if fill_price is None or fill_price <= 0:
+        try:
+            ticker_price = await _exchange.get_ticker_price(sym_ref.okx)
+            if ticker_price and ticker_price > 0:
+                fill_price = ticker_price
+                source = "ticker"
+                if pos_side == "BUY":
+                    reason = "take_profit" if fill_price > entry_price else "stop_loss"
+                else:
+                    reason = "take_profit" if fill_price < entry_price else "stop_loss"
+                logger.info(
+                    "[POSITION_RECONCILE] Using ticker price as approximation: %.4f (source=ticker)",
+                    fill_price,
+                )
+        except Exception as ticker_e:
+            logger.warning("[POSITION_RECONCILE] Ticker fetch failed: %s", ticker_e)
+
+    # Priority 3: entry price fallback (PnL unreliable)
+    if fill_price is None or fill_price <= 0:
+        fill_price = entry_price
+        source = "entry_price_fallback"
+        reason = "external_close_unknown_price"
+        logger.warning(
+            "[POSITION_RECONCILE] No fill price recovered — using entry_price=%.4f as fallback. "
+            "PnL will be inaccurate!",
+            entry_price,
+        )
+
+    logger.info(
+        "[POSITION_RECONCILE] %s %s closed externally | fill=%.4f source=%s reason=%s",
+        pos_side, symbol, fill_price, source, reason,
+    )
+
+    return {"fill_price": fill_price, "source": source, "reason": reason}
+
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/scalping", tags=["scalping"])
@@ -548,18 +664,22 @@ async def _live_close_position(exchange, pos, qty: float) -> float:
         if actual_qty < min_qty:
             # ── SCENARIO 1: Bracket already executed ──
             # Exchange already sold (TP or SL filled). Only dust remains.
-            # Recover fill price from current ticker as best approximation.
+            # Delegate to shared reconciliation helper for consistent fill price logic.
             logger.info(
                 f"Balance {actual_qty} {base_asset} < minSz {min_qty}. "
                 f"Position already closed by exchange bracket."
             )
-            try:
-                close_price_to_use = await exchange.get_ticker_price(sym_ref.okx)
-                if close_price_to_use > 0:
-                    logger.info(f"Using current ticker price as fill approximation: {close_price_to_use}")
-                    return close_price_to_use
-            except Exception as ticker_e:
-                logger.warning(f"Ticker fetch failed, falling back to entry price: {ticker_e}")
+            bracket_id = getattr(pos, 'oco_order_list_id', None)
+            reconcile = await _reconcile_position_with_exchange(
+                symbol=pos.symbol,
+                pos_side=pos.side,
+                entry_price=float(pos.entry_price),
+                quantity=float(pos.quantity),
+                exchange=exchange,
+                bracket_id=bracket_id,
+            )
+            if reconcile is not None:
+                return reconcile["fill_price"]
             return float(pos.entry_price)
 
         # ── SCENARIO 3: Position still open, balance >= min_sz ──
@@ -927,53 +1047,57 @@ async def _on_uds_reconnect_sync():
         return
 
     try:
-        # Check if bracket was executed during disconnection
-        # For OKX: check algo orders history for filled TP/SL
-        if settings.EXCHANGE_PROVIDER.lower() == "okx":
-            # Get algo orders history to find filled bracket orders
-            try:
-                algo_history = await exchange.get_algo_orders_history(pos.symbol)
-                for algo in algo_history:
-                    algo_state = algo.get("state", "")
-                    if algo_state == "effective":  # filled
-                        fill_price = float(algo.get("avgPx") or algo.get("fillPx") or 0)
-                        if fill_price > 0:
-                            # Determine which leg was filled
-                            ord_type = algo.get("ordType", "").lower()
-                            reason = "take_profit" if "tp" in ord_type else ("stop_loss" if "sl" in ord_type else "bracket_filled")
-                            
-                            logger.info(f"UDS reconnect sync: found filled bracket {algo.get('algoId')} for {pos.symbol} @ {fill_price} ({reason})")
-                            
-                            # Close position in memory with fill price
-                            _execution_state["position_manager"].close_position(Decimal(str(fill_price)))
-                            
-                            # Update DB
-                            await _update_closed_position_in_db(pos, fill_price, 0, 0, reason)
-                            
-                            # Refresh balance
-                            await _refresh_session_balance()
-                            
-                            # Broadcast UI
-                            await broadcast_scalping_event("trade_closed", {
-                                "symbol": pos.symbol,
-                                "side": pos.side,
-                                "entry_price": float(pos.entry_price),
-                                "exit_price": fill_price,
-                                "quantity": float(pos.quantity),
-                                "pnl": 0,
-                                "pnl_pct": 0,
-                                "signal_reason": reason,
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
-                            })
-                            return
-            except Exception as algo_e:
-                logger.warning(f"UDS reconnect sync: algo history check failed: {algo_e}")
-        else:
-            # Binance legacy: check open orders
-            open_orders = await exchange.get_open_orders(pos.symbol)
-            if not open_orders:
-                # OCO executed during disconnection - try to get fill price from REST
-                logger.info(f"UDS reconnect sync: no open orders for {pos.symbol}, checking fills...")
+        bracket_id = getattr(pos, 'oco_order_list_id', None)
+        reconcile = await _reconcile_position_with_exchange(
+            symbol=pos.symbol,
+            pos_side=pos.side,
+            entry_price=float(pos.entry_price),
+            quantity=float(pos.quantity),
+            exchange=exchange,
+            bracket_id=bracket_id,
+        )
+        if reconcile is None:
+            return  # Position still open on exchange
+
+        fill_price = reconcile["fill_price"]
+        reason = reconcile["reason"]
+        entry_f = float(pos.entry_price)
+        qty_f = float(pos.quantity)
+
+        gross_pnl = (
+            (fill_price - entry_f) * qty_f
+            if pos.side == "BUY"
+            else (entry_f - fill_price) * qty_f
+        )
+        fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+        entry_fee = _get_fee_rate(fee_tier, "taker", 0.001)
+        exit_fee = _get_fee_rate(fee_tier, "maker", 0.001)
+        total_fees = (entry_f * qty_f * entry_fee) + (fill_price * qty_f * exit_fee)
+        pnl = gross_pnl - total_fees
+        pnl_pct = (pnl / (entry_f * qty_f)) * 100 if entry_f > 0 else 0.0
+
+        logger.info(
+            "[POSITION_RECONCILE] UDS reconnect: %s closed externally | "
+            "fill=%.4f source=%s reason=%s pnl=%.2f",
+            pos.symbol, fill_price, reconcile["source"], reason, pnl,
+        )
+
+        _execution_state["position_manager"].close_position(Decimal(str(fill_price)))
+        await _update_closed_position_in_db(pos, fill_price, pnl, pnl_pct, reason)
+        await _refresh_session_balance()
+
+        await broadcast_scalping_event("position_reconciled_externally", {
+            "symbol": pos.symbol,
+            "side": pos.side,
+            "entry_price": entry_f,
+            "exit_price": fill_price,
+            "quantity": qty_f,
+            "pnl": round(pnl, 2),
+            "pnl_pct": round(pnl_pct, 2),
+            "source": reconcile["source"],
+            "reason": reason,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
 
     except Exception as e:
         logger.warning(f"UDS reconnect sync error (non-fatal): {e}")

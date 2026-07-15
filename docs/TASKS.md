@@ -575,31 +575,24 @@ Con SL ricalibrato a 1.05%, entrambi dovrebbero produrre ~0.35%.
 **Chiarimento dipendenza API key (14/07/2026):** TASK-1154 NON richiede di procurarsi alcuna API key.
 Il `SentimentCollector` (`sentiment.py`) ha già 3 fonti: CryptoCompare (key opzionale), NewsAPI (key opzionale) e RSS feed (gratuito, sempre disponibile → fallback finale). `backend/.env` contiene GIÀ `NEWSAPI_API_KEY` e `CRYPTOCOMPARE_API_KEY` (verificato), quindi oggi gira con tutte e tre le fonti (confermato in TASK-1150: `source=cryptocompare+newsapi+rss`). Lo scope di 1154 è rendere il fallback *robusto* (ordine di priorità, fallback keyword se tutto fallisce, cache 5 min, log compatto su errori DNS) — funziona anche a zero key (solo RSS). Si può avviare subito, senza cercare chiavi.
 
-### TASK-1155 — Whale collector: fonti OKX-compatibili
+### TASK-1155 — Whale collector: fix parsing + API key + structurally_unavailable
 
-**Status:** 🔍 Analisi fatta (2026-07-14) — concluso: richiede Whale Alert API (a pagamento), nessuna fonte gratuita per OKB
+**Status:** ✅ Done (2026-07-15)
 **Priorità:** 🟢 Bassa
 **Dipendenze:** TASK-1150
 
-**Obiettivo:** Se dopo TASK-1150 il solo Blockchair risulta insufficiente, aggiungere Whale Alert API come opzione a pagamento.
+**Obiettivo:** Fixare il parsing del simbolo che impediva a BTC-EUR di funzionare, aggiungere API key CryptoCompare, e marcare OKB come strutturalmente unavailable.
 
 **File:** `synthtrade/backend/app/scalping/intelligence/collectors/whale.py`
 
-**Analisi (sessione live OKB-EUR, 2026-07-14):**
-- `whale` risulta `active=on` ma `status=NONE` a ogni snapshot (`[COLLECTORS] ... whale=NONE`).
-- Motivo: il `WhaleCollector` (TASK-804) usa **Blockchair**, che copre solo **BTC** ed **LTC**. OKB
-  non esiste su Blockchair → nessun dato whale per OKB-EUR.
-- L'unica fonte whale "exchange-aware" per asset OKX è **Whale Alert API** (a pagamento): va
-  aggiunta come source opzionale nel collector, attivata solo se `WHALE_ALERT_API_KEY` è presente.
-- **Nota per OKB:** anche con Whale Alert, la copertura di asset "mid-cap" come OKB è parziale
-  (Whale Alert si concentra sui top asset). È quindi atteso che `whale` resti `NONE` su OKB-EUR
-  finché non si valuta l'utilità reale del segnale. Per BTC-EUR/LTC-EUR il collector continua a
-  funzionare con Blockchair.
-- Il collector resta comunque "pronto a contribuire quando possibile" (graceful `None`, nessun
-  impatto su score/coverage: `whale` è in `no_response_transient`, non in `structurally_unavailable`).
+**Bug risolti (2026-07-15):**
+1. **Parsing errato:** `symbol.replace("USDT", "")` non gestiva `-EUR` → `"BTC-EUR"` diventava `"btc-eur"` invece di `"btc"`. Fix: strip completo di tutti i suffissi quote.
+2. **CryptoCompare senza API key:** il fallback news non usava `CRYPTOCOMPARE_API_KEY` (già nel `.env`) → errore 401. Fix: aggiunto header `Apikey` come fa `sentiment.py`.
+3. **OKB strutturalmente assente:** OKB è un token exchange, non ha dati on-chain. Fix: aggiunto `is_symbol_supported()` che esclude OKB (e BNB) dalla coverage.
 
-**Decisione:** TASK-1155 rimane aperto ma a bassa priorità. Non blocca la raccolta dati su OKB-EUR.
-Da riprendere solo se si vuole il segnale whale anche su asset non-BTC/LTC (acquisto API key).
+**Effetto atteso:**
+- BTC-EUR: whale ora funziona (Blockchair + news fallback con key)
+- OKB-EUR: whale escluso da `structurally_unavailable`, coverage non penalizzata
 
 ### TASK-1156 — On-chain collector: fallback Blockchair
 

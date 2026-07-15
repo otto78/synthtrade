@@ -48,6 +48,7 @@ class TestSignalScoreEngine:
         engine._sentiment.collect = AsyncMock(return_value=None)
         engine._whale.collect = AsyncMock(return_value=None)
         engine._onchain.collect = AsyncMock(return_value=None)
+        engine._order_book_imbalance.collect = AsyncMock(return_value=None)
 
         score = await engine.compute()
 
@@ -89,6 +90,7 @@ class TestSignalScoreEngine:
         engine._sentiment.collect = AsyncMock(return_value=None)
         engine._whale.collect = AsyncMock(return_value=None)
         engine._onchain.collect = AsyncMock(return_value=None)
+        engine._order_book_imbalance.collect = AsyncMock(return_value=None)
 
         score = await engine.compute()
 
@@ -125,6 +127,12 @@ class TestSignalScoreEngine:
             value=85, label="Extreme Greed", timestamp=datetime.now(timezone.utc)
         ))
 
+        # Mock remaining collectors to None
+        engine._sentiment.collect = AsyncMock(return_value=None)
+        engine._whale.collect = AsyncMock(return_value=None)
+        engine._onchain.collect = AsyncMock(return_value=None)
+        engine._order_book_imbalance.collect = AsyncMock(return_value=None)
+
         score = await engine.compute()
 
         assert score.total < 0  # Score negativo = bearish
@@ -138,9 +146,10 @@ class TestSignalScoreEngine:
 
         engine = SignalScoreEngine(symbol="BTCUSDT", threshold=30.0)
 
-        # Crea CVDCalculator con dati
+        # Crea CVDCalculator con abbastanza trades da superare il grace period (100)
         cvd = CVDCalculator()
-        cvd.on_trade(price=50000, quantity=1000, is_buyer_maker=False)  # buy pressure
+        for _ in range(101):
+            cvd.on_trade(price=50000, quantity=1000, is_buyer_maker=False)  # buy pressure
 
         engine._set_cvd_calculator(cvd)
 
@@ -152,6 +161,7 @@ class TestSignalScoreEngine:
         engine._sentiment.collect = AsyncMock(return_value=None)
         engine._whale.collect = AsyncMock(return_value=None)
         engine._onchain.collect = AsyncMock(return_value=None)
+        engine._order_book_imbalance.collect = AsyncMock(return_value=None)
 
         score = await engine.compute()
 
@@ -176,6 +186,7 @@ class TestSignalScoreEngine:
         engine._sentiment.collect = AsyncMock(return_value=None)
         engine._whale.collect = AsyncMock(return_value=None)
         engine._onchain.collect = AsyncMock(return_value=None)
+        engine._order_book_imbalance.collect = AsyncMock(return_value=None)
 
         snapshot = await engine.get_snapshot()
         
@@ -201,6 +212,7 @@ class TestSignalScoreEngine:
         engine._sentiment.collect = AsyncMock(return_value=None)
         engine._whale.collect = AsyncMock(return_value=None)
         engine._onchain.collect = AsyncMock(return_value=None)
+        engine._order_book_imbalance.collect = AsyncMock(return_value=None)
 
         first = await engine.get_snapshot(force_refresh=True)
         second = await engine.get_snapshot()
@@ -224,6 +236,7 @@ class TestSignalScoreEngine:
         engine._sentiment.collect = AsyncMock(return_value=None)
         engine._whale.collect = AsyncMock(return_value=None)
         engine._onchain.collect = AsyncMock(return_value=None)
+        engine._order_book_imbalance.collect = AsyncMock(return_value=None)
 
         await engine.get_snapshot(force_refresh=True)
         await engine.get_snapshot(force_refresh=True)

@@ -41,13 +41,33 @@ class WhaleCollector:
 
     def __init__(self, timeout_seconds: float = 12.0):
         self._timeout = timeout_seconds
+        from app.config import settings
+        self._cryptocompare_key = settings.scalping.CRYPTOCOMPARE_API_KEY
         from app.scalping.intelligence.collectors.circuit_breaker import CollectorCircuitBreaker
         self._cb = CollectorCircuitBreaker("whale")
+
+    # Asset senza dati on-chain dedicati: exchange tokens, stablecoin, ecc.
+    _NO_ONCHAIN_ASSETS = {"okb", "bnb"}  # BNB ha BscScan ma whale limitato
+
+    def is_symbol_supported(self, symbol: str) -> bool:
+        """True se il simbolo ha fonti whale strutturali."""
+        base = symbol.upper()
+        for suffix in ("USDT", "USDC", "USD", "EUR"):
+            base = base.replace(suffix, "")
+        base = base.lower().strip("-_")
+        if base in self._NO_ONCHAIN_ASSETS:
+            return False
+        # BTC/LTC hanno Blockchair, ETH ha Etherscan, gli altri usano news fallback
+        return True
 
     async def collect(self, symbol: str = "BTC") -> Optional[WhaleData]:
         if not self._cb.is_available():
             return None
-        base_symbol = symbol.replace("USDT", "").replace("USDC", "").replace("USD", "").lower()
+        # Strip suffissi exchange/quote: USDT, USDC, USD, EUR e separatori (-/_)
+        base_symbol = symbol.upper()
+        for suffix in ("USDT", "USDC", "USD", "EUR"):
+            base_symbol = base_symbol.replace(suffix, "")
+        base_symbol = base_symbol.lower().strip("-_")
 
         whale_count = 0
         volume = Decimal("0")
@@ -164,8 +184,11 @@ class WhaleCollector:
         """Fallback: cerca keyword 'whale' nelle news di CryptoCompare."""
         try:
             params = {"categories": symbol, "excludeCategories": "Sponsored"}
+            headers = {}
+            if self._cryptocompare_key:
+                headers["authorization"] = f"Apikey {self._cryptocompare_key}"
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.get(CRYPTOCOMPARE_NEWS_URL, params=params)
+                response = await client.get(CRYPTOCOMPARE_NEWS_URL, params=params, headers=headers)
                 if response.status_code == 200:
                     news_data = response.json().get("Data")
                     if isinstance(news_data, list):

@@ -8,7 +8,7 @@ Pesi configurabili (relativi; somma non vincolata a 1.0 — l'engine normalizza)
   fear_greed:       0.15  (contesto macro psicologico)
   whale:            0.10  (movimenti on-chain massicci)
   sentiment:        0.05  (news, rumoroso su simboli non-BTC/ETH)
-  onchain:          0.0   (escluso: richiede Dune query IDs)
+  onchain:          0.05  (proxy macro BTC/ETH via Blockchair, TASK-1156)
   order_book_imbalance: 0.15  (TASK-1151, peso provvisorio; da ricalibrare in Fase 6)
 
 Il SignalScoreEngine:
@@ -56,9 +56,9 @@ from app.scalping.intelligence.collectors.spread import SpreadCollector
 from app.config import settings
 
 # Pesi normalizzati per ogni fonte (relativi; la somma NON deve essere 1.0).
-# OnChain rimosso (richiede Dune query IDs, non utile per scalping intraday)
 # Sentiment ridotto perche' rumoroso su simboli non-BTC/ETH
 # order_book_imbalance aggiunto in TASK-1151 con peso provvisorio (da ricalibrare in Fase 6).
+# onchain: proxy macro BTC/ETH via Blockchair (TASK-1156), peso modesto per segnale indiretto.
 # NOTA: i pesi sono relativi; l'engine normalizza dividendo per il total_weight risposto,
 # quindi aggiungere un peso provvisorio > 1.0 non altera il contributo dei collector esistenti.
 DEFAULT_WEIGHTS: Dict[str, float] = {
@@ -69,7 +69,7 @@ DEFAULT_WEIGHTS: Dict[str, float] = {
     "fear_greed": 0.15,
     "whale": 0.10,
     "sentiment": 0.05,
-    "onchain": 0.0,
+    "onchain": 0.05,  # TASK-1156: proxy macro BTC/ETH, peso modesto
     "order_book_imbalance": 0.15,  # TASK-1151 (peso provvisorio)
 }
 
@@ -131,6 +131,36 @@ class SignalScoreEngine:
         # Cache snapshot: evita refetch HTTP ad ogni candela chiusa
         self._cached_snapshot: Optional[MarketIntelSnapshot] = None
         self._cached_at: float = 0.0
+
+    def _compute_individual_score(self, name: str, result) -> Optional[float]:
+        """Calcola lo score individuale di un collector per il log diagnostico.
+        
+        Ritorna lo score [-100, +100] o None se non calcolabile.
+        """
+        try:
+            if name == "funding_rate" and hasattr(result, "rate"):
+                return FundingRateCollector.rate_to_score(result.rate)
+            elif name == "open_interest" and hasattr(result, "value_usd"):
+                baseline = self._open_interest.get_baseline(self.symbol)
+                if baseline == 0:
+                    baseline = result.value_usd
+                return OpenInterestCollector.oi_to_score(result.value_usd, baseline)
+            elif name == "long_short_ratio" and hasattr(result, "long_pct"):
+                return LongShortRatioCollector.ratio_to_score(result.long_pct)
+            elif name == "fear_greed" and hasattr(result, "value"):
+                return FearGreedCollector.value_to_score(result.value)
+            elif name == "sentiment" and hasattr(result, "score"):
+                return SentimentCollector.sentiment_to_score(result.score)
+            elif name == "whale" and hasattr(result, "recent_whale_activity"):
+                if result.recent_whale_activity:
+                    return WhaleCollector.whale_to_score(result)
+            elif name == "onchain" and hasattr(result, "price_change_24h_pct"):
+                return OnChainCollector.onchain_to_score(result)
+            elif name == "order_book_imbalance" and hasattr(result, "imbalance"):
+                return OrderBookImbalanceCollector.imbalance_to_score(result.imbalance)
+        except Exception:
+            pass
+        return None
 
     @classmethod
     def get_or_create(
@@ -201,6 +231,7 @@ class SignalScoreEngine:
             ("funding_rate", self._funding_rate),
             ("open_interest", self._open_interest),
             ("long_short_ratio", self._long_short),
+            ("whale", self._whale),
         ]
         for name, collector in collectors_to_check:
             if hasattr(collector, "is_symbol_supported"):
@@ -323,6 +354,7 @@ class SignalScoreEngine:
             whale = None
 
         # Stato per-collector compatto (una sola riga, vedi log [COLLECTORS] sotto).
+        # Formato: nome=STATO(w=peso,s=score) dove w=peso attivo, s=score individuale (se disponibile)
         _diag = [
             ("funding_rate", self._funding_rate.is_symbol_supported(self.symbol), results[0]),
             ("open_interest", self._open_interest.is_symbol_supported(self.symbol), results[1]),
@@ -337,23 +369,30 @@ class SignalScoreEngine:
             # funzionamento, senza influenzare lo score.
             ("spread", True, results[8]),
         ]
-        _status_map = {}
+        _status_parts = []
         for _name, _active, _res in _diag:
+            _w = self.weights.get(_name, 0.0)
             if not _active:
-                _status_map[_name] = "OFF"
+                _status_parts.append(f"{_name}=OFF(w={_w:.2f})")
             elif isinstance(_res, Exception):
-                _status_map[_name] = "ERROR"
+                _status_parts.append(f"{_name}=ERROR(w={_w:.2f})")
             elif _res is None:
-                _status_map[_name] = "NONE"
+                _status_parts.append(f"{_name}=NONE(w={_w:.2f})")
             else:
-                _status_map[_name] = "OK"
+                # Calcola score individuale per log
+                _s = self._compute_individual_score(_name, _res)
+                if _s is not None:
+                    _status_parts.append(f"{_name}=OK(w={_w:.2f},s={_s:.1f})")
+                else:
+                    _status_parts.append(f"{_name}=OK(w={_w:.2f})")
         _cvd_snap = self._cvd_calculator.snapshot(self.symbol) if self._cvd_calculator else None
-        _status_map["cvd"] = "OK" if _cvd_snap is not None else "NONE"
+        _cvd_w = self.weights.get("cvd", 0.0)
+        _status_parts.append(f"cvd={'OK' if _cvd_snap is not None else 'NONE'}(w={_cvd_w:.2f})")
 
         logger.info(
             "[ScoreEngine][COLLECTORS] symbol=%s | %s",
             self.symbol,
-            " ".join(f"{k}={v}" for k, v in _status_map.items()),
+            " ".join(_status_parts),
         )
 
         # Log errori specifici (incl. spread, index 8)
@@ -490,7 +529,6 @@ class SignalScoreEngine:
             if self.weights.get(k, 0.0) > 0  # solo pesi attivi (> 0.0)
             and k not in responded_names
             and k not in structurally_excluded
-            and k != "onchain"  # onchain ha peso 0.0, ignorato
         ]
 
         logger.info(

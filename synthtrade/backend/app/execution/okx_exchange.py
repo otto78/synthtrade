@@ -127,31 +127,34 @@ class OkxExchangeAdapter:
             return data.get("data", [])
 
     async def _balance_from_rest(self, asset: str) -> float:
-        """Get balance for a specific asset via direct OKX REST.
+        """Get total balance for an asset via direct OKX REST.
 
-        Uses only availBal (available balance) to match get_holdings() behavior
-        and okx_balance.py dashboard logic. This prevents double-counting.
+        Uses cashBal (available + frozen) so that assets locked in pending
+        orders (e.g. OCO bracket) are still detected as held.
+        POSITION_RECONCILE needs total balance to verify position existence.
         """
         raw = await self._direct_fetch_balance()
         for account in raw:
             for detail in account.get("details", []):
                 if detail.get("ccy") == asset:
-                    # Use only available balance (availBal) to avoid double-counting
-                    # cashBal + frozenBal are already included in total calculations elsewhere
-                    return float(detail.get("availBal", 0) or 0)
+                    return float(detail.get("cashBal", 0) or 0)
         return 0.0
 
     async def get_holdings(self) -> dict[str, float]:
-        """Get available balance for all assets via direct REST (TASK-1164)."""
+        """Get total balance for all assets via direct REST (TASK-1164).
+
+        Uses cashBal (available + frozen) so assets locked in pending orders
+        are included. Needed for balance display and reconcile checks.
+        """
         try:
             raw = await self._direct_fetch_balance()
             holdings: dict[str, float] = {}
             for account in raw:
                 for detail in account.get("details", []):
                     asset = detail.get("ccy", "")
-                    avail = float(detail.get("availBal", 0) or 0)
-                    if asset and avail > 0:
-                        holdings[asset] = holdings.get(asset, 0.0) + avail
+                    total = float(detail.get("cashBal", 0) or 0)
+                    if asset and total > 0:
+                        holdings[asset] = holdings.get(asset, 0.0) + total
             return holdings
         except Exception as e:
             raise ExchangeOrderError(f"OKX holdings fetch failed: {e}", original_exception=e) from e

@@ -3312,9 +3312,15 @@ OKX riceve `tgtCcy=quote_ccy` e calcola la quantità autonomamente.
 
 ### TASK-1156 — On-chain collector: fallback Blockchair
 
-**Status:** ✅ Done (2026-07-15) — supersede TASK-COLLECTOR-004
+**Status:** ✅ Done (2026-07-15) — *supersede TASK-COLLECTOR-004*
 
 **File:** `signal_score_engine.py`: peso onchain 0.0→0.05
+
+### TASK-1157 — Verifica CVD grace period
+
+**Status:** ✅ Done (verificato 15/07/2026) — *supersede TASK-COLLECTOR-005*
+
+Grace period già implementato in `signal_score_engine.py:426-436`: CVD escluso dallo score se `_trades_since_reset < 100`. CVD calculator wired con peso 0.20, window reset ogni 1000 trades. Nessun lavoro aggiuntivo richiesto.
 
 ### TASK-1158 — Spike: equivalente OKX per Long/Short Ratio
 

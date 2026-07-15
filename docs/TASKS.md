@@ -267,18 +267,17 @@ Il fallback REST polling è operativo e gestisce gli eventi di fill senza errori
 
 ## TASK-1116.G — Instrument discovery environment-aware (Demo vs Live)
 
-**Status:** Pending
+**Status:** Pending — *0/6 sottotask implementati (verificato 15/07)*
 **Priorità:** ALTA — causa fallimenti fee/trading silenziosi per simboli validi in live ma assenti in demo
+**Effort:** 3-4 ore
 
-**Dipendenze:** TASK-1103 (OkxExchangeAdapter), TASK-1109 (Frontend exchange-neutral), TASK-1116.E (fallback fee REST)
-
-**Problema:** OKB-EUR è tradeable in live ma non esiste in Demo Trading (errore 51001). Il sistema non distingue i due cataloghi.
+**Problema:** OKB-EUR è tradeable in live ma non esiste in Demo Trading (errore 51001). Il sistema non distingue i due cataloghi. L'endpoint `/exchange/instruments` (router.py:2523) non filtra per ambiente. Il frontend carica gli strumenti una volta sola senza re-fetch al cambio modalità. Nessuna validazione pre-sessione.
 
 **File coinvolti:**
-- `synthtrade/backend/app/execution/okx_exchange.py`
-- `synthtrade/backend/app/scalping/router.py`
-- `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/exchange-symbols.service.ts`
-- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/session-controls.component.ts`
+- `synthtrade/backend/app/execution/okx_exchange.py` — `_direct_fetch_symbol_rules()` non ha header demo
+- `synthtrade/backend/app/scalping/router.py:2523-2566` — endpoint instruments senza filtro ambiente
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/exchange-symbols.service.ts:85-106` — nessun param mode
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/session-controls.component.ts:509-513` — carica una volta, nessun re-fetch
 
 **Sottotask:**
 1. **1116.G.1 — Discovery cache environment-aware**: cache separata per demo/live
@@ -292,23 +291,15 @@ Il fallback REST polling è operativo e gestisce gli eventi di fill senza errori
 
 ## EPICA COLLECTOR INTELLIGENCE — Task pending
 
-### TASK-1157 — Verifica CVD grace period
-
-**Status:** Pending — *supersede TASK-COLLECTOR-005*
-**Priorità:** 🟡 Media
-**Dipendenze:** nessuna
-
-**Obiettivo:** Verificare se CVD funziona dopo 100 trade su OKB-EUR.
-
-**File:** `synthtrade/backend/app/scalping/intelligence/collectors/cvd_calculator.py`
-
 ### TASK-1159 — Ricalibrazione pesi SignalScoreEngine + nota cadenza micro-swing
 
-**Status:** Pending — *bloccata finché le Fasi 1-5 non sono attive per almeno 2-3 sessioni reali*
-**Priorità:** 🔴 Alta
-**Dipendenze:** TASK-1150, 1151, 1152, 1153, 1154, 1157
+**Status:** Pending — *reweight strutturale sbloccato ora; tuning su outcome richiede sessioni reali*
+**Priorità:** 🟠 Alta
+**Dipendenze:** TASK-1150, 1151, 1152, 1153, 1154
 
 **Obiettivo:** Redistribuire i pesi in `SignalScoreEngine.WEIGHTS` su numeri osservati dai log reali, non su placeholder.
+
+**Stato attuale (analisi 15/07):** I pesi sono statici in `DEFAULT_WEIGHTS`, nessun meccanismo runtime. I log `[COVERAGE_REAL]` già mostrano copertura per symbol. Possibile fare reweight strutturale ora (basato su affidabilità collector). Tuning basato su outcome richiede 2-3 sessioni reali. Serve anche un meccanismo per applicare pesi aggiornati (attualmente solo hardcoded).
 
 **Nota:** Con 10-30 trade/giorno, il CVD potrebbe perdere peso relativo a favore di segnali più strutturali come Order Book Imbalance su finestre più larghe. Decisione da prendere solo dopo dati raccolti.
 
@@ -323,6 +314,8 @@ Il fallback REST polling è operativo e gestisce gli eventi di fill senza errori
 
 **Obiettivo:** Bloccare trade in "mean-reversion" durante crolli verticali improvvisi.
 
+**Stato attuale (analisi 15/07):** `signal_aggregator.py:277-293` approva mean-reversion BUY incondizionatamente quando `bias == "bearish"`. Trend/velocity (`trend_5m`, `trend_direction`) esistono in `SignalScore` e vengono loggati in `session_signal_log`, ma **mai usati come filtro decisionale**. Serve: (1) calibrare soglia da dati reali, (2) aggiungere guard in `signal_aggregator.py`.
+
 **Task:**
 1. **Data Collection:** Monitorare log durante cali per registrare velocità (`trend_5m`) in fase "diverging"
 2. **Rule Definition:** Soglia dinamica (`if trend_direction == "diverging" and trend_5m <= -X`)
@@ -335,10 +328,11 @@ Il fallback REST polling è operativo e gestisce gli eventi di fill senza errori
 
 **Status:** Pending
 **Priorità:** MEDIA
+**Effort:** 1-2 ore
 
-**Problema:** Il regime cambia ad ogni candela se le soglie oscillano vicino ai boundary → flickering → supervisor riceve contesti contraddittori.
+**Problema:** `RegimeDetector` è completamente **stateless** (nessun `__init__`, zero attributi). Ogni chiamata a `detect()` produce un regime da zero basato sulle ultime 20 candele. Le soglie (volatility_ratio > 0.01, price_change > 0.003) causano flickering quando il prezzo oscilla vicino ai boundary. L'`ExecutionLoop` (line 162-175) sovrascrive `_current_regime` ad ogni tick senza smoothing. Il supervisor riceve contesti contraddittori.
 
-**File:** `synthtrade/backend/app/scalping/engine/regime_detector.py`
+**File:** `synthtrade/backend/app/scalping/engine/regime_detector.py` (115 righe)
 
 **Implementazione:**
 - Aggiungere `_pending_regime: Optional[str]` e `_pending_count: int`
@@ -365,17 +359,18 @@ Il fallback REST polling è operativo e gestisce gli eventi di fill senza errori
 
 ### TASK-898 — Analisi Trend basata su dati persistiti
 
-**Status:** Pending
-**Priorità:** BASSA — dipende da raccolta dati reali
-**Dipendenze:** TASK-895 + almeno 20 trade chiusi con `signal_log_id` e `trend_direction` non null
+**Status:** Pending — *pronto ma bloccato su query DB live*
+**Priorità:** BASSA
+**Dipendenze:** TASK-895 + query Supabase
 
-**Prerequisito:**
+**Prerequisito:** La pipeline dati è operativa (`trend_direction` salvato in `session_signal_log` su 5/6 path di logging). Manca solo la verifica che ci sono ≥20 trade chiusi con `signal_log_id` e `trend_direction` non null.
+
 ```sql
 SELECT COUNT(*) FROM scalping_trades t
 JOIN session_signal_log sl ON sl.id = t.signal_log_id
 WHERE t.status = 'closed' AND sl.trend_direction IS NOT NULL;
 ```
-Se < 20 → non partire.
+Se ≥20 → il task può partire. Se <20 → aspettare.
 
 **File da creare:** `docs/trend_analysis_report.md`
 
@@ -384,15 +379,20 @@ Se < 20 → non partire.
 ### TASK-907 — Bug Frontend: dati mancanti su reload con sessione PAUSED
 
 **Status:** Pending
-**Priorità:** ALTA — impatta usabilità dashboard ogni reload con sessione in pausa
+**Priorità:** ALTA — fix 2 righe
+**Effort:** 30 min
 
-**Problema:** Ricaricando la pagina in stato `PAUSED`, pannelli PERFORMANCE, TRADE LOG e RISK CONTROLS risultano vuoti.
+**Problema:** `trade-log.component.ts:97` e `performance-panel.component.ts:186` usano `else if (session.status === 'running')` — il branch `'paused'` non esiste. Risk controls funziona (fetch incondizionato).
 
-**Task:**
-1. **Repro:** sessione in pausa → reload → verificare in DevTools quali chiamate REST partono
-2. **Root cause:** identificare se (a) guardia su `session.status`, (b) dati attesi solo da WS, o (c) endpoint filtra per `status='running'`
-3. **Fix:** disaccoppiare caricamento storico dallo stato live
-4. **Verifica:** reload con sessione `paused` → pannelli popolati
+**Fix identificato:** In entrambi i file, cambiare:
+```typescript
+} else if (session.status === 'running') {
+```
+in:
+```typescript
+} else if (session.status !== 'idle') {
+```
+Questo gestisce anche `'stopped'` per vedere storico dopo sessione finita.
 
 ---
 
@@ -402,6 +402,8 @@ Se < 20 → non partire.
 **Priorità:** ALTA — *sospesa: da analizzare assieme a TASK-909*
 
 **Obiettivo:** Impedire `resume_trading` quando regime bearish, confidence alta, `allows_short=False` e nessuna posizione aperta — indipendentemente dal giudizio AI.
+
+**Stato attuale (analisi 15/07):** `_resume()` in `parameter_updater.py:177-185` è incondizionato — nessun check su regime/confidence/short. `short_enabled` non esiste nel codice (solo in arch docs). L'infrastruttura `was_applied`/`blocked_reason` in `supervisor_scheduler.py:299-345` è pronta ma nessun branch `resume_trading` la usa. Servono: (1) `_check_resume_guard()`, (2) esporre `short_enabled` nel context, (3) 6 test.
 
 **Contesto:** Sessione live 30/06 — 6 stop_loss consecutivi, 5 segnali SELL scartati, `resume_trading` con motivazione debole mentre regime era ancora `trending_down`.
 

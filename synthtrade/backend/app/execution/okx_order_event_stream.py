@@ -298,7 +298,7 @@ class OkxOrderEventStream:
                             await self._emit(norm)
                 
             except Exception as e:
-                logger.error("OKX REST polling error: %s", e)
+                logger.error("OKX REST polling error: [%s] %s", type(e).__name__, e)
             
             # Sleep in chunks to allow fast shutdown
             for _ in range(10):

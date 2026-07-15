@@ -545,14 +545,18 @@ async def broadcast_scalping_event(event_type: str, payload: Any):
         "payload": payload,
         "timestamp": _now(),
     }
+    snapshot = list(_scalping_ws_connections)
     dead = []
-    for ws in _scalping_ws_connections:
+    for ws in snapshot:
         try:
             await ws.send_json(message)
         except Exception:
             dead.append(ws)
     for ws in dead:
-        _scalping_ws_connections.remove(ws)
+        try:
+            _scalping_ws_connections.remove(ws)
+        except ValueError:
+            pass  # already removed by disconnect handler
     # Always store last error in session state for HTTP response fallback
     if event_type == "error":
         session = _execution_state["session"]
@@ -2833,9 +2837,9 @@ async def get_intel_snapshot(symbol: str) -> Dict:
         except Exception:
             logger.warning(f"SignalScoreEngine failed for {symbol}, using fallback")
     
-    # Fallback: prova a creare engine on-the-fly
+    # Fallback: prova a creare engine on-the-fly (usa cache singleton, non creare throwaway)
     try:
-        fallback_engine = SignalScoreEngine(symbol=symbol)
+        fallback_engine = SignalScoreEngine.get_or_create(symbol=symbol)
         snapshot = await fallback_engine.get_snapshot()
         return _snapshot_to_dict(symbol, snapshot)
     except Exception as e:

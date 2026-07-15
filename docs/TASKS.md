@@ -119,7 +119,7 @@ async def collect(self, symbol: str) -> dict | None:
 
 ### TASK-1164 — OKX adapter: rimuovere strato CCXT, REST-only (httpx)
 
-**Status:** Pending
+**Status:** ✅ Implemented (`a5236ad` 16/07/2026, further refined)
 **Priorità:** 🔴 CRITICA
 **Effort stimato:** 1-2 giorni
 **Dipendenze:** TASK-1160, TASK-1162
@@ -150,6 +150,7 @@ async def collect(self, symbol: str) -> dict | None:
 **Router — accessi diretti CCXT da eliminare:**
 - Line 1809: `exchange.client.fetch_balance()` → usare `adapter.get_holdings()` (TASK-1160)
 - Line 3354: `exchange_stop.client.cancel_order()` → usare `adapter.cancel_open_exit_orders()`
+- **POSITION_RECONCILE startup:** La chiamata CCXT `fetch_balance()` fallisce con 50119 su OKX EU → produce `balance=0.000000` → falso "position closed externally". Con REST-only, `get_holdings()` restituirà il balance reale. Da verificare che il reconcile usi `adapter.get_holdings()` e non più CCXT diretto.
 
 **Modifiche strutturali:**
 - `OkxExchangeAdapter.__init__`: rimuovere `self.client = ccxt.okx(config)` e tutto il setup CCXT
@@ -176,6 +177,8 @@ async def collect(self, symbol: str) -> dict | None:
 - `test_okx_integration.py` passa
 - `python -m py_compile` su tutti i file modificati OK
 - Sessione paper/demo OKX funziona end-to-end
+
+**Impatto collaterale confermato (15/07/2026):** Il `POSITION_RECONCILE` al riavvio fallisce se le chiamate CCXT restituiscono 0 balance (codice errore 50119). `router.py:POSITION_RECONCILE` vede `balance=0.000000` perché CCXT fetch_balance crasha, interpreta come "posizione chiusa esternamente", chiude la posizione in memoria e ferma la sessione — ma il trade è ancora aperto su OKX. **La migrazione a REST-only risolve automaticamente anche questo: `get_holdings()` (REST direct) funziona correttamente su OKX EU e restituirà il balance reale.**
 
 ### TASK-1165 — Fix sl_pct_net inconsistente (WS initial state vs candle processor)
 

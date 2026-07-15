@@ -1,12 +1,13 @@
 """
-TASK-1103: OkxExchangeAdapter — REST adapter for OKX via ccxt + direct REST fallback.
+TASK-1164: OkxExchangeAdapter — REST-only adapter for OKX via httpx.
 
 Implements ExchangeAdapterProtocol from exchange_models.py.
 Supports Demo Trading (x-simulated-trading: 1) and Live mode.
 Base URL must be eea.okx.com for EU accounts.
 
-NOTE: CCXT's fetch_balance() calls fetch_currencies() first, which fails with
-50119 on OKX EU live accounts. We fall back to direct REST /api/v5/account/balance.
+CCXT removed (TASK-1164): all calls go through direct REST (httpx).
+CCXT was failing with 50119 on OKX EU accounts for fetch_balance/fetch_currencies.
+BinanceExchangeAdapter remains in standby for when Binance returns to EU.
 """
 from __future__ import annotations
 
@@ -17,9 +18,8 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Union, cast
+from typing import Any, Dict, Optional, cast
 
-import ccxt.async_support as ccxt
 import httpx
 from app.config import settings
 from app.execution.exchange_models import (
@@ -61,48 +61,10 @@ class OkxExchangeAdapter:
         passphrase: str,
         demo: bool = True,
         base_url: str = "https://eea.okx.com",
-        client: Any = None,
     ) -> None:
         self.trading_mode = "test" if demo else "live"
         self._demo = demo
-
-        if client:
-            self.client = client
-        else:
-            config: dict[str, Any] = {
-                "apiKey": api_key,
-                "secret": secret,
-                "password": passphrase,
-                "enableRateLimit": True,
-                "options": {
-                    "defaultType": "spot",
-                    # TASK-1100 fix: OKX Demo has instruments with base=None (margin/futures).
-                    # Restricting to SPOT avoids parse_market() crash in load_markets().
-                    "fetchMarkets": ["spot"],
-                },
-            }
-            if demo:
-                config["headers"] = {"x-simulated-trading": "1"}
-
-            self.client = ccxt.okx(config)
-
-            # Override base URL for EU accounts
-            # Guard against None urls (ccxt may return None in certain modes) and
-            # None values in urls["api"] dict. isinstance guard skips non-string values.
-            if base_url and "eea.okx.com" in base_url and self.client.urls is not None:
-                self.client.urls["api"] = {
-                    k: v.replace("www.okx.com", "eea.okx.com") if isinstance(v, str) else v
-                    for k, v in (self.client.urls.get("api") or {}).items()
-                }
-
-            if demo:
-                # Do NOT call set_sandbox_mode() after EU URL override —
-                # it rebuilds urls["api"] from scratch and can crash on None values.
-                # OKX demo is fully controlled via the x-simulated-trading header.
-                self.client.headers = {
-                    **getattr(self.client, "headers", {}),
-                    "x-simulated-trading": "1",
-                }
+        self._base_url = base_url or "https://eea.okx.com"
 
         self._api_key = api_key
         self._secret = secret
@@ -116,7 +78,7 @@ class OkxExchangeAdapter:
         self._macro_cache: dict[str, Any] = {"timestamp": 0, "data": None}
 
     async def close(self) -> None:
-        await self.client.close()
+        pass  # TASK-1164: CCXT client removed, no resources to close
 
     # ── Balance ───────────────────────────────────────────────────────────────
 
@@ -180,24 +142,19 @@ class OkxExchangeAdapter:
         return 0.0
 
     async def get_holdings(self) -> dict[str, float]:
+        """Get available balance for all assets via direct REST (TASK-1164)."""
         try:
-            balance = await self.client.fetch_balance()
-            free = balance.get("free", {})
-            return {asset: float(amt) if amt is not None else 0.0 for asset, amt in free.items() if amt is not None and float(amt) > 0}
+            raw = await self._direct_fetch_balance()
+            holdings: dict[str, float] = {}
+            for account in raw:
+                for detail in account.get("details", []):
+                    asset = detail.get("ccy", "")
+                    avail = float(detail.get("availBal", 0) or 0)
+                    if asset and avail > 0:
+                        holdings[asset] = holdings.get(asset, 0.0) + avail
+            return holdings
         except Exception as e:
-            logger.warning("CCXT fetch_balance failed (%s), falling back to direct REST", e)
-            try:
-                raw = await self._direct_fetch_balance()
-                holdings: dict[str, float] = {}
-                for account in raw:
-                    for detail in account.get("details", []):
-                        asset = detail.get("ccy", "")
-                        avail = float(detail.get("availBal", 0) or 0)
-                        if asset and avail > 0:
-                            holdings[asset] = holdings.get(asset, 0.0) + avail
-                return holdings
-            except Exception as e2:
-                raise ExchangeOrderError(f"OKX holdings fetch failed: {e2}", original_exception=e2) from e2
+            raise ExchangeOrderError(f"OKX holdings fetch failed: {e}", original_exception=e) from e
 
     async def get_balance(self, asset: str = "EUR") -> float:
         """Get available balance for an asset.
@@ -214,17 +171,25 @@ class OkxExchangeAdapter:
     # ── Ticker ────────────────────────────────────────────────────────────────
 
     async def get_ticker_price(self, symbol: str) -> float:
+        """Get ticker price via direct REST (TASK-1164)."""
         now = time.time()
         cached = self._price_cache.get(symbol)
         if cached and (now - cached["ts"]) < self._price_cache_ttl:
             return cached["price"]
         try:
-            ref = SymbolRef.from_compact(symbol) if "/" not in symbol and "-" not in symbol else None
-            ccxt_sym = ref.ccxt if ref else symbol.replace("-", "/")
-            ticker = await self.client.fetch_ticker(ccxt_sym)
-            price = float(ticker.get("last") or 0)
-            self._price_cache[symbol] = {"price": price, "ts": now}
-            return price
+            # Normalize symbol to OKX instId format (BTC-EUR, BTC-USDT, etc.)
+            inst_id = symbol.replace("/", "-").upper() if "/" in symbol else symbol.upper()
+            path = f"/api/v5/market/ticker?instId={inst_id}"
+            url = self._base_url.rstrip("/") + path
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                data = resp.json()
+                if data.get("code") != "0" or not data.get("data"):
+                    raise RuntimeError(f"OKX ticker error {data.get('code')}: {data.get('msg')}")
+                price = float(data["data"][0].get("last", 0))
+                self._price_cache[symbol] = {"price": price, "ts": now}
+                return price
         except Exception as e:
             if cached:
                 logger.warning("get_ticker_price(%s) stale cache fallback: %s", symbol, e)
@@ -344,6 +309,7 @@ class OkxExchangeAdapter:
     # ── Symbol rules ──────────────────────────────────────────────────────────
 
     async def get_symbol_rules(self, symbol: SymbolRef) -> SymbolRules:
+        """Get symbol rules via direct REST (TASK-1164)."""
         key = symbol.okx
         now = time.time()
         cached_ts = self._rules_cache_ts.get(key, 0)
@@ -351,40 +317,17 @@ class OkxExchangeAdapter:
             return self._rules_cache[key]
 
         try:
-            markets = await self.client.load_markets()
-            market = markets.get(symbol.ccxt)
-            if not market:
-                raise UnsupportedInstrumentError(f"OKX: {symbol.ccxt} not found in markets")
-
-            info = cast(dict[str, Any], market.get("info", {}))
-            rules = SymbolRules(
-                symbol=symbol,
-                lot_sz=float(info.get("lotSz", 0.00000001)),
-                min_sz=float(info.get("minSz", 0.00001)),
-                tick_sz=float(info.get("tickSz", 0.01)),
-                max_mkt_sz=float(info.get("maxMktSz", 1_000_000)),
-                max_mkt_amt=float(info.get("maxMktAmt", 1_000_000)),
-                raw=info,
-            )
+            rules = await self._direct_fetch_symbol_rules(symbol)
             self._rules_cache[key] = rules
             self._rules_cache_ts[key] = now
             return rules
-        except UnsupportedInstrumentError:
-            raise
         except Exception as e:
-            logger.warning(f"CCXT load_markets failed for {symbol.okx} ({e}), trying direct REST fallback")
-            try:
-                return await self._direct_fetch_symbol_rules(symbol)
-            except Exception as e2:
-                raise ExchangeOrderError(f"OKX get_symbol_rules failed for {symbol.okx}: {e2}") from e2
+            raise ExchangeOrderError(f"OKX get_symbol_rules failed for {symbol.okx}: {e}") from e
 
     # ── Direct REST fallback for symbol rules ─────────────────────────────────
 
     async def _direct_fetch_symbol_rules(self, symbol: SymbolRef) -> SymbolRules:
-        """Direct REST fallback for OKX symbol rules when CCXT load_markets fails.
-
-        Uses /api/v5/public/instruments endpoint.
-        """
+        """Fetch OKX symbol rules via direct REST (TASK-1164)."""
         path = f"/api/v5/public/instruments?instType=SPOT&instId={symbol.okx}"
         url = settings.OKX_BASE_URL.rstrip("/") + path
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -436,7 +379,7 @@ class OkxExchangeAdapter:
     # ── BTC macro context (router compatibility) ─────────────────────────────
 
     async def get_btc_macro_context(self) -> Dict[str, Any]:
-        """Fetch BTC macro context for supervisor compatibility.
+        """Fetch BTC macro context via direct REST (TASK-1164).
 
         Uses BTC-USDT (or BTC-EUR if available) for price and changes.
         60-second cache to avoid rate limits.
@@ -446,59 +389,21 @@ class OkxExchangeAdapter:
             return self._macro_cache["data"]
 
         try:
-            # Try BTC-USDT first (more liquid), fallback to BTC-EUR
-            btc_symbol = "BTC-USDT"
-            try:
-                ticker = await self.client.fetch_ticker(btc_symbol)
-            except Exception:
-                btc_symbol = "BTC-EUR"
-                ticker = await self.client.fetch_ticker(btc_symbol)
-
-            price = float(ticker.get("last") or 0.0)
-            change_24h_pct = float(ticker.get("percentage") or 0.0)
-
-            # Klines 1h for 1h change
-            klines = await self.client.fetch_ohlcv(btc_symbol, timeframe="1h", limit=2)
-            change_1h_pct = 0.0
-            if len(klines) >= 2:
-                close_prev = float(klines[0][4] or 0)
-                close_now = float(klines[1][4] or 0)
-                if close_prev > 0:
-                    change_1h_pct = ((close_now - close_prev) / close_prev) * 100
-
-            # Determine regime
-            regime = "normal"
-            if change_1h_pct < -2.0:
-                regime = "crash"
-            elif change_1h_pct > 2.0:
-                regime = "rally"
-
-            data = {
-                "btc_price_at_entry": price,
-                "btc_change_1h_pct": round(change_1h_pct, 2),
-                "btc_change_24h_pct": round(change_24h_pct, 2),
-                "macro_regime": regime,
-            }
+            data = await self._direct_fetch_btc_macro_context()
             self._macro_cache["timestamp"] = now
             self._macro_cache["data"] = data
             return data
-
         except Exception as e:
-            logger.warning(f"CCXT failed for BTC macro context ({e}), trying direct REST fallback")
-            try:
-                # Direct REST fallback for EU accounts
-                return await self._direct_fetch_btc_macro_context()
-            except Exception as e2:
-                logger.warning(f"Failed to fetch BTC macro context: {e2}")
-                return {
-                    "btc_price_at_entry": 0.0,
-                    "btc_change_1h_pct": 0.0,
-                    "btc_change_24h_pct": 0.0,
-                    "macro_regime": "unknown",
-                }
+            logger.warning("Failed to fetch BTC macro context: %s", e)
+            return {
+                "btc_price_at_entry": 0.0,
+                "btc_change_1h_pct": 0.0,
+                "btc_change_24h_pct": 0.0,
+                "macro_regime": "unknown",
+            }
 
     async def _direct_fetch_btc_macro_context(self) -> Dict[str, Any]:
-        """Direct REST fallback for BTC macro context on EU accounts."""
+        """Fetch BTC macro context via direct REST (TASK-1164)."""
         # Try BTC-USDT first, then BTC-EUR
         for btc_symbol in ["BTC-USDT", "BTC-EUR"]:
             try:
@@ -605,53 +510,16 @@ class OkxExchangeAdapter:
             )
 
     async def get_trade_fee(self, symbol: SymbolRef) -> FeeTier:
-        """
-        Fetch fee tier from OKX GET /api/v5/account/trade-fee.
+        """Fetch fee tier via direct REST (TASK-1164).
 
         OKX returns negative values for rebates (maker=-0.002 means -0.2% rebate).
         For base level accounts (Lv1), we convert to positive since they don't have rebates.
-        Falls back to direct REST if CCXT fails (50119 on EU accounts).
         """
         try:
-            response = await self.client.fetch_trading_fee(symbol.ccxt)
-            if not response or response.get("maker") is None:
-                logger.warning("OKX get_trade_fee: empty response for %s", symbol.ccxt)
-                return await self._direct_fetch_trade_fee(symbol)
-
-            maker = float(response.get("maker") or 0)
-            taker = float(response.get("taker") or 0)
-            
-            # TASK-1127: Convert negative fees to positive for base level accounts
-            # CCXT response doesn't include VIP level, so we check the sign and context
-            # If we're in live mode and fees are negative, it's likely API returning wrong data
-            if not self._demo and (maker < 0 or taker < 0):
-                # Live mode with negative fees - likely base level account with API bug
-                maker = abs(maker)
-                taker = abs(taker)
-                logger.info(
-                    "[OKX FEE] %s maker=%.4f taker=%.4f (live mode, converted to positive)",
-                    symbol.ccxt, maker, taker,
-                )
-            else:
-                logger.info(
-                    "[OKX FEE] %s maker=%.4f taker=%.4f (negative=rebate)",
-                    symbol.ccxt, maker, taker,
-                )
-                
-            return FeeTier(
-                maker=maker,
-                taker=taker,
-                certified=True,
-                source="okx_trade_fee",
-                raw=cast(dict[str, Any], response),
-            )
+            return await self._direct_fetch_trade_fee(symbol)
         except Exception as e:
-            logger.warning("OKX get_trade_fee failed for %s: %s — trying direct REST fallback", symbol.ccxt, e)
-            try:
-                return await self._direct_fetch_trade_fee(symbol)
-            except Exception as fallback_e:
-                logger.error("OKX get_trade_fee direct fallback also failed: %s — using hardcoded fallback", fallback_e)
-                return _FALLBACK_FEE
+            logger.warning("OKX get_trade_fee failed for %s: %s — using hardcoded fallback", symbol.okx, e)
+            return _FALLBACK_FEE
 
     # ── Orders ────────────────────────────────────────────────────────────────
 
@@ -692,10 +560,7 @@ class OkxExchangeAdapter:
             return data.get("data", [{}])[0]
 
     async def place_market_order(self, request: MarketOrderRequest) -> ExchangeOrder:
-        """Place a market order on OKX.
-
-        Tries CCXT first, falls back to direct REST for EU accounts.
-        """
+        """Place a market order on OKX via direct REST (TASK-1164)."""
         symbol = request.symbol
         side = request.side
         quantity = request.quantity
@@ -707,24 +572,12 @@ class OkxExchangeAdapter:
         if qty <= 0 and not quote_amount:
             raise ExchangeOrderError(f"OKX place_market_order: rounded qty=0 for {symbol.okx}")
 
-        try:
-            params: dict[str, Any] = {"tdMode": "cash"}
-            order = await self.client.create_order(
-                symbol=symbol.ccxt,
-                type="market",
-                side=side,
-                amount=qty or quote_amount or 0,
-                params=params,
-            )
-            result = cast(dict[str, Any], order)
-        except Exception as e:
-            logger.warning("OKX CCXT create_order failed for %s: %s — trying direct REST fallback", symbol.okx, e)
-            result = await self._direct_place_market_order(
-                symbol=symbol,
-                side=side,
-                quantity=qty or quantity,
-                quote_amount=quote_amount,
-            )
+        result = await self._direct_place_market_order(
+            symbol=symbol,
+            side=side,
+            quantity=qty or quantity,
+            quote_amount=quote_amount,
+        )
 
         commission, commission_asset = self._extract_commission(result)
         return ExchangeOrder(
@@ -772,13 +625,20 @@ class OkxExchangeAdapter:
         except Exception as e:
             logger.debug("get_open_orders: algo-pending check failed: %s", e)
 
-        # 2. Check regular open orders via CCXT
+        # 2. Check regular open orders via direct REST (TASK-1164)
         try:
-            ccxt_sym = sym_ref.ccxt
-            orders = await self.client.fetch_open_orders(ccxt_sym)
-            results.extend(orders)
+            path = "/api/v5/trade/orders-pending"
+            url = settings.OKX_BASE_URL.rstrip("/") + path
+            headers = self._sign_headers("GET", path)
+            params = {"instType": "SPOT", "instId": sym_ref.okx}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers=headers, params=params)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("code") == "0":
+                        results.extend(data.get("data", []))
         except Exception as e:
-            logger.debug("get_open_orders: CCXT fetch_open_orders failed: %s", e)
+            logger.debug("get_open_orders: regular orders check failed: %s", e)
 
         return results
 
@@ -911,21 +771,13 @@ class OkxExchangeAdapter:
             return result
 
     async def place_exit_bracket(self, request: ExitBracketRequest) -> ExitBracketOrder:
-        """
-        Place TP/SL bracket on OKX using order-algo (POST /api/v5/trade/order-algo).
+        """Place TP/SL bracket on OKX via direct REST (TASK-1164).
 
-        Uses attachAlgoOrds approach via ccxt create_order with params.
-        If CCXT fails with 50119 (EU routing quirk), falls back to direct REST.
-        If both fail, raises ExitProtectionError with NO internal emergency close
-        — the caller (router) is the sole owner of the emergency close procedure,
-        preventing race conditions from dual close attempts.
+        Uses order-algo endpoint (POST /api/v5/trade/order-algo).
+        If the adapter fails, raises ExitProtectionError with NO internal
+        emergency close — the caller (router) handles emergency close.
         """
         symbol = request.symbol
-        # Initialize variables to avoid unbound errors in exception handler
-        qty = 0.0
-        tp_price = 0.0
-        sl_price = 0.0
-        
         try:
             rules = await self.get_symbol_rules(symbol)
             tp_price = rules.round_price(request.tp_price)
@@ -935,32 +787,18 @@ class OkxExchangeAdapter:
             if qty <= 0:
                 raise ExchangeOrderError(f"OKX bracket: rounded qty=0 for {symbol.okx}")
 
-            # OKX algo order: tpOrdPx / slTriggerPx
-            params: dict[str, Any] = {
-                "tdMode": "cash",
-                "tpTriggerPx": str(tp_price),
-                "tpOrdPx": "-1",        # -1 = market order at trigger
-                "slTriggerPx": str(sl_price),
-                "slOrdPx": "-1",        # -1 = market order at trigger
-                "tpTriggerPxType": "last",
-                "slTriggerPxType": "last",
-            }
-
-            order = await self.client.create_order(
-                symbol=symbol.ccxt,
-                type=cast(Any, "oco"),  # OKX supports oco via order-algo
+            result = await self._direct_place_exit_bracket(
+                symbol=symbol,
                 side=request.side,
-                amount=qty,
-                price=tp_price,
-                params=params,
+                quantity=qty,
+                tp_price=tp_price,
+                sl_price=sl_price,
             )
-
-            algo_id = str(order.get("id") or order.get("info", {}).get("algoId", ""))
+            algo_id = str(result.get("algoId", ""))
             logger.info(
                 "[OKX BRACKET] %s TP=%s SL=%s qty=%s algoId=%s",
                 symbol.okx, tp_price, sl_price, qty, algo_id,
             )
-
             return ExitBracketOrder(
                 provider="okx",
                 symbol=symbol,
@@ -968,141 +806,164 @@ class OkxExchangeAdapter:
                 tp_order_id=algo_id,
                 sl_order_id=algo_id,
                 status="placed",
-                raw=cast(dict[str, Any], order),
+                raw=cast(dict[str, Any], result),
             )
-
         except (ExchangeOrderError, UnsupportedInstrumentError):
             raise
         except Exception as e:
-            # Try direct REST fallback for 50119 (EU routing quirk) before giving up
-            if "50119" in str(e) or "API key doesn't exist" in str(e):
-                logger.warning(
-                    "[OKX BRACKET] CCXT failed with 50119 for %s — trying direct REST fallback",
-                    symbol.okx,
-                )
-                try:
-                    result = await self._direct_place_exit_bracket(
-                        symbol=symbol,
-                        side=request.side,
-                        quantity=qty,
-                        tp_price=tp_price,
-                        sl_price=sl_price,
-                    )
-                    algo_id = str(result.get("algoId", ""))
-                    logger.info(
-                        "[OKX BRACKET DIRECT] %s algoId=%s — bracket placed via direct REST",
-                        symbol.okx, algo_id,
-                    )
-                    return ExitBracketOrder(
-                        provider="okx",
-                        symbol=symbol,
-                        bracket_id=algo_id,
-                        tp_order_id=algo_id,
-                        sl_order_id=algo_id,
-                        status="placed",
-                        raw=cast(dict[str, Any], result),
-                    )
-                except Exception as rest_e:
-                    logger.error(
-                        "[OKX BRACKET] Direct REST fallback also failed for %s: %s",
-                        symbol.okx, rest_e,
-                    )
-                    # Both failed — raise ExitProtectionError without internal close.
-                    # The caller (router) handles emergency close as the single owner.
-                    raise ExitProtectionError(
-                        f"OKX bracket failed for {symbol.okx}: CCXT error={e}, REST fallback error={rest_e}. "
-                        "No emergency close attempted by adapter — caller must handle."
-                    ) from rest_e
-            else:
-                raise ExitProtectionError(
-                    f"OKX bracket failed for {symbol.okx}: {e}. "
-                    "No emergency close attempted by adapter — caller must handle."
-                ) from e
+            logger.error("[OKX BRACKET] Failed for %s: %s", symbol.okx, e)
+            raise ExitProtectionError(
+                f"OKX bracket failed for {symbol.okx}: {e}. "
+                "No emergency close attempted by adapter — caller must handle."
+            ) from e
 
     # ── Open exit orders ──────────────────────────────────────────────────────
 
     async def get_open_exit_orders(self, symbol: SymbolRef) -> list[ExchangeOrder]:
+        """Fetch pending regular orders via direct REST (TASK-1164)."""
         try:
-            orders = await self.client.fetch_open_orders(symbol.ccxt)
+            path = "/api/v5/trade/orders-pending"
+            url = settings.OKX_BASE_URL.rstrip("/") + path
+            headers = self._sign_headers("GET", path)
+            params = {"instType": "SPOT", "instId": symbol.okx}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers=headers, params=params)
+                if resp.status_code != 200:
+                    logger.warning("OKX get_open_exit_orders HTTP %s for %s", resp.status_code, symbol.okx)
+                    return []
+                data = resp.json()
+                if data.get("code") != "0":
+                    logger.warning("OKX get_open_exit_orders API error %s for %s", data.get("msg"), symbol.okx)
+                    return []
+                raw_orders = data.get("data", [])
             return [
                 ExchangeOrder(
                     provider="okx",
                     symbol=symbol,
-                    order_id=str(o.get("id", "")),
+                    order_id=str(o.get("ordId", "")),
                     side=cast(OrderSide, o.get("side") or "buy"),
-                    order_type=o.get("type") or "",
-                    status=o.get("status") or "",
-                    quantity=float(o.get("amount") or 0),
-                    filled=float(o.get("filled") or 0),
-                    average_price=float(o.get("average") or o.get("price") or 0),
+                    order_type=o.get("ordType") or "",
+                    status=o.get("state") or "",
+                    quantity=float(o.get("sz") or 0),
+                    filled=float(o.get("fillSz") or 0),
+                    average_price=float(o.get("avgPx") or 0),
                     commission=0.0,
                     commission_asset=symbol.quote,
                     raw=cast(dict[str, Any], o),
                 )
-                for o in orders
+                for o in raw_orders
             ]
         except Exception as e:
             logger.warning("OKX get_open_exit_orders failed for %s: %s", symbol.okx, e)
             return []
 
     async def cancel_open_exit_orders(self, symbol: SymbolRef) -> None:
+        """Cancel all pending regular orders via direct REST (TASK-1164)."""
         try:
-            orders = await self.client.fetch_open_orders(symbol.ccxt)
-            for o in orders:
+            # 1. Fetch pending orders
+            path = "/api/v5/trade/orders-pending"
+            url = settings.OKX_BASE_URL.rstrip("/") + path
+            headers = self._sign_headers("GET", path)
+            params = {"instType": "SPOT", "instId": symbol.okx}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers=headers, params=params)
+                if resp.status_code != 200:
+                    logger.warning("OKX cancel_open_exit_orders fetch HTTP %s for %s", resp.status_code, symbol.okx)
+                    return
+                data = resp.json()
+                if data.get("code") != "0":
+                    logger.warning("OKX cancel_open_exit_orders fetch error %s for %s", data.get("msg"), symbol.okx)
+                    return
+                raw_orders = data.get("data", [])
+
+            if not raw_orders:
+                return
+
+            # 2. Cancel each order
+            cancelled = 0
+            for o in raw_orders:
+                order_id = o.get("ordId")
+                if not order_id:
+                    continue
                 try:
-                    order_id = o.get("id")
-                    if order_id:
-                        await self.client.cancel_order(order_id, symbol.ccxt)
+                    c_path = "/api/v5/trade/cancel-order"
+                    c_url = settings.OKX_BASE_URL.rstrip("/") + c_path
+                    c_body = {"instType": "SPOT", "instId": symbol.okx, "ordId": order_id}
+                    c_headers = self._sign_headers("POST", c_path, json.dumps(c_body))
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        c_resp = await client.post(c_url, headers=c_headers, json=c_body)
+                        if c_resp.status_code == 200 and c_resp.json().get("code") == "0":
+                            cancelled += 1
+                        else:
+                            logger.warning("OKX cancel order %s failed: %s", order_id, c_resp.text)
                 except Exception as ce:
-                    logger.warning("OKX cancel_order %s failed: %s", o.get("id"), ce)
-            if orders:
-                logger.info("OKX: cancelled %d open orders for %s", len(orders), symbol.okx)
+                    logger.warning("OKX cancel_order %s failed: %s", order_id, ce)
+            if cancelled:
+                logger.info("OKX: cancelled %d open orders for %s", cancelled, symbol.okx)
         except Exception as e:
             logger.warning("OKX cancel_open_exit_orders failed for %s: %s", symbol.okx, e)
 
-    def _get_ccxt_symbol(self, symbol: str) -> str:
-        """Convert symbol to CCXT format (e.g., 'BTC-EUR' -> 'BTC/EUR')."""
-        return symbol.replace("-", "/")
-
     async def _direct_fetch_order_detail(self, order_id: str) -> Optional[dict[str, Any]]:
-        """Fetch order details via direct OKX REST.
-
-        TEMPORARY: Disabled for OKX EU due to 401/50119 authentication issues.
-        """
-        # TEMPORARY: Disable all REST fetch attempts for OKX EU due to authentication issues
-        logger.debug(f"_direct_fetch_order_detail disabled for {order_id} (OKX EU auth issues)")
+        """Fetch order details via direct OKX REST (TASK-1164)."""
+        try:
+            path = "/api/v5/trade/order"
+            url = settings.OKX_BASE_URL.rstrip("/") + path
+            headers = self._sign_headers("GET", path)
+            params = {"instType": "SPOT", "ordId": order_id}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers=headers, params=params)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("code") == "0" and data.get("data"):
+                        return data["data"][0]
+        except Exception as e:
+            logger.debug("_direct_fetch_order_detail failed for %s: %s", order_id, e)
         return None
 
     async def _direct_fetch_closed_orders(self, symbol: str, limit: int = 50) -> list[dict[str, Any]]:
-        """Fetch closed orders via direct OKX REST.
-
-        TEMPORARY: Disabled for OKX EU due to 401/50119 authentication issues.
-        """
-        # TEMPORARY: Disable all REST fetch attempts for OKX EU due to authentication issues
-        logger.debug(f"_direct_fetch_closed_orders disabled for {symbol} (OKX EU auth issues)")
+        """Fetch closed orders via direct OKX REST (TASK-1164)."""
+        sym_ref = SymbolRef.from_okx(symbol) if "-" in symbol else SymbolRef.from_compact(symbol)
+        try:
+            path = "/api/v5/trade/orders-history-archive"
+            url = settings.OKX_BASE_URL.rstrip("/") + path
+            headers = self._sign_headers("GET", path)
+            params = {"instType": "SPOT", "instId": sym_ref.okx, "limit": str(limit)}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers=headers, params=params)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("code") == "0":
+                        return data.get("data", [])
+        except Exception as e:
+            logger.debug("_direct_fetch_closed_orders failed for %s: %s", symbol, e)
         return []
 
     async def _fetch_fill_price_by_order_id(self, symbol: str, order_id: str) -> Optional[float]:
-        """Recupera il fill price di un ordine specifico tramite orderId.
+        """Fetch fill price of a specific order via direct OKX REST (TASK-1164).
 
-        Usato da restore sessione per trovare il prezzo di chiusura dell'OCO
-        tramite sl_order_id o tp_order_id salvati in DB.
-
-        TEMPORARY: Disabled for OKX EU due to 401/50119 authentication issues.
-        Fill price will be recovered via WS private or trade close log.
+        Used by session restore to find the closing price of an OCO
+        via sl_order_id or tp_order_id saved in DB.
         """
-        # TEMPORARY: Disable all fetch attempts for OKX EU due to authentication issues
-        logger.debug(f"_fetch_fill_price_by_order_id disabled for {symbol} orderId={order_id} (OKX EU auth issues)")
+        try:
+            path = "/api/v5/trade/fills"
+            url = settings.OKX_BASE_URL.rstrip("/") + path
+            headers = self._sign_headers("GET", path)
+            params = {"instType": "SPOT", "ordId": order_id}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers=headers, params=params)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("code") == "0" and data.get("data"):
+                        fills = data["data"]
+                        avg = sum(float(f.get("fillPx", 0)) for f in fills) / len(fills)
+                        return avg
+        except Exception as e:
+            logger.debug("_fetch_fill_price_by_order_id failed for %s orderId=%s: %s", symbol, order_id, e)
         return None
 
     async def fetch_closed_orders_with_rest_fallback(self, symbol: str, limit: int = 50) -> list[dict[str, Any]]:
-        """Fetch closed orders with REST fallback for OKX EU accounts.
-
-        TEMPORARY: Disabled for OKX EU due to 401/50119 authentication issues.
-        """
-        # TEMPORARY: Disable all fetch attempts for OKX EU due to authentication issues
-        logger.debug(f"fetch_closed_orders_with_rest_fallback disabled for {symbol} (OKX EU auth issues)")
-        return []
+        """Fetch closed orders via direct OKX REST (TASK-1164)."""
+        return await self._direct_fetch_closed_orders(symbol, limit)
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

@@ -3186,4 +3186,205 @@ qty_raw=0.285, step_size=1e-05, qty_precise=0.2851
 
 **Dettaglio modifiche (righe 1634-1645):**
 ```python
+MarketOrderRequest(
+    symbol=symbol,
+    side="buy",
+    quantity=None,
+    quote_amount=_trade_val,
+    ...
+)
+```
+OKX riceve `tgtCcy=quote_ccy` e calcola la quantità autonomamente.
+
+---
+
+## EPICA OKX — Migrazione Binance → OKX (Completata)
+
+**Status:** ✅ Completata (luglio 2026)
+**Nota:** Archiviata da TASKS.md il 15/07/2026. I task attivi post-migrazione vivono in EPICA AUDIT POST-OKX.
+
+### TASK-1100 — OKX Demo Spike: auth, market order, exit bracket, WS fill
+
+**Status:** ✅ DONE — tutti i sottotask A–H completati (14/07/2026)
+**Priorità:** CRITICA
+**Dipendenze:** API key OKX Demo Trading ✅
+
+**Obiettivo:** verificare empiricamente OKX Demo Trading prima di modificare il runtime live.
+
+**Stato 2026-07-03 10:45:**
+- ✅ **1100.A** — Auth REST: risolto blocco `50119` con URL `eea.okx.com` per EU accounts
+- ✅ **1100.B** — Server time: OK
+- ✅ **1100.C** — Instrument discovery: 527 spot, 16 EUR live (`BTC-EUR` default confermato)
+- ✅ **1100.D** — Fee tier: maker -0.2%, taker -0.35% (rebate!)
+- ✅ **1100.E** — Market order: 10€ → 0.00022883 BTC @ 43700€, fee rebate OK
+- ✅ **1100.F** — Exit bracket: algoId piazzato con successo, metodo `order-algo` confermato
+- ✅ **1100.H** — WS public trades: subscription OK, parser implementato, CVD mapping verificato
+- ✅ **1100.G** — WS private EEA bloccato (errore 60032) → REST polling fallback
+
+**Stato 2026-07-08 (Fix grafico OKX end-to-end):**
+- ✅ Frontend: `_normalizeSymbol()` per mismatch `BTCEUR` vs `BTC-EUR`
+- ✅ Backend: candle1m su WS business, trades su WS public
+- ✅ Backend: market data sempre live (rimosso branch EU-specific)
+- ✅ Backend: router.py type guard e percorso ritorno candles
+
+**Stato 2026-07-09 (Fix regressione chart):**
+- ✅ Indentazione endpoint `@router.get("/candles/{symbol}")` corretta
+
+### TASK-1112 — Validazione Demo Trading end-to-end
+
+**Status:** ✅ DONE (paper mode) — sessione BTC-EUR con OKX Demo WS funzionante, 9 bug fixati
+**Completato:** 2026-07-03
+
+**Bug fixati durante validazione:**
+1. `set_sandbox_mode()` crash NoneType → rimosso
+2. ccxt URL override fragile → httpx diretto
+3. Mock generator mancava `_save_open_position_to_db`
+4. Strategy 2 lookup entry_time mismatch
+5. Paper session_stop usava prezzo reale OKX → entry_price
+6. OkxWSClient symbol normalization
+
+### TASK-1126 — Fix: TP/SL fill detection su OKX EU accounts
+
+**Status:** ✅ DONE (2026-07-13)
+**Priorità:** CRITICA
+
+**Problema:** OKX EU accounts → `orders-algo-history?ordType=oco` ritorna 400.
+**Fix:** Usare `orders-history?state=filled` + seed iniziale con algo orders.
+
+### TASK-1116.B — Bug: OKB-EUR mancante in FUTURES_SYMBOL_MAP collector
+
+**Status:** ✅ Done (corretto in lavorazione TASK-1153)
+
+**Fix:** `"OKBEUR": None, "OKB-EUR": None` aggiunti a `FUTURES_SYMBOL_MAP` + graceful skip OKX.
+
+### TASK-1116.C — Collector adapter provider-aware (OKX derivatives)
+
+**Status:** ⚠️ Superseded — consolidato in TASK-1153
+
+---
+
+## EPICA COLLECTOR INTELLIGENCE — Task completati
+
+### TASK-1150 — Abilitare whale collector + verificare sentiment su OKX
+
+**Status:** ✅ Done (14/07/2026)
+
+**Modifiche:** `SCALPING_WHALE_ENABLED=true` in `.env`, verifica log whale/sentiment.
+
+### TASK-1151 — OrderBookImbalanceCollector
+
+**Status:** ✅ Done (14/07/2026)
+**File:** `collectors/order_book_imbalance.py`
+**Endpoint:** `GET https://eea.okx.com/api/v5/market/books?instId={instId}&sz=20`
+
+### TASK-1152 — SpreadCollector
+
+**Status:** ✅ Done (14/07/2026) — wiring INTENZIONALMENTE DISATTIVATO
+**File:** `collectors/spread.py`
+**Endpoint:** `GET https://eea.okx.com/api/v5/market/ticker?instId={instId}`
+
+### TASK-1153 — CollectorAdapter provider-aware per funding_rate / open_interest / long_short_ratio
+
+**Status:** ✅ Done (14/07/2026) — supersede TASK-1116.C, TASK-COLLECTOR-001
+
+**Modifiche:**
+- `_provider_maps.py`: `OKX_PERPETUAL_MAP` (BTC/ETH/OKB → SWAP)
+- `okx_exchange.py`: adapter methods `get_open_interest`/`get_funding_rate`/`get_long_short_ratio`
+- 3 collector: provider-aware OKX con graceful skip
+- `signal_score_engine.py`: parametro `adapter`
+- `fake_okx_adapter.py`: per test
+- **Test:** `test_collector_provider_aware.py` (14 test, verdi)
+
+### TASK-1154 — Sentiment collector: fallback affidabile
+
+**Status:** ✅ Done (14/07/2026) — supersede TASK-COLLECTOR-002
+
+**File:** `collectors/sentiment.py` — 3 fonti: CryptoCompare, NewsAPI, RSS (fallback).
+
+### TASK-1155 — Whale collector: fix parsing + API key + structurally_unavailable
+
+**Status:** ✅ Done (2026-07-15)
+
+**Bug risolti:**
+1. Parsing errato `-EUR` suffix → strip completo suffissi quote
+2. CryptoCompare senza API key → header `Apikey` aggiunto
+3. OKB strutturalmente assente → `is_symbol_supported()` esclude OKB/BNB
+
+### TASK-1156 — On-chain collector: fallback Blockchair
+
+**Status:** ✅ Done (2026-07-15) — supersede TASK-COLLECTOR-004
+
+**File:** `signal_score_engine.py`: peso onchain 0.0→0.05
+
+### TASK-1158 — Spike: equivalente OKX per Long/Short Ratio
+
+**Status:** ✅ Done (2026-07-14)
+
+**Risultato:** OKX ha l'endpoint rubik `long-short-account-ratio`. Ratio → long/short%: `ratio/(1+ratio)*100`. Bug `OKX_PERPETUAL_MAP["OKB"]=None` corretto.
+
+---
+
+## Migrazione Bybit — CHIUSA
+
+**Status:** Chiusa (2026-07-14)
+
+**Motivazione:** Account Bybit EU non permette API key HMAC per trading automatizzato custom. Si resta su OKX come unico exchange operativo.
+
+**Riferimenti tecnici (non attivi):**
+- `docs/analysis/bybit-api-reference-analysis.md`
+- `docs/plans/bybit-migration-architecture-and-plan.md`
+- `docs/plans/bybit-migration-plan-v2.md`
+
+---
+
+## TASK-OKX-RECAL — Ricalibrazione SL/TP su fee OKX reali
+
+**Status:** ✅ Done (14/07/2026)
+**Priorità:** CRITICA (completata)
+
+**Fee OKX reali:** maker=0.20%, taker=0.35%, round-trip=0.70%
+**Target ricalibrati:** SL=1.05% (net 0.35%), TP=1.55% (net 0.85%), R:R=1.48:1
+
+---
+
+## Task da Investigare — Risultati (2026-07-01)
+
+> Bug identificati in `MASTER_RECAP.md` del 26/06/2026.
+
+| Task | Status | Note |
+|------|--------|------|
+| TASK-INVEST-001 — sync strategy_selected vs strategy_executed | ✅ FATTO | Corretto in frontend |
+| TASK-INVEST-002 — Regressione doppio avvio WS | ✅ FATTO | Risolta |
+| TASK-INVEST-003 — Buffer mismatch warmup/ExecutionLoop | ✅ FATTO | Allineamento confermato |
+| TASK-INVEST-004 — pause_trading permanente su regime unknown | ✅ FATTO | Ripresa automatica implementata |
+| TASK-INVEST-005 — Position.entry_commission non popolato | ✅ FATTO | Popolato via WS (TASK-876) |
+| TASK-INVEST-006 — get_trade_fee() fallback silenzioso | ✅ FATTO | `fee_tier_certified` implementato |
+| TASK-INVEST-007 — GET /position non converte BNB→USDC | ✅ FATTO | Fix applicato in router.py |
+| TASK-INVEST-008 — SELL mean-reversion bloccato da bias bullish | ✅ FATTO | Sblocco confermato |
+| TASK-INVEST-009 — Insufficient funds per minNotional | ✅ FATTO | Fix minNotional applicato |
+| TASK-INVEST-010 — Assenza cooldown dopo consecutive losses | ✅ FATTO | Pausa automatica implementata |
+| TASK-INVEST-011 — Regime misclassification (volume-confirmed) | 🟡 APERTO | Nessuna logica volume-confirmed |
+| TASK-INVEST-012 — Falling Knife Protection non implementata | 🟡 APERTO | Allineata a TASK-906 |
+| TASK-INVEST-013 — trend_direction troppo sensibile | ⚠️ PARZIALE | Soglia troppo sensibile |
+| TASK-INVEST-014 — Supervisor non ha visibilità blocco SHORT | ✅ FATTO | System prompt menziona blocco |
+| TASK-INVEST-015 — APScheduler job missed ripetuti | ✅ FATTO | Log puliti |
+| TASK-INVEST-016 — CryptoCompare/RSS feed intermittenti | ✅ FATTO | Feed stabili |
+| TASK-INVEST-017 — Bias outcome_label Supervisor | ⚠️ PARZIALE | Usa solo PnL |
+| TASK-INVEST-018 — Soglia dinamica senza decadimento | ⚠️ PARZIALE | Decay non implementato |
+| TASK-INVEST-019 — 5/8 collector non funzionanti | ⚠️ PARZIALE | CVD/OI/LSR dipendono da futures |
+| TASK-INVEST-020 — Slope filter EMA Cross | 🟡 APERTO | Nessuno slope filter |
+
+**Nota:** I task INVEST aperti/parziali (011, 012, 013, 017, 018, 019, 020) sono stati parzialmente affrontati dai task collector intelligence (TASK-1150→1159). TASK-INVEST-019 è ora risolto con i provider-aware collectors.
+
+---
+
+## Ordine di esecuzione consigliato (storico, pre-audit)
+
+1. ~~**TASK-1100**~~ ✅ — spike OKX Demo Trading
+2. ~~**TASK-1101 → TASK-1116**~~ ✅ — config, adapter REST, WS, order stream, etc.
+3. ~~**TASK-1113**~~ — Cutover OKX live readiness
+4. ~~**TASK-1114**~~ — OKX fee tier e net pricing parity
+5. ~~**TASK-1117 → TASK-1118**~~ — Bug da recap 2026-07-08
+6. ~~**TASK-OKX-RECAL**~~ ✅ — Ricalibrazione SL/TP
+7. **TASK-907 / TASK-908** — bug non OKX (ancora pending)
 

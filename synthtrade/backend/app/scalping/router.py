@@ -477,8 +477,10 @@ async def scalping_websocket(ws: WebSocket):
         fee_round_trip = (entry_fee_rate + exit_fee_rate) * 100  # converti in percentuale
         
         # Calcola percentuali nette (sottrai fee round-trip dai target lordi)
-        sl_pct_net = (sl_pct_cfg * 100) - fee_round_trip  # perdita netta è peggiore
-        tp_pct_net = (tp_pct_cfg * 100) - fee_round_trip  # guadagno netto è minore
+        # TASK-1165: sl_pct_cfg e tp_pct_cfg sono gia' in percentuale (es. 1.05 = 1.05%).
+        # fee_round_trip e' anch'esso in percentuale (0.70 = 0.70%). Nessuna conversione.
+        sl_pct_net = sl_pct_cfg - fee_round_trip
+        tp_pct_net = tp_pct_cfg - fee_round_trip
         
         try:
             await ws.send_json({
@@ -1338,8 +1340,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
         position_manager=_execution_state["position_manager"],
     )
     # paper_mode controls whether intelligence gating is bypassed for low-score markets.
-    # Must be False in live mode so the full intelligence + technical filter applies.
-    execution_loop.paper_mode = (_session_mode != "live")
+    # Must be False in live/demo mode so the full intelligence + technical filter applies.
+    execution_loop.paper_mode = (_session_mode != "live" and not settings.exchange_demo)
     _execution_state["loop"] = execution_loop
     logger.info(f">>> _start_ws_broadcast: ExecutionLoop created, paper_mode={execution_loop.paper_mode}")
 
@@ -1785,7 +1787,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                             _mode = _execution_state["session"].get("mode", "paper")
                             _trade_val = float(_execution_state["session"].get("trade_value", 10.0))
                             
-                            if _mode == "live":
+                            if _mode == "live" or settings.exchange_demo:
                                 exchange = _execution_state.get("exchange")
                                 if not exchange:
                                     logger.error("Live mode requested but exchange is not initialized!")
@@ -3119,8 +3121,8 @@ async def control_session(control: Dict) -> Dict:
         _execution_state["trade_history"] = []
         _execution_state["position_manager"] = PositionManager()
         
-        # TASK-877: Inizializza fee tier (default per paper trading, sovrascritto per live)
-        if session["mode"] != "live":
+        # TASK-877: Inizializza fee tier (default per paper trading, sovrascritto per live/demo)
+        if session["mode"] != "live" and not settings.exchange_demo:
             _execution_state["fee_tier"] = {"maker": 0.001, "taker": 0.001}  # default paper
         
         # Reset strategy override if there's an existing execution loop

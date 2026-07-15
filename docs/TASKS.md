@@ -179,7 +179,7 @@ async def collect(self, symbol: str) -> dict | None:
 
 ### TASK-1165 — Fix sl_pct_net inconsistente (WS initial state vs candle processor)
 
-**Status:** Pending
+**Status:** ✅ Implemented (16/07/2026)
 **Priorità:** 🟠 ALTA
 **Effort stimato:** 1 ora
 **Dipendenze:** nessuna

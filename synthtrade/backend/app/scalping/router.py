@@ -168,16 +168,21 @@ async def _reconcile_position_with_exchange(
     source = "entry_price_fallback"
     reason = "external_close_unknown_price"
 
-    # Priority 1: algo orders history (most accurate)
-    if bracket_id:
-        try:
-            algo_history = await _exchange.get_algo_orders_history(symbol)
-            for algo in algo_history:
-                if algo.get("algoId") == bracket_id and algo.get("state") == "effective":
-                    fill_price = float(algo.get("avgPx") or algo.get("fillPx") or 0)
-                    if fill_price > 0:
-                        source = "algo_history"
-                        ord_type = algo.get("ordType", "").lower()
+    # Priority 1: real fills from OKX (most accurate)
+    # Always fetch fills — match by bracket_id first, then by exit side
+    exit_side = "sell" if pos_side == "BUY" else "buy"
+    try:
+        fills = await _exchange.get_algo_orders_history(symbol)
+
+        # Priority 1a: match by bracket_id if available
+        if bracket_id:
+            for fill in fills:
+                if fill.get("algoId") == bracket_id and fill.get("state") == "effective":
+                    fp = float(fill.get("avgPx") or fill.get("fillPx") or 0)
+                    if fp > 0:
+                        fill_price = fp
+                        source = "fills"
+                        ord_type = fill.get("ordType", "").lower()
                         if "tp" in ord_type:
                             reason = "take_profit"
                         elif "sl" in ord_type:
@@ -185,33 +190,37 @@ async def _reconcile_position_with_exchange(
                         else:
                             reason = "bracket_filled"
                         logger.info(
-                            "[POSITION_RECONCILE] Recovered fill from algo history: "
+                            "[POSITION_RECONCILE] Recovered fill by bracket_id: "
                             "algoId=%s fill=%.4f reason=%s",
                             bracket_id, fill_price, reason,
                         )
                         break
-        except Exception as hist_e:
-            logger.warning("[POSITION_RECONCILE] Algo history fetch failed: %s", hist_e)
 
-    # Priority 2: current ticker price (approximation)
-    if fill_price is None or fill_price <= 0:
-        try:
-            ticker_price = await _exchange.get_ticker_price(sym_ref.okx)
-            if ticker_price and ticker_price > 0:
-                fill_price = ticker_price
-                source = "ticker"
-                if pos_side == "BUY":
-                    reason = "take_profit" if fill_price > entry_price else "stop_loss"
-                else:
-                    reason = "take_profit" if fill_price < entry_price else "stop_loss"
-                logger.info(
-                    "[POSITION_RECONCILE] Using ticker price as approximation: %.4f (source=ticker)",
-                    fill_price,
-                )
-        except Exception as ticker_e:
-            logger.warning("[POSITION_RECONCILE] Ticker fetch failed: %s", ticker_e)
+        # Priority 1b: match by exit side (most recent fill for the closing side)
+        if fill_price is None or fill_price <= 0:
+            for fill in fills:
+                if fill.get("side", "").lower() == exit_side:
+                    fp = float(fill.get("avgPx") or fill.get("fillPx") or 0)
+                    if fp > 0:
+                        fill_price = fp
+                        source = "fills"
+                        ord_type = fill.get("ordType", "").lower()
+                        if "tp" in ord_type:
+                            reason = "take_profit"
+                        elif "sl" in ord_type:
+                            reason = "stop_loss"
+                        else:
+                            reason = "external_close"
+                        logger.info(
+                            "[POSITION_RECONCILE] Recovered fill by exit side (%s): "
+                            "fill=%.4f reason=%s",
+                            exit_side, fill_price, reason,
+                        )
+                        break
+    except Exception as hist_e:
+        logger.warning("[POSITION_RECONCILE] Fills fetch failed: %s", hist_e)
 
-    # Priority 3: entry price fallback (PnL unreliable)
+    # Priority 2: entry price fallback (PnL unreliable)
     if fill_price is None or fill_price <= 0:
         fill_price = entry_price
         source = "entry_price_fallback"
@@ -327,15 +336,13 @@ def _net_to_gross_pct(net_pct: float, entry_fee_rate: float, exit_fee_rate: floa
     net_pct può essere positivo (TP) o negativo (SL) — la formula è la stessa
     perché la fee si applica sempre a sfavore su entrambe le leg.
 
-    Esempi con fee entry=0.00095 taker, exit=0.001 maker:
-        _net_to_gross_pct(+0.5,  0.00095, 0.001) ->  +0.6963%  (TP allargato)
-        _net_to_gross_pct(-0.3,  0.00095, 0.001) ->  -0.1053%  (SL ristretto)
+    Esempi con fee entry=0.0035 taker, exit=0.0035 taker:
+        _net_to_gross_pct(+1.55,  0.0035, 0.0035) ->  +2.2661%  (TP allargato)
+        _net_to_gross_pct(-1.05,  0.0035, 0.0035) ->  -0.3536%  (SL ristretto)
 
-    NOTA: exit_fee_rate usa "maker" per coerenza con la convenzione già adottata
-    in tutto il codebase (_on_order_update, _close_position_and_record, ecc.).
-    Lo SL su Binance OCO potrebbe eseguire come taker — non ancora verificato
-    sui dati reali. Se si osserva una discrepanza sistematica tra SL netto atteso
-    e osservato, rivedere questa assunzione e passare taker per exit_fee_rate sullo SL.
+    NOTA: OKX OCO usa tpOrdPx="-1" e slOrdPx="-1" → entrambe le gamme sono
+    market order (taker). Confermato da esame ordini reali su OKX EU (2026-07-16).
+    Entrata e uscita sono entrambe taker.
     """
     return (_exit_price_ratio(net_pct, entry_fee_rate, exit_fee_rate) - 1) * 100
 
@@ -501,7 +508,7 @@ async def scalping_websocket(ws: WebSocket):
         tp_pct_cfg = float(risk_cfg.get("take_profit_pct", 0.5))
         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
         _ef = _get_fee_rate(fee_tier, "taker", 0.001)
-        _xf = _get_fee_rate(fee_tier, "maker", 0.001)
+        _xf = _get_fee_rate(fee_tier, "taker", 0.001)  # OKX OCO = market (taker)
         # TASK-1127: Fees are now positive for base level accounts (converted in adapter)
         # _net_to_gross_pct works with positive fee rates
         # SL target is a LOSS: pass the NEGATIVE net so _net_to_gross_pct returns
@@ -521,7 +528,7 @@ async def scalping_websocket(ws: WebSocket):
         # TASK-885: Calcola target netti TP/SL (fee tier round-trip)
         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
         entry_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # market order = taker
-        exit_fee_rate = _get_fee_rate(fee_tier, "maker", 0.001)  # OCO orders = maker
+        exit_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # OKX OCO = market order (taker)
         fee_round_trip = (entry_fee_rate + exit_fee_rate) * 100  # converti in percentuale
         
         # Calcola percentuali nette (sottrai fee round-trip dai target lordi)
@@ -1125,7 +1132,7 @@ async def _on_uds_reconnect_sync():
         )
         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
         entry_fee = _get_fee_rate(fee_tier, "taker", 0.001)
-        exit_fee = _get_fee_rate(fee_tier, "maker", 0.001)
+        exit_fee = _get_fee_rate(fee_tier, "taker", 0.001)  # OKX OCO = market (taker)
         total_fees = (entry_f * qty_f * entry_fee) + (fill_price * qty_f * exit_fee)
         pnl = gross_pnl - total_fees
         pnl_pct = (pnl / (entry_f * qty_f)) * 100 if entry_f > 0 else 0.0
@@ -1524,7 +1531,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         gross_pnl = (fp - entry_f) * qty_f if pos.side == "BUY" else (entry_f - fp) * qty_f
                         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
                         entry_fee_r = _get_fee_rate(fee_tier, "taker", 0.001)
-                        exit_fee_r = _get_fee_rate(fee_tier, "maker", 0.001)
+                        exit_fee_r = _get_fee_rate(fee_tier, "taker", 0.001)  # OKX OCO = market (taker)
                         total_fees = (entry_f * qty_f * entry_fee_r) + (fp * qty_f * exit_fee_r)
                         pnl = gross_pnl - total_fees
                         pnl_pct = (pnl / (entry_f * qty_f)) * 100 if entry_f > 0 else 0
@@ -2001,7 +2008,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     fee_tier_pricing = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
                                     # TASK-1127: Fees are now positive for base level accounts (converted in adapter)
                                     entry_fee_pricing = _get_fee_rate(fee_tier_pricing, "taker", 0.001)
-                                    exit_fee_pricing = _get_fee_rate(fee_tier_pricing, "maker", 0.001)
+                                    exit_fee_pricing = _get_fee_rate(fee_tier_pricing, "taker", 0.001)  # OKX OCO = market order (taker)
 
                                     # TASK-1127: SL/TP gross price calculation.
                                     # SL: _sl_gross_fraction always returns positive move magnitude
@@ -2017,7 +2024,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     tp_price = round(exec_price * (1 + tp_gross_pct), price_prec) if side == "BUY" else round(exec_price * (1 - tp_gross_pct), price_prec)
 
                                     logger.info(
-                                         f"[NET_PRICING] provider={settings.EXCHANGE_PROVIDER} symbol={event.symbol} maker={exit_fee_pricing} taker={entry_fee_pricing} certified={_execution_state.get('fee_tier_certified', False)} | "
+                                         f"[NET_PRICING] provider={settings.EXCHANGE_PROVIDER} symbol={event.symbol} entry_taker={entry_fee_pricing} exit_taker={exit_fee_pricing} certified={_execution_state.get('fee_tier_certified', False)} | "
                                         f"Target netti: TP={tp_pct_net_cfg}% SL={sl_pct_net_cfg}% | "
                                         f"Lordi al prezzo: TP=+{tp_gross_pct*100:.4f}% SL=-{sl_gross_frac*100:.4f}% | "
                                         f"sl_price={sl_price} tp_price={tp_price} | "
@@ -2308,7 +2315,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         
                         # Exit: usa fee tier (costo di chiusura atteso al tier corrente)
                         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-                        exit_fee_rate = _get_fee_rate(fee_tier, "maker", 0.001)  # OCO orders = maker
+                        exit_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # OKX OCO = market order (taker)
                         exit_commission = current_val * exit_fee_rate
                         
                         total_fees = entry_commission + exit_commission
@@ -2333,7 +2340,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         # TASK-885: Calcola target netti TP/SL (fee tier round-trip)
                         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
                         entry_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # market order = taker
-                        exit_fee_rate = _get_fee_rate(fee_tier, "maker", 0.001)  # OCO orders = maker
+                        exit_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # OKX OCO = market order (taker)
                         fee_round_trip = (entry_fee_rate + exit_fee_rate) * 100  # converti in percentuale
                         
                         # Calcola percentuali nette (sottrai fee round-trip dai target lordi)
@@ -2384,7 +2391,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                             "progress_pct": round(progress_pct, 1),         # -100 to +100
                             "sl_distance_pct": round(max(0, (entry_f - current_price_f) / (entry_f - sl_price) * 100) if pos.side == "BUY" and (entry_f - sl_price) > 0 else 0, 1),
                             "tp_distance_pct": round(min(100, (current_price_f - entry_f) / (tp_price - entry_f) * 100) if pos.side == "BUY" and (tp_price - entry_f) > 0 else 0, 1),
-                            "breakeven_pct": round((_get_fee_rate(fee_tier, "taker", 0.001) + _get_fee_rate(fee_tier, "maker", 0.001)) * 100, 2),
+                            "breakeven_pct": round((_get_fee_rate(fee_tier, "taker", 0.001) + _get_fee_rate(fee_tier, "taker", 0.001)) * 100, 2),
                         })
                         logger.debug(f"Position update broadcast @ {current_price_f}: PnL={pnl:.2f} ({pnl_pct:.2f}%) progress={progress_pct:.1f}%")
                 except Exception as e:
@@ -2475,7 +2482,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     
                     # Exit: usa fee tier (costo di chiusura atteso al tier corrente)
                     fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-                    exit_fee_rate = _get_fee_rate(fee_tier, "maker", 0.001)  # OCO orders = maker
+                    exit_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # OKX OCO = market order (taker)
                     exit_commission = current_val * exit_fee_rate
                     
                     total_fees = entry_commission + exit_commission
@@ -2493,7 +2500,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         "take_profit_price": round(tp, 2),
                         "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
                         "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
-                        "breakeven_pct": round((_get_fee_rate(fee_tier, "taker", 0.001) + _get_fee_rate(fee_tier, "maker", 0.001)) * 100, 2),
+                        "breakeven_pct": round((_get_fee_rate(fee_tier, "taker", 0.001) + _get_fee_rate(fee_tier, "taker", 0.001)) * 100, 2),
                     })
                     
                     # Execute SL/TP Auto Close — TASK-855: solo in paper mode
@@ -3753,7 +3760,7 @@ async def get_position() -> Optional[Dict]:
         
         # Exit: usa fee tier (costo di chiusura atteso al tier corrente)
         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-        exit_fee_rate = _get_fee_rate(fee_tier, "maker", 0.001)  # OCO orders = maker
+        exit_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # OKX OCO = market order (taker)
         exit_commission = current_val * exit_fee_rate
         
         total_fees = entry_commission + exit_commission
@@ -3770,7 +3777,7 @@ async def get_position() -> Optional[Dict]:
     tp_pct = float(risk_cfg.get("take_profit_pct", 0.5))
     fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
     entry_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # market order = taker
-    exit_fee_rate = _get_fee_rate(fee_tier, "maker", 0.001)  # OCO orders = maker
+    exit_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # OKX OCO = market order (taker)
     fee_round_trip = (entry_fee_rate + exit_fee_rate) * 100  # converti in percentuale
     
     # Calcola percentuali nette (sottrai fee round-trip dai target lordi)
@@ -3780,7 +3787,7 @@ async def get_position() -> Optional[Dict]:
     # TASK-1129: veri prezzi TP/SL piazzati su OKX (fallback a ricalcolo da pct
     # per posizioni pre-fix / restore senza questi campi).
     _ef_p = _get_fee_rate(fee_tier, "taker", 0.001)
-    _xf_p = _get_fee_rate(fee_tier, "maker", 0.001)
+    _xf_p = _get_fee_rate(fee_tier, "taker", 0.001)  # OKX OCO = market (taker)
     # TASK-1127: Fees are now positive for base level accounts
     sl_price_calc = _sl_price_from_entry(entry, pos.side, sl_pct, _ef_p, _xf_p)[0]
     tp_price_calc = entry * (1 + _net_to_gross_pct(tp_pct, _ef_p, _xf_p) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(tp_pct, _ef_p, _xf_p) / 100)

@@ -4,6 +4,74 @@
 
 ### Da: OpenCode -> prossima sessione
 
+**Data:** 2026-07-16 11:00
+
+**Contesto:** Breakeven indicator + OKX OCO fee fix (taker, non maker)
+
+---
+
+### ✅ Breakeven indicator + OKX OCO fee fix
+
+**Problema 1 (Frontend):** `getBreakevenPct()` e `getProgressPct()` usavano i prezzi lordi dei bracket OKX. SL lordo era solo -0.35% da entry (le fee assorbono la perdita) → marker BE a ~40%, entrambi a sinistra della barra.
+
+**Fix:** Riscritte entrambe le funzioni per usare le percentuali nette SL/TP (`stop_loss_pct`/`take_profit_pct`). Marker BE ora a ~62% della barra (lato destro) ✓.
+
+**Problema 2 (Frontend):** Il tag BE era posizionato assoluto dentro la barra, spesso fuori viewport.
+
+**Fix:** Ristrutturato template con `breakeven-row` sotto la barra, testo 11-12px, color-coded verde/rosso.
+
+**Problema 3 (Backend — CRITICO):** Il fee round-trip usava maker per l'exit, ma OKX OCO usa `tpOrdPx="-1"` e `slOrdPx="-1"` → entrambe le gamme sono market order (taker). Fee round-trip risultante: 0.55% (errato) invece di 0.70% (corretto).
+
+**Fix:** Cambiate 10 occorrenze in `router.py` da `"maker"` a `"taker"` per l'exit fee. Questo corregge:
+- `breakeven_pct` nei broadcast position events
+- Prezzi lordi SL/TP calcolati al placement del bracket
+- PnL calcolato nei broadcast position_update
+- Fee round-trip nel REST endpoint `/position`
+
+**Conferma:** OKX REST API: `[OKX FEE DIRECT] BTC-EUR maker=0.0020 taker=0.0035`. Ordine OCO mostra "TP Market" e "SL Market".
+
+**File:** `synthtrade/frontend/.../position-ticker.component.ts`, `synthtrade/backend/app/scalping/router.py`
+
+---
+
+### Da: OpenCode -> prossima sessione
+
+**Data:** 2026-07-16 10:15
+
+**Contesto:** Fix reconcile fill reali + bug critico supabase stub
+
+---
+
+### ✅ TASK-1177 — Reconcile fill reali + bug critico supabase stub
+
+**Problema 1:** `_reconcile_position_with_exchange()` usava `get_ticker_price()` come fallback — il prezzo al restart (55,952.10) era diverso dal fill reale (56,097.40).
+
+**Fix:** Modificata logica in `router.py:167-231`:
+- Sempre fetch fill reali da OKX (`/api/v5/trade/fills`)
+- Match per `bracket_id` se disponibile, altrimenti per `exit_side`
+- Rimosso ticker approximation
+
+**Problema 2:** `supabase/` test stub alla root oscurava il pacchetto `supabase` reale. `get_supabase()` restituiva `_DummyClient` → DB mai letto/scritto.
+
+**Fix:** Rinominato `supabase/` → `_supabase_test_stub/`. Verificato `SyncClient` reale funzionante.
+
+**Problema 3:** Trade log mostrava 4 entry duplicate con dati misti.
+
+**Fix:** Ripulito DB con dati OKX reali: 2 trade chiusi (PnL=-0.24 ciascuno), 1 aperto.
+
+**Dati verificati:**
+- Trade 1: BUY 56,383.10 → SELL 56,097.40 (4 partial fills) → PnL -0.24
+- Trade 2: BUY 56,620.50 → SELL 56,334.40 → PnL -0.24
+- Trade 3: BUY 55,913.20 (open)
+
+**File:** `synthtrade/backend/app/scalping/router.py`, `_supabase_test_stub/__init__.py`
+
+**Nota:** Endpoint `/api/v5/trade/fills` non restituisce `algoId` per ordini OCO/bracket — matching per `exit_side` è l'alternativa.
+
+---
+
+### Da: OpenCode -> prossima sessione
+
 **Data:** 2026-07-16 09:05
 
 **Contesto:** Code review post-deploy del restore reconcile (commit precedente) + 3 fix

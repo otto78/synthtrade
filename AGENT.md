@@ -84,8 +84,7 @@ synthtrade/
 │           │   │   └── services/ ← API services
 │           │   └── pages/      ← Angular pages
 │
-├── supabase/
-│   └── migrations/             ← database migrations
+├── _supabase_test_stub/        ← test stub (DO NOT RUN — shadows real supabase package)
 │
 └── .env                        ← secrets (never commit / mai committare)
 ```

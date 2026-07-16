@@ -1,6 +1,6 @@
 # TASKS.md — SynthTrade Task Tracking
 
-> **Aggiornato:** 2026-07-15 14:00. Task completati spostati in `docs/ARCHIVE_TASKS.md`.
+> **Aggiornato:** 2026-07-16 10:00. Task completati spostati in `docs/ARCHIVE_TASKS.md`.
 
 ---
 
@@ -617,11 +617,42 @@ Tutti gli altri componenti scalping (`position-ticker`, `trade-log`, `session-co
 **File modificati:**
 - `synthtrade/backend/app/main.py` (blocco adapter init in `_restore_scalping_session`)
 
+### TASK-1177 — Reconcile fill reali + bug critico supabase stub
+
+**Status:** ✅ Implemented (16/07/2026)
+**Priorità:** 🔴 CRITICA
+**Effort stimato:** 2 ore
+**Dipendenze:** TASK-1160, TASK-1174
+
+**Problemi:**
+1. Reconcile usava ticker price come approssimazione del fill (non il fill reale di OKX) → PnL sbagliato
+2. `supabase/` test stub alla root oscurava il pacchetto `supabase` reale → `get_supabase()` restituiva `_DummyClient` → DB mai letto/scritto
+3. Trade log mostrava 4 entry duplicate con dati misti
+
+**Fix:**
+- `router.py:167-231`: Reconcile ora fetcha fill reali da OKX (`/api/v5/trade/fills`), matcha per `bracket_id` oppure per `exit_side`. Rimosso ticker approximation.
+- Rinominato `supabase/` → `_supabase_test_stub/`
+- Trade log ripulito con dati OKX reali (2 trade chiusi con PnL=-0.24 ciascuno, 1 aperto)
+
+**File coinvolti:**
+- `synthtrade/backend/app/scalping/router.py` (lines 167-231)
+- `_supabase_test_stub/__init__.py` (rinominato)
+
+**Acceptance Criteria:**
+- Trade log mostra 2 trade chiusi con fill price reale OKX ✅
+- `get_supabase()` restituisce `SyncClient` reale ✅
+- `python -m py_compile synthtrade/backend/app/scalping/router.py` OK ✅
+- Recap: `docs/recap/2026-07-16_reconcile-fix.md` ✅
+
+**Note:**
+- L'endpoint `/api/v5/trade/fills` non restituisce `algoId` per ordini OCO/bracket → il matching per bracket_id non funziona. Usare matching per `exit_side`
+- `get_supabase()` usa `lru_cache` — DummyClient una volta cachato resta per tutta la sessione
+
 ---
 
 ## Task da Investigare — Aperti/Parziali
 
-> Da `MASTER_RECAP.md` 26/06/2026. Verifica 01/07/2026. Aggiornato 15/07/2026.
+> Da `MASTER_RECAP.md` 26/06/2026. Verifica 01/07/2026. Aggiornato 16/07/2026.
 
 | Task | Status | Note |
 |------|--------|------|

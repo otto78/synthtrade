@@ -72,13 +72,13 @@ import { Position } from '../models/position.model';
           <div class="progress-bar">
             <div class="progress-fill" [style.width.%]="getProgressPct()" [ngClass]="getProgressClass()"></div>
             <div class="breakeven-marker" [style.left.%]="getBreakevenPct()"></div>
-            <div class="breakeven-tag" [style.left.%]="getBreakevenPct()">
-              <span class="be-text">BE {{ getBreakevenPctValue() | number:'1.2-2' }}%</span>
-            </div>
           </div>
-          <div class="breakeven-status" [ngClass]="isAboveBreakeven() ? 'above' : 'below'">
-            {{ isAboveBreakeven() ? 'Above Breakeven' : 'Below Breakeven' }}
-            <span class="be-diff">({{ getBreakevenDiff() >= 0 ? '+' : '' }}{{ getBreakevenDiff() | number:'1.2-2' }}%)</span>
+          <div class="breakeven-row">
+            <span class="breakeven-tag">BE {{ getBreakevenPctValue() | number:'1.2-2' }}%</span>
+            <span class="breakeven-status" [ngClass]="isAboveBreakeven() ? 'above' : 'below'">
+              {{ isAboveBreakeven() ? 'Above Breakeven' : 'Below Breakeven' }}
+              <span class="be-diff">({{ getBreakevenDiff() >= 0 ? '+' : '' }}{{ getBreakevenDiff() | number:'1.2-2' }}%)</span>
+            </span>
           </div>
         </div>
       </div>
@@ -167,7 +167,6 @@ import { Position } from '../models/position.model';
       background: rgba(255,255,255,0.12);
       border-radius: 5px;
       position: relative;
-      margin-bottom: 18px;
     }
     .progress-state {
       font-size: 11px;
@@ -200,31 +199,33 @@ import { Position } from '../models/position.model';
       transform: translateX(-1px);
       z-index: 2;
     }
+    .breakeven-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 14px;
+    }
     .breakeven-tag {
-      position: absolute;
-      top: 16px;
-      transform: translateX(-50%);
       white-space: nowrap;
       z-index: 2;
     }
-    .be-text {
-      font-size: 9px;
+    .breakeven-tag .be-text {
+      font-size: 11px;
       font-weight: 700;
       color: #F0B90B;
       letter-spacing: 0.3px;
     }
     .breakeven-status {
-      font-size: 10px;
+      font-size: 12px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.4px;
-      margin-top: 2px;
     }
     .breakeven-status.above {
       color: var(--accent-success, #26a69a);
     }
     .breakeven-status.below {
-      color: var(--text-secondary);
+      color: var(--accent-danger, #ef5350);
     }
     .be-diff {
       font-weight: 400;
@@ -355,20 +356,24 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
 
   getProgressPct(): number {
     if (!this.position) return 0;
-    const { side, current_price, stop_loss_price, take_profit_price } = this.position;
-    if (stop_loss_price == null || take_profit_price == null) return 0;
+    const { side, entry_price, current_price, stop_loss_pct, take_profit_pct } = this.position;
+    const slDist = Math.abs(stop_loss_pct ?? 1.0);
+    const tpDist = Math.abs(take_profit_pct ?? 1.0);
+    const totalRange = slDist + tpDist;
+    if (totalRange <= 0) return 0;
 
     if (side === 'BUY') {
-      const totalRange = take_profit_price - stop_loss_price;
-      if (totalRange <= 0) return 0;
-      const progress = ((current_price - stop_loss_price) / totalRange) * 100;
-      return Math.max(0, Math.min(100, progress));
+      const slNet = entry_price * (1 - slDist / 100);
+      const tpNet = entry_price * (1 + tpDist / 100);
+      const range = tpNet - slNet;
+      if (range <= 0) return 0;
+      return Math.max(0, Math.min(100, ((current_price - slNet) / range) * 100));
     }
-
-    const totalRange = stop_loss_price - take_profit_price;
-    if (totalRange <= 0) return 0;
-    const progress = ((stop_loss_price - current_price) / totalRange) * 100;
-    return Math.max(0, Math.min(100, progress));
+    const slNet = entry_price * (1 + slDist / 100);
+    const tpNet = entry_price * (1 - tpDist / 100);
+    const range = slNet - tpNet;
+    if (range <= 0) return 0;
+    return Math.max(0, Math.min(100, ((slNet - current_price) / range) * 100));
   }
 
   getProgressText(): string {
@@ -392,23 +397,27 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
    */
   getBreakevenPct(): number {
     if (!this.position) return 50;
-    const { side, entry_price, stop_loss_price, take_profit_price, breakeven_pct } = this.position;
-    if (stop_loss_price == null || take_profit_price == null) return 50;
+    const { side, entry_price, stop_loss_pct, take_profit_pct, breakeven_pct } = this.position;
+    const slDist = Math.abs(stop_loss_pct ?? 1.0);
+    const tpDist = Math.abs(take_profit_pct ?? 1.0);
+    const totalRange = slDist + tpDist;
+    if (totalRange <= 0) return 50;
 
     const bePct = breakeven_pct ?? 0.2;
-    const bePrice = side === 'BUY'
-      ? entry_price * (1 + bePct / 100)
-      : entry_price * (1 - bePct / 100);
-
     if (side === 'BUY') {
-      const totalRange = take_profit_price - stop_loss_price;
-      if (totalRange <= 0) return 50;
-      return Math.max(0, Math.min(100, ((bePrice - stop_loss_price) / totalRange) * 100));
+      const slNet = entry_price * (1 - slDist / 100);
+      const tpNet = entry_price * (1 + tpDist / 100);
+      const bePrice = entry_price * (1 + bePct / 100);
+      const range = tpNet - slNet;
+      if (range <= 0) return 50;
+      return Math.max(0, Math.min(100, ((bePrice - slNet) / range) * 100));
     }
-
-    const totalRange = stop_loss_price - take_profit_price;
-    if (totalRange <= 0) return 50;
-    return Math.max(0, Math.min(100, ((stop_loss_price - bePrice) / totalRange) * 100));
+    const slNet = entry_price * (1 + slDist / 100);
+    const tpNet = entry_price * (1 - tpDist / 100);
+    const bePrice = entry_price * (1 - bePct / 100);
+    const range = slNet - tpNet;
+    if (range <= 0) return 50;
+    return Math.max(0, Math.min(100, ((slNet - bePrice) / range) * 100));
   }
 
   /** Breakeven price (entry + round-trip fees) */

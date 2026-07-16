@@ -7,6 +7,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.4.16] — 2026-07-16
+
+### Fixed
+- **Breakeven indicator**: Aggiunto marker BE sulla barra di progresso del position-ticker. Calcola `breakeven_pct` dal fee tier reale OKX (taker + taker) e posiziona il marker sulla barra usando le percentuali nette SL/TP.
+- **Breakeven marker position**: `getBreakevenPct()` e `getProgressPct()` riscritte per usare le percentuali nette SL/TP anziché i prezzi lordi dei bracket — il marker BE ora appare correttamente a ~62% della barra (lato destro).
+- **OKX OCO exit fee**: Cambiato da maker a taker in 10 occorrenze di `router.py`. OKX OCO usa `tpOrdPx="-1"` e `slOrdPx="-1"` → entrambe le gamme sono market order (taker), non maker. Fix del fee round-trip da 0.55% a 0.70%.
+- **Breakeven UI layout**: Ristrutturato template — BE tag + status sotto la barra con spaziatura 14px, testo 11-12px, color-coded (verde/rosso).
+
+---
+
 ## [1.4.15] — 2026-07-13
 
 ### Reverted

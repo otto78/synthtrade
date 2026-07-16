@@ -157,7 +157,7 @@ Requisiti:
 - `_execution_state["fee_tier_certified"]` deve rimanere anche con OKX.
 - Se il fee tier non e' certificato, UI/log devono segnalarlo e i calcoli usano fallback esplicito, non silenzioso.
 - Il market entry usa fee taker attesa.
-- L'exit bracket usa fee maker/taker attesa in base al tipo reale di ordine OKX validato nello spike; non assumere automaticamente maker.
+- L'exit bracket usa fee **taker** per entrambe le gamme — OKX OCO esegue `tpOrdPx="-1"` e `slOrdPx="-1"` (market orders). Confermato da ordini reali (2026-07-16): "TP Market" e "SL Market". Fee round-trip = taker + taker.
 - I log `[NET_PRICING]`, position update, trade log, PnL realtime, close manuale e restore devono usare lo stesso fee model provider-neutral.
 - Le commissioni reali da fill OKX vanno normalizzate in `commission` e `commission_asset` come oggi per Binance.
 - La conversione commissioni deve diventare quote-aware: oggi esistono helper BNB->USDC; con `OKB-EUR` la quote e' EUR, quindi non bisogna lasciare conversioni hardcoded USDC/BNB.

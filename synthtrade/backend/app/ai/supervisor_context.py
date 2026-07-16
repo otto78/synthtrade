@@ -38,6 +38,7 @@ async def build_scalping_context(
         "regime": regime.regime if regime else "unknown",
         "regime_confidence": regime.confidence if regime else 0.0,
         "vol_anomaly": vol_anomaly,
+        "short_enabled": False,  # TASK-908: short non implementato, always False
     }
     
     if ta_patterns:

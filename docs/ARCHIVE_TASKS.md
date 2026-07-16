@@ -3457,6 +3457,10 @@ Grace period già implementato in `signal_score_engine.py:426-436`: CVD escluso 
 ### TASK-907 — Bug Frontend: dati mancanti su reload con sessione PAUSED
 **Status:** ✅ Done (16/07/2026)
 
+### TASK-908 — Resume Guard: blocca resume in regime bearish senza short
+**Status:** ✅ Done (16/07/2026)
+**Fix:** Guard in supervisor_scheduler.py, defense-in-depth in parameter_updater, context enhancement, 6 test.
+
 ---
 
 ## Ordine di esecuzione consigliato (storico, pre-audit)

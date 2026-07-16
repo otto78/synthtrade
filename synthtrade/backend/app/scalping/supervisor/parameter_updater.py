@@ -179,6 +179,11 @@ class ParameterUpdater:
         logger.info("Resuming trading per supervisor decision")
         try:
             from app.scalping.router import _execution_state
+            # TASK-908: defense-in-depth — no-op se già running
+            current = _execution_state["session"].get("status")
+            if current == "running":
+                logger.warning("Resume called but session already running — no-op")
+                return
             _execution_state["session"]["status"] = "running"
             logger.info("Trading resumed - session status set to 'running'")
         except Exception as e:

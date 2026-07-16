@@ -27,6 +27,7 @@ from app.config import settings
 STRATEGY_CHANGE_COOLDOWN = settings.scalping.SCALPING_STRATEGY_COOLDOWN_SEC
 PARAM_UPDATE_COOLDOWN = settings.scalping.SCALPING_PARAM_UPDATE_COOLDOWN_SEC
 THRESHOLD_CHANGE_COOLDOWN = 1800  # 30 minuti
+RESUME_GUARD_MIN_CONFIDENCE = 0.7  # TASK-908: soglia minima regime per bloccare resume
 
 
 class SupervisorScheduler:
@@ -333,6 +334,31 @@ class SupervisorScheduler:
                 )
                 self._last_strategy_change = 0.0
                 blocked_reason = f"regime mismatch: {decision.new_strategy} not in {allowed}"
+                was_applied = False
+
+        # TASK-908: blocca resume in regime bearish senza possibilità di short
+        if decision.action == "resume_trading" and was_applied:
+            current_regime = self._loop.regime if self._loop else None
+            regime_name = current_regime.regime if current_regime else "unknown"
+            regime_confidence = current_regime.confidence if current_regime else 0.0
+
+            has_position = False
+            if self._loop and hasattr(self._loop, '_position_manager') and self._loop._position_manager:
+                has_position = self._loop._position_manager.has_open()
+
+            if (
+                regime_name == "trending_down"
+                and regime_confidence >= RESUME_GUARD_MIN_CONFIDENCE
+                and not has_position
+            ):
+                logger.warning(
+                    f"⛔ Resume BLOCKED: regime={regime_name} confidence={regime_confidence:.2f} "
+                    f"no_position — mercato in downtrend, nessuna posizione da proteggere"
+                )
+                blocked_reason = (
+                    f"resume blocked: regime={regime_name} confidence={regime_confidence:.2f} "
+                    f"no_position — bearish senza short"
+                )
                 was_applied = False
 
         if was_applied:

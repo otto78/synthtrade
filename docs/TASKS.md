@@ -1,6 +1,6 @@
 # TASKS.md — SynthTrade Task Tracking
 
-> **Aggiornato:** 2026-07-16 15:40. Task completati spostati in `docs/ARCHIVE_TASKS.md`.
+> **Aggiornato:** 2026-07-16 16:00. Task completati spostati in `docs/ARCHIVE_TASKS.md`.
 
 ---
 
@@ -179,38 +179,23 @@ Questo gestisce anche `'stopped'` per vedere storico dopo sessione finita.
 
 ### TASK-908 — Hardcoded Resume Guard (no-short, regime bearish)
 
-**Status:** Riservato per analisi (richiesta Andrea 14/07/2026) — non implementare ora
-**Priorità:** ALTA — *sospesa: da analizzare assieme a TASK-909*
+**Status:** ✅ Implemented (16/07/2026)
+**Priorità:** ALTA
+**Effort:** 2 ore
 
-**Obiettivo:** Impedire `resume_trading` quando regime bearish, confidence alta, `allows_short=False` e nessuna posizione aperta — indipendentemente dal giudizio AI.
+**Problema:** `_resume()` in `parameter_updater.py` era incondizionato — nessun check su regime/confidence/short. Il 30/06: 6 stop_loss consecutivi, 5 segnali SELL scartati, `resume_trading` con motivazione debole mentre regime era `trending_down`.
 
-**Stato attuale (analisi 15/07):** `_resume()` in `parameter_updater.py:177-185` è incondizionato — nessun check su regime/confidence/short. `short_enabled` non esiste nel codice (solo in arch docs). L'infrastruttura `was_applied`/`blocked_reason` in `supervisor_scheduler.py:299-345` è pronta ma nessun branch `resume_trading` la usa. Servono: (1) `_check_resume_guard()`, (2) esporre `short_enabled` nel context, (3) 6 test.
+**Fix:**
+1. **Guard** in `supervisor_scheduler.py:339-358` — blocca `resume_trading` quando `regime=trending_down` + `confidence >= 0.7` + nessuna posizione aperta. Segue il pattern delle guard esistenti (cooldown, regime mismatch).
+2. **Defense-in-depth** in `parameter_updater.py:_resume()` — no-op se sessione già `running`.
+3. **Context enhancement** in `supervisor_context.py` — aggiunto `short_enabled: False` per informare l'AI (short non implementato).
+4. **6 test unit** — tutti passanti.
 
-**Contesto:** Sessione live 30/06 — 6 stop_loss consecutivi, 5 segnali SELL scartati, `resume_trading` con motivazione debole mentre regime era ancora `trending_down`.
-
-**File:**
-- `parameter_updater.py`
-- `supervisor_scheduler.py`
-- `context_builder.py`
-
-#### Red — Test
-- [ ] `test_blocks_resume_when_trending_down_and_no_short`
-- [ ] `test_allows_resume_when_regime_not_bearish`
-- [ ] `test_allows_resume_when_short_enabled`
-- [ ] `test_allows_resume_when_confidence_low`
-- [ ] `test_guard_does_not_affect_other_actions`
-- [ ] `test_was_applied_false_and_reason_logged`
-
-#### Green — Implementazione
-- [ ] `short_enabled: bool` e `regime_confidence: float` in `SupervisorContext`
-- [ ] `_check_resume_guard(decision, context) -> tuple[bool, str | None]` in `parameter_updater.py`
-- [ ] `RESUME_GUARD_MIN_CONFIDENCE = 0.7` (costante hardcoded)
-- [ ] Applicare guard PRIMA di eseguire `Resuming trading`
-- [ ] Se bloccato: log warning + persistere `was_applied=False, blocked_reason=...`
-
-#### Refactor
-- [ ] Costanti `RESUME_GUARD_MIN_CONFIDENCE` e `{"trending_down"}` in costanti di modulo
-- [ ] Campo `short_enabled` nel payload broadcast WS decisione supervisor
+**File modificati:**
+- `supervisor_scheduler.py` — costante `RESUME_GUARD_MIN_CONFIDENCE = 0.7` + guard
+- `parameter_updater.py` — defense-in-depth in `_resume()`
+- `supervisor_context.py` — `short_enabled: False` nel context
+- `test_task_908.py` — 6 nuovi test
 
 ---
 

@@ -190,8 +190,7 @@ export class MarketIntelPanelComponent implements OnInit, OnDestroy {
       })
     );
 
-    // Load initial snapshot
-    this.loadSnapshot();
+    // No immediate loadSnapshot() — wait for session symbol to avoid phantom engine
 
     // Listen to real-time updates from WebSocket
     this.sub.add(

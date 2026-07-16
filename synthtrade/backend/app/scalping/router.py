@@ -2950,7 +2950,7 @@ async def get_intel_snapshot(symbol: str) -> Dict:
     """
     engine = _execution_state.get("signal_engine")
     
-    # Try to get full snapshot (score + raw data)
+    # Try to get full snapshot from the active session engine
     if engine and engine.symbol == symbol:
         try:
             snapshot = await engine.get_snapshot()
@@ -2958,13 +2958,26 @@ async def get_intel_snapshot(symbol: str) -> Dict:
         except Exception:
             logger.warning(f"SignalScoreEngine failed for {symbol}, using fallback")
     
-    # Fallback: prova a creare engine on-the-fly (usa cache singleton, non creare throwaway)
-    try:
-        fallback_engine = SignalScoreEngine.get_or_create(symbol=symbol)
-        snapshot = await fallback_engine.get_snapshot()
-        return _snapshot_to_dict(symbol, snapshot)
-    except Exception as e:
-        logger.debug(f"Fallback engine failed: {e}")
+    # If the requested symbol is NOT the active session symbol, return empty data
+    # without creating a phantom engine (prevents OKBEUR ghost on frontend load)
+    active_symbol = _execution_state.get("session", {}).get("symbol")
+    if active_symbol and symbol.upper() != active_symbol.upper():
+        logger.debug(f"Intel snapshot: {symbol} != active {active_symbol}, returning empty")
+        return {
+            "symbol": symbol,
+            "funding_rate": 0.0,
+            "open_interest": 0,
+            "long_pct": 0,
+            "short_pct": 0,
+            "cvd_trend": "neutral",
+            "fear_greed_value": 50,
+            "fear_greed_label": "Neutral",
+            "signal_score": 50.0,
+            "signal_bias": "neutral",
+            "tradeable": False,
+            "breakdown": {},
+            "recorded_at": _now(),
+        }
     
     # Ultimate fallback
     return {

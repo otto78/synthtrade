@@ -75,7 +75,11 @@ import { Position } from '../models/position.model';
           </div>
           <div class="breakeven-label" [style.left.%]="getBreakevenPct()">
             <span class="be-text">BE</span>
-            <span class="be-price">{{ position.entry_price | number:'1.2-2' }}</span>
+            <span class="be-price">{{ getBreakevenPrice() | number:'1.2-2' }}</span>
+          </div>
+          <div class="breakeven-status" [ngClass]="isAboveBreakeven() ? 'above' : 'below'">
+            {{ isAboveBreakeven() ? 'Above Breakeven' : 'Below Breakeven' }}
+            <span class="be-diff">({{ getBreakevenDiff() | number:'1.2-2' }}%)</span>
           </div>
         </div>
       </div>
@@ -216,6 +220,24 @@ import { Position } from '../models/position.model';
       font-size: 9px;
       color: var(--text-secondary);
     }
+    .breakeven-status {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-top: 2px;
+    }
+    .breakeven-status.above {
+      color: var(--accent-success, #26a69a);
+    }
+    .breakeven-status.below {
+      color: var(--text-secondary);
+    }
+    .be-diff {
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0;
+    }
   `],
 })
 export class PositionTickerComponent implements OnInit, OnDestroy {
@@ -266,6 +288,7 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
         stop_loss_pct: event.stop_loss_pct,
         take_profit_pct: event.take_profit_pct,
         trade_value_usd: event.trade_value_usd ?? (event.quantity ? event.quantity * event.entry_price : undefined),
+        breakeven_pct: (event as any).breakeven_pct,
       };
       this.cdr.markForCheck();
       this.cdr.detectChanges();
@@ -365,23 +388,57 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
 
   /**
    * Breakeven position on the progress bar (0-100%).
-   * For BUY: entry is between SL (0%) and TP (100%).
-   * For SELL: entry is between TP (0%) and SL (100%).
+   * The breakeven price = entry + (entry * breakeven_pct / 100) for BUY.
+   * Maps that price onto the SL→TP range.
    */
   getBreakevenPct(): number {
     if (!this.position) return 50;
-    const { side, entry_price, stop_loss_price, take_profit_price } = this.position;
+    const { side, entry_price, stop_loss_price, take_profit_price, breakeven_pct } = this.position;
     if (stop_loss_price == null || take_profit_price == null) return 50;
+
+    const bePct = breakeven_pct ?? 0.2;
+    const bePrice = side === 'BUY'
+      ? entry_price * (1 + bePct / 100)
+      : entry_price * (1 - bePct / 100);
 
     if (side === 'BUY') {
       const totalRange = take_profit_price - stop_loss_price;
       if (totalRange <= 0) return 50;
-      return Math.max(0, Math.min(100, ((entry_price - stop_loss_price) / totalRange) * 100));
+      return Math.max(0, Math.min(100, ((bePrice - stop_loss_price) / totalRange) * 100));
     }
 
     const totalRange = stop_loss_price - take_profit_price;
     if (totalRange <= 0) return 50;
-    return Math.max(0, Math.min(100, ((stop_loss_price - entry_price) / totalRange) * 100));
+    return Math.max(0, Math.min(100, ((stop_loss_price - bePrice) / totalRange) * 100));
+  }
+
+  /** Breakeven price (entry + round-trip fees) */
+  getBreakevenPrice(): number {
+    if (!this.position) return 0;
+    const { side, entry_price, breakeven_pct } = this.position;
+    const bePct = breakeven_pct ?? 0.2;
+    return side === 'BUY'
+      ? entry_price * (1 + bePct / 100)
+      : entry_price * (1 - bePct / 100);
+  }
+
+  /** Is current price above breakeven? */
+  isAboveBreakeven(): boolean {
+    if (!this.position) return false;
+    const { side, current_price } = this.position;
+    const bePrice = this.getBreakevenPrice();
+    return side === 'BUY' ? current_price >= bePrice : current_price <= bePrice;
+  }
+
+  /** Difference between current price and breakeven in % */
+  getBreakevenDiff(): number {
+    if (!this.position) return 0;
+    const { side, current_price, entry_price } = this.position;
+    const bePrice = this.getBreakevenPrice();
+    if (entry_price === 0) return 0;
+    return side === 'BUY'
+      ? ((current_price - bePrice) / entry_price) * 100
+      : ((bePrice - current_price) / entry_price) * 100;
   }
 
   /**

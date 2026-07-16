@@ -25,4 +25,6 @@ export interface Position {
   take_profit_pct_net?: number;
   // Trade size in USDC/USDT
   trade_value_usd?: number;
+  // Breakeven: round-trip fee percentage (entry taker + exit maker)
+  breakeven_pct?: number;
 }

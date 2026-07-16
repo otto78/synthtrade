@@ -2151,6 +2151,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                         "take_profit_price": round(tp_price, 2),
                                         "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
                                         "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
+                                        "breakeven_pct": round((entry_fee_pricing + exit_fee_pricing) * 100, 2),
                                     })
 
                                     # Signal to session stop that we need a close on Binance
@@ -2215,6 +2216,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                     "trade_value_usd": round(float(pos_obj.quantity) * float(pos_obj.entry_price), 2),
                                     "pnl": 0.0,
                                     "pnl_pct": 0.0,
+                                    "breakeven_pct": round((_get_fee_rate(_execution_state.get("fee_tier", {}), "taker", 0.001) + _get_fee_rate(_execution_state.get("fee_tier", {}), "maker", 0.001)) * 100, 2),
                                 })
                                 logger.info(f">>> TRADE EXECUTED: {side} {event.symbol.upper()} @ {candle.close}")
                         else:
@@ -2382,6 +2384,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                             "progress_pct": round(progress_pct, 1),         # -100 to +100
                             "sl_distance_pct": round(max(0, (entry_f - current_price_f) / (entry_f - sl_price) * 100) if pos.side == "BUY" and (entry_f - sl_price) > 0 else 0, 1),
                             "tp_distance_pct": round(min(100, (current_price_f - entry_f) / (tp_price - entry_f) * 100) if pos.side == "BUY" and (tp_price - entry_f) > 0 else 0, 1),
+                            "breakeven_pct": round((_get_fee_rate(fee_tier, "taker", 0.001) + _get_fee_rate(fee_tier, "maker", 0.001)) * 100, 2),
                         })
                         logger.debug(f"Position update broadcast @ {current_price_f}: PnL={pnl:.2f} ({pnl_pct:.2f}%) progress={progress_pct:.1f}%")
                 except Exception as e:
@@ -2490,6 +2493,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         "take_profit_price": round(tp, 2),
                         "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
                         "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
+                        "breakeven_pct": round((_get_fee_rate(fee_tier, "taker", 0.001) + _get_fee_rate(fee_tier, "maker", 0.001)) * 100, 2),
                     })
                     
                     # Execute SL/TP Auto Close — TASK-855: solo in paper mode
@@ -3799,6 +3803,7 @@ async def get_position() -> Optional[Dict]:
         "take_profit_pct_net": round(tp_pct_net, 2),  # TASK-885
         "stop_loss_price": round(stop_loss_price, 2),  # TASK-1129
         "take_profit_price": round(take_profit_price, 2),  # TASK-1129
+        "breakeven_pct": round(fee_round_trip, 2),
     }
 
 

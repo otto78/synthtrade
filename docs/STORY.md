@@ -4,6 +4,21 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.18 — 2026-07-16
+
+**Milestone:** Fix restore reconcile dopo riavvio PC — code review post-deploy
+
+**Completato:**
+- ✅ **TASK-1174:** Fix P1 — `get_symbol_rules` failure non bloccava più la riconciliazione restore. Rimosso pre-check ridondante, delegato interamente a `_reconcile_position_with_exchange`
+- ✅ **TASK-1175:** Fix P1 — Algo history retry ora esegue sempre 3 tentativi con delay, non si blocca su risultati vuoti
+- ✅ **TASK-1176:** Fix P2 — Adapter init failure durante restore loggato a `error` con traceback
+
+**Contesto:** Dopo il commit precedente (restore reconcile a doppio livello), una code review ha identificato 3 problemi: (1) se `get_symbol_rules` falliva nel blocco post-WS, la riconciliazione veniva silenziosamente saltata; (2) il retry su algo history si bloccava al primo tentativo vuoto; (3) il fallimento dell'adapter era solo un warning.
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/router.py` (blocco restore in `_start_ws_broadcast` + fallback algo history)
+- `synthtrade/backend/app/main.py` (log level adapter init)
+
 ### v1.4.17 — 2026-07-15
 
 **Milestone:** Fix Change Detection prezzo live chart + EPICA AUDIT POST-OKX completamento

@@ -99,7 +99,17 @@ async def _reconcile_position_with_exchange(
         min_qty = float(rules.min_sz)
         base_asset = sym_ref.base
 
-        total_bal = await _exchange.get_balance(base_asset)
+        # Use get_holdings (more reliable during reconnection) to check if position still exists
+        try:
+            holdings = await _exchange.get_holdings()
+            total_bal = holdings.get(base_asset, 0.0)
+            logger.debug("[POSITION_RECONCILE] Holdings check: %s = %.6f (minQty=%.6f)", base_asset, total_bal, min_qty)
+        except Exception as holdings_e:
+            logger.warning("[POSITION_RECONCILE] Holdings check failed, falling back to get_balance: %s", holdings_e)
+            try:
+                total_bal = await _exchange.get_balance(base_asset)
+            except Exception:
+                total_bal = None
 
         if total_bal is not None and total_bal >= min_qty:
             logger.info(
@@ -114,6 +124,44 @@ async def _reconcile_position_with_exchange(
         )
     except Exception as bal_e:
         logger.warning("[POSITION_RECONCILE] Balance check failed: %s", bal_e)
+        # FALLBACK: Try algo history with retry when balance check fails
+        # This handles the case where network was down during startup but bracket executed.
+        # TASK-1175: Always retry 3 times — OKX can take 1-5s to propagate fills.
+        if bracket_id:
+            for attempt in range(3):
+                try:
+                    algo_history = await _exchange.get_algo_orders_history(symbol)
+                    for algo in algo_history:
+                        if algo.get("algoId") == bracket_id and algo.get("state") == "effective":
+                            fill_price = float(algo.get("avgPx") or algo.get("fillPx") or 0)
+                            if fill_price > 0:
+                                source = "algo_history"
+                                ord_type = algo.get("ordType", "").lower()
+                                if "tp" in ord_type:
+                                    reason = "take_profit"
+                                elif "sl" in ord_type:
+                                    reason = "stop_loss"
+                                else:
+                                    reason = "bracket_filled"
+                                logger.info(
+                                    "[POSITION_RECONCILE] Balance check failed but recovered fill from algo history: "
+                                    "algoId=%s fill=%.4f reason=%s (attempt %d)",
+                                    bracket_id, fill_price, reason, attempt + 1,
+                                )
+                                return {"fill_price": fill_price, "source": source, "reason": reason}
+                    # No match in this attempt — retry if attempts remain
+                    if attempt < 2:
+                        await asyncio.sleep(1.5)
+                        continue
+                    logger.warning(
+                        "[POSITION_RECONCILE] Algo history: no fill found for bracket_id=%s after 3 attempts",
+                        bracket_id,
+                    )
+                except Exception as hist_e:
+                    if attempt < 2:
+                        await asyncio.sleep(1.0)
+                        continue
+                    logger.warning("[POSITION_RECONCILE] Algo history fallback failed after 3 attempts: %s", hist_e)
         return None
 
     fill_price: Optional[float] = None
@@ -1447,6 +1495,62 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     if guard:
         guard.complete_phase("pipeline_phase")
 
+    # ── FIX-2026-07-16: Final reconcile in restore_mode after WS is connected ──
+    # When network was down during startup, the balance check may have failed.
+    # Now that WS is connected, re-check if position was closed externally.
+    # TASK-1174: Delegate entirely to _reconcile_position_with_exchange which
+    # handles get_symbol_rules failures, holdings vs balance fallback, and
+    # algo history retry internally.
+    if restore_mode:
+        try:
+            pm = _execution_state["position_manager"]
+            pos = pm.get_open()
+            if pos:
+                exchange = _execution_state.get("exchange")
+                if exchange:
+                    bracket_id = getattr(pos, 'oco_order_list_id', None)
+                    reconcile = await _reconcile_position_with_exchange(
+                        symbol=pos.symbol,
+                        pos_side=pos.side,
+                        entry_price=float(pos.entry_price),
+                        quantity=float(pos.quantity),
+                        exchange=exchange,
+                        bracket_id=bracket_id,
+                    )
+                    if reconcile:
+                        fp = reconcile["fill_price"]
+                        entry_f = float(pos.entry_price)
+                        qty_f = float(pos.quantity)
+                        gross_pnl = (fp - entry_f) * qty_f if pos.side == "BUY" else (entry_f - fp) * qty_f
+                        fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                        entry_fee_r = _get_fee_rate(fee_tier, "taker", 0.001)
+                        exit_fee_r = _get_fee_rate(fee_tier, "maker", 0.001)
+                        total_fees = (entry_f * qty_f * entry_fee_r) + (fp * qty_f * exit_fee_r)
+                        pnl = gross_pnl - total_fees
+                        pnl_pct = (pnl / (entry_f * qty_f)) * 100 if entry_f > 0 else 0
+
+                        logger.info(
+                            "[RESTORE_RECONCILE] Position was closed externally - "
+                            "fill=%.4f reason=%s pnl=%.2f",
+                            fp, reconcile["reason"], pnl
+                        )
+                        pm.close_position(Decimal(str(fp)))
+                        await _update_closed_position_in_db(
+                            pos, fp, pnl, pnl_pct, reconcile["reason"]
+                        )
+                        await broadcast_scalping_event("position_reconciled_externally", {
+                            "symbol": pos.symbol,
+                            "side": pos.side,
+                            "entry_price": entry_f,
+                            "exit_price": fp,
+                            "quantity": qty_f,
+                            "pnl": round(pnl, 2),
+                            "pnl_pct": round(pnl_pct, 2),
+                            "reason": reconcile["reason"],
+                            "source": reconcile["source"],
+                        })
+        except Exception as restore_e:
+            logger.warning(f"[RESTORE_RECONCILE] Reconcile after WS connect failed: {restore_e}")
 
     # Pull events from WS client queues and broadcast to scalping WS clients
     async def _candle_processor():

@@ -571,6 +571,54 @@ Tutti gli altri componenti scalping (`position-ticker`, `trade-log`, `session-co
 
 ---
 
+### TASK-1174 — Fix P1: get_symbol_rules failure silently skips restore reconcile
+
+**Status:** ✅ Implemented (16/07/2026)
+**Priorità:** 🔴 ALTA
+**Effort:** 15 min
+**Dipendenze:** commit precedente (restore reconcile post-WS)
+
+**Problema:** Nel blocco restore di `_start_ws_broadcast`, il pre-check holdings + `get_symbol_rules` era nello stesso try/except. Se `get_symbol_rules` falliva (timeout, rate limit), `min_qty` non veniva assegnato → `NameError` → l'intera riconciliazione veniva silenziosamente saltata. La posizione restava in memoria come "aperta" anche se chiusa su exchange.
+
+**Fix:** Rimosso il pre-check ridondante. Il blocco restore delega interamente a `_reconcile_position_with_exchange` che gestisce internamente: fallback holdings→balance, `get_symbol_rules` con fallback, e retry su algo history.
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/router.py` (blocco restore in `_start_ws_broadcast`)
+
+---
+
+### TASK-1175 — Fix P1: Algo history retry si blocca su risultati vuoti
+
+**Status:** ✅ Implemented (16/07/2026)
+**Priorità:** 🔴 ALTA
+**Effort:** 15 min
+**Dipendenze:** commit precedente (restore reconcile)
+
+**Problema:** Nella fallback di `_reconcile_position_with_exchange`, quando `get_algo_orders_history` restituiva dati ma senza match per il bracket_id, il `break` usciva dal ciclo di retry al primo tentativo. Se OKX non aveva ancora propagato il fill (1-5s), il prezzo veniva perso.
+
+**Fix:** Il ciclo di retry ora esegue sempre 3 tentativi con delay di 1.5s tra uno e l'altro. Il `break` viene eseguito solo quando il fill è stato trovato. Se dopo 3 tentativi non c'è match, viene loggato un warning.
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/router.py` (fallback algo history in `_reconcile_position_with_exchange`)
+
+---
+
+### TASK-1176 — Fix P2: Adapter init failure durante restore loggato a error level
+
+**Status:** ✅ Implemented (16/07/2026)
+**Priorità:** 🟡 MEDIA
+**Effort:** 5 min
+**Dipendenze:** commit precedente (restore reconcile)
+
+**Problema:** Se `build_exchange_adapter()` falliva durante il restore, l'eccezione veniva loggata solo come `warning`. Per una sessione live trading, un fallimento dell'adapter è critico e deve essere visibile nei log a livello `error`.
+
+**Fix:** Cambiato `logger.warning` → `logger.error` con `exc_info=True` per avere il traceback completo.
+
+**File modificati:**
+- `synthtrade/backend/app/main.py` (blocco adapter init in `_restore_scalping_session`)
+
+---
+
 ## Task da Investigare — Aperti/Parziali
 
 > Da `MASTER_RECAP.md` 26/06/2026. Verifica 01/07/2026. Aggiornato 15/07/2026.

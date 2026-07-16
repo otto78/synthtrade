@@ -4,6 +4,32 @@
 
 ### Da: OpenCode -> prossima sessione
 
+**Data:** 2026-07-16 09:05
+
+**Contesto:** Code review post-deploy del restore reconcile (commit precedente) + 3 fix
+
+---
+
+### ✅ Fix restore reconcile post-riavvio PC
+
+**Problema:** Dopo riavvio PC, se un trade era stato chiuso durante lo spegnimento (TP/SL eseguito), l'app poteva ripartire con una posizione fantasma in memoria.
+
+**Commit precedente** aveva aggiunto:
+1. Reconcile al startup (`main.py`) — verifica se il trade è ancora aperto su exchange
+2. Reconcile post-WS (`router.py`) — secondo controllo dopo connessione WebSocket
+3. Fallback su algo history con retry quando balance check fallisce
+
+**Code review ha trovato 3 problemi:**
+- **P1 (TASK-1174):** Se `get_symbol_rules` falliva nel blocco post-WS, la riconciliazione veniva silenziosamente saltata. Fix: rimosso pre-check ridondante, delegato a `_reconcile_position_with_exchange`
+- **P1 (TASK-1175):** Il retry su algo history si bloccava al primo tentativo vuoto. Fix: sempre 3 tentativi con delay 1.5s
+- **P2 (TASK-1176):** Adapter init failure era solo warning. Fix: cambiato a `error` con `exc_info=True`
+
+**File:** `synthtrade/backend/app/scalping/router.py`, `synthtrade/backend/app/main.py`
+
+---
+
+### Da: OpenCode -> prossima sessione
+
 **Data:** 2026-07-15 16:07
 
 **Contesto:** Fix Change Detection prezzo live chart (TASK-1173) + review TASKS.md

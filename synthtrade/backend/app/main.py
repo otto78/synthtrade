@@ -140,6 +140,9 @@ async def _restore_scalping_session(db) -> None:
     # Step 6 — Check for open positions FIRST (before balance check)
     # Balance check can fail if we already hold the base asset from a previous BUY
     has_open_position = False
+    adapter = None
+    base_asset = None
+    sym_ref = None
     if session_mode == "live":
         try:
             from app.execution.exchange_factory import build_exchange_adapter
@@ -148,14 +151,23 @@ async def _restore_scalping_session(db) -> None:
             _execution_state["exchange"] = adapter
 
             symbol = _execution_state["session"]["symbol"]
-            sym_ref = SymbolRef.from_okx(symbol) if "-" in symbol else SymbolRef.from_compact(symbol)
-            rules = await adapter.get_symbol_rules(sym_ref)
-            base_asset = rules.symbol.base
-            min_qty = float(rules.min_sz)
+            try:
+                sym_ref = SymbolRef.from_okx(symbol) if "-" in symbol else SymbolRef.from_compact(symbol)
+                rules = await adapter.get_symbol_rules(sym_ref)
+                base_asset = rules.symbol.base
+                min_qty = float(rules.min_sz)
+            except Exception as e:
+                logger.warning("Could not get symbol rules during restore: %s", e)
+                # Continue with DB check - we still need to reconcile
+                sym_ref = SymbolRef.from_compact(symbol)
+                base_asset = sym_ref.base
+                min_qty = 0.00001  # fallback minimum
+        except Exception as e:
+            # TASK-1176: live session — adapter failure is critical, log at error level
+            logger.error("Could not initialize adapter during restore: %s", e, exc_info=True)
 
-            total_bal = await adapter.get_balance(base_asset)
-
-            # Check if we have an open trade in DB for this symbol
+        # Check if we have an open trade in DB for this symbol (BEFORE balance check)
+        try:
             def _db_op_open():
                 return db.table("scalping_trades") \
                     .select("*") \
@@ -164,7 +176,7 @@ async def _restore_scalping_session(db) -> None:
                     .limit(1) \
                     .execute()
             open_trades = await asyncio.to_thread(_db_op_open)
-            if open_trades.data:
+            if open_trades.data and sym_ref:
                 ot = open_trades.data[0]
                 symbol_ot = ot.get("symbol", symbol)
                 side = ot.get("side", "BUY")

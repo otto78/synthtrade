@@ -72,14 +72,13 @@ import { Position } from '../models/position.model';
           <div class="progress-bar">
             <div class="progress-fill" [style.width.%]="getProgressPct()" [ngClass]="getProgressClass()"></div>
             <div class="breakeven-marker" [style.left.%]="getBreakevenPct()"></div>
-          </div>
-          <div class="breakeven-label" [style.left.%]="getBreakevenPct()">
-            <span class="be-text">BE</span>
-            <span class="be-price">{{ getBreakevenPrice() | number:'1.2-2' }}</span>
+            <div class="breakeven-tag" [style.left.%]="getBreakevenPct()">
+              <span class="be-text">BE {{ getBreakevenPctValue() | number:'1.2-2' }}%</span>
+            </div>
           </div>
           <div class="breakeven-status" [ngClass]="isAboveBreakeven() ? 'above' : 'below'">
             {{ isAboveBreakeven() ? 'Above Breakeven' : 'Below Breakeven' }}
-            <span class="be-diff">({{ getBreakevenDiff() | number:'1.2-2' }}%)</span>
+            <span class="be-diff">({{ getBreakevenDiff() >= 0 ? '+' : '' }}{{ getBreakevenDiff() | number:'1.2-2' }}%)</span>
           </div>
         </div>
       </div>
@@ -167,8 +166,8 @@ import { Position } from '../models/position.model';
       height: 10px;
       background: rgba(255,255,255,0.12);
       border-radius: 5px;
-      overflow: hidden;
       position: relative;
+      margin-bottom: 18px;
     }
     .progress-state {
       font-size: 11px;
@@ -201,24 +200,18 @@ import { Position } from '../models/position.model';
       transform: translateX(-1px);
       z-index: 2;
     }
-    .breakeven-label {
-      position: relative;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      margin-top: 4px;
+    .breakeven-tag {
+      position: absolute;
+      top: 16px;
       transform: translateX(-50%);
-      pointer-events: none;
+      white-space: nowrap;
+      z-index: 2;
     }
     .be-text {
       font-size: 9px;
       font-weight: 700;
       color: #F0B90B;
-      letter-spacing: 0.5px;
-    }
-    .be-price {
-      font-size: 9px;
-      color: var(--text-secondary);
+      letter-spacing: 0.3px;
     }
     .breakeven-status {
       font-size: 10px;
@@ -288,7 +281,7 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
         stop_loss_pct: event.stop_loss_pct,
         take_profit_pct: event.take_profit_pct,
         trade_value_usd: event.trade_value_usd ?? (event.quantity ? event.quantity * event.entry_price : undefined),
-        breakeven_pct: (event as any).breakeven_pct,
+        breakeven_pct: event.breakeven_pct,
       };
       this.cdr.markForCheck();
       this.cdr.detectChanges();
@@ -313,6 +306,11 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
       pnl_pct: number;
       entry_time: string;
       status?: string;
+      stop_loss_price?: number;
+      take_profit_price?: number;
+      stop_loss_pct?: number;
+      take_profit_pct?: number;
+      breakeven_pct?: number;
     }
     this.http.get<PositionApiResponse | null>(this.POSITION_API).subscribe({
       next: (pos) => {
@@ -329,10 +327,11 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
             pnl_pct: pos.pnl_pct,
             leverage: 1,
             opened_at: pos.entry_time,
-            stop_loss_price: pos.entry_price * 0.997,
-            take_profit_price: pos.entry_price * 1.005,
-            stop_loss_pct: -0.3,
-            take_profit_pct: 0.5,
+            stop_loss_price: pos.stop_loss_price ?? pos.entry_price * 0.997,
+            take_profit_price: pos.take_profit_price ?? pos.entry_price * 1.005,
+            stop_loss_pct: pos.stop_loss_pct ?? -0.3,
+            take_profit_pct: pos.take_profit_pct ?? 0.5,
+            breakeven_pct: pos.breakeven_pct,
           };
           this.cdr.markForCheck();
           this.cdr.detectChanges();
@@ -420,6 +419,11 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
     return side === 'BUY'
       ? entry_price * (1 + bePct / 100)
       : entry_price * (1 - bePct / 100);
+  }
+
+  /** Raw breakeven percentage value (for display) */
+  getBreakevenPctValue(): number {
+    return this.position?.breakeven_pct ?? 0.2;
   }
 
   /** Is current price above breakeven? */

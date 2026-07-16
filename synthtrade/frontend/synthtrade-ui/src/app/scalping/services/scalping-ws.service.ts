@@ -107,6 +107,7 @@ export interface PositionEvent {
   take_profit_price?: number;
   stop_loss_pct?: number;
   take_profit_pct?: number;
+  breakeven_pct?: number;
 }
 
 /** Strategy parameter values — extensible for different strategy types */

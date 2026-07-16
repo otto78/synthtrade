@@ -221,7 +221,7 @@ async def session_health_job() -> None:
         mode = session.get("mode", "N/A")
 
         checks = {
-            "session_running": status == "running",
+            "session_running": status in ("running", "paused"),
             "symbol_set": symbol != "N/A",
             "mode_valid": mode in ("paper", "live", "test"),
         }

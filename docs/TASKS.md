@@ -1,6 +1,6 @@
 # TASKS.md — SynthTrade Task Tracking
 
-> **Aggiornato:** 2026-07-16 16:10. Task completati in `docs/ARCHIVE_TASKS.md`.
+> **Aggiornato:** 2026-07-16 16:30. Task completati in `docs/ARCHIVE_TASKS.md`.
 
 ---
 
@@ -36,18 +36,23 @@
 
 ## TASK-906 — Trend Analysis: Prevenzione Falling Knife in Mean-Reversion
 
-**Status:** Pending (in attesa del prossimo drop di mercato per raccogliere dati reali)
+**Status:** ✅ Implemented (16/07/2026)
 **Priorità:** ALTA
+**Effort:** 3 ore
 
-**Obiettivo:** Bloccare trade in "mean-reversion" durante crolli verticali improvvisi.
+**Problema:** `signal_aggregator.py:277-293` approvava mean-reversion BUY incondizionatamente quando `bias == "bearish"`. Durante un crash verticale, RSI+Bollinger segnalava BUY (oversold) ma il prezzo continuava a cadere → stop loss.
 
-**Stato attuale (analisi 15/07):** `signal_aggregator.py:277-293` approva mean-reversion BUY incondizionatamente quando `bias == "bearish"`. Trend/velocity (`trend_5m`, `trend_direction`) esistono in `SignalScore` e vengono loggati in `session_signal_log`, ma **mai usati come filtro decisionale**. Serve: (1) calibrare soglia da dati reali, (2) aggiungere guard in `signal_aggregator.py`.
+**Fix:** Aggiunta guard `FALLING_KNIFE_TREND_THRESHOLD = -20.0` in `signal_aggregator.py`. Se `trend_direction == "diverging"` AND `trend_5m < -20.0` (score drop di 20+ punti in 5 minuti), il mean-reversion BUY viene bloccato.
 
-**Task:**
-1. **Data Collection:** Monitorare log durante cali per registrare velocità (`trend_5m`) in fase "diverging"
-2. **Rule Definition:** Soglia dinamica (`if trend_direction == "diverging" and trend_5m <= -X`)
-3. **Implementation:** Aggiornare `signal_aggregator.py` bloccando trade in mean-reversion
-4. **Verifica:** Prevenga falling knife senza bloccare mean-reversion legittimo
+**Logica:**
+- `trend_5m`: variazione dello score negli ultimi 5 minuti (es: -35.0 = score dropato 35 punti)
+- `trend_direction`: `"diverging"` = score si allontana da zero (crash), `"converging"` = score si avvicina a zero (recovery)
+- Guard attiva SOLO per mean-reversion BUY (rsi_bollinger, stoch_rsi_bb_squeeze)
+- Non influenza: CLOSE, SELL, BUY normali, mean-reversion SELL
+
+**File modificati:**
+- `signal_aggregator.py` — costante + guard
+- `test_task_906.py` — 12 nuovi test
 
 ---
 

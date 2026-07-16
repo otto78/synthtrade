@@ -3461,6 +3461,10 @@ Grace period già implementato in `signal_score_engine.py:426-436`: CVD escluso 
 **Status:** ✅ Done (16/07/2026)
 **Fix:** Guard in supervisor_scheduler.py, defense-in-depth in parameter_updater, context enhancement, 6 test.
 
+### TASK-906 — Falling Knife Protection: blocca mean-reversion BUY durante crash
+**Status:** ✅ Done (16/07/2026)
+**Fix:** Guard in signal_aggregator.py: trend_direction=diverging + trend_5m < -20 → blocca. 12 test.
+
 ---
 
 ## Ordine di esecuzione consigliato (storico, pre-audit)

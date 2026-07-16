@@ -15,6 +15,10 @@ from app.core.signal_log_writer import log_mean_reversion_decision
 
 logger = logging.getLogger(__name__)
 
+# TASK-906: Falling knife protection — soglia minima trend_5m per bloccare mean-reversion BUY
+# Se lo score dropa di più di 20 punti in 5 minuti in direzione diverging, è un crash
+FALLING_KNIFE_TREND_THRESHOLD = -20.0
+
 # ANSI color codes for logs
 GREEN = "\033[92m"
 RED = "\033[91m"
@@ -278,6 +282,27 @@ class SignalAggregator:
             if technical.type == "BUY" and technical.source and any(
                 technical.source.startswith(s) for s in MEAN_REVERSION_STRATEGIES
             ):
+                # TASK-906: Falling knife protection — blocca mean-reversion BUY durante crash
+                if (
+                    market_score.trend_direction == "diverging"
+                    and market_score.trend_5m is not None
+                    and market_score.trend_5m < FALLING_KNIFE_TREND_THRESHOLD
+                ):
+                    reason = (
+                        f"FALLING KNIFE PROTECTION: mean-reversion BUY bloccato "
+                        f"(trend_5m={market_score.trend_5m:.1f}, direction=diverging, "
+                        f"bias={bias}, source={technical.source})"
+                    )
+                    logger.warning(f"{RED}🔴 BLOCK: {symbol} {reason}{RESET}")
+                    return ExecutionDecision(
+                        execute=False,
+                        reason=reason,
+                        signal_type=technical.type,
+                        ta_patterns=ta_patterns,
+                        vol_anomaly=vol_anomaly,
+                        is_mean_reversion_override=False
+                    )
+
                 # TASK-912: Log mean-reversion override correttamente su session_signal_log
                 override_reason = f"MEAN-REVERSION BUY permesso (source={technical.source}) nonostante bias={bias}{trend_str} — chiusura range, non long direzionale"
                 logger.info(f"⚡ {override_reason}")

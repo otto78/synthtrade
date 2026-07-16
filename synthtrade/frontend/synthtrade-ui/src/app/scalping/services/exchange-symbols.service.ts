@@ -56,6 +56,7 @@ export class ExchangeSymbolsService {
 
   private symbols$: Observable<string[]> | null = null;
   private instruments$: Observable<ExchangeInstrument[]> | null = null;
+  private _lastFetchedMode: string | null = null;
 
   /** Currently active provider (populated after first fetch) */
   activeProvider: string = 'okx';
@@ -68,9 +69,10 @@ export class ExchangeSymbolsService {
    * Falls back to legacy Binance endpoint if new one is unavailable.
    * Returns list of symbol strings in exchange format.
    */
-  getSymbols(): Observable<string[]> {
-    if (!this.symbols$) {
-      this.symbols$ = this.getInstruments().pipe(
+  getSymbols(mode?: 'test' | 'live'): Observable<string[]> {
+    const key = `symbols_${mode || ''}`;
+    if (!this.symbols$ || (mode && this._lastFetchedMode !== mode)) {
+      this.symbols$ = this.getInstruments(mode).pipe(
         map((instruments) => instruments.map((i) => i.symbol)),
         shareReplay(1)
       );
@@ -80,12 +82,18 @@ export class ExchangeSymbolsService {
 
   /**
    * Fetch full instrument objects (with base/quote metadata).
-   * Cached after first call.
+   * Cached after first call. Pass mode to force environment-specific catalog.
    */
-  getInstruments(): Observable<ExchangeInstrument[]> {
-    if (!this.instruments$) {
+  getInstruments(mode?: 'test' | 'live'): Observable<ExchangeInstrument[]> {
+    const cacheKey = mode || '';
+    if (!this.instruments$ || (mode && this._lastFetchedMode !== mode)) {
+      const params: any = {};
+      if (mode) {
+        params.mode = mode;
+      }
+      this._lastFetchedMode = mode || null;
       this.instruments$ = this.http
-        .get<ExchangeInstrumentsResponse>(this.NEW_API)
+        .get<ExchangeInstrumentsResponse>(this.NEW_API, { params })
         .pipe(
           tap((resp) => {
             this.activeProvider = resp.provider;
@@ -118,6 +126,7 @@ export class ExchangeSymbolsService {
   invalidateCache(): void {
     this.symbols$ = null;
     this.instruments$ = null;
+    this._lastFetchedMode = null;
   }
 
   // ── Private ────────────────────────────────────────────────────────────────

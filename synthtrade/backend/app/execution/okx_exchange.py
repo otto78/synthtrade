@@ -70,8 +70,8 @@ class OkxExchangeAdapter:
         self._secret = secret
         self._passphrase = passphrase
 
-        self._rules_cache: dict[str, SymbolRules] = {}
-        self._rules_cache_ts: dict[str, float] = {}
+        self._rules_cache: dict[tuple[str, bool], SymbolRules] = {}
+        self._rules_cache_ts: dict[tuple[str, bool], float] = {}
         self._rules_cache_ttl = 300  # 5 min
         self._price_cache: dict[str, dict[str, Any]] = {}
         self._price_cache_ttl = 15
@@ -313,16 +313,16 @@ class OkxExchangeAdapter:
 
     async def get_symbol_rules(self, symbol: SymbolRef) -> SymbolRules:
         """Get symbol rules via direct REST (TASK-1164)."""
-        key = symbol.okx
+        cache_key = (symbol.okx, self._demo)
         now = time.time()
-        cached_ts = self._rules_cache_ts.get(key, 0)
-        if key in self._rules_cache and (now - cached_ts) < self._rules_cache_ttl:
-            return self._rules_cache[key]
+        cached_ts = self._rules_cache_ts.get(cache_key, 0)
+        if cache_key in self._rules_cache and (now - cached_ts) < self._rules_cache_ttl:
+            return self._rules_cache[cache_key]
 
         try:
             rules = await self._direct_fetch_symbol_rules(symbol)
-            self._rules_cache[key] = rules
-            self._rules_cache_ts[key] = now
+            self._rules_cache[cache_key] = rules
+            self._rules_cache_ts[cache_key] = now
             return rules
         except Exception as e:
             raise ExchangeOrderError(f"OKX get_symbol_rules failed for {symbol.okx}: {e}") from e
@@ -333,8 +333,11 @@ class OkxExchangeAdapter:
         """Fetch OKX symbol rules via direct REST (TASK-1164)."""
         path = f"/api/v5/public/instruments?instType=SPOT&instId={symbol.okx}"
         url = settings.OKX_BASE_URL.rstrip("/") + path
+        headers = {}
+        if self._demo:
+            headers["x-simulated-trading"] = "1"
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url)
+            resp = await client.get(url, headers=headers)
             resp.raise_for_status()
             data = resp.json()
             if data.get("code") != "0":
@@ -352,6 +355,25 @@ class OkxExchangeAdapter:
                 max_mkt_amt=float(info.get("maxMktAmt", 1_000_000)),
                 raw=info,
             )
+
+    async def list_instruments(self, inst_type: str = "SPOT") -> list[dict[str, Any]]:
+        """List all instruments for the current environment (demo or live).
+
+        Returns raw OKX instrument dicts filtered by state='live'.
+        Uses x-simulated-trading header when in demo mode.
+        """
+        path = f"/api/v5/public/instruments?instType={inst_type}"
+        url = settings.OKX_BASE_URL.rstrip("/") + path
+        headers = {}
+        if self._demo:
+            headers["x-simulated-trading"] = "1"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("code") != "0":
+                raise RuntimeError(f"OKX instruments API error {data.get('code')}: {data.get('msg')}")
+            return [item for item in data.get("data", []) if item.get("state") == "live"]
 
     # ── Symbol filters (router compatibility) ───────────────────────────────
 

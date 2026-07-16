@@ -3384,6 +3384,75 @@ Grace period già implementato in `signal_score_engine.py:426-436`: CVD escluso 
 
 ---
 
+## EPICA AUDIT POST-OKX — Fix critici + semplificazione + refactor
+
+### TASK-1160 — Fix 5 NameErrors in router.py live trade path
+**Status:** ✅ Done (16/07/2026)
+
+### TASK-1161 — Fix circuit breaker on_success() mai chiamato
+**Status:** ✅ Done (16/07/2026)
+
+### TASK-1162 — Fix _sign_headers credenziali instance vs settings
+**Status:** ✅ Done (16/07/2026)
+
+### TASK-1163 — Fix OCO leg detection in order event stream
+**Status:** ✅ Done (16/07/2026)
+
+### TASK-1164 — OKX adapter: rimuovere strato CCXT, REST-only (httpx)
+**Status:** ✅ Done (16/07/2026)
+
+### TASK-1165 — Fix sl_pct_net inconsistente (WS initial state vs candle processor)
+**Status:** ✅ Done (16/07/2026)
+
+### TASK-1116.G — Instrument discovery environment-aware (Demo vs Live)
+**Status:** ✅ Done (16/07/2026)
+
+**Problema:** OKB-EUR è tradeable in live ma non esiste in Demo Trading (errore 51001). Il sistema non distingue i due cataloghi. L'endpoint `/exchange/instruments` non filtra per ambiente. Il frontend carica gli strumenti una volta sola senza re-fetch al cambio modalità. Nessuna validazione pre-sessione.
+
+**Root cause:** `_direct_fetch_symbol_rules()` e l'endpoint `/exchange/instruments` chiamavano OKX senza header `x-simulated-trading: 1`, restituendo sempre il catalogo live. La cache non era environment-aware. Il frontend non passava mode al backend.
+
+**Fix applicati:**
+- Cache `(symbol, demo_flag)` tupla in `okx_exchange.py`
+- Header `x-simulated-trading` in `_direct_fetch_symbol_rules()` e `list_instruments()`
+- Endpoint `/exchange/instruments` accetta `?mode=test|live`, passa header demo
+- Validazione pre-sessione con `UnsupportedInstrumentError` → errore `SYMBOL_NOT_AVAILABLE`
+- Frontend: `getInstruments(mode?)` passa mode come query param
+- Mode badge con tooltip nei session controls
+- 8 nuovi test unit
+
+**File:** `okx_exchange.py`, `router.py`, `exchange-symbols.service.ts`, `session-controls.component.ts`, `test_task_1116g.py`
+
+---
+
+### TASK-1170 — Fix log diagnostico COLLECTORS
+**Status:** ✅ Done (16/07/2026)
+
+### TASK-1171 — Trova istanza fantasma SignalScoreEngine "BTCUSDT"
+**Status:** ✅ Done (16/07/2026)
+
+### TASK-1172 — Fix chart preview symbol blocked by stale session status
+**Status:** ✅ Done (15/07/2026)
+
+### TASK-1173 — LiveChartComponent: prezzo non si aggiorna
+**Status:** ✅ Done (15/07/2026)
+
+### TASK-1174 — Fix get_symbol_rules failure silently skips restore
+**Status:** ✅ Done (16/07/2026)
+
+### TASK-1175 — Fix algo history retry si blocca su risultati vuoti
+**Status:** ✅ Done (16/07/2026)
+
+### TASK-1176 — Fix adapter init failure log level
+**Status:** ✅ Done (16/07/2026)
+
+### TASK-1177 — Reconcile fill reali + fix critico supabase stub
+**Status:** ✅ Done (16/07/2026)
+
+### TASK-907 — Bug Frontend: dati mancanti su reload con sessione PAUSED
+**Status:** ✅ Done (16/07/2026)
+
+---
+
 ## Ordine di esecuzione consigliato (storico, pre-audit)
 
 1. ~~**TASK-1100**~~ ✅ — spike OKX Demo Trading

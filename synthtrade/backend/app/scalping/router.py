@@ -2629,13 +2629,14 @@ async def binance_exchange_info():
 
 
 @router.get("/exchange/instruments")
-async def exchange_instruments():
-    """TASK-1109: Provider-neutral instruments endpoint.
+async def exchange_instruments(mode: str | None = None):
+    """TASK-1109/1116.G: Provider-neutral instruments endpoint.
 
-    OKX: returns live spot pairs via /api/v5/public/instruments.
+    OKX: returns spot pairs via /api/v5/public/instruments.
+    Adds x-simulated-trading header when in demo mode (mode=test or settings.exchange_demo).
+    Accepts optional ?mode=test|live query param to override settings.
 
     Binance: proxies Binance exchangeInfo.
-
     """
 
     provider = settings.EXCHANGE_PROVIDER.lower()
@@ -2644,10 +2645,15 @@ async def exchange_instruments():
         import httpx
         base_url = settings.OKX_BASE_URL.rstrip("/")
         try:
+            is_demo = (mode == "test") if mode else settings.exchange_demo
+            headers = {}
+            if is_demo:
+                headers["x-simulated-trading"] = "1"
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(
                     f"{base_url}/api/v5/public/instruments",
                     params={"instType": "SPOT"},
+                    headers=headers,
                 )
                 resp.raise_for_status()
                 data = resp.json()
@@ -2668,7 +2674,7 @@ async def exchange_instruments():
             default_symbol = "BTC-EUR" if "BTC-EUR" in eur_pairs else (eur_pairs[0] if eur_pairs else "BTC-EUR")
             return {
                 "provider": "okx",
-                "demo": settings.exchange_demo,
+                "demo": is_demo,
                 "default_symbol": default_symbol,
                 "instruments": instruments,
             }
@@ -3164,12 +3170,34 @@ async def control_session(control: Dict) -> Dict:
 
             try:
                 # Get quote asset from symbol (e.g. BTC-EUR -> EUR, BTCUSDT -> USDT)
-                from app.execution.exchange_models import SymbolRef
+                from app.execution.exchange_models import SymbolRef, UnsupportedInstrumentError
                 try:
                     sym_ref = SymbolRef.from_okx(active_symbol) if "-" in active_symbol else SymbolRef.from_compact(active_symbol)
                     quote_asset = sym_ref.quote
                 except Exception:
                     quote_asset = "EUR"  # fallback for OKX default
+
+                # TASK-1116.G.3: Validate symbol exists in current environment BEFORE balance check
+                try:
+                    await adapter.get_symbol_rules(sym_ref)
+                except UnsupportedInstrumentError:
+                    mode_label = "Demo Trading" if session_mode == "test" else "Live Trading"
+                    error_msg = (
+                        f"Il simbolo {active_symbol} non e' disponibile in {mode_label} su {settings.EXCHANGE_PROVIDER.upper()}. "
+                        f"Prova con un altro simbolo."
+                    )
+                    logger.error(f"✗ SYMBOL NOT AVAILABLE: {active_symbol} in {mode_label}")
+                    session["status"] = "idle"
+                    session["error_message"] = error_msg
+                    session["error_code"] = "SYMBOL_NOT_AVAILABLE"
+                    if guard:
+                        guard.fail(f"symbol_not_available: {active_symbol} in {mode_label}")
+                        _sync_session_load_guard()
+                    try:
+                        await adapter.close()
+                    except Exception:
+                        pass
+                    return session.copy()
 
                 available_balance = await adapter.get_balance(quote_asset)
                 trade_val = float(control.get("trade_value", session.get("trade_value", 10.0)))

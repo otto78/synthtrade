@@ -25,6 +25,17 @@ import { ConfigService } from '../../core/services/config.service';
         </div>
         <div class="title-hr"></div>
 
+        <!-- TASK-1116.G.5: Mode indicator with tooltip -->
+        <div class="mode-indicator" *ngIf="globalMode !== 'paper'"
+             [title]="globalMode === 'test' ? 'Modalita Demo Trading: non tutti i simboli sono disponibili. Alcuni pair potrebbero essere assenti.' : 'Modalita Live Trading: tutti i simboli reali sono disponibili.'">
+          <span class="mode-badge" [class.demo]="globalMode === 'test'" [class.live]="globalMode === 'live'">
+            {{ globalMode === 'test' ? 'DEMO' : 'LIVE' }}
+          </span>
+          <span class="mode-hint" *ngIf="globalMode === 'test'">
+            Alcuni simboli potrebbero non essere disponibili
+          </span>
+        </div>
+
         <div class="config-grid">
           <div class="field">
             <label>Simbolo</label>
@@ -209,6 +220,37 @@ import { ConfigService } from '../../core/services/config.service';
       height: 1px;
       background: rgba(234,236,239,0.08);
       margin: -6px 0 12px 0;
+    }
+
+    /* TASK-1116.G.5: Mode indicator */
+    .mode-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      cursor: help;
+    }
+    .mode-badge {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .mode-badge.demo {
+      background: rgba(255, 183, 77, 0.15);
+      color: #ffb74d;
+      border: 1px solid rgba(255, 183, 77, 0.3);
+    }
+    .mode-badge.live {
+      background: rgba(239, 83, 80, 0.12);
+      color: #ef5350;
+      border: 1px solid rgba(239, 83, 80, 0.25);
+    }
+    .mode-hint {
+      font-size: 11px;
+      color: var(--text-secondary);
+      opacity: 0.7;
     }
 
     /* Config */
@@ -455,7 +497,7 @@ import { ConfigService } from '../../core/services/config.service';
 export class SessionControlsComponent implements OnInit {
   session: ScalpingSession | null = null;
   sessionId: string | null = null;
-  selectedSymbol = 'OKBEUR';
+  selectedSymbol = 'BTC-EUR';
   selectedStrategy = 'momentum_base';
   
   /** Trade value: restore from localStorage or default 100 */
@@ -492,6 +534,16 @@ export class SessionControlsComponent implements OnInit {
   ngOnInit(): void {
     this.configService.getMode().subscribe(info => {
       this.globalMode = info.mode;
+      // TASK-1116.G.4: Re-fetch instruments when mode changes
+      const modeParam = info.mode === 'live' ? 'live' : 'test';
+      this.exchangeSymbols.getSymbols(modeParam as 'test' | 'live').subscribe((symbols) => {
+        this.allSymbols = symbols;
+        // Update default symbol from service if current selection is not in list
+        if (symbols.length > 0 && !symbols.includes(this.selectedSymbol)) {
+          this.selectedSymbol = this.exchangeSymbols.defaultSymbol || symbols[0];
+        }
+        this.cdr.detectChanges();
+      });
     });
 
     this.sessionApi.session$.subscribe((data) => {
@@ -505,12 +557,6 @@ export class SessionControlsComponent implements OnInit {
       this.cdr.detectChanges();
     });
     this.sessionApi.getStatus().subscribe();
-
-    // Load all exchange instruments (provider-neutral: OKX or Binance)
-    this.exchangeSymbols.getSymbols().subscribe((symbols) => {
-      this.allSymbols = symbols;
-      this.cdr.detectChanges();
-    });
 
     // Close dropdown on click outside
     document.addEventListener('click', (e) => {

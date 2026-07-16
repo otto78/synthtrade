@@ -136,7 +136,7 @@ import { StatCardComponent } from '../../shared/components/stat-card/stat-card.c
       }
 
       <!-- LLM Models Configuration -->
-      <div class="llm-section">
+      <!-- <div class="llm-section">
         <button class="accordion-header" (click)="toggleLLM()">
           <h3>Modelli LLM</h3>
           <span class="accordion-arrow" [class.open]="llmOpen()">▾</span>
@@ -183,7 +183,7 @@ import { StatCardComponent } from '../../shared/components/stat-card/stat-card.c
             </div>
           </div>
         }
-      </div>
+      </div> -->
     </div>
   `,
   styles: [`

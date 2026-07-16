@@ -1,6 +1,6 @@
 # TASKS.md — SynthTrade Task Tracking
 
-> **Aggiornato:** 2026-07-16 16:30. Task completati in `docs/ARCHIVE_TASKS.md`.
+> **Aggiornato:** 2026-07-16 16:50. Task completati in `docs/ARCHIVE_TASKS.md`.
 
 ---
 
@@ -91,20 +91,12 @@
 
 ## TASK-898 — Analisi Trend basata su dati persistiti
 
-**Status:** Pending — *pronto ma bloccato su query DB live*
+**Status:** ✅ Completed (16/07/2026)
 **Priorità:** BASSA
-**Dipendenze:** TASK-895 + query Supabase
 
-**Prerequisito:** La pipeline dati è operativa (`trend_direction` salvato in `session_signal_log` su 5/6 path di logging). Manca solo la verifica che ci sono ≥20 trade chiusi con `signal_log_id` e `trend_direction` non null.
+**Risultato:** 19 trade chiusi con trend data analizzati. Nessuna correlazione significativa (r=0.004). Il 100% dei trade è BUY, 84% stop loss. Regime sempre "unknown". Report: `docs/trend_analysis_report.md`.
 
-```sql
-SELECT COUNT(*) FROM scalping_trades t
-JOIN session_signal_log sl ON sl.id = t.signal_log_id
-WHERE t.status = 'closed' AND sl.trend_direction IS NOT NULL;
-```
-Se ≥20 → il task può partire. Se <20 → aspettare.
-
-**File da creare:** `docs/trend_analysis_report.md`
+**Finding chiave:** TASK-906 (falling knife) e TASK-908 (resume guard) mitigano i problemi identificati. Serve più dati (≥100 trade) per analisi statistica significativa.
 
 ---
 

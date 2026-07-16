@@ -3465,6 +3465,10 @@ Grace period già implementato in `signal_score_engine.py:426-436`: CVD escluso 
 **Status:** ✅ Done (16/07/2026)
 **Fix:** Guard in signal_aggregator.py: trend_direction=diverging + trend_5m < -20 → blocca. 12 test.
 
+### TASK-898 — Trend Analysis da dati persistiti
+**Status:** ✅ Done (16/07/2026)
+**Risultato:** 19 trade analizzati, nessuna correlazione (r=0.004). Report: `docs/trend_analysis_report.md`.
+
 ---
 
 ## Ordine di esecuzione consigliato (storico, pre-audit)

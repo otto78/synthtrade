@@ -71,6 +71,11 @@ import { Position } from '../models/position.model';
           <div class="progress-state" [ngClass]="getProgressClass()">{{ getProgressText() }}</div>
           <div class="progress-bar">
             <div class="progress-fill" [style.width.%]="getProgressPct()" [ngClass]="getProgressClass()"></div>
+            <div class="breakeven-marker" [style.left.%]="getBreakevenPct()"></div>
+          </div>
+          <div class="breakeven-label" [style.left.%]="getBreakevenPct()">
+            <span class="be-text">BE</span>
+            <span class="be-price">{{ position.entry_price | number:'1.2-2' }}</span>
           </div>
         </div>
       </div>
@@ -181,6 +186,35 @@ import { Position } from '../models/position.model';
     }
     .progress-fill.success {
       background: linear-gradient(90deg, #26a69a, #4db6ac);
+    }
+    .breakeven-marker {
+      position: absolute;
+      top: -2px;
+      width: 2px;
+      height: 14px;
+      background: #F0B90B;
+      border-radius: 1px;
+      transform: translateX(-1px);
+      z-index: 2;
+    }
+    .breakeven-label {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 4px;
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+    .be-text {
+      font-size: 9px;
+      font-weight: 700;
+      color: #F0B90B;
+      letter-spacing: 0.5px;
+    }
+    .be-price {
+      font-size: 9px;
+      color: var(--text-secondary);
     }
   `],
 })
@@ -327,6 +361,27 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
     if (progress < 30) return 'danger';
     if (progress < 70) return 'warning';
     return 'success';
+  }
+
+  /**
+   * Breakeven position on the progress bar (0-100%).
+   * For BUY: entry is between SL (0%) and TP (100%).
+   * For SELL: entry is between TP (0%) and SL (100%).
+   */
+  getBreakevenPct(): number {
+    if (!this.position) return 50;
+    const { side, entry_price, stop_loss_price, take_profit_price } = this.position;
+    if (stop_loss_price == null || take_profit_price == null) return 50;
+
+    if (side === 'BUY') {
+      const totalRange = take_profit_price - stop_loss_price;
+      if (totalRange <= 0) return 50;
+      return Math.max(0, Math.min(100, ((entry_price - stop_loss_price) / totalRange) * 100));
+    }
+
+    const totalRange = stop_loss_price - take_profit_price;
+    if (totalRange <= 0) return 50;
+    return Math.max(0, Math.min(100, ((stop_loss_price - entry_price) / totalRange) * 100));
   }
 
   /**

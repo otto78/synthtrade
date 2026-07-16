@@ -15,7 +15,8 @@ from app.scalping.models.supervisor import SupervisorDecision
 
 logger = logging.getLogger(__name__)
 
-REGIME_ALLOWED_STRATEGIES: Dict[str, List[str]] = {
+# TASK-904: fallback hardcoded — il mapping reale viene da ScalpingConfigLoader
+_FALLBACK_REGIME_ALLOWED_STRATEGIES: Dict[str, List[str]] = {
     "ranging":        ["rsi_bollinger", "momentum_base", "stoch_rsi_bb_squeeze"],
     "volatile":       ["stoch_rsi_bb_squeeze", "momentum_base"],
     "trending_up":    ["ema_cross"],
@@ -326,7 +327,12 @@ class SupervisorScheduler:
 
         if decision.action == "change_strategy" and decision.new_strategy:
             current_regime = self._loop.regime.regime if self._loop and self._loop.regime else "unknown"
-            allowed = REGIME_ALLOWED_STRATEGIES.get(current_regime, ["momentum_base"])
+            # TASK-904: legge da config_loader (DB-driven) con fallback hardcoded
+            try:
+                from app.scalping.config_loader import get_scalping_config
+                allowed = get_scalping_config().regime_allowed_strategies.get(current_regime, ["momentum_base"])
+            except Exception:
+                allowed = _FALLBACK_REGIME_ALLOWED_STRATEGIES.get(current_regime, ["momentum_base"])
             if decision.new_strategy not in allowed:
                 logger.warning(
                     f"⛔ Supervisor ha proposto '{decision.new_strategy}' "

@@ -164,14 +164,11 @@ L'`ExecutionLoop` (riga 162-175) sovrascrive `_current_regime` ad ogni tick senz
 | Task | Priorità | Note |
 |------|----------|------|
 | TASK-1166 | 🟡 Media | Refactor router.py (~4200 righe → moduli <500 righe) |
-| TASK-904 | 🔴 Bassa | StrategySelector DB-driven (mapping hardcoded) |
-| TASK-INVEST-* | ⚠️ Varia | 6 task di investigazione aperti/parziali |
 
 ---
 
 ## Prossimi Passi
 
 1. **TASK-1166** — Refactor router.py (2-3 giorni)
-2. **TASK-904** — StrategySelector DB-driven (bassa priorità)
-3. **Raccogliere dati** — servono ≥100 trade con trend data per analisi statistica significativa
-4. **Monitorare in live** — verificare che TASK-906 e TASK-908 riducano le perdite dopo 50+ trade
+2. **Raccogliere dati** — servono ≥100 trade con trend data per analisi statistica significativa
+3. **Monitorare in live** — verificare che TASK-906 e TASK-908 riducano le perdite dopo 50+ trade

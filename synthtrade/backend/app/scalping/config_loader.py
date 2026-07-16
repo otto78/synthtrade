@@ -16,6 +16,24 @@ from app.db.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
 
+# TASK-904: default mapping regime -> strategia (usato se DB non ha override)
+_DEFAULT_REGIME_STRATEGY_MAP = {
+    "trending_up": "ema_cross",
+    "trending_down": "ema_cross",
+    "ranging": "rsi_bollinger",
+    "volatile": "stoch_rsi_bb_squeeze",
+    "unknown": "momentum_base",
+}
+
+# TASK-904: default mapping regime -> strategie consentite (usato se DB non ha override)
+_DEFAULT_REGIME_ALLOWED_STRATEGIES = {
+    "ranging":        ["rsi_bollinger", "momentum_base", "stoch_rsi_bb_squeeze"],
+    "volatile":       ["stoch_rsi_bb_squeeze", "momentum_base"],
+    "trending_up":    ["ema_cross"],
+    "trending_down":  ["ema_cross"],
+    "unknown":        ["momentum_base"],
+}
+
 
 class ScalpingConfigLoader:
     """Configurazione scalping con override runtime da DB."""
@@ -45,6 +63,12 @@ class ScalpingConfigLoader:
             "SCALPING_REGIME_VOLATILE_THRESHOLD":    settings.scalping.SCALPING_REGIME_VOLATILE_THRESHOLD,
             "SCALPING_TA_VOLUME_ANOMALY_MULTIPLIER": settings.scalping.SCALPING_TA_VOLUME_ANOMALY_MULTIPLIER,
         }
+        # TASK-904: regime -> strategia default (override via DB con chiavi REGIME_STRATEGY_*)
+        for regime, strategy in _DEFAULT_REGIME_STRATEGY_MAP.items():
+            base[f"REGIME_STRATEGY_{regime}"] = strategy
+        # TASK-904: regime -> strategie consentite default (override via DB con chiavi REGIME_ALLOWED_*)
+        for regime, strategies in _DEFAULT_REGIME_ALLOWED_STRATEGIES.items():
+            base[f"REGIME_ALLOWED_{regime}"] = ",".join(strategies)
         self._config = base
 
         # Step 2: override da DB
@@ -55,7 +79,7 @@ class ScalpingConfigLoader:
                 type_map = {"float": float, "int": int, "bool": lambda v: v.lower() == "true", "str": str}
                 for row in rows.data:
                     key = row["key"]
-                    if key in self._config:
+                    if key in self._config and row.get("value", ""):
                         converter = type_map.get(row["value_type"], str)
                         try:
                             self._config[key] = converter(row["value"])
@@ -129,6 +153,28 @@ class ScalpingConfigLoader:
     @property
     def ta_volume_anomaly_multiplier(self) -> float:
         return self._config["SCALPING_TA_VOLUME_ANOMALY_MULTIPLIER"]
+
+    # --- TASK-904: regime -> strategy mappings (DB-driven) ---
+
+    @property
+    def regime_strategy_map(self) -> dict[str, str]:
+        """Mapping regime -> strategia principale. DB override con chiavi REGIME_STRATEGY_*."""
+        result = {}
+        for regime in _DEFAULT_REGIME_STRATEGY_MAP:
+            result[regime] = self._config.get(f"REGIME_STRATEGY_{regime}", _DEFAULT_REGIME_STRATEGY_MAP[regime])
+        return result
+
+    @property
+    def regime_allowed_strategies(self) -> dict[str, list[str]]:
+        """Mapping regime -> lista strategie consentite. DB override con chiavi REGIME_ALLOWED_*."""
+        result = {}
+        for regime in _DEFAULT_REGIME_ALLOWED_STRATEGIES:
+            raw = self._config.get(f"REGIME_ALLOWED_{regime}", "")
+            if raw:
+                result[regime] = [s.strip() for s in raw.split(",") if s.strip()]
+            else:
+                result[regime] = list(_DEFAULT_REGIME_ALLOWED_STRATEGIES[regime])
+        return result
 
 
 # Singleton — istanziato all'avvio, condiviso da tutti i moduli scalping

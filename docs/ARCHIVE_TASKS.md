@@ -3477,6 +3477,30 @@ Grace period già implementato in `signal_score_engine.py:426-436`: CVD escluso 
 **Status:** ✅ Done (16/07/2026)
 **Fix:** Aggiunta isteresi K=3 in `regime_detector.py`. `detect()` ora usa stato: `_committed_regime`, `_pending_regime`, `_pending_count`. Il regime committed cambia solo se lo stesso candidato si osserva per 3 candele consecutive. `_detect_candidate()` estra logica raw. `detect_with_core()` resta stateless. 15 test in `test_task_903.py`.
 
+### TASK-904 — StrategySelector + RegimeAllowed DB-driven
+**Status:** ✅ Done (16/07/2026)
+**Fix:** Mapping regime→strategia e regime→strategie-consentite ora letti da `ScalpingConfigLoader` (DB `scalping_runtime_config`) invece che hardcoded.
+
+**File modificati:**
+- `config_loader.py` — chiavi `REGIME_STRATEGY_*` e `REGIME_ALLOWED_*` con default hardcoded, override DB. Fix: valori vuoti in DB non sovrascrivono i default.
+- `strategy_selector.py` — `__init__` accetta `regime_strategy_map` opzionale, fallback a `get_scalping_config().regime_strategy_map`
+- `supervisor_scheduler.py` — `REGIME_ALLOWED_STRATEGIES` → `_FALLBACK_REGIME_ALLOWED_STRATEGIES`, uso `get_scalping_config().regime_allowed_strategies` con fallback
+- `test_task_904.py` — 14 test (defaults, DB override, empty value, consistency, selector, supervisor fallback)
+
+**DB keys (override via POST /api/scalping/config):**
+```
+REGIME_STRATEGY_trending_up = ema_cross
+REGIME_STRATEGY_trending_down = ema_cross
+REGIME_STRATEGY_ranging = rsi_bollinger
+REGIME_STRATEGY_volatile = stoch_rsi_bb_squeeze
+REGIME_STRATEGY_unknown = momentum_base
+REGIME_ALLOWED_ranging = rsi_bollinger,momentum_base,stoch_rsi_bb_squeeze
+REGIME_ALLOWED_volatile = stoch_rsi_bb_squeeze,momentum_base
+REGIME_ALLOWED_trending_up = ema_cross
+REGIME_ALLOWED_trending_down = ema_cross
+REGIME_ALLOWED_unknown = momentum_base
+```
+
 ---
 
 ## Ordine di esecuzione consigliato (storico, pre-audit)

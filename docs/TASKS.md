@@ -1,6 +1,6 @@
 # TASKS.md — SynthTrade Task Tracking
 
-> **Aggiornato:** 2026-07-16 17:40. Task completati in `docs/ARCHIVE_TASKS.md`. Recap sessione: `docs/recap/2026-07-16_trading-safety-improvements.md`.
+> **Aggiornato:** 2026-07-16 18:00. Task completati in `docs/ARCHIVE_TASKS.md`. Recap sessione: `docs/recap/2026-07-16_trading-safety-improvements.md`.
 
 ---
 
@@ -31,23 +31,6 @@
 - `router.py` è < 300 righe (orchestratore)
 - Tutti i test passano
 - Nessuna modifica al comportamento osservabile
-
----
-
-## TASK-904 — StrategySelector DB-driven
-
-**Status:** Pending
-**Priorità:** 🔴 BASSA
-**Dipendenze:** TASK-902
-
-**Problema:** Mapping `regime → strategia_consentita` hardcoded in due posti:
-- `strategy_selector.py` — dict hardcoded `REGIME_STRATEGY_MAP`
-- `supervisor_scheduler.py` — dict hardcoded `REGIME_ALLOWED_STRATEGIES`
-
-**File:**
-- `strategy_selector.py` — leggere da `scalping_runtime_config`
-- `supervisor_scheduler.py` — sostituire dict hardcoded con lettura da DB
-- Migration: chiavi `regime_strategy_*` a `scalping_runtime_config`
 
 ---
 

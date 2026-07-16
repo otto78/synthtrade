@@ -1,6 +1,6 @@
 # TASKS.md — SynthTrade Task Tracking
 
-> **Aggiornato:** 2026-07-16 12:00. Task completati spostati in `docs/ARCHIVE_TASKS.md`.
+> **Aggiornato:** 2026-07-16 15:40. Task completati spostati in `docs/ARCHIVE_TASKS.md`.
 
 ---
 
@@ -60,9 +60,9 @@ Il fallback REST polling è operativo e gestisce gli eventi di fill senza errori
 
 ## TASK-1116.G — Instrument discovery environment-aware (Demo vs Live)
 
-**Status:** ✅ Committed (`HEAD` 16/07/2026)
+**Status:** ✅ Committed (16/07/2026)
 **Priorità:** ALTA
-**Effort:** 4 ore
+**Effort:** 6 ore
 
 **Sottotask completati:**
 1. ✅ **1116.G.1** — Cache `(symbol, demo_flag)` in `okx_exchange.py`, header `x-simulated-trading` in `_direct_fetch_symbol_rules()` e `list_instruments()`
@@ -72,7 +72,11 @@ Il fallback REST polling è operativo e gestisce gli eventi di fill senza errori
 5. ✅ **1116.G.5** — Mode badge (DEMO/LIVE) con tooltip nei session controls
 6. ✅ **1116.G.6** — 8 nuovi test unit (cache partition, demo header, list_instruments, symbol validation)
 
-**File modificati:** `okx_exchange.py`, `router.py`, `exchange-symbols.service.ts`, `session-controls.component.ts`, `test_task_1116g.py`
+**Fix aggiuntivi (16/07 pomeriggio):**
+- ✅ Health check accetta `paused` come stato valido (non solo `running`)
+- ✅ OKBEUR phantom engine eliminato: intel snapshot ritorna dati vuoti per symbol != sessione attiva; frontend non chiama `loadSnapshot()` su init senza sessione
+
+**File modificati:** `okx_exchange.py`, `router.py`, `exchange-symbols.service.ts`, `session-controls.component.ts`, `market-intel-panel.component.ts`, `scalping_jobs.py`, `test_task_1116g.py`
 
 ---
 

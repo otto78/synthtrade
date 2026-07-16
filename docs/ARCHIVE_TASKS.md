@@ -3427,8 +3427,14 @@ Grace period già implementato in `signal_score_engine.py:426-436`: CVD escluso 
 ### TASK-1170 — Fix log diagnostico COLLECTORS
 **Status:** ✅ Done (16/07/2026)
 
-### TASK-1171 — Trova istanza fantasma SignalScoreEngine "BTCUSDT"
+### TASK-1171 — Elimina istanze fantasma SignalScoreEngine (BTCUSDT + OKBEUR)
 **Status:** ✅ Done (16/07/2026)
+**Fix multipli:**
+1. `supervisor_check_job()` creava `SupervisorScheduler()` senza symbol → default BTCUSDT → engine phantom ogni 10min
+2. `get_intel_snapshot` endpoint creava engine on-the-fly per ogni symbol richiesto → OKBEUR phantom dal frontend
+3. Health check considerava `paused` come fallimento (fix in commit separato)
+
+**File:** `scalping_jobs.py`, `router.py`, `market-intel-panel.component.ts`
 
 ### TASK-1172 — Fix chart preview symbol blocked by stale session status
 **Status:** ✅ Done (15/07/2026)

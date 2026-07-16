@@ -3459,19 +3459,23 @@ Grace period già implementato in `signal_score_engine.py:426-436`: CVD escluso 
 
 ### TASK-908 — Resume Guard: blocca resume in regime bearish senza short
 **Status:** ✅ Done (16/07/2026)
-**Fix:** Guard in supervisor_scheduler.py, defense-in-depth in parameter_updater, context enhancement, 6 test.
+**Fix:** Guard a 3 livelli:
+1. `supervisor_scheduler.py:339-358`: se `regime=="trending_down"` + `confidence>=0.7` + `has_position==false` → blocca resume
+2. `parameter_updater.py:_resume()`: no-op se regime bearish (defense-in-depth)
+3. `supervisor_context.py`: `short_enabled: False` nel contesto AI
+6 test in `test_task_908.py`.
 
 ### TASK-906 — Falling Knife Protection: blocca mean-reversion BUY durante crash
 **Status:** ✅ Done (16/07/2026)
-**Fix:** Guard in signal_aggregator.py: trend_direction=diverging + trend_5m < -20 → blocca. 12 test.
+**Fix:** Guard `FALLING_KNIFE_TREND_THRESHOLD = -20.0` in `signal_aggregator.py`. Se `trend_direction=="diverging"` + `trend_5m < -20.0` → blocca mean-reversion BUY. Solo per rsi_bollinger e stoch_rsi_bb_squeeze. Avrebbe bloccato 7/9 trade diverging dal dataset. 12 test in `test_task_906.py`.
 
 ### TASK-898 — Trend Analysis da dati persistiti
 **Status:** ✅ Done (16/07/2026)
-**Risultato:** 19 trade analizzati, nessuna correlazione (r=0.004). Report: `docs/trend_analysis_report.md`.
+**Risultato:** 19 trade analizzati via SQL JOIN `scalping_trades` + `session_signal_log`. Correlazione Pearson r=0.004 (nessuna). 100% BUY, 84% stop_loss, regime sempre "unknown". Report: `docs/trend_analysis_report.md`.
 
 ### TASK-903 — RegimeDetector: isteresi K candele
 **Status:** ✅ Done (16/07/2026)
-**Fix:** Aggiunta isteresi K=3 in regime_detector.py. Il regime committed cambia solo se lo stesso candidato si osserva per 3 candele consecutive. Proprietà `pending_regime`/`pending_count` per debug. 15 test.
+**Fix:** Aggiunta isteresi K=3 in `regime_detector.py`. `detect()` ora usa stato: `_committed_regime`, `_pending_regime`, `_pending_count`. Il regime committed cambia solo se lo stesso candidato si osserva per 3 candele consecutive. `_detect_candidate()` estra logica raw. `detect_with_core()` resta stateless. 15 test in `test_task_903.py`.
 
 ---
 

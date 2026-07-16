@@ -3469,6 +3469,10 @@ Grace period già implementato in `signal_score_engine.py:426-436`: CVD escluso 
 **Status:** ✅ Done (16/07/2026)
 **Risultato:** 19 trade analizzati, nessuna correlazione (r=0.004). Report: `docs/trend_analysis_report.md`.
 
+### TASK-903 — RegimeDetector: isteresi K candele
+**Status:** ✅ Done (16/07/2026)
+**Fix:** Aggiunta isteresi K=3 in regime_detector.py. Il regime committed cambia solo se lo stesso candidato si osserva per 3 candele consecutive. Proprietà `pending_regime`/`pending_count` per debug. 15 test.
+
 ---
 
 ## Ordine di esecuzione consigliato (storico, pre-audit)

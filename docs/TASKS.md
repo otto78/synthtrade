@@ -1,6 +1,6 @@
 # TASKS.md — SynthTrade Task Tracking
 
-> **Aggiornato:** 2026-07-16 16:50. Task completati in `docs/ARCHIVE_TASKS.md`.
+> **Aggiornato:** 2026-07-16 17:10. Task completati in `docs/ARCHIVE_TASKS.md`.
 
 ---
 
@@ -58,19 +58,13 @@
 
 ## TASK-903 — RegimeDetector: isteresi K candele
 
-**Status:** Pending
+**Status:** ✅ Completed (16/07/2026)
 **Priorità:** MEDIA
 **Effort:** 1-2 ore
 
-**Problema:** `RegimeDetector` è completamente **stateless** (nessun `__init__`, zero attributi). Ogni chiamata a `detect()` produce un regime da zero basato sulle ultime 20 candele. Le soglie (volatility_ratio > 0.01, price_change > 0.003) causano flickering quando il prezzo oscilla vicino ai boundary. L'`ExecutionLoop` (line 162-175) sovrascrive `_current_regime` ad ogni tick senza smoothing. Il supervisor riceve contesti contraddittori.
+**Problema:** `RegimeDetector` era stateless → flickering ogni tick ai boundary.
 
-**File:** `synthtrade/backend/app/scalping/engine/regime_detector.py` (115 righe)
-
-**Implementazione:**
-- Aggiungere `_pending_regime: Optional[str]` e `_pending_count: int`
-- Regime committed cambia SOLO se lo stesso candidato si osserva per K candele consecutive (default K=3)
-- Se il candidato cambia prima di K → reset counter
-- Proprietà pubblica `pending_regime` per debug
+**Fix:** Aggiunta isteresi K=3 in `regime_detector.py`. Il regime committed cambia solo se lo stesso candidato si osserva per 3 candele consecutive. Proprietà `pending_regime` e `pending_count` per debug. 15 test in `test_task_903.py`.
 
 ---
 

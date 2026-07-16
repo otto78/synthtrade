@@ -3471,5 +3471,5 @@ Grace period già implementato in `signal_score_engine.py:426-436`: CVD escluso 
 4. ~~**TASK-1114**~~ — OKX fee tier e net pricing parity
 5. ~~**TASK-1117 → TASK-1118**~~ — Bug da recap 2026-07-08
 6. ~~**TASK-OKX-RECAL**~~ ✅ — Ricalibrazione SL/TP
-7. **TASK-907 / TASK-908** — bug non OKX (ancora pending)
+7. ~~**TASK-907 / TASK-908**~~ ✅ — bug non OKX (completati 16/07)
 

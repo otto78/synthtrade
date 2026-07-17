@@ -1654,11 +1654,12 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                                             t.cancel()
                                     
                                     await asyncio.sleep(2)
-                                    
-                                    if _execution_state["session"]["status"] == "running":
+
+                                    if _execution_state["session"]["status"] in ("running", "paused"):
                                         logger.info(">>> RESTART_WS: Calling _start_ws_broadcast(restore_mode=True)...")
                                         await _start_ws_broadcast(symbol, restore_mode=True)
                                         logger.info(">>> RESTART_WS: Full restart completed!")
+                                        
                                 except Exception as inner_e:
                                     logger.error(f">>> RESTART_WS: Failed: {inner_e}")
                             

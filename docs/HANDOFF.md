@@ -2,13 +2,89 @@
 
 ## Ultimo Handoff
 
-### Da: OpenCode -> prossima sessione
+### Da: Antigravity → prossima sessione
 
-**Data:** 2026-07-16 11:00
+**Data:** 2026-07-17 14:30
 
-**Contesto:** Breakeven indicator + OKX OCO fee fix (taker, non maker)
+**Contesto:** TASK-1166 Refactoring `router.py` — Fasi 1-4 completate.
 
 ---
+
+### ✅ TASK-1166 Completato: `router.py` da 4310→180 righe (95.8% riduzione)
+
+**Problema:** `router.py` era un monolite ingestibile da oltre 4300 righe.
+**Soluzione completa (4 fasi):**
+- **Fase 1:** Estratti `_state.py` (50 righe), `pricing.py` (149), `reconciliation.py` (162), `db_ops.py` (169).
+- **Fase 2:** Estratti `trade_executor.py` (451), `session_lifecycle.py` (59).
+- **Fase 3:** Estratti `broadcast.py` (38), `pipeline.py` (224), `market_processors.py` (1006).
+- **Fase 4:** Estratti REST endpoints in `rest/`:
+  - `rest/market_data.py` (245): exchange-info, instruments, sessions, trade-history, candles, `_snapshot_to_dict`
+  - `rest/backtest.py` (75): run, result, list endpoints
+  - `rest/session.py` (968): control_session, get_session, logs, position, config, risk, performance, health
+  - `rest/intel_opportunity.py` (243): intelligence, opportunities, debug, supervisor endpoints
+- `router.py` (180 righe) ora è un thin shell che include 4 sub-router + re-export backward-compat + WS endpoint.
+- Tutti i test passano: 12/12 OKX integration, 6/6 reconcile, 27/27 unit.
+- Pre-existing bugs fixati: `session_lifecycle.py` import path, `market_processors.py` loose code syntax.
+
+### 📋 Task ancora Pending
+
+| Task | Descrizione | Priorità |
+|------|-------------|----------|
+| TASK-1166.Cleanup | Eliminare eventuali test o commenti obsoleti, aggiornare TASKS.md | BASSA |
+
+### 🔍 Verifica manuale da fare al prossimo avvio
+
+- Testare start sessione live per verificare che `_on_order_update` funzioni correttamente da `trade_executor.py`.
+- Verificare che il WebSocket endpoint inizia correttamente (lo WS è ancora in `router.py`).
+- Controllare che tutti gli import backward-compat in `router.py` funzionano con main.py, config_api.py, scalping_jobs.py, user_data_stream.py, supervisor_scheduler.py, parameter_updater.py.
+
+---
+
+### Precedente Handoff (2026-07-17 10:45)
+
+**Contesto:** AlgoId traceability flow — completamento UI fixes (Trade Log & Topbar) e validazione Frontend per `entry_price`.
+
+---
+
+### ✅ UI Fixes & AlgoId Flow Completato (TASK-1180, 1181, 1182, 1183)
+
+**Problema:** Nonostante il backend fosse stato fixato nel fetch asincrono del fill price reale (`avgPx`), occorreva sistemare l'UI e verificare il flusso dati:
+1. `TASK-1180`: Trade fantasma nel Trade Log causati da riconciliazioni fallite (`external_close_unknown_price`).
+2. `TASK-1181`: Frontend `entry_price`. Verificato che WebSocket propaga l'aggiornamento a `live-chart` senza bisogno di fix lato frontend.
+3. `TASK-1182`: Il badge RUNNING nella topbar non diventava PAUSED quando la sessione andava in pausa.
+4. `TASK-1183`: Trade Log senza data e non sempre in perfetto ordine cronologico (specialmente al ripristino di sessione via WS vs REST).
+
+**Fix applicati:**
+
+| Task | File | Modifica |
+|------|------|---------|
+| TASK-1180 | `trade-log.component.ts` (Frontend), `main.py` (Backend) | Aggiunto filtro in `main.py` per non caricare vecchi trade fantasma dal DB; aggiunto filtro nel ws.subscribe su `tradeClosed$` in UI per ignorarli. |
+| TASK-1181 | `TASKS.md` | Chiuso senza modifiche frontend: l'aggiornamento backend di `exec_price` e l'evento WS `position` assicurano che `position.entry_price` si aggiorni correttamente nel frontend. |
+| TASK-1182 | `topbar.component.ts` | Introdotto `computedEngineStatus` per sincronizzare visivamente lo stato RUNNING/PAUSED in base al `session.status`. |
+| TASK-1183 | `trade-log.component.ts` | Pipe Angular `date:'MM/dd HH:mm:ss'` aggiunta; `.sort()` temporale applicato ai trade ricevuti sia da feed WS che REST per evitare sfasamenti. |
+
+**Flusso target ora completamente stabile:**
+Il backend ripristina la sessione, rintraccia order id asincroni, corregge i fill price, non invia più trade falsati. Il frontend mostra in tempo reale i PAUSED states e il Trade Log aggiornato fedelmente.
+
+---
+
+### 📋 Task ancora Pending (da fare)
+
+| Task | Descrizione | Priorità |
+|------|-------------|----------|
+| TASK-1166 | Refactor `router.py` (Decomposizione modulo monolitico 4350+ linee) | MEDIA |
+
+### 🔍 Verifica manuale da fare al prossimo avvio
+
+1. Avviare backend, creare sessione, attendere trade
+2. Verificare nel log: `[ENTRY_ORDER_ID]` e `[ENTRY_FILL]` o `[ENTRY_FILL_FALLBACK]`
+3. Verificare in Supabase: `exchange_order_id` non-null sulla riga del trade
+4. Riavviare backend: verificare `ordId=... algoId=...` nel log di restore
+5. Eseguire: `pytest synthtrade/backend/tests/unit/test_reconcile_position.py -v` → deve passare 6/6
+
+---
+
+### Precedente Handoff (2026-07-16)
 
 ### ✅ Breakeven indicator + OKX OCO fee fix
 

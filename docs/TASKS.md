@@ -1,8 +1,10 @@
 # TASKS.md — SynthTrade Task Tracking
 
-> **Aggiornato:** 2026-07-16 20:00. Task completati in `docs/ARCHIVE_TASKS.md`. Recap sessione: `docs/recap/2026-07-16_trading-safety-improvements.md`.
+> **Aggiornato:** 2026-07-17 09:51. Task completati in `docs/ARCHIVE_TASKS.md`. Recap sessione: `docs/recap/2026-07-16_trading-safety-improvements.md`.
 
 ---
+
+
 
 ## TASK-1166 — Refactor router.py: estrazione moduli
 
@@ -41,7 +43,7 @@
 
 ---
 
-### Sub-TASK-1166.A — Shared state module (`_state.py`)
+### [COMPLETATO] Sub-TASK-1166.A — Shared state module (`_state.py`)
 
 **Effort:** ~30 min
 **Crea:** `scalping/_state.py` (~50 righe)
@@ -65,7 +67,7 @@ _warning_throttle_sec: float = 10.0
 
 ---
 
-### Sub-TASK-1166.B — Moduli foglia (pricing, reconciliation, db_ops)
+### [COMPLETATO] Sub-TASK-1166.B — Moduli foglia (pricing, reconciliation, db_ops)
 
 **Effort:** ~1-2h
 **Dipende da:** 1166.A
@@ -221,16 +223,3 @@ Ridurre `router.py` a ~250 righe contenente:
 1166.A e un prerequisito per tutti. 1166.B e prerequisito per C, D, E. 1166.F e l'ultimo.
 
 ---
-
-## Task da Investigare — Aperti/Parziali
-
-> Da `MASTER_RECAP.md` 26/06/2026. Verifica 01/07/2026.
-
-| Task | Status | Note |
-|------|--------|------|
-| TASK-INVEST-011 — Regime misclassification (volume-confirmed) | APERTO | Nessuna logica volume-confirmed in `regime_detector.py` |
-| TASK-INVEST-012 — Falling Knife Protection | ALLINEATO | TASK-906 completato. Monitorare in live. |
-| TASK-INVEST-013 — trend_direction troppo sensibile | PARZIALE | Codice presente ma soglia troppo sensibile |
-| TASK-INVEST-017 — Bias outcome_label Supervisor | PARZIALE | Usa solo PnL (no bias regime) |
-| TASK-INVEST-018 — Soglia dinamica senza decadimento | PARZIALE | Decay/degradation non implementato |
-| TASK-INVEST-020 — Slope filter su EMA Cross | APERTO | Nessuno slope filter in `ema_cross.py` |

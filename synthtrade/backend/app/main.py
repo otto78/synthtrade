@@ -268,10 +268,22 @@ async def _restore_scalping_session(db) -> None:
                             pos_obj.tp_price = Decimal(str(ot["tp_price"]))
                         if ot.get("sl_price"):
                             pos_obj.sl_price = Decimal(str(ot["sl_price"]))
+                        # TASK-1187: ripristina entry_order_id (ordId market) e
+                        # exchange_bracket_id (algoId OCO) dal DB per tracciabilità
+                        # completa e disponibilità nei path di reconcile.
+                        if ot.get("exchange_order_id"):
+                            pos_obj.entry_order_id = ot["exchange_order_id"]
+                        # exchange_bracket_id è la fonte primaria di verità per il reconcile;
+                        # oco_order_list_id è il legacy field — usiamo exchange_bracket_id
+                        # come override se diverso (record più recenti usano solo exchange_bracket_id).
+                        if ot.get("exchange_bracket_id") and not pos_obj.oco_order_list_id:
+                            pos_obj.oco_order_list_id = ot["exchange_bracket_id"]
                         has_open_position = True
                         logger.info(
-                            "Open position restored from DB during startup: %s %s @ %s qty=%s",
+                            "Open position restored from DB during startup: %s %s @ %s qty=%s "
+                            "ordId=%s algoId=%s",
                             side, symbol_ot, entry_price, quantity,
+                            pos_obj.entry_order_id, pos_obj.oco_order_list_id,
                         )
         except Exception as e:
             logger.warning(f"Could not check open positions during restore: {e}")
@@ -370,6 +382,10 @@ async def _restore_scalping_session(db) -> None:
         if db_trades.data:
             trade_list = []
             for t in db_trades.data:
+                # TASK-1180: escludi trade fantasma chiusi al restart precedente
+                # (reconciliazione fallita senza fill), appartengono a run passati
+                if t.get("signal_reason") == "external_close_unknown_price":
+                    continue
                 trade_list.append({
                     "symbol": t.get("symbol"),
                     "side": t.get("side"),

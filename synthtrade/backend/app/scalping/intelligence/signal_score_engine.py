@@ -409,12 +409,6 @@ class SignalScoreEngine:
         self._last_collectors_log = (
             f"{_DIM}[ScoreEngine] COLLECTORS: {self.symbol} | {' '.join(_status_parts)}{_RESET}"
         )
-        self._last_coverage_log = (
-            f"{_DIM}[ScoreEngine] COVERAGE: {self.symbol} total={configurable_total:.2f} "
-            f"responded={responded_weight:.2f} real={real_coverage * 100:.1f}% "
-            f"unavailable={structurally_excluded} no_response={no_response_transient} "
-            f"old={coverage * 100:.1f}%{_RESET}"
-        )
 
         # Log errori specifici (incl. spread, index 8)
         _all_names = [
@@ -551,6 +545,15 @@ class SignalScoreEngine:
             and k not in responded_names
             and k not in structurally_excluded
         ]
+
+        _DIM = "\033[2m"
+        _RESET = "\033[0m"
+        self._last_coverage_log = (
+            f"{_DIM}[ScoreEngine] COVERAGE: {self.symbol} total={configurable_total:.2f} "
+            f"responded={responded_weight:.2f} real={real_coverage * 100:.1f}% "
+            f"unavailable={structurally_excluded} no_response={no_response_transient} "
+            f"old={coverage * 100:.1f}%{_RESET}"
+        )
 
         # ── Fine log diagnostico (stored as self._last_collectors_log/coverage_log, logged in compute()) ──
 

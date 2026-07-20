@@ -133,6 +133,10 @@ class SignalScoreEngine:
         self._cached_snapshot: Optional[MarketIntelSnapshot] = None
         self._cached_at: float = 0.0
 
+        # Diagnostica cache: logged in compute() per essere nel ciclo candle
+        self._last_collectors_log: Optional[str] = None
+        self._last_coverage_log: Optional[str] = None
+
     def _compute_individual_score(self, name: str, result) -> Optional[float]:
         """Calcola lo score individuale di un collector per il log diagnostico.
         
@@ -248,6 +252,10 @@ class SignalScoreEngine:
             SignalScore con total, bias, tradeable, breakdown.
         """
         snapshot = await self.get_snapshot()
+        if self._last_collectors_log:
+            logger.info(self._last_collectors_log)
+        if self._last_coverage_log:
+            logger.info(self._last_coverage_log)
         if snapshot.signal_score is None:
             # Fallback in caso di errore critico, non dovrebbe accadere
             from datetime import datetime, timezone
@@ -396,10 +404,14 @@ class SignalScoreEngine:
         _status_parts.append(f"cvd={'OK' if _cvd_snap is not None else 'NONE'}(w={_cvd_w:.2f}" +
                             (f",s={_cvd_s:.1f})" if _cvd_s is not None else ")"))
 
-        logger.info(
-            "[ScoreEngine] COLLECTORS: %s | %s",
-            self.symbol,
-            " ".join(_status_parts),
+        self._last_collectors_log = (
+            "[ScoreEngine] COLLECTORS: %s | %s"
+            % (self.symbol, " ".join(_status_parts))
+        )
+        self._last_coverage_log = (
+            "[ScoreEngine] COVERAGE: %s total=%.2f responded=%.2f real=%.1f%% unavailable=%s no_response=%s old=%.1f%%"
+            % (self.symbol, configurable_total, responded_weight,
+               real_coverage * 100, structurally_excluded, no_response_transient, coverage * 100)
         )
 
         # Log errori specifici (incl. spread, index 8)
@@ -538,17 +550,7 @@ class SignalScoreEngine:
             and k not in structurally_excluded
         ]
 
-        logger.info(
-            "[ScoreEngine] COVERAGE: %s total=%.2f "
-            "responded=%.2f real=%.1f%% "
-            "unavailable=%s no_response=%s "
-            "old=%.1f%%",
-            self.symbol, configurable_total, responded_weight,
-            real_coverage * 100,
-            structurally_excluded, no_response_transient,
-            coverage * 100,
-        )
-        # ── Fine log diagnostico ──
+        # ── Fine log diagnostico (stored as self._last_collectors_log/coverage_log, logged in compute()) ──
 
         # Gate 1: Skip se coverage insufficiente (meno del 50% dei dati disponibili)
         if coverage < 0.5:

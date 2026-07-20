@@ -303,7 +303,7 @@ async def control_session(control: Dict) -> Dict:
         # Start WS client + ExecutionLoop pipeline
         async def _start_with_error_logging():
             """Wrapper that logs any exception from _start_ws_broadcast."""
-            logger.info(">>> START_WITH_ERROR_LOGGING: entering _start_with_error_logging")
+            logger.info("[Session] entering _start_with_error_logging")
             try:
                 await _start_ws_broadcast(active_symbol.lower())
                 
@@ -337,6 +337,54 @@ async def control_session(control: Dict) -> Dict:
                         logger.info(f"Session saved to DB with id={session['db_session_id']} mode={session['mode']} trade_value={session.get('trade_value')}")
                         if guard:
                             guard.complete_phase("db_phase")
+
+                        # ── SESSION LOGGING: attach session_id to all logs + start capture ──
+                        # FIX: moved inside async after DB insert so db_session_id is available
+                        SessionContextFilter.set_session_id(session["session_id"])
+                        db_sid = session["db_session_id"]
+                        session_log_handler = SessionLogHandler(
+                            session_id=session["session_id"],
+                            db_session_id=db_sid,
+                        )
+                        session_log_handler.symbol = active_symbol
+                        session_log_handler.attach()
+
+                        _handler_logger = logger
+                        def _make_persist_callback(h: SessionLogHandler) -> Callable[[str], None]:
+                            _db_sid = h.db_session_id
+                            def _save_to_db(content: str) -> None:
+                                if not _db_sid:
+                                    return
+                                try:
+                                    from app.db.supabase_client import get_supabase
+                                    supabase = get_supabase()
+                                    supabase.table("scalping_sessions").update({
+                                        "log_content": content,
+                                    }).eq("id", _db_sid).execute()
+                                except Exception as e:
+                                    _handler_logger.warning(f"[LIVE_LOG] Failed to persist logs to DB: {e}")
+                            return _save_to_db
+
+                        session_log_handler.set_persist_callback(_make_persist_callback(session_log_handler))
+                        logger.info(f"[LIVE_LOG] Persist callback configured for session {db_sid}")
+                        _execution_state["session_log_handler"] = session_log_handler
+                        logger.info(f"Session log capture started for {session['session_id']}")
+
+                        _LOG_PERSIST_INTERVAL_SEC = 300
+                        async def _periodic_log_persist():
+                            while session.get("status") == "running":
+                                await asyncio.sleep(_LOG_PERSIST_INTERVAL_SEC)
+                                handler = _execution_state.get("session_log_handler")
+                                if handler and handler.log_count > 0:
+                                    ok = handler.persist_now()
+                                    if ok:
+                                        _handler_logger.info(f"[LIVE_LOG] Periodic persist OK ({handler.log_count} entries)")
+                                    else:
+                                        _handler_logger.debug("[LIVE_LOG] Periodic persist skipped (no callback or empty)")
+
+                        _persist_task = asyncio.create_task(_periodic_log_persist(), name="log-persist-periodic")
+                        _execution_state["log_persist_task"] = _persist_task
+
                     elif guard:
                         guard.fail("db_insert_failed: empty response")
                 except Exception as db_e:
@@ -377,62 +425,8 @@ async def control_session(control: Dict) -> Dict:
                 logger.info("Scalping broadcast task completed normally")
         task.add_done_callback(_on_task_done)
         
-        # ── SESSION LOGGING: attach session_id to all logs + start capture ──
-        SessionContextFilter.set_session_id(session["session_id"])
-        db_sid = session.get("db_session_id", "")
-        session_log_handler = SessionLogHandler(
-            session_id=session["session_id"],
-            db_session_id=db_sid,
-        )
-        session_log_handler.symbol = active_symbol
-        session_log_handler.attach()  # aggancia root + forced logger
-        
-        # Soluzione 1: Configura callback per persistenza live su DB
-        _handler_logger = logger  # capture reference for closure
-        def _make_persist_callback(h: SessionLogHandler) -> Callable[[str], None]:
-            """Crea un callback sincrono che salva il contenuto su DB via asyncio thread."""
-            import functools
-            _db_sid = h.db_session_id
-            def _save_to_db(content: str) -> None:
-                if not _db_sid:
-                    return
-                try:
-                    from app.db.supabase_client import get_supabase
-                    supabase = get_supabase()
-                    supabase.table("scalping_sessions").update({
-                        "log_content": content,
-                    }).eq("id", _db_sid).execute()
-                except Exception as e:
-                    _handler_logger.warning(f"[LIVE_LOG] Failed to persist logs to DB: {e}")
-            return _save_to_db
-        
-        if db_sid:
-            session_log_handler.set_persist_callback(_make_persist_callback(session_log_handler))
-            logger.info(f"[LIVE_LOG] Persist callback configured for session {db_sid}")
-        
-        _execution_state["session_log_handler"] = session_log_handler
-        logger.info(f"Session log capture started for {session['session_id']}")
-        
-        # Soluzione 1: Avvia il task periodico di persistenza log (ogni 5 min)
-        _LOG_PERSIST_INTERVAL_SEC = 300  # 5 minuti
-        async def _periodic_log_persist():
-            """Task asincrono che salva i log su DB ogni 5 minuti.
-            
-            Se il backend crasha/riavvia, i log salvati fino all'ultimo persist
-            sono comunque recuperabili dal DB (non più persi completamente).
-            """
-            while session.get("status") == "running":
-                await asyncio.sleep(_LOG_PERSIST_INTERVAL_SEC)
-                handler = _execution_state.get("session_log_handler")
-                if handler and handler.log_count > 0:
-                    ok = handler.persist_now()
-                    if ok:
-                        _handler_logger.info(f"[LIVE_LOG] Periodic persist OK ({handler.log_count} entries)")
-                    else:
-                        _handler_logger.debug("[LIVE_LOG] Periodic persist skipped (no callback or empty)")
-        
-        _persist_task = asyncio.create_task(_periodic_log_persist(), name="log-persist-periodic")
-        _execution_state["log_persist_task"] = _persist_task
+        # SessionContextFilter.set_session_id is called inside _start_with_error_logging
+        # after DB insert, so db_session_id is available for log persistence.
 
         logger.info(f"Session started: {session['session_id']} mode={session['mode']} symbol={active_symbol}")
 

@@ -234,7 +234,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                 timestamp=datetime.fromtimestamp(event.open_time / 1000, tz=timezone.utc),
                 closed=True,
             )
-            logger.info(f"[Candle] PROCESSING closed candle for {event.symbol} @ {candle.close}")
+            logger.info(f"[Candle] CYCLE START: {event.symbol} @ {candle.close}")
             try:
                 decision = await _execution_state.get('loop').process_candle(candle)
                 # Sync actual running strategy to session for frontend display
@@ -242,7 +242,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                     actual_strategy = _execution_state.get('loop')._strategy.name
                     if session.get("strategy") != actual_strategy:
                         session["strategy"] = actual_strategy
-                        logger.info(f"[Candle] Strategy synced to actual: {actual_strategy}")
+                        logger.info(f"[Candle] SYNC: strategy={actual_strategy}")
                         await broadcast_scalping_event("session_restored", session.copy())
                 if decision and decision.execute:
                     pm = _execution_state["position_manager"]
@@ -257,7 +257,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                     # Non trade signals are kept for supervisor analysis.
                     if pm.has_open() and decision.signal_type != "CLOSE":
                         logger.debug(
-                            f">>> SKIP broadcasting signal for {event.symbol}: "
+                            f"[Candle] SKIP broadcast: {event.symbol} "
                             f"has_open=True, signal_type={decision.signal_type} "
                             f"(keeping for supervisor background analysis)"
                         )
@@ -762,6 +762,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                 logger.warning(f"Execution loop processing error: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
+            logger.info(f"[Candle] CYCLE END: {event.symbol}")
             
             try:
                 # ── FIX-2026-06-05: Position update broadcast on every closed candle ──
@@ -877,7 +878,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
             except Exception as e:
                 logger.error(f"Error in position broadcast: {e}")
         else:
-            logger.debug(f">>> LIVE candle update (not closed yet): {event.symbol} close={event.close}")
+            logger.debug(f"[Candle] LIVE update (not closed): {event.symbol} close={event.close}")
 
 
 

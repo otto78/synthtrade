@@ -88,9 +88,9 @@ class ExecutionLoop:
         """Update strategy parameters (used by supervisor)."""
         if self._strategy and hasattr(self._strategy, "update_params"):
             self._strategy.update_params(params)
-            logger.info(f"Strategy params updated: {params}")
+            logger.info(f"[ExecLoop] Strategy params updated: {params}")
         else:
-            logger.warning(f"Cannot update params: strategy has no update_params method. Params: {params}")
+            logger.warning(f"[ExecLoop] Cannot update params: strategy has no update_params method. Params: {params}")
 
     def set_strategy(self, strategy_name: str) -> None:
         """Set strategy directly by name (used by supervisor).
@@ -101,7 +101,7 @@ class ExecutionLoop:
         from app.scalping.strategies.registry import StrategyRegistry
         self._strategy = StrategyRegistry.get(strategy_name)
         self._strategy_overridden = True
-        logger.info(f"Strategy overridden to: {strategy_name} (locked until next session)")
+        logger.info(f"[ExecLoop] Strategy overridden to: {strategy_name} (locked until next session)")
 
     def reset_strategy_override(self) -> None:
         """Reset the strategy override flag — used at session start."""
@@ -181,7 +181,7 @@ class ExecutionLoop:
             else:
                 self._strategy = None
         else:
-            logger.debug(f"Strategy locked: {self._strategy.name if self._strategy else 'None'} (override active)")
+            logger.debug(f"[ExecLoop] Strategy locked: {self._strategy.name if self._strategy else 'None'} (override active)")
 
         if not self._strategy:
             logger.warning(f"{YELLOW}[ExecLoop] no strategy selected for regime={self._current_regime.regime if self._current_regime else 'N/A'}{RESET}")
@@ -235,7 +235,7 @@ class ExecutionLoop:
             try:
                 risk_result = self._risk_manager.check_drawdown(0.0)
                 if not risk_result.approved:
-                    logger.warning(f"Risk check bloccato: {risk_result.reason}")
+                    logger.warning(f"[ExecLoop] Risk check bloccato: {risk_result.reason}")
                     decision = ExecutionDecision(
                         execute=False,
                         reason=f"Risk block: {risk_result.reason}",
@@ -244,7 +244,7 @@ class ExecutionLoop:
                     )
                     return decision
             except Exception as exc:
-                logger.warning(f"Risk check fallito (non bloccante): {exc}")
+                logger.warning(f"[ExecLoop] Risk check fallito (non bloccante): {exc}")
 
         # 8. Notify
         if self._on_signal and decision and decision.execute:
@@ -254,16 +254,16 @@ class ExecutionLoop:
 
     async def on_trade(self, trade_data: dict) -> None:
         """Callback quando un trade viene eseguito."""
-        logger.info(f"Trade executed: {trade_data}")
+        logger.info(f"[ExecLoop] Trade executed: {trade_data}")
         if self._on_trade:
             await self._on_trade(trade_data)
 
     async def start(self) -> None:
         """Avvia il loop (placeholder per ora - verrà integrato con WS)."""
         self._running = True
-        logger.info(f"ExecutionLoop started for {self._symbol}")
+        logger.info(f"[ExecLoop] Started for {self._symbol}")
 
     async def stop(self) -> None:
         """Ferma il loop."""
         self._running = False
-        logger.info(f"ExecutionLoop stopped for {self._symbol}")
+        logger.info(f"[ExecLoop] Stopped for {self._symbol}")

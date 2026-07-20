@@ -147,7 +147,7 @@ class SignalAggregator:
         # ── FIX-2026-06-12: CLOSE sempre permesso ──
         if technical.type == "CLOSE":
             logger.info(
-                f"{GREEN}[Aggregator] 🟢 CLOSE {symbol} sempre permesso (segnale di uscita, non filtrato da bias){RESET}"
+                f"{GREEN}[Aggregator] CLOSE: {symbol} sempre permesso (segnale di uscita, non filtrato da bias){RESET}"
             )
             return ExecutionDecision(
                 execute=True,
@@ -185,7 +185,7 @@ class SignalAggregator:
             if only_one_bias and abs(market_score.total) >= 5.0:
                 if abs(market_score.total) < soglia_reale:
                     logger.info(
-                        f"{RED}[Aggregator] 🔴 BLOCK: {symbol} |score|={market_score.signal_strength:.1f} < threshold "
+                        f"{RED}[Aggregator] BLOCK: {symbol} |score|={market_score.signal_strength:.1f} < threshold "
                         f"(collector concordi, bypass bloccato: {bypass_reason}){RESET}"
                     )
                     return ExecutionDecision(
@@ -197,14 +197,14 @@ class SignalAggregator:
                 else:
                     # Score forte nonostante pochi collector → passa alla soglia normale
                     logger.info(
-                        f"{YELLOW}[Aggregator] 📋 {symbol}: {num_collectors_responded} collector concordi MA score={market_score.total:.1f} "
+                        f"{YELLOW}[Aggregator] BYPASS: {symbol}: {num_collectors_responded} collector concordi MA score={market_score.total:.1f} "
                         f">= soglia {soglia_reale} — bypass blocco, valutazione soglia normale{RESET}"
                     )
 
             # Collector discordi o pochi dati → bypass intelligence (usa solo tecnico)
             if technical.confidence >= min_confidence:
                 logger.info(
-                    f"{YELLOW}[Aggregator] 📋 {mode_label} MODE: {technical.type} {symbol} @ {technical.confidence:.2f} "
+                    f"{YELLOW}[Aggregator] BYPASS: {mode_label} MODE: {technical.type} {symbol} @ {technical.confidence:.2f} "
                     f"(intelligence bypassed: {bypass_reason}){RESET}"
                 )
                 return ExecutionDecision(
@@ -228,7 +228,7 @@ class SignalAggregator:
                 f"intelligence neutrale "
                 f"({num_collectors_responded} collectors, score={market_score.total:.1f}){trend_str}"
             )
-            logger.info(f"{RED}[Aggregator] 🔴 BLOCK: {symbol} {reason}{RESET}")
+            logger.info(f"{RED}[Aggregator] BLOCK: {symbol} {reason}{RESET}")
             return ExecutionDecision(
                 execute=False,
                 reason=reason,
@@ -245,7 +245,7 @@ class SignalAggregator:
                 f"|score|={market_score.signal_strength:.1f} < threshold {soglia}{trend_str}"
             )
             logger.info(
-                f"{RED}[Aggregator] 🔴 BLOCK: {symbol} {reason} (bias={market_score.bias}){RESET}"
+                f"{RED}[Aggregator] BLOCK: {symbol} {reason} (bias={market_score.bias}){RESET}"
             )
             return ExecutionDecision(
                 execute=False,
@@ -263,12 +263,12 @@ class SignalAggregator:
                 technical.source.startswith(s) for s in MEAN_REVERSION_STRATEGIES
             ):
                 logger.info(
-                    f"[Aggregator] ⚡ MEAN-REVERSION SELL permesso (source={technical.source}) "
+                    f"[Aggregator] MEAN-REVERSION: SELL permesso (source={technical.source}) "
                     f"nonostante bias={bias} — chiusura range, non short direzionale"
                 )
             else:
                 reason = f"conflitto intelligence-tecnico: bias={bias}, segnale={technical.type}{trend_str}"
-                logger.info(f"{RED}[Aggregator] 🔴 BLOCK: {symbol} {reason}{RESET}")
+                logger.info(f"{RED}[Aggregator] BLOCK: {symbol} {reason}{RESET}")
                 return ExecutionDecision(
                     execute=False,
                     reason=reason,
@@ -293,7 +293,7 @@ class SignalAggregator:
                         f"(trend_5m={market_score.trend_5m:.1f}, direction=diverging, "
                         f"bias={bias}, source={technical.source})"
                     )
-                    logger.info(f"{RED}[Aggregator] 🔴 BLOCK: {symbol} {reason}{RESET}")
+                    logger.info(f"{RED}[Aggregator] BLOCK: {symbol} {reason}{RESET}")
                     return ExecutionDecision(
                         execute=False,
                         reason=reason,
@@ -305,7 +305,7 @@ class SignalAggregator:
 
                 # TASK-912: Log mean-reversion override correttamente su session_signal_log
                 override_reason = f"MEAN-REVERSION BUY permesso (source={technical.source}) nonostante bias={bias}{trend_str} — chiusura range, non long direzionale"
-                logger.info(f"[Aggregator] ⚡ {override_reason}")
+                logger.info(f"[Aggregator] OVERRIDE: {override_reason}")
                 # Passiamo l'override_reason nel decision object per il logging successivo
                 return ExecutionDecision(
                     execute=True,
@@ -318,7 +318,7 @@ class SignalAggregator:
                 )
             else:
                 reason = f"conflitto intelligence-tecnico: bias={bias}, segnale={technical.type}{trend_str}"
-                logger.info(f"{RED}[Aggregator] 🔴 BLOCK: {symbol} {reason}{RESET}")
+                logger.info(f"{RED}[Aggregator] BLOCK: {symbol} {reason}{RESET}")
                 return ExecutionDecision(
                     execute=False,
                     reason=reason,
@@ -330,7 +330,7 @@ class SignalAggregator:
 
         if bias == "neutral":
             reason = "bias intelligence neutrale, no trade"
-            logger.info(f"{YELLOW}[Aggregator] 🟡 SKIP: {symbol} {reason} (score={market_score.total:.1f}){RESET}")
+            logger.info(f"{YELLOW}[Aggregator] SKIP: {symbol} {reason} (score={market_score.total:.1f}){RESET}")
             return ExecutionDecision(
                 execute=False,
                 reason=reason,
@@ -346,7 +346,7 @@ class SignalAggregator:
             # Se abbiamo volumi molto alti e un sentiment fortemente ribassista dai pattern
             if score_ta < -1:
                 reason = f"TA FILTER BLOCK: anomalia di volume ({vol_anomaly}) con forti pattern BEARISH (score={score_ta})"
-                logger.info(f"{RED}[Aggregator] 🔴 BLOCK: {symbol} {reason}{RESET}")
+                logger.info(f"{RED}[Aggregator] BLOCK: {symbol} {reason}{RESET}")
                 return ExecutionDecision(
                     execute=False,
                     reason=reason,
@@ -358,7 +358,7 @@ class SignalAggregator:
             # Se abbiamo volumi molto alti e un sentiment rialzista dai pattern, spingiamo il confidence
             elif score_ta > 0:
                 boost_amount = 0.2
-                logger.info(f"[Aggregator] 🚀 TA FILTER BOOST: anomalia di volume con pattern BULLISH (score={score_ta}) -> Aggiungo +{boost_amount} al confidence")
+                logger.info(f"[Aggregator] TA BOOST: volume anomalia + pattern BULLISH (score={score_ta}) -> +{boost_amount} confidence")
                 # Lo applichiamo temporaneamente al tecnico per il calcolo combinato
                 technical = TechnicalSignal(
                     type=technical.type,
@@ -375,7 +375,7 @@ class SignalAggregator:
 
         if combined < min_confidence:
             reason = f"confidenza combinata {combined:.2f} < soglia {min_confidence}"
-            logger.info(f"{YELLOW}[Aggregator] 🟡 SKIP: {symbol} {reason}{RESET}")
+            logger.info(f"{YELLOW}[Aggregator] SKIP: {symbol} {reason}{RESET}")
             return ExecutionDecision(
                 execute=False,
                 reason=reason,
@@ -394,7 +394,7 @@ class SignalAggregator:
             reason_str += f" [BOOST TA: {score_ta} patterns]"
             
         logger.info(
-            f"{GREEN}[Aggregator] 🟢 SIGNAL: {technical.type} {symbol} conf={combined:.3f} | {reason_str}{RESET}"
+            f"{GREEN}[Aggregator] SIGNAL: {technical.type} {symbol} conf={combined:.3f} | {reason_str}{RESET}"
         )
         return ExecutionDecision(
             execute=True,

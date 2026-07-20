@@ -397,7 +397,7 @@ class SignalScoreEngine:
                             (f",s={_cvd_s:.1f})" if _cvd_s is not None else ")"))
 
         logger.info(
-            "[ScoreEngine][COLLECTORS] symbol=%s | %s",
+            "[ScoreEngine] COLLECTORS: %s | %s",
             self.symbol,
             " ".join(_status_parts),
         )
@@ -539,10 +539,10 @@ class SignalScoreEngine:
         ]
 
         logger.info(
-            "[ScoreEngine][COVERAGE_REAL] symbol=%s configurable_total=%.2f "
-            "responded_weight=%.2f real_coverage=%.1f%% "
-            "structurally_unavailable=%s no_response_transient=%s "
-            "old_coverage_field=%.1f%%",
+            "[ScoreEngine] COVERAGE: %s total=%.2f "
+            "responded=%.2f real=%.1f%% "
+            "unavailable=%s no_response=%s "
+            "old=%.1f%%",
             self.symbol, configurable_total, responded_weight,
             real_coverage * 100,
             structurally_excluded, no_response_transient,

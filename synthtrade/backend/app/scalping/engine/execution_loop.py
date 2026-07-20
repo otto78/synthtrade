@@ -132,14 +132,14 @@ class ExecutionLoop:
         if not self._candle_buffer.is_ready():
             if buf_before == 0:
                 logger.info(
-                    f"{CYAN}PIPELINE: buffer warmup started for {self._symbol} "
+                    f"{CYAN}[ExecLoop] buffer warmup started for {self._symbol} "
                     f"(need >=50 candles, have {buf_after}){RESET}"
                 )
                 # SAFETY: if warmup was supposed to load 100 candles but buffer is empty,
                 # the warmup may have loaded into a different buffer instance.
                 # Log the buffer IDs for debugging.
                 logger.warning(
-                    f"{YELLOW}PIPELINE: BUFFER MISMATCH — buf_before=0 despite warmup. "
+                    f"{YELLOW}[ExecLoop] BUFFER MISMATCH — buf_before=0 despite warmup. "
                     f"ExecutionLoop._candle_buffer id={id(self._candle_buffer)}. "
                     f"This means the warmup loaded into a DIFFERENT buffer instance. "
                     f"Check that ExecutionLoop receives the SAME CandleBuffer object as the warmup.{RESET}"
@@ -149,7 +149,7 @@ class ExecutionLoop:
                 # candles from the enclosing scope is not possible here. 
                 # But we can at least accumulate WS candles and wait.
             elif buf_before % 10 == 0:
-                logger.info(f"{YELLOW}PIPELINE: buffer {buf_before}/50 candles for {self._symbol}{RESET}")
+                logger.info(f"{YELLOW}[ExecLoop] buffer {buf_before}/50 candles for {self._symbol}{RESET}")
             return None
 
         candles = self._candle_buffer.get()
@@ -184,7 +184,7 @@ class ExecutionLoop:
             logger.debug(f"Strategy locked: {self._strategy.name if self._strategy else 'None'} (override active)")
 
         if not self._strategy:
-            logger.warning(f"{YELLOW}PIPELINE: no strategy selected for regime={self._current_regime.regime if self._current_regime else 'N/A'}{RESET}")
+            logger.warning(f"{YELLOW}[ExecLoop] no strategy selected for regime={self._current_regime.regime if self._current_regime else 'N/A'}{RESET}")
             return None
 
         # 4. Generate technical signal
@@ -199,7 +199,7 @@ class ExecutionLoop:
         ta_score = ta_patterns.get("score", 0) if ta_patterns else 0
         vol_str = f" vol_anomaly={vol_anomaly}" if vol_anomaly else ""
         logger.info(
-            f"{MAGENTA}PIPELINE: {self._symbol} regime={regime_name} "
+            f"{MAGENTA}[ExecLoop] {self._symbol} regime={regime_name} "
             f"strategy={self._strategy.name} "
             f"tech={technical_signal.type}@{technical_signal.confidence:.2f} "
             f"intel={market_score.total:.1f} ({market_score.bias}) "
@@ -210,7 +210,7 @@ class ExecutionLoop:
         # 7. Aggregate signals
         if self._position_manager.has_open() and technical_signal.type not in ("NONE", "CLOSE"):
             pos = self._position_manager.get_open()
-            logger.info(f">>> HOLD: existing {pos.side if pos else 'position'} position matches {technical_signal.type} signal")
+            logger.info(f"[ExecLoop] HOLD: existing {pos.side if pos else 'position'} position matches {technical_signal.type} signal")
             return ExecutionDecision(
                 execute=False,
                 reason="posizione aperta: nessun nuovo ingresso",

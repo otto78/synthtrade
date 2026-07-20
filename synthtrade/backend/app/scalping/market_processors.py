@@ -74,7 +74,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
             
             if stale_seconds > 180:  # 3 minutes
                 logger.warning(
-                    f">>> CANDLE_PROC WATCHDOG: No data for {stale_seconds:.0f}s. "
+                    f"[Candle] WATCHDOG: No data for {stale_seconds:.0f}s. "
                     f"Force-reloading candles via REST API..."
                 )
                 _last_event_time = datetime.now(timezone.utc)  # reset to avoid spamming
@@ -100,19 +100,19 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                 "volume": float(c.volume),
                                 "timestamp": c.timestamp.isoformat() if hasattr(c.timestamp, 'isoformat') else str(c.timestamp),
                             })
-                        logger.info(f">>> CANDLE_PROC WATCHDOG: Loaded {loaded} fresh candles via REST")
+                        logger.info(f"[Candle] WATCHDOG: Loaded {loaded} fresh candles via REST")
                 except Exception as rest_e:
-                    logger.error(f">>> CANDLE_PROC WATCHDOG: REST reload failed: {rest_e}")
+                    logger.error(f"[Candle] WATCHDOG: REST reload failed: {rest_e}")
                 
                 # TASK-907: Full WS and tasks restart
                 try:
                     if not _ws_client_ref._stop_event.is_set():
-                        logger.info(">>> CANDLE_PROC WATCHDOG: Triggering full WS restart...")
+                        logger.info("[Candle] WATCHDOG: Triggering full WS restart...")
                         
                         async def _full_restart():
                             try:
                                 # Stop Vecchio Client (chiude le code)
-                                logger.info(">>> RESTART_WS: Stopping old client...")
+                                logger.info("[Candle] RESTART: Stopping old client...")
                                 await _ws_client_ref.stop()
                                 
                                 # Ferma Supervisor se presente
@@ -121,7 +121,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                     old_supervisor.stop()
                                 
                                 # Cancella vecchi task (incluso me stesso alla fine)
-                                logger.info(">>> RESTART_WS: Cancelling old tasks...")
+                                logger.info("[Candle] RESTART: Cancelling old tasks...")
                                 for t in _execution_state.get("ws_tasks", []):
                                     if t != asyncio.current_task():
                                         t.cancel()
@@ -129,20 +129,20 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                 await asyncio.sleep(2)
 
                                 if _execution_state["session"]["status"] in ("running", "paused"):
-                                    logger.info(">>> RESTART_WS: Calling _start_ws_broadcast(restore_mode=True)...")
+                                    logger.info("[Candle] RESTART: Calling _start_ws_broadcast(restore_mode=True)...")
                                     from app.scalping.pipeline import _start_ws_broadcast
                                     await _start_ws_broadcast(symbol, restore_mode=True)
-                                    logger.info(">>> RESTART_WS: Full restart completed!")
+                                    logger.info("[Candle] RESTART: Full restart completed!")
                                     
                             except Exception as inner_e:
-                                logger.error(f">>> RESTART_WS: Failed: {inner_e}")
+                                logger.error(f"[Candle] RESTART: Failed: {inner_e}")
                         
                         asyncio.create_task(_full_restart(), name="ws-full-restart-watchdog")
                         
                         # Esci da questo `_candle_processor` così muore pulito, il nuovo prenderà il suo posto.
                         break
                 except Exception as ws_e:
-                    logger.error(f">>> CANDLE_PROC WATCHDOG: WS restart failed: {ws_e}")
+                    logger.error(f"[Candle] WATCHDOG: WS restart failed: {ws_e}")
 
                 # ── WAKEUP BALANCE CHECK ────────────────────────────────────
                 # When the PC resumes from standby, the WS watchdog fires after
@@ -151,7 +151,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                 # the inactive period. If spot balance is zero, auto-pause session.
                 if _execution_state["session"].get("mode") == "live":
                     try:
-                        logger.info(">>> WAKEUP: Refreshing balance after standby...")
+                        logger.info("[Candle] WAKEUP: Refreshing balance after standby...")
                         await _refresh_session_balance()
                         bal = _execution_state["session"].get("live_balance", 0)
                         trade_val = float(_execution_state["session"].get("trade_value", 10.0))
@@ -168,9 +168,9 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                 "pause_message": "I tuoi fondi sono in Simple Earn. Spostali su Spot e fai Resume.",
                             })
                         else:
-                            logger.info(f">>> WAKEUP: Spot balance OK: {bal}")
+                            logger.info(f"[Candle] WAKEUP: Spot balance OK: {bal}")
                     except Exception as bal_e:
-                        logger.warning(f">>> WAKEUP: Balance refresh failed (non-fatal): {bal_e}")
+                        logger.warning(f"[Candle] WAKEUP: Balance refresh failed (non-fatal): {bal_e}")
             
             continue
 
@@ -181,7 +181,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
             _first_candle = False
             if len(_execution_state.get('loop')._candle_buffer) < 50:
                 logger.warning(
-                    f">>> CANDLE_PROC SAFETY: buffer has only {len(_execution_state.get('loop')._candle_buffer)} candles. "
+                    f"[Candle] SAFETY: buffer has only {len(_execution_state.get('loop')._candle_buffer)} candles. "
                     f"Force-loading warmup data into ExecutionLoop buffer (id={id(_execution_state.get('loop')._candle_buffer)})..."
                 )
                 try:
@@ -192,9 +192,9 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                         for c in past_candles:
                             if hasattr(c, "timestamp") and hasattr(c, "open"):
                                 _execution_state.get('loop')._candle_buffer.add(c)
-                        logger.info(f">>> CANDLE_PROC SAFETY: Force-loaded {len(past_candles)} candles. Buffer now: {len(_execution_state.get('loop')._candle_buffer)}")
+                        logger.info(f"[Candle] SAFETY: Force-loaded {len(past_candles)} candles. Buffer now: {len(_execution_state.get('loop')._candle_buffer)}")
                 except Exception as reload_err:
-                    logger.error(f">>> CANDLE_PROC SAFETY: Force-load failed: {reload_err}")
+                    logger.error(f"[Candle] SAFETY: Force-load failed: {reload_err}")
 
         # Broadcast to frontend WS clients
         await broadcast_scalping_event("candle", {
@@ -209,7 +209,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
 
         # TRACE: log every event to understand flow (debug-only, too noisy for info)
         buf_size = len(_execution_state.get('loop')._candle_buffer) if _execution_state.get('loop')._candle_buffer else -1
-        logger.debug(f">>> CANDLE EVENT: {event.symbol} is_closed={event.is_closed} close={event.close} buffer={buf_size} session_status={_execution_state['session']['status']}")
+        logger.debug(f"[Candle] EVENT: {event.symbol} is_closed={event.is_closed} close={event.close} buffer={buf_size} session_status={_execution_state['session']['status']}")
 
         # Feed into execution loop for signal generation (only closed candles)
         if event.is_closed:
@@ -234,7 +234,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                 timestamp=datetime.fromtimestamp(event.open_time / 1000, tz=timezone.utc),
                 closed=True,
             )
-            logger.info(f">>> PROCESSING closed candle for {event.symbol} @ {candle.close}")
+            logger.info(f"[Candle] PROCESSING closed candle for {event.symbol} @ {candle.close}")
             try:
                 decision = await _execution_state.get('loop').process_candle(candle)
                 # Sync actual running strategy to session for frontend display
@@ -242,7 +242,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                     actual_strategy = _execution_state.get('loop')._strategy.name
                     if session.get("strategy") != actual_strategy:
                         session["strategy"] = actual_strategy
-                        logger.info(f"Session strategy synced to actual: {actual_strategy}")
+                        logger.info(f"[Candle] Strategy synced to actual: {actual_strategy}")
                         await broadcast_scalping_event("session_restored", session.copy())
                 if decision and decision.execute:
                     pm = _execution_state["position_manager"]
@@ -262,7 +262,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                             f"(keeping for supervisor background analysis)"
                         )
                     else:
-                        logger.info(f">>> DECISION APPROVED -> {decision.reason} | confidence={decision.confidence}")
+                        logger.info(f"[Candle] DECISION APPROVED -> {decision.reason} | confidence={decision.confidence}")
                         # TASK-894/895: log decisione execute su session_signal_log, cattura ID per collegamento
                         # TASK-912: usa il flag is_mean_reversion_override per decidere quale logging function chiamare
                         _ms = _execution_state.get('loop')._last_market_score
@@ -310,10 +310,10 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
 
                     # Simulate trade execution
                     if session["status"] != "running":
-                        logger.debug(f">>> PAUSED: skipping trade execution (status={session['status']})")
+                        logger.debug(f"[Candle] PAUSED: skipping trade execution (status={session['status']})")
                         continue
                     side = decision.signal_type
-                    logger.info(f">>> TRADE: side={side} has_open={pm.has_open()} daily_loss={_check_daily_loss()}")
+                    logger.info(f"[Candle] TRADE: side={side} has_open={pm.has_open()} daily_loss={_check_daily_loss()}")
                     
                     guard = _execution_state.get("session_load_guard")
                     if guard and not guard.is_ready():
@@ -327,7 +327,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
 
                     if not pm.has_open():
                         if side == "SELL":
-                            logger.info("Short selling non implementato — segnale SELL ignorato (feature futura)")
+                            logger.info("[TradeExec] Short selling not supported")
                             # TASK-913: Logga il rifiuto short con decision_type corretto
                             _ms = _execution_state.get('loop')._last_market_score
                             await asyncio.to_thread(
@@ -705,15 +705,15 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                 "pnl_pct": 0.0,
                                 "breakeven_pct": round((_get_fee_rate(_execution_state.get("fee_tier", {}), "taker", 0.001) + _get_fee_rate(_execution_state.get("fee_tier", {}), "maker", 0.001)) * 100, 2),
                             })
-                            logger.info(f">>> TRADE EXECUTED: {side} {event.symbol.upper()} @ {candle.close}")
+                            logger.info(f"[Candle] TRADE EXECUTED: {side} {event.symbol.upper()} @ {candle.close}")
                     else:
                         # If opposite signal, close position
                         pos = pm.get_open()
                         if pos.side.lower() != side.lower():
-                            logger.info(f">>> CLOSING: {pos.side} position opposite to {side} signal")
+                            logger.info(f"[Candle] CLOSING: {pos.side} position opposite to {side} signal")
                             await _close_position_and_record(pm, float(candle.close), pos, reason=decision.reason or "signal")
                         else:
-                            logger.info(f">>> HOLD: existing {pos.side} position matches {side} signal")
+                            logger.info(f"[Candle] HOLD: existing {pos.side} position matches {side} signal")
                             # TASK-894: log hold su session_signal_log (non-blocking)
                             _ms = _execution_state.get('loop')._last_market_score
                             asyncio.create_task(asyncio.to_thread(
@@ -732,7 +732,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
 
                 else:
                     reason_str = decision.reason if decision else "decision=None"
-                    logger.info(f">>> DECISION REJECTED: {reason_str}")
+                    logger.info(f"[Candle] DECISION REJECTED: {reason_str}")
                     # TASK-894: log rejected su session_signal_log (non-blocking)
                     if decision and session.get("db_session_id"):
                         _ms = _execution_state.get('loop')._last_market_score

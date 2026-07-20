@@ -35,7 +35,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     """
     session = _execution_state["session"]
     logger.info(
-        f">>> _start_ws_broadcast() ENTERED for {symbol} | "
+        f"[Pipeline] ENTERED for {symbol} | "
         f"session_status={session['status']} mode={session['mode']} "
         f"restore_mode={restore_mode}"
     )
@@ -61,7 +61,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     _execution_state["cvd_calculator"] = cvd_calculator
 
     _session_mode = _execution_state["session"].get("mode", "paper")
-    logger.info(f">>> _start_ws_broadcast: _session_mode={_session_mode}")
+    logger.info(f"[Pipeline] _session_mode={_session_mode}")
     from app.scalping.engine.execution_loop import ExecutionLoop
     from app.scalping.engine.signal_aggregator import SignalAggregator
     from app.scalping.engine.regime_detector import RegimeDetector
@@ -79,14 +79,14 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     # Must be False in live/demo mode so the full intelligence + technical filter applies.
     execution_loop.paper_mode = (_session_mode != "live" and not settings.exchange_demo)
     _execution_state["loop"] = execution_loop
-    logger.info(f">>> _start_ws_broadcast: ExecutionLoop created, paper_mode={execution_loop.paper_mode}")
+    logger.info(f"[Pipeline] ExecutionLoop created, paper_mode={execution_loop.paper_mode}")
 
     # Warm up the candle buffer with historical candles BEFORE starting WS client.
-    logger.info(f">>> _start_ws_broadcast: starting warmup...")
+    logger.info(f"[Pipeline] starting warmup...")
     try:
         from app.scalping.backtest.historical_loader import HistoricalLoader
         loader = HistoricalLoader()
-        logger.info(f"Pre-loading past 100 1m candles for {symbol.upper()} to warm up buffer...")
+        logger.info(f"[Pipeline] Pre-loading past 100 1m candles for {symbol.upper()} to warm up buffer...")
         past_candles = await loader.load_ohlcv(symbol.upper(), interval="1m", limit=100)
         if past_candles:
             loaded_count = 0
@@ -95,21 +95,21 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     candle_buffer.add(c)
                     loaded_count += 1
             logger.info(
-                f"Successfully loaded {loaded_count} historical candles for {symbol} "
+                f"[Pipeline] Loaded {loaded_count} historical candles for {symbol} "
                 f"(available via HTTP /candles/{symbol}). "
                 f"Buffer size: {len(candle_buffer)}, ready: {candle_buffer.is_ready(50)}"
             )
 
             if len(execution_loop._candle_buffer) < 50:
                 logger.info(
-                    f"Buffer sync: aligning execution_loop buffer with candle_buffer "
+                    f"[Pipeline] Buffer sync: aligning execution_loop buffer with candle_buffer "
                     f"(candle_buffer len={len(candle_buffer)}, "
                     f"execution_loop buffer len={len(execution_loop._candle_buffer)}). "
                     f"Setting direct reference..."
                 )
                 execution_loop._candle_buffer = candle_buffer
                 logger.info(
-                    f"Buffer sync complete. "
+                    f"[Pipeline] Buffer sync complete. "
                     f"Buffer now: {len(execution_loop._candle_buffer)}, "
                     f"ready: {execution_loop._candle_buffer.is_ready(50)}"
                 )
@@ -135,17 +135,17 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                     if _forced_decision:
                         _d = _forced_decision
                         logger.info(
-                            f">>> FORCED FIRST PIPELINE: regime={execution_loop._current_regime.regime if execution_loop._current_regime else 'N/A'} "
+                            f"[Pipeline] FORCED FIRST: regime={execution_loop._current_regime.regime if execution_loop._current_regime else 'N/A'} "
                             f"strategy={execution_loop._strategy.name if execution_loop._strategy else 'N/A'} "
                             f"decision=execute={_d.execute} confidence={_d.confidence:.2f} reason='{_d.reason}' type={_d.signal_type}"
                         )
                 except Exception as forced_err:
-                    logger.warning(f"First forced process_candle failed (non-fatal): {forced_err}")
+                    logger.warning(f"[Pipeline] Forced candle failed (non-fatal): {forced_err}")
 
         else:
-            logger.warning(f"No historical candles returned for {symbol}, buffer will warm up live.")
+            logger.warning(f"[Pipeline] No historical candles returned for {symbol}, buffer will warm up live.")
     except Exception as warmup_err:
-        logger.error(f"Could not warm up candle buffer with historical data: {warmup_err}", exc_info=True)
+        logger.error(f"[Pipeline] Warmup failed with historical data: {warmup_err}", exc_info=True)
 
     # TASK-1107: provider-neutral WS client via factory (OKX or Binance)
     from app.execution.exchange_factory import build_ws_client
@@ -153,14 +153,14 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     _execution_state["ws_client"] = client
     try:
         await asyncio.wait_for(client.start(), timeout=10.0)
-        logger.info(f"BinanceWSClient connected successfully for {symbol}")
+        logger.info(f"[Pipeline] WS connected for {symbol}")
     except asyncio.TimeoutError:
         logger.warning(
-            f"Binance WS connection timed out for {symbol} after 10s. "
+            f"[Pipeline] WS timeout for {symbol} after 10s. "
             f"Pipeline will run with mock data and reconnect on next watchdog cycle."
         )
     except Exception as ws_e:
-        logger.warning(f"Binance WS connection failed for {symbol}: {ws_e}. Running with mock data only.")
+        logger.warning(f"[Pipeline] WS failed for {symbol}: {ws_e}. Running with mock data only.")
 
     if guard:
         guard.complete_phase("pipeline_phase")
@@ -194,7 +194,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         pnl_pct = (pnl / (entry_f * qty_f)) * 100 if entry_f > 0 else 0
 
                         logger.info(
-                            "[RESTORE_RECONCILE] Position was closed externally - "
+                            "[Pipeline] RECONCILE: Position was closed externally - "
                             "fill=%.4f reason=%s pnl=%.2f",
                             fp, reconcile["reason"], pnl
                         )
@@ -214,7 +214,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                             "source": reconcile["source"],
                         })
         except Exception as restore_e:
-            logger.warning(f"[RESTORE_RECONCILE] Reconcile after WS connect failed: {restore_e}")
+            logger.warning(f"[Pipeline] RECONCILE: Reconcile after WS connect failed: {restore_e}")
 
     # Pull events from WS client queues and broadcast to scalping WS clients
     from app.scalping.market_processors import _candle_processor, _trade_processor, _intelligence_processor
@@ -224,7 +224,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
             return
         exc = task.exception()
         if exc:
-            logger.error(f"{name} CRASHED with {type(exc).__name__}: {exc}", exc_info=exc)
+            logger.error(f"[Pipeline] {name} CRASHED with {type(exc).__name__}: {exc}", exc_info=exc)
 
     task_candle = asyncio.create_task(_candle_processor(symbol, restore_mode), name=f"candle-proc-{symbol}")
     task_candle.add_done_callback(lambda t: _task_done_cb("candle_processor", t))
@@ -236,7 +236,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
     _execution_state["ws_tasks"] = [task_candle, task_trade, task_intel]
 
     ws_count = len(_scalping_ws_connections)
-    logger.info(f"Scalping broadcast started for {symbol} — {ws_count} frontend WS client(s) connected")
+    logger.info(f"[Pipeline] Broadcast started for {symbol} — {ws_count} frontend WS client(s) connected")
 
     # Post-start actions for restore_mode
     if restore_mode:

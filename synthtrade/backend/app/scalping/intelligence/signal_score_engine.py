@@ -205,9 +205,9 @@ class SignalScoreEngine:
                 timeout=timeout,
                 adapter=adapter,
             )
-            logger.info(f"[SignalScoreEngine] Created singleton instance for {normalized} (id={id(cls._instances[normalized])})")
+            logger.info(f"[ScoreEngine] Created singleton instance for {normalized} (id={id(cls._instances[normalized])})")
         instance = cls._instances[normalized]
-        logger.info(f"[SignalScoreEngine] get_or_create({symbol}) -> normalized={normalized} id={id(instance)}, cvd_calculator={instance._cvd_calculator is not None}")
+        logger.info(f"[ScoreEngine] get_or_create({symbol}) -> normalized={normalized} id={id(instance)}, cvd_calculator={instance._cvd_calculator is not None}")
         return instance
 
     def _set_cvd_calculator(self, calculator: CVDCalculator) -> None:

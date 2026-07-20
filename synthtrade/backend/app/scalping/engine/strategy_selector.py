@@ -4,11 +4,14 @@ TASK-904: Mapping letto da ScalpingConfigLoader (DB scalping_runtime_config)
 invece di hardcoded. Default rimane hardcoded nel config_loader per retrocompatibilità.
 """
 
+import logging
 from typing import Optional
 
 from app.scalping.models.market import MarketRegime
 from app.scalping.strategies.registry import StrategyRegistry
 from app.scalping.strategies.base import AbstractScalpingStrategy
+
+logger = logging.getLogger(__name__)
 
 
 class StrategySelector:
@@ -52,6 +55,7 @@ class StrategySelector:
             Strategy instance or None if not found.
         """
         strategy_name = self._get_map().get(regime.regime, "ema_cross")
+        logger.info(f"[Strategy] selected={strategy_name} for regime={regime.regime}")
         return StrategyRegistry.get(strategy_name)
 
     def get_name_for_regime(self, regime: MarketRegime) -> str:

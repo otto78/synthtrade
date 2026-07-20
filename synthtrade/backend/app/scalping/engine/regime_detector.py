@@ -9,9 +9,12 @@ Il metodo detect_with_core() riutilizza detect_trend() e detect_volatility()
 da app/core/indicators.py per un'analisi più sofisticata.
 """
 
+import logging
 from typing import List, Optional
 
 from app.scalping.models.market import Candle, MarketRegime
+
+logger = logging.getLogger(__name__)
 
 # TASK-903: numero di candele consecutive richieste per confermare un cambio regime
 REGIME_HYSTERESIS_K = 3
@@ -108,12 +111,14 @@ class RegimeDetector:
             self._committed_confidence = candidate.confidence
             self._pending_regime = None
             self._pending_count = 0
+            logger.info(f"[Regime] initial commit: regime={candidate_regime} confidence={candidate.confidence:.2f}")
             return candidate
 
         # Candidato uguale al committed → reset pending (tutto stabile)
         if candidate_regime == self._committed_regime:
             self._pending_regime = None
             self._pending_count = 0
+            logger.debug(f"[Regime] unchanged: regime={self._committed_regime}")
             return MarketRegime(
                 regime=self._committed_regime,
                 confidence=self._committed_confidence,
@@ -126,18 +131,22 @@ class RegimeDetector:
             # Nuovo candidato → reset counter
             self._pending_regime = candidate_regime
             self._pending_count = 1
+            logger.info(f"[Regime] candidate: {candidate_regime} (was: {self._committed_regime}, pending_count=1/{self._k})")
 
         # Contatore raggiunto K → commit
         if self._pending_count >= self._k:
+            old = self._committed_regime
             self._committed_regime = candidate_regime
             self._committed_confidence = candidate.confidence
             self._pending_regime = None
             self._pending_count = 0
+            logger.info(f"[Regime] CHANGED: {old} -> {candidate_regime} (hysteresis={self._k} candles)")
             return MarketRegime(
                 regime=candidate_regime,
                 confidence=candidate.confidence,
             )
 
+        logger.debug(f"[Regime] pending: {candidate_regime} ({self._pending_count}/{self._k})")
         # Non ancora confermato → restituisci il committed
         return MarketRegime(
             regime=self._committed_regime,

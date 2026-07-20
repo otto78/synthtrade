@@ -143,7 +143,7 @@ async def _on_order_update(event: dict):
     if not pos:
         return
     if pos.oco_order_list_id and order_list_id != pos.oco_order_list_id:
-        logger.debug(f"[ORDER_STREAM] event bracket_id={order_list_id} != pos.bracket_id={pos.oco_order_list_id} — skip")
+        logger.debug(f"[TradeExec] ORDER_STREAM: event bracket_id={order_list_id} != pos.bracket_id={pos.oco_order_list_id} — skip")
         return
 
     if status == "filled":
@@ -162,7 +162,7 @@ async def _on_order_update(event: dict):
             reason = "bracket_filled"
 
         if fill_price <= 0:
-            logger.warning(f"[ORDER_STREAM] FILLED event with fill_price=0 for {symbol} orderId={order_id} — skip close")
+            logger.warning(f"[TradeExec] ORDER_STREAM: FILLED event with fill_price=0 for {symbol} orderId={order_id} — skip close")
             return
 
         # TASK-878: Calcola PnL con commissioni reali
@@ -252,13 +252,13 @@ async def _on_order_update(event: dict):
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
-        logger.info(f"\033[92m✅ Trade chiuso da {reason}: {pos.symbol} @ {fill_price} | PnL={pnl:.2f} ({pnl_pct:.2f}%)\033[0m")
+        logger.info(f"\033[92m[TradeExec] Trade closed {reason}: {pos.symbol} @ {fill_price} | PnL={pnl:.2f} ({pnl_pct:.2f}%)\033[0m")
 
     elif status == "expired":
         # ⚠️ Binance NON garantisce l'ordine FILLED/EXPIRED.
         # Se arriva prima EXPIRED, la posizione è ancora aperta — il FILLED arriverà dopo.
         # Se la posizione è già chiusa (pos=None sopra), usciamo silenziosamente.
-        logger.info(f"ℹ️ OCO leg EXPIRED (attesa FILLED dell'altro leg): {symbol} orderId={order_id}")
+        logger.info(f"[TradeExec] OCO leg EXPIRED (attesa FILLED dell'altro leg): {symbol} orderId={order_id}")
 
 
 async def _on_uds_reconnect_sync():
@@ -306,7 +306,7 @@ async def _on_uds_reconnect_sync():
         pnl_pct = (pnl / (entry_f * qty_f)) * 100 if entry_f > 0 else 0.0
 
         logger.info(
-            "[POSITION_RECONCILE] UDS reconnect: %s closed externally | "
+            "[TradeExec] RECONCILE: UDS reconnect: %s closed externally | "
             "fill=%.4f source=%s reason=%s pnl=%.2f",
             pos.symbol, fill_price, reconcile["source"], reason, pnl,
         )
@@ -362,9 +362,9 @@ async def _start_uds_if_needed():
             on_reconnect_sync=_on_uds_reconnect_sync,
         )
         _execution_state["user_data_stream"] = order_stream
-        logger.info("\033[96m📡 ORDER STREAM ATTIVO: avviato post-bracket confermato [%s]\033[0m", provider)
+        logger.info("\033[96m[TradeExec] ORDER STREAM active: avviato post-bracket confermato [%s]\033[0m", provider)
     except Exception as uds_e:
-        logger.warning("[ORDER_STREAM] Avvio fallito (non-fatal): %s", uds_e)
+        logger.warning("[TradeExec] ORDER_STREAM: Avvio fallito (non-fatal): %s", uds_e)
 
 
 async def _handle_bracket_failed(exchange, symbol: str):
@@ -380,9 +380,9 @@ async def _handle_bracket_failed(exchange, symbol: str):
         from app.execution.exchange_models import SymbolRef
         sym_ref = SymbolRef.from_okx(symbol) if "-" in symbol else SymbolRef.from_compact(symbol)
         await exchange.cancel_open_exit_orders(sym_ref)
-        logger.info(f"[BRACKET_FAILED] Cancelled open exit orders for {symbol}")
+        logger.info(f"[TradeExec] BRACKET_FAILED: Cancelled open exit orders for {symbol}")
     except Exception as e:
-        logger.warning(f"[BRACKET_FAILED] cancel_open_exit_orders failed (non-blocking): {e}")
+        logger.warning(f"[TradeExec] BRACKET_FAILED: cancel_open_exit_orders failed (non-blocking): {e}")
 
     # 2. Market sell con qty reale post-fee (provider-neutral)
     try:
@@ -404,13 +404,13 @@ async def _handle_bracket_failed(exchange, symbol: str):
                     quantity=actual_qty,
                 )
                 await exchange.close_position(close_req)
-                logger.info(f"[BRACKET_FAILED] Emergency market sell executed: {actual_qty} {base_asset}")
+                logger.info(f"[TradeExec] BRACKET_FAILED: Emergency market sell executed: {actual_qty} {base_asset}")
             else:
-                logger.warning(f"[BRACKET_FAILED] qty={actual_qty} < minQty={min_qty} for {symbol} — impossible to sell")
+                logger.warning(f"[TradeExec] BRACKET_FAILED: qty={actual_qty} < minQty={min_qty} for {symbol} — impossible to sell")
         else:
-            logger.error(f"[BRACKET_FAILED] Balance={actual_qty} for {base_asset} — no asset to sell")
+            logger.error(f"[TradeExec] BRACKET_FAILED: Balance={actual_qty} for {base_asset} — no asset to sell")
     except Exception as e:
-        logger.error(f"[BRACKET_FAILED] Emergency market sell failed for {symbol}: {e}")
+        logger.error(f"[TradeExec] BRACKET_FAILED: Emergency market sell failed for {symbol}: {e}")
 
     # 3. Broadcast error a UI
     await broadcast_scalping_event("error", {

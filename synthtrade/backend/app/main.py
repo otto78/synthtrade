@@ -3,6 +3,7 @@ import uuid
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from typing import Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -131,6 +132,53 @@ async def _restore_scalping_session(db) -> None:
             _execution_state["session"].get("trade_value"),
         )
         guard.complete_phase("db_phase")
+
+        # ── SESSION LOGGING: attach session_id to all logs + start capture ──
+        from app.core.logging import SessionContextFilter
+        from app.core.session_log_handler import SessionLogHandler
+        short_session_id = f"sess_{uuid.uuid4().hex[:8]}"
+        SessionContextFilter.set_session_id(short_session_id)
+        session_log_handler = SessionLogHandler(
+            session_id=short_session_id,
+            db_session_id=session_id,
+        )
+        session_log_handler.symbol = _execution_state["session"]["symbol"]
+        session_log_handler.attach()
+
+        def _make_restore_persist_callback(h: SessionLogHandler) -> Callable[[str], None]:
+            _db_sid = h.db_session_id
+            def _save_to_db(content: str) -> None:
+                if not _db_sid:
+                    return
+                try:
+                    from app.db.supabase_client import get_supabase
+                    supabase = get_supabase()
+                    supabase.table("scalping_sessions").update({
+                        "log_content": content,
+                    }).eq("id", _db_sid).execute()
+                except Exception as e:
+                    logger.warning("[LIVE_LOG] Failed to persist logs to DB during restore: %s", e)
+            return _save_to_db
+
+        session_log_handler.set_persist_callback(_make_restore_persist_callback(session_log_handler))
+        _execution_state["session_log_handler"] = session_log_handler
+        logger.info("[LIVE_LOG] Session log capture started for restore %s (db=%s)", short_session_id, session_id)
+
+        _LOG_PERSIST_INTERVAL_SEC = 300
+        async def _periodic_log_persist_restore():
+            while _execution_state["session"].get("status") == "running":
+                await asyncio.sleep(_LOG_PERSIST_INTERVAL_SEC)
+                handler = _execution_state.get("session_log_handler")
+                if handler and handler.log_count > 0:
+                    ok = handler.persist_now()
+                    if ok:
+                        logger.info("[LIVE_LOG] Periodic persist OK (%d entries)", handler.log_count)
+                    else:
+                        logger.debug("[LIVE_LOG] Periodic persist skipped (no callback or empty)")
+
+        _persist_task = asyncio.create_task(_periodic_log_persist_restore(), name="log-persist-restore")
+        _execution_state["log_persist_task"] = _persist_task
+
     except Exception as e:
         logger.error(
             "Failed to populate _execution_state from DB session: %s", e, exc_info=True

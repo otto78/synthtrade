@@ -404,14 +404,16 @@ class SignalScoreEngine:
         _status_parts.append(f"cvd={'OK' if _cvd_snap is not None else 'NONE'}(w={_cvd_w:.2f}" +
                             (f",s={_cvd_s:.1f})" if _cvd_s is not None else ")"))
 
+        _DIM = "\033[2m"
+        _RESET = "\033[0m"
         self._last_collectors_log = (
-            "[ScoreEngine] COLLECTORS: %s | %s"
-            % (self.symbol, " ".join(_status_parts))
+            f"{_DIM}[ScoreEngine] COLLECTORS: {self.symbol} | {' '.join(_status_parts)}{_RESET}"
         )
         self._last_coverage_log = (
-            "[ScoreEngine] COVERAGE: %s total=%.2f responded=%.2f real=%.1f%% unavailable=%s no_response=%s old=%.1f%%"
-            % (self.symbol, configurable_total, responded_weight,
-               real_coverage * 100, structurally_excluded, no_response_transient, coverage * 100)
+            f"{_DIM}[ScoreEngine] COVERAGE: {self.symbol} total={configurable_total:.2f} "
+            f"responded={responded_weight:.2f} real={real_coverage * 100:.1f}% "
+            f"unavailable={structurally_excluded} no_response={no_response_transient} "
+            f"old={coverage * 100:.1f}%{_RESET}"
         )
 
         # Log errori specifici (incl. spread, index 8)

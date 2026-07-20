@@ -33,6 +33,15 @@ from app.core.signal_log_writer import log_signal_decision, log_mean_reversion_d
 
 logger = logging.getLogger(__name__)
 
+# ANSI color codes for decision cycle visibility
+GREEN = "\033[92m"
+RED = "\033[91m"
+YELLOW = "\033[93m"
+CYAN = "\033[96m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+RESET = "\033[0m"
+
 async def _candle_processor(symbol: str, restore_mode: bool = False):
     """Consume candle_queue and broadcast + feed execution loop.
     
@@ -234,7 +243,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                 timestamp=datetime.fromtimestamp(event.open_time / 1000, tz=timezone.utc),
                 closed=True,
             )
-            logger.info(f"[Candle] CYCLE START: {event.symbol} @ {candle.close}")
+            logger.info(f"{BOLD}{CYAN}[Candle] CYCLE START: {event.symbol} @ {candle.close}{RESET}")
             try:
                 decision = await _execution_state.get('loop').process_candle(candle)
                 # Sync actual running strategy to session for frontend display
@@ -262,7 +271,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                             f"(keeping for supervisor background analysis)"
                         )
                     else:
-                        logger.info(f"[Candle] DECISION APPROVED -> {decision.reason} | confidence={decision.confidence}")
+                        logger.info(f"{BOLD}{GREEN}[Candle] DECISION APPROVED -> {decision.reason} | confidence={decision.confidence}{RESET}")
                         # TASK-894/895: log decisione execute su session_signal_log, cattura ID per collegamento
                         # TASK-912: usa il flag is_mean_reversion_override per decidere quale logging function chiamare
                         _ms = _execution_state.get('loop')._last_market_score
@@ -313,7 +322,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                         logger.debug(f"[Candle] PAUSED: skipping trade execution (status={session['status']})")
                         continue
                     side = decision.signal_type
-                    logger.info(f"[Candle] TRADE: side={side} has_open={pm.has_open()} daily_loss={_check_daily_loss()}")
+                    logger.info(f"{CYAN}[Candle] TRADE: side={side} has_open={pm.has_open()} daily_loss={_check_daily_loss()}{RESET}")
                     
                     guard = _execution_state.get("session_load_guard")
                     if guard and not guard.is_ready():
@@ -327,7 +336,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
 
                     if not pm.has_open():
                         if side == "SELL":
-                            logger.info("[TradeExec] Short selling not supported")
+                            logger.info(f"{BOLD}{YELLOW}[Candle] TRADE BLOCKED: SHORT NOT SUPPORTED — SELL signal approved but cannot short{RESET}")
                             # TASK-913: Logga il rifiuto short con decision_type corretto
                             _ms = _execution_state.get('loop')._last_market_score
                             await asyncio.to_thread(
@@ -705,15 +714,15 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                 "pnl_pct": 0.0,
                                 "breakeven_pct": round((_get_fee_rate(_execution_state.get("fee_tier", {}), "taker", 0.001) + _get_fee_rate(_execution_state.get("fee_tier", {}), "maker", 0.001)) * 100, 2),
                             })
-                            logger.info(f"[Candle] TRADE EXECUTED: {side} {event.symbol.upper()} @ {candle.close}")
+                            logger.info(f"{GREEN}[Candle] TRADE EXECUTED: {side} {event.symbol.upper()} @ {candle.close}{RESET}")
                     else:
                         # If opposite signal, close position
                         pos = pm.get_open()
                         if pos.side.lower() != side.lower():
-                            logger.info(f"[Candle] CLOSING: {pos.side} position opposite to {side} signal")
+                            logger.info(f"{YELLOW}[Candle] CLOSING: {pos.side} position opposite to {side} signal{RESET}")
                             await _close_position_and_record(pm, float(candle.close), pos, reason=decision.reason or "signal")
                         else:
-                            logger.info(f"[Candle] HOLD: existing {pos.side} position matches {side} signal")
+                            logger.info(f"{DIM}[Candle] HOLD: existing {pos.side} position matches {side} signal{RESET}")
                             # TASK-894: log hold su session_signal_log (non-blocking)
                             _ms = _execution_state.get('loop')._last_market_score
                             asyncio.create_task(asyncio.to_thread(
@@ -732,7 +741,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
 
                 else:
                     reason_str = decision.reason if decision else "decision=None"
-                    logger.info(f"[Candle] DECISION REJECTED: {reason_str}")
+                    logger.info(f"{RED}[Candle] DECISION REJECTED: {reason_str}{RESET}")
                     # TASK-894: log rejected su session_signal_log (non-blocking)
                     if decision and session.get("db_session_id"):
                         _ms = _execution_state.get('loop')._last_market_score
@@ -762,7 +771,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                 logger.warning(f"Execution loop processing error: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
-            logger.info(f"[Candle] CYCLE END: {event.symbol}")
+            logger.info(f"{BOLD}{CYAN}[Candle] CYCLE END: {event.symbol}{RESET}")
             
             try:
                 # ── FIX-2026-06-05: Position update broadcast on every closed candle ──

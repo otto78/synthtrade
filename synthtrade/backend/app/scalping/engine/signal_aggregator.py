@@ -24,6 +24,8 @@ GREEN = "\033[92m"
 RED = "\033[91m"
 YELLOW = "\033[93m"
 CYAN = "\033[96m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
 RESET = "\033[0m"
 
 
@@ -394,7 +396,7 @@ class SignalAggregator:
             reason_str += f" [BOOST TA: {score_ta} patterns]"
             
         logger.info(
-            f"{GREEN}[Aggregator] SIGNAL: {technical.type} {symbol} conf={combined:.3f} | {reason_str}{RESET}"
+            f"{BOLD}{GREEN}[Aggregator] SIGNAL: {technical.type} {symbol} conf={combined:.3f} | {reason_str}{RESET}"
         )
         return ExecutionDecision(
             execute=True,

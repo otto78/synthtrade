@@ -210,7 +210,7 @@ class ExecutionLoop:
         # 7. Aggregate signals
         if self._position_manager.has_open() and technical_signal.type not in ("NONE", "CLOSE"):
             pos = self._position_manager.get_open()
-            logger.info(f"[ExecLoop] HOLD: existing {pos.side if pos else 'position'} position matches {technical_signal.type} signal")
+            logger.info(f"{DIM}[ExecLoop] HOLD: existing {pos.side if pos else 'position'} position matches {technical_signal.type} signal{RESET}")
             return ExecutionDecision(
                 execute=False,
                 reason="posizione aperta: nessun nuovo ingresso",

@@ -120,6 +120,18 @@ async def scalping_websocket(ws: WebSocket):
     logger.info("Scalping WS client connected (%d total)", len(_scalping_ws_connections))
 
     # ── FIX-2026-06-05: Send initial state to newly connected client ──
+    # FIX: also send session state so frontend is in sync after reconnect
+    session_data = _execution_state.get("session", {})
+    if session_data.get("status") in ("running", "paused"):
+        try:
+            await ws.send_json({
+                "type": "session_restored",
+                "payload": session_data.copy(),
+                "timestamp": _now(),
+            })
+        except Exception:
+            pass
+
     pm = _execution_state["position_manager"]
     pos = pm.get_open()
     if pos:

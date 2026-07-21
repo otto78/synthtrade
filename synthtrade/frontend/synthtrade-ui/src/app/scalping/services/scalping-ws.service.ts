@@ -191,7 +191,7 @@ export class ScalpingWsService implements OnDestroy {
   /** Backend errors (e.g. live trade failed, insufficient funds) */
   error$ = new Subject<ErrorEventPayload>();
   /** Session updates (balance, status changes) */
-  sessionRestored$ = new Subject<ScalpingSession>();
+  sessionRestored$ = new BehaviorSubject<ScalpingSession | null>(null);
 
   /** Stato connessione WS — usato per mostrare banner 'Reconnecting...' in UI */
   connectionStatus$ = new BehaviorSubject<WsConnectionStatus>('disconnected');

@@ -5,6 +5,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { ConfigService } from '../../core/services/config.service';
 import { DashboardService } from '../../core/services/dashboard.service';
 import { LLMModelsService } from '../../core/services/llm-models.service';
+import { SessionApiService } from '../../scalping/services/session-api.service';
 import { UiService } from '../../core/services/ui.service';
 import { BehaviorSubject, tap, catchError, of, Subscription, interval } from 'rxjs';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
@@ -42,12 +43,13 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
         @if (engineStatus()) {
           <span
             class="engine-badge status-badge"
-            [class.running]="engineStatus() === 'RUNNING'"
-            [class.stopped]="engineStatus() !== 'RUNNING'"
-            [class.offline]="engineStatus() === 'OFFLINE' || engineStatus() === '—'"
+            [class.running]="computedEngineStatus() === 'RUNNING'"
+            [class.stopped]="computedEngineStatus() !== 'RUNNING' && computedEngineStatus() !== 'PAUSED'"
+            [class.paused]="computedEngineStatus() === 'PAUSED'"
+            [class.offline]="computedEngineStatus() === 'OFFLINE' || computedEngineStatus() === '—'"
           >
             <span class="engine-indicator"></span>
-            <span class="engine-label">{{ engineStatus() }}</span>
+            <span class="engine-label">{{ computedEngineStatus() }}</span>
           </span>
         }
 
@@ -244,7 +246,14 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
     }
     .engine-badge.running .engine-indicator { background: #0ECB81; }
     .engine-badge.stopped .engine-indicator { background: #F0B90B; }
-    .engine-badge.offline .engine-indicator { background: #F6465D; }
+    .engine-badge.offline .engine-indicator { background: #9e9e9e; }
+
+    .engine-badge.paused {
+      background: rgba(255, 179, 0, 0.1);
+      border-color: rgba(255, 179, 0, 0.3);
+      color: #ffb300;
+    }
+    .engine-badge.paused .engine-indicator { background: #ffb300; }
 
     /* LLM Status Badge */
     .clickable {
@@ -389,6 +398,7 @@ export class TopbarComponent implements OnInit, OnDestroy {
   ui = inject(UiService);
   private dashboardService = inject(DashboardService);
   private llmModelsService = inject(LLMModelsService);
+  private sessionApi = inject(SessionApiService);
   private sub = new Subscription();
 
   mode$ = this.configService.getMode();
@@ -399,6 +409,18 @@ export class TopbarComponent implements OnInit, OnDestroy {
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
 
   engineStatus = signal<string>('');
+  sessionStatus = signal<string>('idle');
+
+  // Computed status that takes PAUSED into account
+  get computedEngineStatus(): string {
+    const sStatus = this.sessionStatus();
+    const eStatus = this.engineStatus();
+    if (eStatus === 'RUNNING' && sStatus === 'paused') {
+      return 'PAUSED';
+    }
+    return eStatus;
+  }
+
   llmStatus = signal<'all_ok' | 'partial' | 'all_down'>('all_ok');
 
   // Confirm dialog per switch a LIVE
@@ -423,6 +445,15 @@ export class TopbarComponent implements OnInit, OnDestroy {
     this.sub.add(
       this.llmModelsService.checkCompleted.subscribe(res => {
         this.llmStatus.set(res.summary);
+      })
+    );
+    this.sub.add(
+      this.sessionApi.session$.subscribe((session) => {
+        if (session) {
+          this.sessionStatus.set(session.status);
+        } else {
+          this.sessionStatus.set('idle');
+        }
       })
     );
   }

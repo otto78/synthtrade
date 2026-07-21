@@ -222,6 +222,8 @@ private _toastCounter = 0;
           this._prevStatus !== 'disconnected' // Non mostrarlo alla prima connessione
         ) {
           this._showReconnectedFlash();
+          // FIX: re-fetch session state after WS reconnect to stay in sync
+          this.sessionApi.getStatus().subscribe();
         }
         this._prevStatus = status;
         this.wsStatus = status;
@@ -239,9 +241,11 @@ private _toastCounter = 0;
     // Sync session state from WebSocket (e.g. live balance updates)
     this._sub.add(
       this.wsService.sessionRestored$.subscribe((session) => {
-this.sessionApi.updateSession(session);
-     })
-     );
+        if (session) {
+          this.sessionApi.updateSession(session);
+        }
+      })
+    );
 
 // Listen for HTTP errors via custom event (fallback when WS error races with HTTP response)
      window.addEventListener('scalping-error', this._httpErrorCallback as EventListener);

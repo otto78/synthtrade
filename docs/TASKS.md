@@ -1,6 +1,6 @@
 # TASKS.md — SynthTrade Task Tracking
 
-> **Aggiornato:** 2026-07-17 09:51. Task completati in `docs/ARCHIVE_TASKS.md`. Recap sessione: `docs/recap/2026-07-16_trading-safety-improvements.md`.
+> **Aggiornato:** 2026-07-21. Task completati in `docs/ARCHIVE_TASKS.md`. Recap sessione: `docs/recap/2026-07-16_trading-safety-improvements.md`.
 
 ---
 
@@ -8,7 +8,7 @@
 
 ## TASK-1166 — Refactor router.py: estrazione moduli
 
-**Status:** COMPLETATO (Fase 1-3)
+**Status:** COMPLETATO ✅
 **Priorita:** MEDIA
 **Effort totale:** ~2 giorni
 **Dipendenze:** TASK-1160, TASK-1164 (completati)
@@ -101,7 +101,7 @@ Estrarre: `_save_open_position_to_db`, `_update_closed_position_in_db`
 
 ---
 
-### Sub-TASK-1166.C — Trade executor + session lifecycle
+### [COMPLETATO] Sub-TASK-1166.C — Trade executor + session lifecycle
 
 **Effort:** ~2h
 **Dipende da:** 1166.A, 1166.B

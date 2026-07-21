@@ -202,6 +202,18 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         await _update_closed_position_in_db(
                             pos, fp, pnl, pnl_pct, reconcile["reason"]
                         )
+                        # FIX: append to trade_history so session counters are accurate
+                        _execution_state["trade_history"].append({
+                            "symbol": pos.symbol,
+                            "side": pos.side,
+                            "entry_price": entry_f,
+                            "exit_price": fp,
+                            "quantity": qty_f,
+                            "pnl": round(pnl, 2),
+                            "pnl_pct": round(pnl_pct, 2),
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "signal_reason": reconcile["reason"],
+                        })
                         await broadcast_scalping_event("position_reconciled_externally", {
                             "symbol": pos.symbol,
                             "side": pos.side,

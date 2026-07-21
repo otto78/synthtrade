@@ -40,7 +40,7 @@ import { SessionApiService } from '../services/session-api.service';
           </thead>
           <tbody>
             <tr *ngFor="let trade of trades">
-              <td>{{ trade.timestamp | date:'shortTime' }}</td>
+              <td>{{ trade.timestamp | date:'MM/dd HH:mm:ss' }}</td>
               <td [ngClass]="trade.side.toLowerCase()">{{ trade.side }}</td>
               <td>{{ trade.entry_price | number:'1.2-2' }}</td>
               <td>{{ trade.exit_price | number:'1.2-2' }}</td>
@@ -108,12 +108,19 @@ export class TradeLogComponent implements OnInit, OnDestroy {
     // Step 2: Subscribe to live WS trade_closed events — deduplicate
     this.sub.add(
       this.ws.tradeClosed$.subscribe((trade) => {
+        // TASK-1180: ignore ghost trades closed without a known fill (from reconciliation)
+        if (trade.signal_reason === 'external_close_unknown_price') {
+          return;
+        }
+        
         const key = `${trade.entry_price}|${trade.exit_price}|${trade.symbol}`;
         if (this.seenKeys.has(key)) {
           return; // already in the list
         }
         this.seenKeys.add(key);
         this.trades = [trade, ...this.trades];
+        // Ensure chronological sort always
+        this.trades.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         this.cdr.markForCheck();
         this.cdr.detectChanges();
       })

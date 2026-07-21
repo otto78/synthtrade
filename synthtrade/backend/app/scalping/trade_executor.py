@@ -314,6 +314,18 @@ async def _on_uds_reconnect_sync():
         _execution_state["position_manager"].close_position(Decimal(str(fill_price)))
         await _update_closed_position_in_db(pos, fill_price, pnl, pnl_pct, reason)
         await _refresh_session_balance()
+        # FIX: append to trade_history so session counters are accurate
+        _execution_state["trade_history"].append({
+            "symbol": pos.symbol,
+            "side": pos.side,
+            "entry_price": entry_f,
+            "exit_price": fill_price,
+            "quantity": qty_f,
+            "pnl": round(pnl, 2),
+            "pnl_pct": round(pnl_pct, 2),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "signal_reason": reason,
+        })
 
         await broadcast_scalping_event("position_reconciled_externally", {
             "symbol": pos.symbol,

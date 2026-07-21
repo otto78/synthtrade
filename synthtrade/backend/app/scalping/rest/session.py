@@ -442,9 +442,12 @@ async def control_session(control: Dict) -> Dict:
         # TASK-1128 FIX: In live mode, also liquidate any untracked base asset balance.
         # Race condition: if the session is stopped between the market BUY and the bracket
         # registration, pm.get_open() returns None but we still hold the base asset.
+        # FIX: only run this check if the session actually executed trades — otherwise
+        # there's no orphaned balance to recover and the check is unnecessary noise.
         _stop_mode = _execution_state.get("session", {}).get("mode", "paper")
         _stop_exchange = _execution_state.get("exchange")
-        if not pos and _stop_mode == "live" and _stop_exchange:
+        _had_trades = len(_execution_state.get("trade_history", [])) > 0
+        if not pos and _stop_mode == "live" and _stop_exchange and _had_trades:
             active_sym = _execution_state.get("session", {}).get("symbol", "")
             if active_sym:
                 try:

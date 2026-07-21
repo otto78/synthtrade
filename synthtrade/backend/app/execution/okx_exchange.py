@@ -626,6 +626,45 @@ class OkxExchangeAdapter:
             MarketOrderRequest(symbol=request.symbol, side=opp_side, quantity=request.quantity)
         )
 
+    async def get_order_by_id(self, symbol: SymbolRef, ord_id: str) -> dict[str, Any]:
+        """Fetch singolo ordine per ordId via GET /api/v5/trade/order.
+
+        TASK-1186: Usato per recuperare avgPx reale dopo un market order asincrono OKX.
+        OKX spesso risponde alla POST del market order con avgPx vuoto perché il fill
+        avviene in modo asincrono. Questo metodo permette di fare polling post-placement.
+
+        Returns:
+            dict con campi OKX: ordId, avgPx, accFillSz, state, etc.
+            Ritorna {} se l'ordine non è trovato o la chiamata fallisce.
+        """
+        path = "/api/v5/trade/order"
+        url = settings.OKX_BASE_URL.rstrip("/") + path
+        query_string = f"instId={symbol.okx}&ordId={ord_id}"
+        # OKX GET signing: prehash includes query string as if it were the body
+        headers = self._sign_headers("GET", path + "?" + query_string)
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(url, headers=headers, params={"instId": symbol.okx, "ordId": ord_id})
+                if resp.status_code != 200:
+                    logger.warning("[GET_ORDER_BY_ID] HTTP %s for ordId=%s", resp.status_code, ord_id)
+                    return {}
+                data = resp.json()
+                if data.get("code") != "0":
+                    logger.warning(
+                        "[GET_ORDER_BY_ID] OKX error code=%s msg=%s for ordId=%s",
+                        data.get("code"), data.get("msg"), ord_id,
+                    )
+                    return {}
+                result = data.get("data", [{}])[0]
+                logger.debug(
+                    "[GET_ORDER_BY_ID] ordId=%s avgPx=%s accFillSz=%s state=%s",
+                    ord_id, result.get("avgPx"), result.get("accFillSz"), result.get("state"),
+                )
+                return result
+        except Exception as e:
+            logger.warning("[GET_ORDER_BY_ID] Failed for ordId=%s: %s", ord_id, e)
+            return {}
+
     async def get_open_orders(self, symbol: str) -> list[dict[str, Any]]:
         """Return open orders for a symbol (both regular and algo/OCO).
 
@@ -638,8 +677,9 @@ class OkxExchangeAdapter:
         # 1. Check pending algo orders (OCO brackets via order-algo)
         try:
             path = "/api/v5/trade/orders-algo-pending"
+            query_string = f"instType=SPOT&instId={sym_ref.okx}&ordType=oco"
             url = settings.OKX_BASE_URL.rstrip("/") + path
-            headers = self._sign_headers("GET", path)
+            headers = self._sign_headers("GET", path + "?" + query_string)
             params = {"instType": "SPOT", "instId": sym_ref.okx, "ordType": "oco"}
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url, headers=headers, params=params)
@@ -653,8 +693,9 @@ class OkxExchangeAdapter:
         # 2. Check regular open orders via direct REST (TASK-1164)
         try:
             path = "/api/v5/trade/orders-pending"
+            query_string = f"instType=SPOT&instId={sym_ref.okx}"
             url = settings.OKX_BASE_URL.rstrip("/") + path
-            headers = self._sign_headers("GET", path)
+            headers = self._sign_headers("GET", path + "?" + query_string)
             params = {"instType": "SPOT", "instId": sym_ref.okx}
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url, headers=headers, params=params)
@@ -682,8 +723,9 @@ class OkxExchangeAdapter:
         # Try fills endpoint first (shows actual trade executions)
         try:
             path = "/api/v5/trade/fills"
+            query_string = f"instType=SPOT&instId={sym_ref.okx}"
             url = settings.OKX_BASE_URL.rstrip("/") + path
-            headers = self._sign_headers("GET", path)
+            headers = self._sign_headers("GET", path + "?" + query_string)
             params = {"instType": "SPOT", "instId": sym_ref.okx}
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url, headers=headers, params=params)
@@ -709,8 +751,9 @@ class OkxExchangeAdapter:
         # Fallback: try orders-history for any filled algo orders
         try:
             path = "/api/v5/trade/orders-history"
+            query_string = f"instType=SPOT&instId={sym_ref.okx}&state=filled"
             url = settings.OKX_BASE_URL.rstrip("/") + path
-            headers = self._sign_headers("GET", path)
+            headers = self._sign_headers("GET", path + "?" + query_string)
             params = {"instType": "SPOT", "instId": sym_ref.okx, "state": "filled"}
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url, headers=headers, params=params)
@@ -848,8 +891,9 @@ class OkxExchangeAdapter:
         """Fetch pending regular orders via direct REST (TASK-1164)."""
         try:
             path = "/api/v5/trade/orders-pending"
+            query_string = f"instType=SPOT&instId={symbol.okx}"
             url = settings.OKX_BASE_URL.rstrip("/") + path
-            headers = self._sign_headers("GET", path)
+            headers = self._sign_headers("GET", path + "?" + query_string)
             params = {"instType": "SPOT", "instId": symbol.okx}
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url, headers=headers, params=params)
@@ -887,8 +931,9 @@ class OkxExchangeAdapter:
         try:
             # 1. Fetch pending orders
             path = "/api/v5/trade/orders-pending"
+            query_string = f"instType=SPOT&instId={symbol.okx}"
             url = settings.OKX_BASE_URL.rstrip("/") + path
-            headers = self._sign_headers("GET", path)
+            headers = self._sign_headers("GET", path + "?" + query_string)
             params = {"instType": "SPOT", "instId": symbol.okx}
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url, headers=headers, params=params)
@@ -932,8 +977,9 @@ class OkxExchangeAdapter:
         """Fetch order details via direct OKX REST (TASK-1164)."""
         try:
             path = "/api/v5/trade/order"
+            query_string = f"instType=SPOT&ordId={order_id}"
             url = settings.OKX_BASE_URL.rstrip("/") + path
-            headers = self._sign_headers("GET", path)
+            headers = self._sign_headers("GET", path + "?" + query_string)
             params = {"instType": "SPOT", "ordId": order_id}
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url, headers=headers, params=params)
@@ -950,8 +996,9 @@ class OkxExchangeAdapter:
         sym_ref = SymbolRef.from_okx(symbol) if "-" in symbol else SymbolRef.from_compact(symbol)
         try:
             path = "/api/v5/trade/orders-history-archive"
+            query_string = f"instType=SPOT&instId={sym_ref.okx}&limit={limit}"
             url = settings.OKX_BASE_URL.rstrip("/") + path
-            headers = self._sign_headers("GET", path)
+            headers = self._sign_headers("GET", path + "?" + query_string)
             params = {"instType": "SPOT", "instId": sym_ref.okx, "limit": str(limit)}
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url, headers=headers, params=params)
@@ -971,8 +1018,9 @@ class OkxExchangeAdapter:
         """
         try:
             path = "/api/v5/trade/fills"
+            query_string = f"instType=SPOT&ordId={order_id}"
             url = settings.OKX_BASE_URL.rstrip("/") + path
-            headers = self._sign_headers("GET", path)
+            headers = self._sign_headers("GET", path + "?" + query_string)
             params = {"instType": "SPOT", "ordId": order_id}
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url, headers=headers, params=params)

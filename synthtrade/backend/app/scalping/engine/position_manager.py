@@ -48,6 +48,9 @@ class Position:
     # (stesso pattern di TASK-825/831 per gli ID del bracket).
     tp_price: Optional[Decimal] = None
     sl_price: Optional[Decimal] = None
+    # TASK-1185: OKX ordId dell'ordine market di apertura.
+    # Distinto da order_id (legacy) — salvato come exchange_order_id in DB.
+    entry_order_id: Optional[str] = None
 
 
 class PositionManager:
@@ -76,6 +79,7 @@ class PositionManager:
         order_id: Optional[str] = None,
         entry_commission: Optional[float] = None,
         entry_commission_asset: Optional[str] = None,
+        entry_order_id: Optional[str] = None,
     ) -> Position:
         """Apre una nuova posizione.
 
@@ -83,6 +87,8 @@ class PositionManager:
         (commissione reale dall'ordine market), vengono salvati subito sulla
         posizione invece di restare None e far scattare il fallback a fee tier
         in ogni calcolo di PnL successivo.
+        TASK-1185: entry_order_id = OKX ordId del market order di apertura.
+        Salvato come exchange_order_id in DB per tracciabilità e restore.
         """
         position = Position(
             symbol=symbol,
@@ -92,6 +98,7 @@ class PositionManager:
             order_id=order_id,
             entry_commission=entry_commission,
             entry_commission_asset=entry_commission_asset,
+            entry_order_id=entry_order_id,
         )
         self._positions.append(position)
         return position

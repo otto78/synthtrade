@@ -119,8 +119,9 @@ def mock_supabase_and_broadcast():
     """Patch DB and broadcast so tests never hit real Supabase or WebSocket."""
     with (
         patch("app.scalping.router.get_supabase") as mock_db,
-        patch("app.scalping.router.broadcast_scalping_event", new_callable=AsyncMock) as mock_bc,
-        patch("app.scalping.router.asyncio.to_thread", side_effect=lambda fn, *a, **kw: asyncio.coroutine(fn)(*a, **kw) if asyncio.iscoroutinefunction(fn) else asyncio.get_event_loop().run_in_executor(None, fn)),
+        patch("app.scalping.trade_executor.broadcast_scalping_event", new_callable=AsyncMock) as mock_bc,
+        patch("app.scalping.session_lifecycle.broadcast_scalping_event", new_callable=AsyncMock),
+        patch("app.scalping.trade_executor.asyncio.to_thread", side_effect=lambda fn, *a, **kw: asyncio.coroutine(fn)(*a, **kw) if asyncio.iscoroutinefunction(fn) else asyncio.get_event_loop().run_in_executor(None, fn)),
     ):
         db = MagicMock()
         # Simulate successful DB insert returning a row with id
@@ -184,7 +185,7 @@ async def test_1111a_happy_path_tp_fill(adapter, order_stream, mock_supabase_and
 
     # 6. Simulate TP fill event from OKX algo-orders channel
     tp_event = adapter.simulate_tp_fill(bracket_res)
-    with patch("app.scalping.router._update_closed_position_in_db", new_callable=AsyncMock) as mock_db_close:
+    with patch("app.scalping.trade_executor._update_closed_position_in_db", new_callable=AsyncMock) as mock_db_close:
         await order_stream.fire_fill(tp_event)
 
         # 7. Position should be closed
@@ -345,7 +346,7 @@ async def test_1111d_restore_open_position_with_bracket(adapter, order_stream, m
         "leg": "take_profit",
     }
 
-    with patch("app.scalping.router._update_closed_position_in_db", new_callable=AsyncMock) as mock_close:
+    with patch("app.scalping.trade_executor._update_closed_position_in_db", new_callable=AsyncMock) as mock_close:
         await order_stream.fire_fill(tp_event)
 
         assert not _execution_state["position_manager"].has_open()
@@ -417,7 +418,8 @@ def test_1111f_net_to_gross_pricing_okx_fees():
     tp_gross_pct = _net_to_gross_pct(tp_net_pct, entry_fee, exit_fee)
 
     tp_price = round(entry_price * (1 + tp_gross_pct / 100), 1)
-    sl_price = round(_sl_price_from_entry(entry_price, "BUY", sl_net_pct, entry_fee, exit_fee), 1)
+    sl_result = _sl_price_from_entry(entry_price, "BUY", sl_net_pct, entry_fee, exit_fee)
+    sl_price = round(sl_result[0], 1)
 
     assert tp_gross_pct > tp_net_pct, (
         f"Gross TP {tp_gross_pct:.4f}% should exceed net {tp_net_pct}% (fee overhead)"

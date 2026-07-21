@@ -4,6 +4,76 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.21 — 2026-07-21
+
+**Milestone:** Fix critico — TP fill non rilevato da polling REST (2026-07-15)
+
+**Problema:** Il TP su BTC-EUR si è eseguito su OKX alle 17:54, ma l'app non lo ha rilevato. La posizione fantasma è rimasta aperta per ~8 minuti fino allo stop manuale (18:02). Reconciliation allo stop ha trovato il fill in 5 secondi.
+
+**Root cause (doppia):**
+1. **seen_algos poisoning:** il seed in `_start_polling()` aggiungeva gli algoId dei pending algos a `seen_algos`. Quando l'algo faceva fill, compariva in `orders-history` con lo stesso algoId → saltato dal check `algo_id not in seen_algos`.
+2. **Task asyncio morto silenziosamente:** il polling loop ha subito 9 errori di connessione in 5 ore (14:08→17:50), con frequenza crescente. L'ultimo errore alle 17:50:09, poi silenzio totale per 12 minuti. Nessuno monitorava lo stato del task.
+
+**Fix applicati:**
+- ✅ Rimosso il seed dei pending algos da `seen_algos` (inutile: `_normalize_algo_order` filtra `state="live"` → `None`)
+- ✅ Spostato `seen_algos.add(algo_id)` in step 3 **dopo** l'emit riuscito (prima era prima)
+- ✅ Aggiunto health check in `session_health_job`: se `_listen_task.done()` è True, riavvia automaticamente lo stream
+
+**File modificati:**
+- `synthtrade/backend/app/execution/okx_order_event_stream.py`
+- `synthtrade/backend/app/scheduler/scalping_jobs.py`
+
+**Lezione appresa:** Il polling REST come unico meccanismo di rilevamento fill richiede robustezza totale. Non basta avere un try/except nel loop — serve anche un health check esterno che rilevi il task morto e lo riavvii.
+
+---
+
+### v1.4.20 — 2026-07-17
+
+**Milestone:** Refactoring `router.py` (Fase 1: Moduli Foglia)
+
+**Completato:**
+- ✅ **TASK-1166 (Phase 1):** Iniziato il refactoring del monolitico `router.py` estraendo moduli chiave.
+- ✅ Estratto `_state.py` per gestire le variabili globali (`_execution_state`, websocket array, ecc.).
+- ✅ Estratto `pricing.py` per le funzioni pure di pricing e size calculations.
+- ✅ Estratto `reconciliation.py` contenente `_reconcile_position_with_exchange`.
+- ✅ Estratto `db_ops.py` contenente `_save_open_position_to_db` e `_update_closed_position_in_db`.
+- ✅ Test suite completa eseguita con successo senza errori di sintassi e import risolti.
+- ✅ Il flusso `algoId` per la tracciabilità e riconciliazione degli ordini condizionali è confermato essere persistente e corretto in DB.
+
+**Decisioni chiave:**
+- `router.py` manterrà il ruolo di orchestratore esportando gli oggetti necessari all'esterno per backward compatibility.
+- Architettura a moduli con separazione chiara (state -> leaf modules -> trade execution -> REST endpoints).
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/router.py`
+- `synthtrade/backend/app/scalping/_state.py` (creato)
+- `synthtrade/backend/app/scalping/pricing.py` (creato)
+- `synthtrade/backend/app/scalping/reconciliation.py` (creato)
+- `synthtrade/backend/app/scalping/db_ops.py` (creato)
+- `docs/TASKS.md`
+- `docs/ARCHIVE_TASKS.md`
+
+### v1.4.19 — 2026-07-17
+
+**Milestone:** Completamento epica AlgoId Flow & UI Fixes
+
+**Completato:**
+- ✅ **TASK-1180:** Trade fantasma rimosso da UI filtrando `external_close_unknown_price`.
+- ✅ **TASK-1181:** Entry price ora riflette il fill reale calcolato via `get_order_by_id`.
+- ✅ **TASK-1182:** Badge "RUNNING" / "PAUSED" si sincronizza correttamente con lo stato sessione.
+- ✅ **TASK-1183:** Trade Log mostra data e ordina cronologicamente in modo corretto.
+- ✅ **TASK-1184, 1185, 1186, 1187, 1188:** Unit test estesi per riconciliazione (A-E), linkage `entry_order_id`, post-fill async fetch, db restore di pos_obj e audit script eseguiti con successo.
+
+**Contesto:** Il flusso di riconciliazione su OKX EU era afflitto da entry prices non realistici e side-effects in UI come ghost trades. Connettendo l'`entry_order_id` in DB, il backend ora rintraccia con 3 retry il fill reale asincrono del market order e lo associa nativamente al DB e al flusso WebSocket `position`. La topbar UI è stata migliorata reattivamente per session states asincroni.
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/router.py` (retry fill, `entry_order_id`)
+- `synthtrade/backend/tests/unit/test_reconcile_position.py` (casi A-E)
+- `synthtrade/backend/app/main.py` (ghost trade filter)
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/trade-log.component.ts` (timestamp date + dedup)
+- `synthtrade/frontend/synthtrade-ui/src/app/layout/topbar/topbar.component.ts` (sync badge with session.status)
+- `docs/TASKS.md` (tasks completati)
+
 ### v1.4.18 — 2026-07-16
 
 **Milestone:** Fix restore reconcile dopo riavvio PC — code review post-deploy

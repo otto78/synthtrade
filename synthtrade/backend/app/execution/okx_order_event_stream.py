@@ -226,6 +226,10 @@ class OkxOrderEventStream:
         
         # Seed con ordini storici esistenti (non emetterli)
         # NOTE: On OKX EU, algo orders (TP/SL) appear in orders-history with algoId populated
+        # TASK-XXXX: Only seed completed orders (filled/cancelled). Do NOT seed pending algos
+        # into seen_algos — when a pending algo fills, it reappears in orders-history with
+        # state="filled" and the same algoId. If already in seen_algos, the fill is silently
+        # skipped (the "seen_algos poisoning" bug that caused the 2026-07-15 TP miss).
         try:
             resp = await self._rest_request("GET", "/api/v5/trade/orders-history", params={"instType": "SPOT", "state": "filled"})
             for item in resp.get("data", []):
@@ -238,16 +242,6 @@ class OkxOrderEventStream:
             logger.info("OKX REST polling: seeded %d historical orders, %d algo orders", len(seen_orders), len(seen_algos))
         except Exception as e:
             logger.warning("OKX REST polling: seed orders failed: %s", e)
-        
-        try:
-            resp = await self._rest_request("GET", "/api/v5/trade/orders-algo-pending", params={"instType": "SPOT", "ordType": "oco"})
-            for item in resp.get("data", []):
-                aid = item.get("algoId")
-                if aid:
-                    seen_algos.add(aid)
-            logger.info("OKX REST polling: seeded %d pending algo orders", len(seen_algos))
-        except Exception as e:
-            logger.warning("OKX REST polling: seed pending algo failed: %s", e)
         
         while self._running:
             try:
@@ -292,10 +286,12 @@ class OkxOrderEventStream:
                 for item in resp_algo.get("data", []):
                     algo_id = item.get("algoId")
                     if algo_id and algo_id not in seen_algos:
-                        seen_algos.add(algo_id)
                         norm = self._normalize_algo_order(item)
                         if norm:
                             await self._emit(norm)
+                            # Add to seen_algos ONLY after successful emit to prevent
+                            # skipping the fill when it later appears in orders-history
+                            seen_algos.add(algo_id)
                 
             except Exception as e:
                 logger.error("OKX REST polling error: [%s] %s", type(e).__name__, e)

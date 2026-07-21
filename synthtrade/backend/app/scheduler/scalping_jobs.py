@@ -243,6 +243,39 @@ async def session_health_job() -> None:
         dead_tasks = [t.get_name() for t in ws_tasks if t.done()]
         checks["tasks_alive"] = len(dead_tasks) == 0
 
+        # TASK-XXXX: Detect dead order event stream (REST polling fallback).
+        # If the polling task crashed silently, restart it automatically.
+        order_stream = _execution_state.get("user_data_stream")
+        if order_stream:
+            stream_task = getattr(order_stream, "_listen_task", None)
+            if stream_task and stream_task.done():
+                exc = stream_task.exception()
+                logger.warning(
+                    "Order event stream task is DEAD (exc=%s). Restarting...",
+                    exc,
+                )
+                try:
+                    # Stop the dead stream cleanly, then restart
+                    await order_stream.stop()
+                except Exception:
+                    pass
+                _execution_state.pop("user_data_stream", None)
+                try:
+                    from app.scalping.trade_executor import _start_uds_if_needed
+                    await _start_uds_if_needed()
+                    checks["order_stream_alive"] = True
+                    logger.info("Order event stream restarted successfully")
+                except Exception as restart_err:
+                    logger.error("Order event stream restart FAILED: %s", restart_err)
+                    checks["order_stream_alive"] = False
+            else:
+                checks["order_stream_alive"] = True
+        else:
+            # No stream yet — OK if no active position, warn otherwise
+            position_manager = _execution_state.get("position_manager")
+            has_position = bool(position_manager and position_manager.get_open())
+            checks["order_stream_alive"] = not has_position
+
         failed = [k for k, v in checks.items() if not v]
         if failed:
             # Se la sessione è intenzionalmente idle, logga a DEBUG invece di WARNING

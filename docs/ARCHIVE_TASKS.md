@@ -3920,3 +3920,52 @@ Il Trade Log mostra solo l'orario (es. `8:19 AM`, `9:36 AM`, `2:25 AM`) senza la
 | TASK-INVEST-018 — Soglia dinamica senza decadimento | PARZIALE | Decay/degradation non implementato |
 | TASK-INVEST-020 — Slope filter su EMA Cross | APERTO | Nessuno slope filter in `ema_cross.py` |
 
+---
+
+## EPICA Refactoring router.py — Completata (2026-07-21)
+
+### TASK-1166 — Refactor router.py: estrazione moduli
+
+**Status:** ✅ COMPLETATO
+**Completato:** 2026-07-21
+**Priorità:** MEDIA
+**Effort totale:** ~2 giorni
+**Dipendenze:** TASK-1160, TASK-1164 (completati)
+
+**Risultato:** `router.py` ridotto da 4310 a 197 righe (-95.4%). Moduli estratti verificati con 12/12 test di integrazione passanti.
+
+**Architettura finale:**
+| Modulo | Righe | Contenuto |
+|--------|-------|-----------|
+| `_state.py` | 50 | Variabili globali condivise |
+| `pricing.py` | 149 | Funzioni pure pricing/size |
+| `reconciliation.py` | 162 | Riconciliazione posizioni |
+| `db_ops.py` | 169 | Operazioni database |
+| `trade_executor.py` | 463 | Logica esecuzione trade |
+| `session_lifecycle.py` | 59 | Lifecycle sessione |
+| `broadcast.py` | 38 | Broadcasting eventi WS |
+| `pipeline.py` | 244 | Orchestratore WS broadcast |
+| `candle_processor.py` | 844 | Processore candele (loop principale) |
+| `trade_processor.py` | 133 | Processore trade real-time |
+| `intel_processor.py` | 75 | Processore intelligence + restore |
+| `router.py` | 197 | Orchestratore + WS endpoint + re-export |
+
+**REST endpoints:**
+| Modulo | Righe | Contenuto |
+|--------|-------|-----------|
+| `rest/session.py` | 668 | control_session, health, get_session, logs |
+| `rest/position.py` | 116 | get_position, list_positions |
+| `rest/performance.py` | 144 | get_performance + helper |
+| `rest/config.py` | 67 | config + risk config endpoints |
+| `rest/market_data.py` | 245 | Dati mercato |
+| `rest/intel_opportunity.py` | 243 | Intelligence + opportunity |
+| `rest/backtest.py` | 75 | Backtest endpoints |
+
+**Sub-task completati:**
+- ✅ 1166.A — Shared state module (`_state.py`)
+- ✅ 1166.B — Moduli foglia (pricing, reconciliation, db_ops)
+- ✅ 1166.C — Trade executor + session lifecycle
+- ✅ 1166.D — Pipeline extraction (candle_processor, trade_processor, intel_processor)
+- ✅ 1166.E — REST endpoints (position, performance, config)
+- ✅ 1166.F — router.py orchestratore + backward compat
+

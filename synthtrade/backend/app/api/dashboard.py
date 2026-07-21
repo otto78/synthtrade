@@ -13,7 +13,7 @@ from app.models.trade import Trade
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
-BALANCE_TIMEOUT = 30
+BALANCE_TIMEOUT = 12
 
 
 def _mode_filter(query):

@@ -3513,3 +3513,410 @@ REGIME_ALLOWED_unknown = momentum_base
 6. ~~**TASK-OKX-RECAL**~~ ✅ — Ricalibrazione SL/TP
 7. ~~**TASK-907 / TASK-908**~~ ✅ — bug non OKX (completati 16/07)
 
+
+
+
+## TASK-1184 — [RICONCILIAZIONE] Verifica e test del piano già implementato
+
+**Status:** ✅ Done — 2026-07-17 (test unit creati: test_reconcile_position.py)
+
+### Contesto
+
+Il piano di riconciliazione è **già completamente implementato** nel codice corrente. Tutti i fix elencati nel piano risultano presenti:
+
+| Check | File | Riga | Stato |
+|-------|------|------|-------|
+| `_reconcile_position_with_exchange()` helper | `router.py` | L70-239 | ✅ Presente |
+| Reconcile startup in `main.py` | `main.py` | L186-252 | ✅ Presente |
+| `_on_uds_reconnect_sync` usa helper con PnL reale | `router.py` | L1112-1161 | ✅ Presente |
+| Gate `_full_restart` include `"paused"` | `router.py` | L1658 | ✅ **Fix applicato** |
+| Reconcile in `restore_mode` dentro `_start_ws_broadcast` | `router.py` | L1511-1560 | ✅ Presente |
+
+**Quello che manca** è la verifica descritta al paragrafo 5 del piano e il test di integrazione menzionato nel vecchio piano (`test_1111e_restore_reconcile_already_closed`) che non esiste nel codebase.
+
+### Step da eseguire
+
+#### 1. Test unitario — `_reconcile_position_with_exchange` con posizione chiusa
+
+Creare `synthtrade/backend/tests/unit/test_reconcile_position.py`:
+
+```python
+# Scenari da coprire:
+# A. balance >= min_qty → return None (posizione ancora aperta)
+# B. balance < min_qty + bracket_id match in algo history → fill da avgPx, reason=take_profit/stop_loss
+# C. balance < min_qty + match per exit side → fill da algo history, reason=external_close
+# D. balance < min_qty + nessun match → fill = entry_price, reason=external_close_unknown_price
+# E. balance check fallisce (exception) → retry 3 volte, poi None
+```
+
+Usare `fake_okx_adapter.py` già presente in `tests/integration/` come base per i mock.
+
+#### 2. Test integrazione — Scenario pausa + sleep simulata
+
+Creare `synthtrade/backend/tests/integration/test_full_restart_paused.py`:
+
+```python
+# Scenario: session status="paused" + _full_restart() viene chiamato
+# Verifica: _start_ws_broadcast(restore_mode=True) viene chiamato
+# (prima del fix: gate status=="running" bloccava il restart in pausa)
+```
+
+#### 3. Verifica manuale (da eseguire con backend live)
+
+Seguire la checklist del piano §5:
+1. Sessione in `"paused"`, sospendere rete/PC per >3 minuti, ripristinare
+2. Log atteso: `RESTART_WS: Calling _start_ws_broadcast(restore_mode=True)...`
+3. Se una posizione era stata chiusa da TP/SL durante l'assenza → log atteso: `source=fills` con `reason=take_profit` o `stop_loss`
+4. Health check deve tornare `ws_connected=True`, `tasks_alive=True` entro pochi secondi
+
+### Acceptance Criteria
+- Test unitario copre i 5 scenari (A-E) di `_reconcile_position_with_exchange`
+- Test integrazione verifica il gate `paused` in `_full_restart`
+- Checklist manuale §5 del piano completata senza regressioni
+- `pytest synthtrade/backend/tests/unit/test_reconcile_position.py` → 5/5 pass
+- `pytest synthtrade/backend/tests/integration/test_full_restart_paused.py` → pass
+
+---
+
+## TASK-1185 — [ALGOID FLOW] entry_order_id non viene mai impostato su Position
+
+**Status:** ✅ Done — 2026-07-17
+
+### Root cause (analisi codice)
+
+Il flusso attuale è:
+
+```
+place_market_order() → market_res.order_id = ordId  ✅ presente in ExchangeOrder
+    ↓
+place_exit_bracket(entry_order_id=market_res.order_id)  ✅ passato in ExitBracketRequest
+    ↓
+pos_obj = pm.open_position(...)    ← NON riceve order_id
+pos_obj.oco_order_list_id = bracket_res.bracket_id  ✅ algoId salvato
+pos_obj.entry_order_id = ???       ← ❌ MAI IMPOSTATO
+    ↓
+_save_open_position_to_db():
+    "exchange_bracket_id": pos.oco_order_list_id  ✅ algoId in DB
+    "exchange_order_id": getattr(pos,'entry_order_id', None)  ← ❌ sempre None
+```
+
+In `router.py` L2083 `entry_order_id=market_res.order_id` viene passato alla `ExitBracketRequest` (dove è ignorato da OKX) ma **non viene mai scritto su `pos_obj`**. La `Position` dataclass ha il campo `order_id` (L31 di `position_manager.py`) ma `open_position()` non viene chiamata con esso. Risultato: `exchange_order_id` nel DB è sempre `None`.
+
+### Fix (router.py, ~L2101-2108)
+
+```python
+# Dopo pm.open_position():
+pos_obj.entry_order_id = market_res.order_id   # ← aggiungere questa riga
+```
+
+Oppure passare `order_id` direttamente in `open_position()`:
+```python
+pos_obj = pm.open_position(
+    symbol=event.symbol.upper(),
+    side=side,
+    entry_price=Decimal(str(exec_price)),
+    quantity=Decimal(str(exec_qty)),
+    order_id=market_res.order_id,    # ← già supportato dal metodo
+    entry_commission=...,
+    entry_commission_asset=...,
+)
+```
+
+### Acceptance Criteria
+- `exchange_order_id` in DB (`scalping_trades`) contiene il `ordId` OKX dell'ordine market di apertura
+- Log al momento del trade: `[ENTRY_ORDER_ID] ordId=<id> saved`
+- Nel restore: `exchange_order_id` viene letto da DB e ripristinato su `pos_obj.entry_order_id`
+
+---
+
+## TASK-1186 — [ALGOID FLOW] fill reale market order: fetch avgPx post-placement
+
+**Status:** ✅ Done — 2026-07-17
+
+### Problema
+
+OKX `/api/v5/trade/order` (market order) risponde **sincronicamente** ma spesso con `avgPx=""` o `avgPx="0"` perché il fill avviene in un secondo momento async. Il codice attuale:
+
+```python
+# router.py L1989
+exec_price = float(market_res.average_price or event.close)
+```
+
+Se `average_price = 0` (risposta OKX asincrona), usa `event.close` = prezzo candle = **prezzo segnale, non fill**. Questo è il motivo per cui il Trade Log mostra 54.798,40 invece di 54.803,9.
+
+### Soluzione
+
+**Aggiungere metodo `get_order_by_id(symbol, ord_id)` in `okx_exchange.py`:**
+
+```python
+async def get_order_by_id(self, symbol: SymbolRef, ord_id: str) -> dict:
+    """GET /api/v5/trade/order — fetch singolo ordine per ordId."""
+    path = "/api/v5/trade/order"
+    params = {"instId": symbol.okx, "ordId": ord_id}
+    # ... firma + GET ...
+    return data.get("data", [{}])[0]
+```
+
+**In router.py, dopo `place_market_order()`, aggiungere fetch con retry:**
+
+```python
+# Fetch fill reale con retry (OKX market order async)
+if not market_res.average_price or market_res.average_price == 0:
+    for attempt in range(3):
+        await asyncio.sleep(0.5)
+        try:
+            order_detail = await exchange.get_order_by_id(sym_ref, market_res.order_id)
+            avg_px = float(order_detail.get("avgPx") or 0)
+            filled_sz = float(order_detail.get("accFillSz") or 0)
+            if avg_px > 0:
+                exec_price = avg_px
+                if filled_sz > 0:
+                    exec_qty = filled_sz
+                logger.info(f"[ENTRY_FILL] ordId={market_res.order_id} avgPx={avg_px} accFillSz={filled_sz} (attempt {attempt+1})")
+                break
+        except Exception as fe:
+            logger.warning(f"[ENTRY_FILL] fetch attempt {attempt+1} failed: {fe}")
+    else:
+        logger.warning(f"[ENTRY_FILL_FALLBACK] Using signal price {event.close} as entry — fill not recovered")
+        exec_price = float(event.close)
+```
+
+### Acceptance Criteria
+- `entry_price` in DB = `avgPx` OKX reale dell'ordine market
+- `exec_qty` aggiornato con `accFillSz` reale se disponibile
+- Fallback a `event.close` con log `[ENTRY_FILL_FALLBACK]` se tutti i retry falliscono
+- `get_order_by_id()` aggiunto a `ExchangeAdapterProtocol` in `exchange_models.py`
+- Test con `fake_okx_adapter.py`: scenario A (avgPx in prima risposta), scenario B (avgPx vuoto, disponibile al retry 2), scenario C (tutti retry falliti → fallback)
+
+---
+
+## TASK-1187 — [ALGOID FLOW] restore sessione: leggere exchange_order_id da DB
+
+**Status:** ✅ Done — 2026-07-17
+
+### Problema
+
+In `main.py` Step 6 (restore posizione aperta), L256-275, vengono restaurati sull'oggetto `pos_obj` in memoria:
+- ✅ `pos_obj.oco_order_list_id` (algoId bracket)
+- ✅ `pos_obj.sl_order_id`, `tp_order_id`
+- ✅ `pos_obj.tp_price`, `pos_obj.sl_price`
+- ❌ `pos_obj.entry_order_id` — **non restaurato** (campo `exchange_order_id` letto dal DB ma non assegnato)
+
+### Fix (main.py, L256-275)
+
+```python
+# Aggiungere dopo le righe esistenti:
+if ot.get("exchange_order_id"):
+    pos_obj.entry_order_id = ot["exchange_order_id"]
+```
+
+Questo permette a `_reconcile_position_with_exchange` di avere l'`ordId` dell'ordine market originale disponibile in caso di necessità futura (es. fetch fill via orderId se algoId fallisce).
+
+### Acceptance Criteria
+- Dopo il restore, `pos.entry_order_id` contiene il valore salvato in `exchange_order_id` in DB
+- Log al restore: `[RESTORE] entry_order_id=<id> restored`
+- Nessuna regressione sul reconcile esistente
+
+---
+
+## TASK-1188 — [ALGOID FLOW] audit completo flusso algoId: log + DB verification
+
+**Status:** ✅ Done — 2026-07-17 (script creato, test manuale pendente)
+
+### Obiettivo
+
+Verificare end-to-end che, dopo TASK-1185/1186/1187, l'intero flusso algoId sia tracciabile e completo. Creare uno script di audit che verifichi la consistenza del DB.
+
+### Flusso target completo (post fix)
+
+```
+[SEGNALE BUY]
+  │
+  ▼
+place_market_order()  →  ordId="abc123"  avgPx=54803.9 (reale o fetch)
+  │
+  ├─ LOG: [ENTRY_ORDER] ordId=abc123 avgPx=54803.9 qty=0.000365
+  │
+  ▼
+place_exit_bracket()  →  algoId="375027..."
+  │
+  ├─ LOG: [OKX BRACKET] BTC-EUR TP=56039.4 SL=54604.6 qty=0.000365 algoId=375027...
+  │
+  ▼
+_save_open_position_to_db():
+  exchange_order_id   = "abc123"      ← ordine market
+  exchange_bracket_id = "375027..."   ← algoId OCO
+  entry_price         = 54803.9       ← fill reale
+  tp_price, sl_price  = real values
+
+[RESTORE / WAKEUP]
+  │
+  ▼
+read DB → pos_obj:
+  pos_obj.entry_order_id    = "abc123"
+  pos_obj.oco_order_list_id = "375027..."
+
+  ▼
+_reconcile_position_with_exchange(bracket_id="375027...")
+  → get_algo_orders_history() → cerca algoId "375027..."
+  → se trovato: fill_price da avgPx, reason=take_profit/stop_loss ✅
+  → se non trovato: fallback per exit_side ✅
+  → se tutto fallisce: entry_price_fallback ✅ (con warning)
+```
+
+### Script di audit
+
+Creare `synthtrade/backend/tests/audit/test_algoid_audit.py`:
+
+```python
+# Verifica DB integrity:
+# 1. Tutti i trade closed in session X hanno exchange_order_id non-null
+# 2. Tutti i trade closed hanno exchange_bracket_id non-null
+# 3. entry_price != exit_price (tranne external_close_unknown_price)
+# 4. Conta trade con entry_price = segnale (round number) vs fill (decimale preciso) → metrica di degradazione
+```
+
+### Acceptance Criteria
+- Script audit eseguibile: `pytest synthtrade/backend/tests/audit/test_algoid_audit.py -v`
+- Tutti i trade aperti e chiusi post-fix hanno `exchange_order_id` non-null
+- Tutti i trade hanno `exchange_bracket_id` non-null
+- Il log del trade execution mostra chiaramente orderId, algoId, avgPx in sequenza
+
+---
+
+## TASK-1180 — Trade fantasma nel Trade Log post-restart (reconcile trade visibile in UI)
+
+**Status:** ✅ Done — 2026-07-17
+**Priorità:** ALTA
+**Effort stimato:** 30 min
+**File coinvolti:** `synthtrade/backend/app/main.py`, frontend Trade Log component
+
+### Problema
+
+Al restart del backend, se c'era una posizione aperta in DB che risulta chiusa sull'exchange (reconciliazione), il sistema:
+1. Chiude il trade nel DB (corretto)
+2. All'avvio, carica la trade history per la sessione corrente senza escludere il trade appena riconciliato
+
+Risultato: il Trade Log mostra 3 trade invece di 2 — il trade `8:19 AM BUY 55,913.20 -0.04 external_close_unknown` è un trade chiuso durante il reconcile dell'avvio precedente, appartiene alla stessa `session_id` ma in realtà è un trade di una sessione precedente.
+
+**Root cause:** In `main.py` step 7.5 (L363), la query `scalping_trades.select(*).eq("session_id", session_id)` carica tutti i trade della sessione, inclusi quelli chiusi con `reason=external_close_unknown_price` durante precedenti reconciliazioni.
+
+### Soluzione proposta
+
+**Opzione A (consigliata):** Aggiungere un campo `is_reconcile_close` (boolean) alla tabella `scalping_trades` e filtrarlo nel restore e nella UI.
+
+**Opzione B (quick fix, no migration):** Escludere dalla query di restore i trade con `signal_reason = 'external_close_unknown_price'` E `pnl = 0` (o pnl_pct = 0) — questi sono quelli con fill = entry_price, ovvero il fallback. Rischio: potrebbe filtrare trade legittimi con PnL zero.
+
+**Opzione C (robusta):** Aggiungere un campo `entry_time` separato al trade e confrontarlo con `session.created_at`. I trade di reconcile hanno `exit_time` ≈ startup time e `entry_time` della sessione precedente.
+
+**Opzione raccomandata:** Filtrare nel restore usando `signal_reason != 'external_close_unknown_price'` (esclude SOLO i trade chiusi per mancanza di fill reale, che sono per definizione quelli già persi nella sessione precedente). Nel frontend, aggiungere il filtro anche al Trade Log (o meglio, mostrare con badge distinto "Reconciled").
+
+### Acceptance Criteria
+- Il Trade Log mostra solo i trade generati durante la sessione attiva corrente
+- I trade di reconcile non spariscono dal DB (logging importante)
+- Il Performance panel conta solo i trade reali della sessione corrente
+
+---
+
+## TASK-1181 — Entry price errato: si usa il prezzo del segnale invece del fill reale
+
+**Status:** ✅ Done — 2026-07-17 (Risolto automaticamente dal fix backend di TASK-1186, dato che frontend si alimenta da WS position e REST trade history).
+**Priorità:** ALTA
+**Effort stimato:** 1-2h
+**File coinvolti:** `synthtrade/backend/app/scalping/router.py`, frontend components
+
+### Problema
+
+Dal log: `LIVE TRADE CALC: symbol=BTC-EUR, price=54798.4` — questo prezzo è quello della candela corrente al momento del segnale.
+Dall'OKX Order History: il fill reale è stato **54.803,9** (market order filled a prezzo diverso).
+
+L'app salva come `entry_price` il prezzo del segnale, non il prezzo di esecuzione reale restituito dall'ordine market. Conseguenze:
+- **PnL calcolato sbagliato** (usa 54.798,4 invece di 54.803,9 come base)
+- **Breakeven sbagliato** (entry errata → soglia fee calcolata su prezzo errato)
+- **Trade Log** mostra entry visivamente scorretta
+
+### Root cause da localizzare
+
+1. Trovare dove viene chiamato `_save_open_position_to_db` dopo l'esecuzione del trade
+2. Verificare se il fill price viene recuperato dalla risposta dell'ordine market OKX
+3. Se il fill reale è disponibile nella response OKX, usarlo; altrimenti fare un GET `orders/history` subito dopo il place per recuperarlo
+
+### Soluzione proposta
+
+Dopo `place_order()` (o equivalente OKX), recuperare il `avgPx` dalla response. Se non disponibile nella response immediata (alcune exchange APIs restituiscono solo l'orderId), fare un polling di `get_order_fills()` con retry (max 3 tentativi, 500ms di gap). Usare il fill price per aggiornare `entry_price` in DB prima di procedere con il bracket.
+
+### Acceptance Criteria
+- L'entry price nel Trade Log corrisponde al fill reale mostrato su OKX Order History
+- Il PnL e breakeven sono calcolati sull'entry reale
+- In assenza di fill recuperabile entro timeout, usare il prezzo segnale come fallback (con log warning)
+
+---
+
+## TASK-1182 — Badge "RUNNING" in topbar non si aggiorna quando la sessione è PAUSED
+
+**Status:** ✅ Done — 2026-07-17
+**Priorità:** MEDIA
+**Effort stimato:** 30-60 min
+**File coinvolti:** Frontend Angular — componente topbar (`topbar.component.ts`)
+
+### Problema
+
+La card "STATO" nella sezione SESSION mostra correttamente "PAUSED" dopo che il supervisor esegue `pause_trading`, ma il badge in alto (`● RUNNING`) resta verde e non si aggiorna.
+
+Dallo scenario: il supervisor ha eseguito pause_trading alle 08:20:12 e di nuovo alle 08:30:24 — entrambe le volte `session.status = 'paused'` è stato propagato correttamente via WS (`supervisor_decision broadcasted: action=pause_trading`), ma la topbar non lo riflette.
+
+### Ipotesi
+
+- Il badge topbar legge lo stato da una sorgente diversa rispetto alla session card (es. lo legge dalla property `isRunning` del servizio che si aggiorna solo sul WS event `session_status_changed` ma non su `supervisor_decision`)
+- Oppure: il badge è agganciato a un getter che non usa OnPush / ChangeDetectionRef, simile al bug TASK-1173 (live chart)
+
+### Dove cercare
+
+1. Cercare il componente che renderizza `● RUNNING` nella topbar
+2. Verificare da quale property/observable legge lo stato di sessione
+3. Confrontare con la card SESSION che funziona correttamente
+4. Verificare se entrambi si aggiornano sullo stesso WS event o su eventi diversi
+
+### Acceptance Criteria
+- Badge topbar mostra `● PAUSED` (o colore/testo appropriato) quando `session.status = 'paused'`
+- Badge si aggiorna in tempo reale al cambio di stato senza reload
+- Nessuna regressione sugli stati RUNNING / STOPPED
+
+---
+
+## TASK-1183 — Trade Log: manca la data, trade fuori ordine cronologico
+
+**Status:** ✅ Done — 2026-07-17
+**Priorità:** BASSA
+**Effort stimato:** 30 min
+**File coinvolti:** Frontend — componente Trade Log / trade history table
+
+### Problema
+
+Il Trade Log mostra solo l'orario (es. `8:19 AM`, `9:36 AM`, `2:25 AM`) senza la data. I 3 trade restored appartengono a giorni diversi, quindi l'ordinamento puramente orario crea sequenze illogiche (`2:25 AM` dopo `9:36 AM` stesso giorno).
+
+### Soluzione
+
+1. **Mostrare data+ora** nel Trade Log: formato `DD/MM HH:mm` o tooltip con data completa al hover
+2. **Ordinare per timestamp completo** (datetime) invece che solo per ora
+
+### Acceptance Criteria
+- Colonna Time mostra data+ora (o data compatta DD/MM HH:mm)
+- Ordinamento cronologico corretto anche per trade di giorni diversi
+- Formato leggibile e non troppo verbose (es. `17/07 08:19`)
+
+---
+
+## Task da Investigare — Aperti/Parziali
+
+> Da `MASTER_RECAP.md` 26/06/2026. Verifica 01/07/2026.
+
+| Task | Status | Note |
+|------|--------|------|
+| TASK-INVEST-011 — Regime misclassification (volume-confirmed) | APERTO | Nessuna logica volume-confirmed in `regime_detector.py` |
+| TASK-INVEST-012 — Falling Knife Protection | ALLINEATO | TASK-906 completato. Monitorare in live. |
+| TASK-INVEST-013 — trend_direction troppo sensibile | PARZIALE | Codice presente ma soglia troppo sensibile |
+| TASK-INVEST-017 — Bias outcome_label Supervisor | PARZIALE | Usa solo PnL (no bias regime) |
+| TASK-INVEST-018 — Soglia dinamica senza decadimento | PARZIALE | Decay/degradation non implementato |
+| TASK-INVEST-020 — Slope filter su EMA Cross | APERTO | Nessuno slope filter in `ema_cross.py` |
+

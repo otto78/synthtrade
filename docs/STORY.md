@@ -4,6 +4,38 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.22 — 2026-07-21
+
+**Milestone:** TASK-1166 completato — Refactoring totale router.py (-95.4%)
+
+**Completato:**
+- ✅ **Sub-TASK-1166.D:** Estratto `candle_processor.py` (844 righe), `trade_processor.py` (133 righe), `intel_processor.py` (75 righe) da `market_processors.py`
+- ✅ **Sub-TASK-1166.E:** Estratto `rest/position.py` (116 righe), `rest/performance.py` (144 righe), `rest/config.py` (67 righe) da `rest/session.py`
+- ✅ **Sub-TASK-1166.F:** `router.py` ridotto a 197 righe (da 4310 originali)
+- ✅ `market_processors.py` diventato modulo di re-export (10 righe)
+- ✅ Tutti i 12 test di integrazione passanti
+
+**Risultato:**
+| Metrica | Prima | Dopo | Riduzione |
+|---------|-------|------|-----------|
+| `router.py` | 4310 righe | 197 righe | -95.4% |
+| `market_processors.py` | 1023 righe | 10 righe (re-export) | -99% |
+| `rest/session.py` | 959 righe | 668 righe | -30% |
+
+**File modificati:**
+- `synthtrade/backend/app/scalping/candle_processor.py` (creato)
+- `synthtrade/backend/app/scalping/trade_processor.py` (creato)
+- `synthtrade/backend/app/scalping/intel_processor.py` (creato)
+- `synthtrade/backend/app/scalping/market_processors.py` (diventato re-export)
+- `synthtrade/backend/app/scalping/rest/position.py` (creato)
+- `synthtrade/backend/app/scalping/rest/performance.py` (creato)
+- `synthtrade/backend/app/scalping/rest/config.py` (creato)
+- `synthtrade/backend/app/scalping/rest/session.py` (ridotto)
+- `synthtrade/backend/app/scalping/router.py` (aggiornato include_router)
+- `docs/TASKS.md` (aggiornato)
+
+---
+
 ### v1.4.21 — 2026-07-21
 
 **Milestone:** Fix critico — TP fill non rilevato da polling REST (2026-07-15)

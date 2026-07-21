@@ -50,11 +50,17 @@ ws_scalping_router = APIRouter(tags=["scalping-ws"])
 from app.scalping.rest.market_data import router as _market_data_router
 from app.scalping.rest.backtest import router as _backtest_router
 from app.scalping.rest.session import router as _session_router
+from app.scalping.rest.position import router as _position_router
+from app.scalping.rest.performance import router as _performance_router
+from app.scalping.rest.config import router as _config_router
 from app.scalping.rest.intel_opportunity import router as _intel_router
 
 router.include_router(_market_data_router)
 router.include_router(_backtest_router)
 router.include_router(_session_router)
+router.include_router(_position_router)
+router.include_router(_performance_router)
+router.include_router(_config_router)
 router.include_router(_intel_router)
 
 # ---------------------------------------------------------------------------

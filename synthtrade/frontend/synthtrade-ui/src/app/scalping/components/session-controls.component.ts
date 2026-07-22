@@ -116,6 +116,20 @@ import { ConfigService } from '../../core/services/config.service';
               <span *ngIf="shortAvailable"> · Leva max {{ maxLeverage }}× (1=no margin)</span>
             </div>
           </div>
+
+          <!-- TASK-1223.E: Short selling toggle — only visible when symbol supports short -->
+          <div class="field" *ngIf="shortAvailable">
+            <label class="short-toggle-label">
+              <span>Short abilitato</span>
+              <label class="toggle-switch">
+                <input type="checkbox" [(ngModel)]="shortEnabled" />
+                <span class="toggle-slider"></span>
+              </label>
+            </label>
+            <div class="short-warning" *ngIf="shortEnabled">
+              Rischio liquidazione + interesse prestito — usare solo con capitale ridotto durante i test
+            </div>
+          </div>
         </div>
 
         <button class="btn-start" (click)="startSession()" [disabled]="loading">
@@ -469,6 +483,57 @@ import { ConfigService } from '../../core/services/config.service';
       color: var(--text-secondary);
       opacity: 0.6;
     }
+    .short-toggle-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 36px;
+      height: 20px;
+      cursor: pointer;
+    }
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: rgba(255,255,255,0.1);
+      border-radius: 20px;
+      transition: background 0.2s;
+    }
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      left: 2px;
+      top: 2px;
+      background: var(--text-secondary);
+      border-radius: 50%;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .toggle-switch input:checked + .toggle-slider {
+      background: rgba(239,83,80,0.4);
+    }
+    .toggle-switch input:checked + .toggle-slider::before {
+      transform: translateX(16px);
+      background: #ef5350;
+    }
+    .short-warning {
+      font-size: 10px;
+      color: #ef5350;
+      margin-top: 4px;
+      line-height: 1.3;
+    }
     .trade-live {
       background: rgba(240,185,11,0.04);
       border: 1px solid rgba(240,185,11,0.12);
@@ -617,6 +682,13 @@ export class SessionControlsComponent implements OnInit {
   showSymbolDropdown = false;
   shortAvailability: ExchangeInstrument | null = null;
   shortAvailable = false;
+  /** Short enabled: restore from localStorage or default false */
+  shortEnabled: boolean = (() => {
+    try {
+      return localStorage.getItem('scalping_short_enabled') === 'true';
+    } catch {}
+    return false;
+  })();
   maxLeverage = 10;
 
   globalMode: string = 'test';
@@ -658,6 +730,11 @@ export class SessionControlsComponent implements OnInit {
       if (data?.leverage && data.leverage > 0) {
         this.leverage = data.leverage;
         try { localStorage.setItem('scalping_leverage', String(data.leverage)); } catch {}
+      }
+      // Sync short_enabled from backend
+      if (data?.short_enabled !== undefined) {
+        this.shortEnabled = data.short_enabled;
+        try { localStorage.setItem('scalping_short_enabled', String(data.short_enabled)); } catch {}
       }
       this.cdr.detectChanges();
     });
@@ -715,13 +792,20 @@ export class SessionControlsComponent implements OnInit {
     } catch {}
   }
 
+  private saveShortEnabled(): void {
+    try {
+      localStorage.setItem('scalping_short_enabled', String(this.shortEnabled));
+    } catch {}
+  }
+
   startSession(): void {
     this.loading = true;
     this.saveTradeValue();
     this.saveLeverage();
+    this.saveShortEnabled();
     // Map globalMode: 'live' -> 'live', 'test' -> 'test', default -> 'paper'
     const executionMode = this.globalMode === 'live' ? 'live' : (this.globalMode === 'test' ? 'test' : 'paper');
-    this.sessionApi.start(executionMode, this.selectedStrategy, this.selectedSymbol, this.tradeValue, this.leverage).subscribe({
+    this.sessionApi.start(executionMode, this.selectedStrategy, this.selectedSymbol, this.tradeValue, this.leverage, this.shortEnabled).subscribe({
       next: (data: ScalpingSession) => {
         this.session = data;
         this.sessionId = data.session_id || null;

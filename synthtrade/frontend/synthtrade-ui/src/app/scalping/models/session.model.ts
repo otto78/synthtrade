@@ -16,6 +16,7 @@ export interface ScalpingSession {
   live_balance?: number;
   trade_value?: number;
   leverage?: number;
+  short_enabled?: boolean;
   first_trade_entry?: number;
   hold_pnl_pct?: number;
   error_code?: string;
@@ -29,4 +30,5 @@ export interface SessionControl {
   symbol?: string;
   trade_value?: number;
   leverage?: number;
+  short_enabled?: boolean;
 }

@@ -259,6 +259,23 @@ async def control_session(control: Dict) -> Dict:
                 logger.info(f"✓ Leverage set to {leverage_val}× for {active_symbol}")
             except Exception as e:
                 logger.warning(f"⚠ Failed to set leverage {leverage_val}× for {active_symbol}: {e}")
+
+        # TASK-1223.B: Read short_enabled from start body
+        short_enabled_val = bool(control.get("short_enabled", session.get("short_enabled", False)))
+        session["short_enabled"] = short_enabled_val
+        if short_enabled_val:
+            logger.info(f"✓ Short selling ENABLED for {active_symbol}")
+            # Fetch short availability for this symbol so candle_processor can access it
+            try:
+                sym_ref_short = SymbolRef.from_okx(active_symbol) if "-" in active_symbol else SymbolRef.from_compact(active_symbol)
+                short_info = await _execution_state["exchange"].get_short_availability(sym_ref_short)
+                _execution_state["short_available"] = {active_symbol: short_info.available}
+                _execution_state["short_availability_info"] = {active_symbol: short_info}
+                logger.info(f"  Short availability for {active_symbol}: available={short_info.available}, "
+                            f"borrow_apr={short_info.borrow_rate_apr}, max_loan={short_info.max_loan_qty}")
+            except Exception as e:
+                logger.warning(f"⚠ Could not fetch short availability for {active_symbol}: {e}")
+                _execution_state["short_available"] = {active_symbol: False}
         
         # Reset strategy override if there's an existing execution loop
         existing_loop = _execution_state.get("loop")
@@ -317,6 +334,8 @@ async def control_session(control: Dict) -> Dict:
                         "fee_tier_certified": _execution_state.get("fee_tier_certified"),
                         "fee_tier_maker": _get_fee_rate(_execution_state.get("fee_tier") or {}, "maker", None),
                         "fee_tier_taker": _get_fee_rate(_execution_state.get("fee_tier") or {}, "taker", None),
+                        # TASK-1223: short selling flag
+                        "allows_short": session.get("short_enabled", False),
                     }).execute()
                     if db_resp.data:
                         session["db_session_id"] = db_resp.data[0]["id"]

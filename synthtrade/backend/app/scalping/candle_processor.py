@@ -336,23 +336,50 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
 
                     if not pm.has_open():
                         if side == "SELL":
-                            logger.info(f"{BOLD}{YELLOW}[Candle] TRADE BLOCKED: SHORT NOT SUPPORTED — SELL signal approved but cannot short{RESET}")
-                            # TASK-913: Logga il rifiuto short con decision_type corretto
-                            _ms = _execution_state.get('loop')._last_market_score
-                            await asyncio.to_thread(
-                                log_rejected_short_unsupported,
-                                session_id=session.get("db_session_id") or session.get("session_id") or "",
-                                symbol=event.symbol.upper(),
-                                regime=_execution_state.get('loop')._current_regime.regime if _execution_state.get('loop')._current_regime else "unknown",
-                                strategy_type=_execution_state.get('loop')._strategy.name if _execution_state.get('loop')._strategy else "unknown",
-                                tech_signal=decision.signal_type,
-                                tech_confidence=round(abs(decision.confidence), 3),
-                                intel_score=float(_ms.total) if _ms else None,
-                                intel_bias=_ms.bias if _ms else None,
-                                trend_direction=_ms.trend_direction if _ms else None,
-                                trend_value=float(_ms.trend_5m) if _ms and _ms.trend_5m is not None else None,
-                            )
-                            continue
+                            # TASK-1223.G: 3-way gate for short selling
+                            _short_enabled = session.get("short_enabled", False)
+                            _short_available = _execution_state.get("short_available", {}).get(session.get("symbol", ""), False)
+
+                            if not _short_enabled:
+                                # Gate 1: short not enabled — original behavior
+                                logger.info(f"{BOLD}{YELLOW}[Candle] TRADE BLOCKED: SHORT NOT SUPPORTED — SELL signal approved but cannot short{RESET}")
+                                _ms = _execution_state.get('loop')._last_market_score
+                                await asyncio.to_thread(
+                                    log_rejected_short_unsupported,
+                                    session_id=session.get("db_session_id") or session.get("session_id") or "",
+                                    symbol=event.symbol.upper(),
+                                    regime=_execution_state.get('loop')._current_regime.regime if _execution_state.get('loop')._current_regime else "unknown",
+                                    strategy_type=_execution_state.get('loop')._strategy.name if _execution_state.get('loop')._strategy else "unknown",
+                                    tech_signal=decision.signal_type,
+                                    tech_confidence=round(abs(decision.confidence), 3),
+                                    intel_score=float(_ms.total) if _ms else None,
+                                    intel_bias=_ms.bias if _ms else None,
+                                    trend_direction=_ms.trend_direction if _ms else None,
+                                    trend_value=float(_ms.trend_5m) if _ms and _ms.trend_5m is not None else None,
+                                )
+                                continue
+
+                            if not _short_available:
+                                # Gate 2: short enabled but symbol doesn't support it
+                                logger.info(f"{BOLD}{YELLOW}[Candle] TRADE BLOCKED: SHORT UNAVAILABLE — short enabled but {event.symbol} not borrowable{RESET}")
+                                _ms = _execution_state.get('loop')._last_market_score
+                                await asyncio.to_thread(
+                                    log_rejected_short_unsupported,
+                                    session_id=session.get("db_session_id") or session.get("session_id") or "",
+                                    symbol=event.symbol.upper(),
+                                    regime=_execution_state.get('loop')._current_regime.regime if _execution_state.get('loop')._current_regime else "unknown",
+                                    strategy_type=_execution_state.get('loop')._strategy.name if _execution_state.get('loop')._strategy else "unknown",
+                                    tech_signal=decision.signal_type,
+                                    tech_confidence=round(abs(decision.confidence), 3),
+                                    intel_score=float(_ms.total) if _ms else None,
+                                    intel_bias=_ms.bias if _ms else None,
+                                    trend_direction=_ms.trend_direction if _ms else None,
+                                    trend_value=float(_ms.trend_5m) if _ms and _ms.trend_5m is not None else None,
+                                )
+                                continue
+
+                            # Gate 3: short enabled + available — proceed with short
+                            logger.info(f"{BOLD}{GREEN}[Candle] SHORT APPROVED: short_enabled=True, short_available=True for {event.symbol}{RESET}")
 
                         # Only BUY signals reach this point (CLOSE/NONE already filtered)
                         if side != "BUY":

@@ -18,15 +18,15 @@ _Nessun task attivo._
 | Task | Titolo | Blocco | Stato |
 |------|--------|--------|-------|
 | TASK-1220 | Spike read-only OKX margin endpoints | Fase 0 | ✅ Done (cross margin, gate passed) |
-| TASK-1221 | Modelli dati short (dataclasses) | Fase 1 | ⏳ Ready |
-| TASK-1222 | MarketOrderRequest — margin_mode | Fase 1 | ❌ Blocked (1221) |
+| TASK-1221 | Check disponibilità short per simbolo | Fase 1 | ✅ Done (badge + API + 4 test) |
+| TASK-1222 | MarketOrderRequest — margin_mode | Fase 1 | ⏳ Ready |
 | TASK-1223 | ExchangeAdapterProtocol — open_short | Fase 1 | ❌ Blocked (1222) |
 | TASK-1224 | OkxExchangeAdapter — open_short | Fase 1 | ❌ Blocked (1222,1223) |
 | TASK-1225 | candle_processor — invia ordine SELL | Fase 1 | ❌ Blocked (1224) |
-| TASK-1226 | _execution_state — short_enabled flag | Fase 1 | ❌ Blocked (1221) |
+| TASK-1226 | _execution_state — short_enabled flag | Fase 1 | ⏳ Ready |
 | TASK-1227 | Session start — short_enabled | Fase 1 | ❌ Blocked (1226) |
-| TASK-1228 | DB ops — position_side | Fase 1 | ❌ Blocked (1221) |
-| TASK-1229 | Supervisor prompt — contesto short | Fase 1 | ❌ Blocked (1221) |
+| TASK-1228 | DB ops — position_side | Fase 1 | ⏳ Ready |
+| TASK-1229 | Supervisor prompt — contesto short | Fase 1 | ⏳ Ready |
 | TASK-1230 | Time-stop Layer 1+2 (MVP) | Fase 2 | ⏳ Ready (depends on 1220 only) |
 | TASK-1231 | Frontend — short_enabled + status | Fase 2 | ❌ Blocked (1227) |
 | TASK-1232 | Test end-to-end | Fase 2 | ❌ Blocked (1225,1228,1230) |

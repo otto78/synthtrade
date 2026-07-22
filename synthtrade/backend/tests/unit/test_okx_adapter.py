@@ -673,3 +673,190 @@ async def test_get_short_availability_api_error_code(monkeypatch):
 
     result = await adapter.get_short_availability(BTC_EUR)
     assert result.available is False
+
+
+# ── TASK-1222: Margin methods ────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_set_leverage_success(monkeypatch):
+    """set_leverage returns lever on success."""
+    adapter = OkxExchangeAdapter(api_key="k", secret="s", passphrase="p", demo=True)
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=_mock_okx_response("0", [{"lever": "5"}]))
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kw: mock_client)
+
+    result = await adapter.set_leverage(BTC_EUR, leverage=5, mgn_mode="cross")
+    assert result["lever"] == "5"
+
+
+@pytest.mark.asyncio
+async def test_market_order_cross_td_mode(monkeypatch):
+    """Market order with margin_mode='cross' sends tdMode=cross."""
+    adapter = OkxExchangeAdapter(api_key="k", secret="s", passphrase="p", demo=True)
+
+    rules_resp = _mock_okx_response("0", [{
+        "instId": "BTC-EUR", "lotSz": "0.00001", "minSz": "0.00001",
+        "tickSz": "0.1", "maxMktSz": "100", "maxMktAmt": "1000000",
+    }])
+    order_resp = _mock_okx_response("0", [{"id": "ord-123", "status": "filled"}])
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=rules_resp)
+    mock_client.post = AsyncMock(return_value=order_resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kw: mock_client)
+
+    request = MarketOrderRequest(symbol=BTC_EUR, side="sell", quantity=0.001, margin_mode="cross")
+    await adapter.place_market_order(request)
+
+    order_body = mock_client.post.call_args.kwargs.get("json", {})
+    assert order_body["tdMode"] == "cross"
+    assert order_body["side"] == "sell"
+
+
+@pytest.mark.asyncio
+async def test_market_order_no_margin_defaults_to_cash(monkeypatch):
+    """Market order with margin_mode=None sends tdMode=cash (spot regression test)."""
+    adapter = OkxExchangeAdapter(api_key="k", secret="s", passphrase="p", demo=True)
+
+    rules_resp = _mock_okx_response("0", [{
+        "instId": "BTC-EUR", "lotSz": "0.00001", "minSz": "0.00001",
+        "tickSz": "0.1", "maxMktSz": "100", "maxMktAmt": "1000000",
+    }])
+    order_resp = _mock_okx_response("0", [{"id": "ord-124", "status": "filled"}])
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=rules_resp)
+    mock_client.post = AsyncMock(return_value=order_resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kw: mock_client)
+
+    request = MarketOrderRequest(symbol=BTC_EUR, side="buy", quantity=0.001)
+    await adapter.place_market_order(request)
+
+    order_body = mock_client.post.call_args.kwargs.get("json", {})
+    assert order_body["tdMode"] == "cash"
+
+
+@pytest.mark.asyncio
+async def test_get_margin_positions_recognizes_short_via_poscсy(monkeypatch):
+    """posCcy=quote → side=sell (SHORT)."""
+    adapter = OkxExchangeAdapter(api_key="k", secret="s", passphrase="p", demo=True)
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=_mock_okx_response("0", [{
+        "instId": "BTC-EUR", "pos": "0.01", "posCcy": "EUR",
+        "avgPx": "60000", "markPx": "61000", "upl": "10",
+        "mgnRatio": "500", "lever": "5", "mgnMode": "cross",
+    }]))
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kw: mock_client)
+
+    positions = await adapter.get_margin_positions()
+    assert len(positions) == 1
+    assert positions[0].side == "sell"
+    assert positions[0].quantity == 0.01
+    assert positions[0].pos_ccy == "EUR"
+
+
+@pytest.mark.asyncio
+async def test_get_margin_positions_recognizes_long_via_poscсy(monkeypatch):
+    """posCcy=base → side=buy (LONG)."""
+    adapter = OkxExchangeAdapter(api_key="k", secret="s", passphrase="p", demo=True)
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=_mock_okx_response("0", [{
+        "instId": "BTC-EUR", "pos": "0.05", "posCcy": "BTC",
+        "avgPx": "60000", "markPx": "61000", "upl": "50",
+        "mgnRatio": "800", "lever": "3", "mgnMode": "cross",
+    }]))
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kw: mock_client)
+
+    positions = await adapter.get_margin_positions()
+    assert len(positions) == 1
+    assert positions[0].side == "buy"
+    assert positions[0].quantity == 0.05
+
+
+@pytest.mark.asyncio
+async def test_close_short_position_market_buy(monkeypatch):
+    """close_short_position finds short position and places buy to cover."""
+    adapter = OkxExchangeAdapter(api_key="k", secret="s", passphrase="p", demo=True)
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=[
+        _mock_okx_response("0", [{
+            "instId": "BTC-EUR", "pos": "0.01", "posCcy": "EUR",
+            "avgPx": "60000", "markPx": "61000", "upl": "10",
+            "mgnRatio": "500", "lever": "5", "mgnMode": "cross",
+        }]),
+        _mock_okx_response("0", [{
+            "instId": "BTC-EUR", "lotSz": "0.00001", "minSz": "0.00001",
+            "tickSz": "0.1", "maxMktSz": "100", "maxMktAmt": "1000000",
+        }]),
+    ])
+    mock_client.post = AsyncMock(return_value=_mock_okx_response("0", [{"id": "ord-cover", "status": "filled"}]))
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kw: mock_client)
+
+    order = await adapter.close_short_position(BTC_EUR)
+    assert order.side == "buy"
+    assert order.order_id == "ord-cover"
+    order_body = mock_client.post.call_args.kwargs.get("json", {})
+    assert order_body["tdMode"] == "cross"
+
+
+@pytest.mark.asyncio
+async def test_borrow_repay_history_parsing(monkeypatch):
+    """get_borrow_repay_history parses records correctly."""
+    adapter = OkxExchangeAdapter(api_key="k", secret="s", passphrase="p", demo=True)
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=_mock_okx_response("0", [
+        {"ccy": "BTC", "borrowAmt": "0.001", "marginInterest": "0.000001", "ts": "1234567890"},
+        {"ccy": "BTC", "borrowAmt": "0.002", "marginInterest": "0.000002", "ts": "1234567891"},
+    ]))
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kw: mock_client)
+
+    records = await adapter.get_borrow_repay_history(BTC_EUR)
+    assert len(records) == 2
+    assert records[0].borrow_amount == 0.001
+    assert records[0].margin_interest == 0.000001
+    assert records[1].borrow_amount == 0.002
+
+
+@pytest.mark.asyncio
+async def test_exit_bracket_cross_td_mode(monkeypatch):
+    """Exit bracket with margin_mode='cross' sends tdMode=cross."""
+    adapter = OkxExchangeAdapter(api_key="k", secret="s", passphrase="p", demo=True)
+
+    rules_resp = _mock_okx_response("0", [{
+        "instId": "BTC-EUR", "lotSz": "0.00001", "minSz": "0.00001",
+        "tickSz": "0.1", "maxMktSz": "100", "maxMktAmt": "1000000",
+    }])
+    bracket_resp = _mock_okx_response("0", [{"algoId": "algo-789"}])
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=rules_resp)
+    mock_client.post = AsyncMock(return_value=bracket_resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kw: mock_client)
+
+    request = ExitBracketRequest(
+        symbol=BTC_EUR, side="sell", quantity=0.001,
+        tp_price=65000.0, sl_price=58000.0, margin_mode="cross",
+    )
+    result = await adapter.place_exit_bracket(request)
+    assert result.bracket_id == "algo-789"
+
+    bracket_body = mock_client.post.call_args.kwargs.get("json", {})
+    assert bracket_body["tdMode"] == "cross"
+    assert bracket_body["side"] == "sell"

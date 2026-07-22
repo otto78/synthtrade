@@ -54,8 +54,8 @@ export class SessionApiService {
   }
 
   /** Start session with specific mode */
-  start(mode: 'paper' | 'live' | 'test' = 'paper', strategy?: string, symbol?: string, tradeValue?: number): Observable<ScalpingSession> {
-    return this.controlSession({ action: 'start', mode, strategy, symbol, trade_value: tradeValue });
+  start(mode: 'paper' | 'live' | 'test' = 'paper', strategy?: string, symbol?: string, tradeValue?: number, leverage?: number): Observable<ScalpingSession> {
+    return this.controlSession({ action: 'start', mode, strategy, symbol, trade_value: tradeValue, leverage });
   }
 
   /** Stop session */

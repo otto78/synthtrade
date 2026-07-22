@@ -87,7 +87,7 @@ import { ConfigService } from '../../core/services/config.service';
           </div>
 
           <div class="field">
-            <label>Valore Trade ($)</label>
+            <label>Valore Trade / Leva</label>
             <div class="trade-value-row">
               <input
                 type="number"
@@ -98,8 +98,19 @@ import { ConfigService } from '../../core/services/config.service';
                 placeholder="100"
               />
               <span class="trade-currency">{{ getQuoteAsset() }}</span>
+              <span class="trade-separator">×</span>
+              <input
+                type="number"
+                [(ngModel)]="leverage"
+                min="1"
+                max="125"
+                step="1"
+                class="leverage-input"
+                placeholder="1"
+              />
+              <span class="trade-currency">leva</span>
             </div>
-            <div class="trade-hint">Importo per singolo trade</div>
+            <div class="trade-hint">Importo per singolo trade · Leva margin (1× = no margin)</div>
           </div>
         </div>
 
@@ -152,7 +163,7 @@ import { ConfigService } from '../../core/services/config.service';
 
         <!-- Trade Value edit while session is running -->
         <div class="field trade-live">
-          <label>Valore Trade ($) <span class="hint-inline">· dal prossimo trade</span></label>
+          <label>Valore Trade / Leva <span class="hint-inline">· dal prossimo trade</span></label>
           <div class="trade-value-row">
             <input
               type="number"
@@ -163,6 +174,17 @@ import { ConfigService } from '../../core/services/config.service';
               placeholder="100"
             />
             <span class="trade-currency">{{ getQuoteAsset() }}</span>
+            <span class="trade-separator">×</span>
+            <input
+              type="number"
+              [(ngModel)]="leverage"
+              min="1"
+              max="125"
+              step="1"
+              class="leverage-input"
+              placeholder="1"
+            />
+            <span class="trade-currency">leva</span>
             <button class="btn-apply" (click)="applyTradeValue()" [disabled]="applyingTradeValue">
               {{ applyingTradeValue ? '...' : '✓' }}
             </button>
@@ -412,6 +434,30 @@ import { ConfigService } from '../../core/services/config.service';
       font-weight: 500;
       white-space: nowrap;
     }
+    .trade-separator {
+      font-size: 13px;
+      color: var(--text-secondary);
+      opacity: 0.5;
+      font-weight: 300;
+    }
+    .leverage-input {
+      width: 52px;
+      padding: 8px 8px;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.05);
+      color: var(--text-primary);
+      border: 1px solid rgba(234,236,239,0.1);
+      font-size: 13px;
+      font-weight: 600;
+      outline: none;
+      transition: all 0.2s;
+      min-width: 0;
+      text-align: center;
+    }
+    .leverage-input:focus {
+      border-color: var(--accent-primary, #F0B90B);
+      background: rgba(255,255,255,0.08);
+    }
     .trade-hint {
       font-size: 10px;
       color: var(--text-secondary);
@@ -540,6 +586,18 @@ export class SessionControlsComponent implements OnInit {
     } catch {}
     return 100;
   })();
+
+  /** Leverage: restore from localStorage or default 1 */
+  leverage: number = (() => {
+    try {
+      const saved = localStorage.getItem('scalping_leverage');
+      if (saved !== null) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed >= 1 && parsed <= 125) return parsed;
+      }
+    } catch {}
+    return 1;
+  })();
   
   applyingTradeValue = false;
   tradeValueApplied = false;
@@ -588,6 +646,11 @@ export class SessionControlsComponent implements OnInit {
         this.tradeValue = data.trade_value;
         try { localStorage.setItem('scalping_trade_value', String(data.trade_value)); } catch {}
       }
+      // Sync leverage from backend
+      if (data?.leverage && data.leverage > 0) {
+        this.leverage = data.leverage;
+        try { localStorage.setItem('scalping_leverage', String(data.leverage)); } catch {}
+      }
       this.cdr.detectChanges();
     });
     this.sessionApi.getStatus().subscribe();
@@ -632,12 +695,20 @@ export class SessionControlsComponent implements OnInit {
     } catch {}
   }
 
+  /** Persist leverage to localStorage so it survives page reload */
+  private saveLeverage(): void {
+    try {
+      localStorage.setItem('scalping_leverage', String(this.leverage));
+    } catch {}
+  }
+
   startSession(): void {
     this.loading = true;
     this.saveTradeValue();
+    this.saveLeverage();
     // Map globalMode: 'live' -> 'live', 'test' -> 'test', default -> 'paper'
     const executionMode = this.globalMode === 'live' ? 'live' : (this.globalMode === 'test' ? 'test' : 'paper');
-    this.sessionApi.start(executionMode, this.selectedStrategy, this.selectedSymbol, this.tradeValue).subscribe({
+    this.sessionApi.start(executionMode, this.selectedStrategy, this.selectedSymbol, this.tradeValue, this.leverage).subscribe({
       next: (data: ScalpingSession) => {
         this.session = data;
         this.sessionId = data.session_id || null;

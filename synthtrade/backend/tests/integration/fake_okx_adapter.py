@@ -17,12 +17,14 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 from app.execution.exchange_models import (
+    BorrowRecord,
     ClosePositionRequest,
     ExchangeOrder,
     ExitBracketOrder,
     ExitBracketRequest,
     ExitProtectionError,
     FeeTier,
+    MarginPosition,
     MarketOrderRequest,
     SymbolRef,
     SymbolRules,
@@ -243,6 +245,30 @@ class FakeOkxAdapter:
     async def get_long_short_ratio(self, base_asset: str, period: str = "5m") -> Optional[float]:
         self.calls.append(f"get_long_short_ratio({base_asset})")
         return getattr(self, "long_short_ratio_value", None)
+
+    # ── Margin methods (TASK-1222) ─────────────────────────────────────────────
+
+    async def set_leverage(self, symbol: SymbolRef, leverage: int, mgn_mode: str = "cross", ccy: Optional[str] = None) -> dict:
+        self.calls.append(f"set_leverage({symbol.okx},{leverage},{mgn_mode})")
+        return {"lever": str(leverage)}
+
+    async def get_leverage_info(self, symbol: SymbolRef, mgn_mode: str = "cross") -> dict:
+        self.calls.append(f"get_leverage_info({symbol.okx})")
+        return {"lever": "1", "mgnMode": mgn_mode}
+
+    async def get_margin_positions(self) -> list:
+        self.calls.append("get_margin_positions")
+        return []
+
+    async def close_short_position(self, symbol: SymbolRef) -> ExchangeOrder:
+        self.calls.append(f"close_short_position({symbol.okx})")
+        return await self.place_market_order(
+            MarketOrderRequest(symbol=symbol, side="buy", quantity=0.0)
+        )
+
+    async def get_borrow_repay_history(self, symbol: SymbolRef) -> list:
+        self.calls.append(f"get_borrow_repay_history({symbol.okx})")
+        return []
 
     # ── Test helpers ─────────────────────────────────────────────────────────
 

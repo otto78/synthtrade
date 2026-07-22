@@ -130,6 +130,7 @@ class MarketOrderRequest:
     side: OrderSide
     quantity: float = 0.0     # base asset quantity (optional when quote_amount is used)
     quote_amount: float | None = None  # alternative: spend this quote amount
+    margin_mode: str | None = None  # "cross" | "isolated" | None=cash (spot)
 
 
 @dataclass
@@ -148,6 +149,7 @@ class ExitBracketRequest:
     sl_price: float
     entry_order_id: str | None = None
     fee_tier: FeeTier | None = None
+    margin_mode: str | None = None  # "cross" | "isolated" | None=cash (spot)
 
 
 @dataclass
@@ -158,6 +160,32 @@ class ShortAvailability:
     max_loan_qty: float | None = None
     max_loan_ccy: str | None = None
     mgn_mode: str = "cross"
+
+
+@dataclass
+class MarginPosition:
+    """TASK-1222.I: Margin position from OKX /positions?instType=MARGIN."""
+    symbol: SymbolRef
+    side: OrderSide          # "buy" (long) or "sell" (short)
+    quantity: float
+    entry_price: float
+    mark_price: float
+    unrealized_pnl: float
+    margin_ratio: float      # mgnRatio from OKX
+    pos_ccy: str             # raw posCcy from OKX
+    lever: float = 1.0
+    mgn_mode: str = "cross"
+    raw: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class BorrowRecord:
+    """TASK-1222.J: Borrow/repay record from OKX quick-margin-borrow-repay-history."""
+    ccy: str
+    borrow_amount: float
+    margin_interest: float
+    timestamp: str
+    raw: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

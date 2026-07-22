@@ -655,11 +655,11 @@ class OkxExchangeAdapter:
     async def get_leverage_info(self, symbol: SymbolRef, mgn_mode: str = "cross") -> dict[str, Any]:
         """Get current leverage info via GET /api/v5/account/leverage-info.
 
-        Returns leverage info for each currency in the instrument.
-        Includes maxLever from OKX response (maximum allowed leverage).
-        Call before set_leverage to avoid redundant calls.
+        OKX requires instType=MARGIN and ccy (not instId).
+        Returns leverage info including maxLever (maximum allowed leverage).
         """
-        path = f"/api/v5/account/leverage-info?instId={symbol.okx}&mgnMode={mgn_mode}"
+        ccy = symbol.base
+        path = f"/api/v5/account/leverage-info?instType=MARGIN&ccy={ccy}&mgnMode={mgn_mode}"
         url = settings.OKX_BASE_URL.rstrip("/") + path
         headers = self._sign_headers("GET", path)
         try:

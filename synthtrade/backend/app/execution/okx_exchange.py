@@ -558,6 +558,8 @@ class OkxExchangeAdapter:
         """Check if short selling is available for a symbol.
 
         Calls max-loan + interest-limits to determine borrowability and APR.
+        In demo mode, falls back to public interest-rate-loan-quota if private
+        endpoints fail (demo accounts may not support private margin endpoints).
         Returns ShortAvailability with available=False on any error (no exceptions propagated).
         """
         from app.execution.exchange_models import ShortAvailability
@@ -574,6 +576,15 @@ class OkxExchangeAdapter:
                 data_loan = resp_loan.json()
 
             if data_loan.get("code") != "0":
+                # TASK-1224 FIX: In demo mode, private endpoints may fail with
+                # 50101 (APIKey mismatch) or 51010 (account mode). Fall back to
+                # public endpoint to at least check if the symbol is borrowable.
+                if self._demo:
+                    logger.info(
+                        "OKX max-loan failed in demo for %s: %s %s — trying public endpoint",
+                        inst_id, data_loan.get("code"), data_loan.get("msg"),
+                    )
+                    return await self._get_short_availability_public(symbol)
                 logger.warning(
                     "OKX max-loan failed for %s: %s %s",
                     inst_id, data_loan.get("code"), data_loan.get("msg"),
@@ -620,6 +631,68 @@ class OkxExchangeAdapter:
 
         except Exception as e:
             logger.warning("OKX get_short_availability failed for %s: %s", symbol.okx, e)
+            return ShortAvailability(available=False)
+
+    async def _get_short_availability_public(self, symbol: SymbolRef) -> "ShortAvailability":
+        """TASK-1224: Fallback for demo mode — use public interest-rate-loan-quota.
+
+        The public endpoint doesn't require authentication and works in demo mode.
+        It tells us if a currency is borrowable, but max_loan_qty will be None
+        (demo accounts may not report actual limits).
+        """
+        from app.execution.exchange_models import ShortAvailability
+
+        try:
+            ccy = symbol.base
+            base_url = settings.OKX_BASE_URL.rstrip("/")
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                # Public endpoint — no auth headers needed
+                resp = await client.get(
+                    f"{base_url}/api/v5/public/interest-rate-loan-quota",
+                    params={"ccy": ccy},
+                )
+                data = resp.json()
+
+            if data.get("code") != "0":
+                logger.debug(
+                    "OKX public interest-rate-loan-quota failed for %s: %s %s",
+                    symbol.okx, data.get("code"), data.get("msg"),
+                )
+                return ShortAvailability(available=False)
+
+            # Check if the currency appears in the response (borrowable)
+            rows = data.get("data", [])
+            if not rows:
+                return ShortAvailability(available=False)
+
+            # Any row for this ccy means it's borrowable
+            borrowable = any(r.get("ccy") == ccy for r in rows)
+            if not borrowable:
+                return ShortAvailability(available=False)
+
+            # Extract rate if available (hourly -> annualized)
+            apr = None
+            for r in rows:
+                if r.get("ccy") == ccy:
+                    rate_str = r.get("rate", "0")
+                    if rate_str:
+                        apr = float(rate_str) * 24 * 365
+                    break
+
+            logger.info(
+                "Short availability (public) for %s: available=True, apr=%s",
+                symbol.okx, apr,
+            )
+            return ShortAvailability(
+                available=True,
+                borrow_rate_apr=apr,
+                max_loan_qty=None,  # not available from public endpoint
+                max_loan_ccy=ccy,
+                mgn_mode="cross",
+            )
+
+        except Exception as e:
+            logger.debug("OKX public short availability failed for %s: %s", symbol.okx, e)
             return ShortAvailability(available=False)
 
     # ── Margin methods (TASK-1222) ─────────────────────────────────────────────

@@ -1,0 +1,434 @@
+{
+  "generated_at": "2026-07-22T09:37:26.745249+00:00",
+  "task": "TASK-1220",
+  "results": [
+    {
+      "name": "live_credentials_present",
+      "ok": true,
+      "details": {
+        "api_key": "6dc0...4e2f",
+        "secret": "2884...078F",
+        "passphrase": "Synt...026!",
+        "env_file": "C:\\Users\\andrea.mazzarotto\\myJobs\\SynthTrade\\synthtrade\\backend\\.env"
+      }
+    },
+    {
+      "name": "1220A_account_config",
+      "ok": true,
+      "details": {
+        "enableSpotBorrow": false,
+        "acctLv": "1",
+        "acctSt": null,
+        "posMode": "net_mode",
+        "uid": "858315397756873787",
+        "http_status": 200,
+        "raw_code": "0",
+        "raw_msg": ""
+      }
+    },
+    {
+      "name": "1220B_max_loan_BTC-EUR",
+      "ok": false,
+      "details": {
+        "instId": "BTC-EUR",
+        "maxLoan": null,
+        "ccy": null,
+        "mgnMode": null,
+        "is_borrowable": false,
+        "http_status": 200,
+        "raw_code": "51010",
+        "raw_msg": "You can't complete this request under your current account mode."
+      }
+    },
+    {
+      "name": "1220B_max_loan_ETH-EUR",
+      "ok": false,
+      "details": {
+        "instId": "ETH-EUR",
+        "maxLoan": null,
+        "ccy": null,
+        "mgnMode": null,
+        "is_borrowable": false,
+        "http_status": 200,
+        "raw_code": "51010",
+        "raw_msg": "You can't complete this request under your current account mode."
+      }
+    },
+    {
+      "name": "1220B_max_loan_summary",
+      "ok": false,
+      "details": {
+        "borrowable_symbols": [],
+        "total_tested": 2
+      }
+    },
+    {
+      "name": "1220C_interest_rate_ETH",
+      "ok": true,
+      "details": {
+        "ccy": "ETH",
+        "top_rate": 0.0,
+        "top_rate_pct": "N/A",
+        "tiers_count": 1,
+        "rates": [
+          {
+            "ccy": null,
+            "rate": null,
+            "7dRate": null,
+            "loanQuota": null,
+            "used": null
+          }
+        ],
+        "http_status": 200,
+        "raw_code": "0",
+        "raw_msg": ""
+      }
+    },
+    {
+      "name": "1220C_interest_rate_BTC",
+      "ok": true,
+      "details": {
+        "ccy": "BTC",
+        "top_rate": 0.0,
+        "top_rate_pct": "N/A",
+        "tiers_count": 1,
+        "rates": [
+          {
+            "ccy": null,
+            "rate": null,
+            "7dRate": null,
+            "loanQuota": null,
+            "used": null
+          }
+        ],
+        "http_status": 200,
+        "raw_code": "0",
+        "raw_msg": ""
+      }
+    },
+    {
+      "name": "1220D_leverage_BTC-EUR",
+      "ok": true,
+      "details": {
+        "instId": "BTC-EUR",
+        "lever": "5",
+        "mgnMode": "isolated",
+        "posSide": "",
+        "http_status": 200,
+        "raw_code": "0",
+        "raw_msg": ""
+      }
+    },
+    {
+      "name": "1220D_leverage_ETH-EUR",
+      "ok": true,
+      "details": {
+        "instId": "ETH-EUR",
+        "lever": "5",
+        "mgnMode": "isolated",
+        "posSide": "",
+        "http_status": 200,
+        "raw_code": "0",
+        "raw_msg": ""
+      }
+    },
+    {
+      "name": "1220E_positions_margin",
+      "ok": true,
+      "details": {
+        "positions_count": 0,
+        "sample": [],
+        "note": "Empty list is OK — confirms endpoint works, no active margin positions expected",
+        "http_status": 200,
+        "raw_code": "0",
+        "raw_msg": ""
+      }
+    },
+    {
+      "name": "1220F_position_tiers_BTC-EUR",
+      "ok": false,
+      "details": {
+        "instId": "BTC-EUR",
+        "instType": "SPOT",
+        "tiers_count": 0,
+        "mmr": null,
+        "tier": null,
+        "maxSz": null,
+        "minSz": null,
+        "http_status": 400,
+        "raw_code": "51000",
+        "raw_msg": "Parameter instType error"
+      }
+    },
+    {
+      "name": "1220F_position_tiers_ETH-EUR",
+      "ok": false,
+      "details": {
+        "instId": "ETH-EUR",
+        "instType": "SPOT",
+        "tiers_count": 0,
+        "mmr": null,
+        "tier": null,
+        "maxSz": null,
+        "minSz": null,
+        "http_status": 400,
+        "raw_code": "51000",
+        "raw_msg": "Parameter instType error"
+      }
+    },
+    {
+      "name": "1220G_borrow_repay_history",
+      "ok": false,
+      "details": {
+        "entries_count": 0,
+        "sample": [],
+        "note": "Empty list expected — no margin positions opened yet",
+        "http_status": 404,
+        "raw_code": 404,
+        "raw_msg": "Not Found"
+      }
+    },
+    {
+      "name": "1220G_interest_limits",
+      "ok": true,
+      "details": {
+        "limits_count": 1,
+        "data": [
+          {
+            "debt": "0",
+            "interest": "0",
+            "loanAlloc": "",
+            "nextDiscountTime": "1784714400000",
+            "nextInterestTime": "1784714400000",
+            "records": [
+              {
+                "availLoan": "",
+                "avgRate": "",
+                "ccy": "BTC",
+                "interest": "0",
+                "interestFreeLiab": "0",
+                "loanQuota": "10",
+                "posLoan": "",
+                "potentialBorrowingAmt": "0",
+                "rate": "0.0000612",
+                "surplusLmt": "10",
+                "surplusLmtDetails": {},
+                "usedLmt": "0",
+                "usedLoan": ""
+              },
+              {
+                "availLoan": "",
+                "avgRate": "",
+                "ccy": "ETH",
+                "interest": "0",
+                "interestFreeLiab": "0",
+                "loanQuota": "200",
+                "posLoan": "",
+                "potentialBorrowingAmt": "0",
+                "rate": "0.0000612",
+                "surplusLmt": "200",
+                "surplusLmtDetails": {},
+                "usedLmt": "0",
+                "usedLoan": ""
+              },
+              {
+                "availLoan": "",
+                "avgRate": "",
+                "ccy": "SOL",
+                "interest": "0",
+                "interestFreeLiab": "0",
+                "loanQuota": "4000",
+                "posLoan": "",
+                "potentialBorrowingAmt": "0",
+                "rate": "0.0000612",
+                "surplusLmt": "4000",
+                "surplusLmtDetails": {},
+                "usedLmt": "0",
+                "usedLoan": ""
+              },
+              {
+                "availLoan": "",
+                "avgRate": "",
+                "ccy": "DOGE",
+                "interest": "0",
+                "interestFreeLiab": "0",
+                "loanQuota": "100000",
+                "posLoan": "",
+                "potentialBorrowingAmt": "0",
+                "rate": "0.0000276",
+                "surplusLmt": "100000",
+                "surplusLmtDetails": {},
+                "usedLmt": "0",
+                "usedLoan": ""
+              },
+              {
+                "availLoan": "",
+                "avgRate": "",
+                "ccy": "XRP",
+                "interest": "0",
+                "interestFreeLiab": "0",
+                "loanQuota": "250000",
+                "posLoan": "",
+                "potentialBorrowingAmt": "0",
+                "rate": "0.0000276",
+                "surplusLmt": "250000",
+                "surplusLmtDetails": {},
+                "usedLmt": "0",
+                "usedLoan": ""
+              },
+              {
+                "availLoan": "",
+                "avgRate": "",
+                "ccy": "SUI",
+                "interest": "0",
+                "interestFreeLiab": "0",
+                "loanQuota": "100000",
+                "posLoan": "",
+                "potentialBorrowingAmt": "0",
+                "rate": "0.0000276",
+                "surplusLmt": "100000",
+                "surplusLmtDetails": {},
+                "usedLmt": "0",
+                "usedLoan": ""
+              },
+              {
+                "availLoan": "",
+                "avgRate": "",
+                "ccy": "ADA",
+                "interest": "0",
+                "interestFreeLiab": "0",
+                "loanQuota": "20000",
+                "posLoan": "",
+                "potentialBorrowingAmt": "0",
+                "rate": "0.0000276",
+                "surplusLmt": "20000",
+                "surplusLmtDetails": {},
+                "usedLmt": "0",
+                "usedLoan": ""
+              },
+              {
+                "availLoan": "",
+                "avgRate": "",
+                "ccy": "LTC",
+                "interest": "0",
+                "interestFreeLiab": "0",
+                "loanQuota": "500",
+                "posLoan": "",
+                "potentialBorrowingAmt": "0",
+                "rate": "0.0000276",
+                "surplusLmt": "500",
+                "surplusLmtDetails": {},
+                "usedLmt": "0",
+                "usedLoan": ""
+              },
+              {
+                "availLoan": "",
+                "avgRate": "",
+                "ccy": "PEPE",
+                "interest": "0",
+                "interestFreeLiab": "0",
+                "loanQuota": "3800000000",
+                "posLoan": "",
+                "potentialBorrowingAmt": "0",
+                "rate": "0.0000276",
+                "surplusLmt": "3800000000",
+                "surplusLmtDetails": {},
+                "usedLmt": "0",
+                "usedLoan": ""
+              },
+              {
+                "availLoan": "",
+                "avgRate": "",
+                "ccy": "PUMP",
+                "interest": "0",
+                "interestFreeLiab": "0",
+                "loanQuota": "1500000",
+                "posLoan": "",
+                "potentialBorrowingAmt": "0",
+                "rate": "0.0000276",
+                "surplusLmt": "1500000",
+                "surplusLmtDetails": {},
+                "usedLmt": "0",
+                "usedLoan": ""
+              },
+              {
+                "availLoan": "",
+                "avgRate": "",
+                "ccy": "USDC",
+                "interest": "0",
+                "interestFreeLiab": "0",
+                "loanQuota": "50000",
+                "posLoan": "",
+                "potentialBorrowingAmt": "0",
+                "rate": "0.0000612",
+                "surplusLmt": "50000",
+                "surplusLmtDetails": {},
+                "usedLmt": "0",
+                "usedLoan": ""
+              }
+            ]
+          }
+        ],
+        "http_status": 200,
+        "raw_code": "0",
+        "raw_msg": ""
+      }
+    },
+    {
+      "name": "1220H_gate_check",
+      "ok": false,
+      "details": {
+        "gate_results": [
+          {
+            "symbol": "BTC-EUR",
+            "borrowable": false,
+            "apr": 0.0,
+            "apr_pct": "0.00%",
+            "cost_2h_pct": "0.0000%",
+            "passes_gate": false
+          },
+          {
+            "symbol": "ETH-EUR",
+            "borrowable": false,
+            "apr": 0.0,
+            "apr_pct": "0.00%",
+            "cost_2h_pct": "0.0000%",
+            "passes_gate": false
+          }
+        ],
+        "note": "Gate: at least one symbol must be borrowable with positive APR for short to be viable"
+      }
+    },
+    {
+      "name": "1220I_usdt_fallback_BTC-USDT",
+      "ok": false,
+      "details": {
+        "instId": "BTC-USDT",
+        "maxLoan": null,
+        "is_borrowable": false,
+        "http_status": 200,
+        "raw_code": "51010",
+        "raw_msg": "You can't complete this request under your current account mode."
+      }
+    },
+    {
+      "name": "1220I_usdt_fallback_ETH-USDT",
+      "ok": false,
+      "details": {
+        "instId": "ETH-USDT",
+        "maxLoan": null,
+        "is_borrowable": false,
+        "http_status": 200,
+        "raw_code": "51010",
+        "raw_msg": "You can't complete this request under your current account mode."
+      }
+    },
+    {
+      "name": "1220I_usdt_fallback_summary",
+      "ok": false,
+      "details": {
+        "borrowable_usdt": []
+      }
+    }
+  ]
+}

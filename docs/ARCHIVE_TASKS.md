@@ -3969,3 +3969,19 @@ Il Trade Log mostra solo l'orario (es. `8:19 AM`, `9:36 AM`, `2:25 AM`) senza la
 - ✅ 1166.E — REST endpoints (position, performance, config)
 - ✅ 1166.F — router.py orchestratore + backward compat
 
+---
+
+## 🔧 Fix Leg Detection OCO + Resilient Polling Loop (2026-07-21)
+
+### Fix leg detection OCO + resilient polling loop
+**Status:** Done ✅  
+**Completato:** 2026-07-21
+
+**Problema:** OCO con entrambi i trigger non-zero etichettava sempre `take_profit` indipendentemente dal leg effettivo. OKX EU `orders-algo-history` fornisce `actualSide` (`"tp"`/`"sl"`) ma non veniva usato.
+
+**Soluzione:**
+- `_normalize_algo_order`: priorità `actualSide` → fill_price vs trigger → `ordType`
+- Step 3 nel polling loop: query `orders-algo-history?ordType=oco&state=effective` per `actualSide`
+- Polling loop resiliente: ogni step con try/except isolato
+- Recovery logging per monitoraggio
+

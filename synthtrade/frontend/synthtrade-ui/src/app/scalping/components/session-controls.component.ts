@@ -99,7 +99,6 @@ import { ConfigService } from '../../core/services/config.service';
               />
               <span class="trade-currency">{{ getQuoteAsset() }}</span>
               <ng-container *ngIf="shortAvailable">
-                <span class="trade-separator">×</span>
                 <input
                   type="number"
                   [(ngModel)]="leverage"
@@ -180,7 +179,6 @@ import { ConfigService } from '../../core/services/config.service';
             />
             <span class="trade-currency">{{ getQuoteAsset() }}</span>
             <ng-container *ngIf="shortAvailable">
-              <span class="trade-separator">×</span>
               <input
                 type="number"
                 [(ngModel)]="leverage"
@@ -416,11 +414,11 @@ import { ConfigService } from '../../core/services/config.service';
     .trade-value-row {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
     }
     .trade-input {
       flex: 1;
-      padding: 8px 10px;
+      padding: 8px 8px;
       border-radius: 6px;
       background: rgba(255,255,255,0.05);
       color: var(--text-primary);
@@ -430,6 +428,7 @@ import { ConfigService } from '../../core/services/config.service';
       outline: none;
       transition: all 0.2s;
       min-width: 0;
+      max-width: 80px;
     }
     .trade-input:focus {
       border-color: var(--accent-primary, #F0B90B);
@@ -448,7 +447,7 @@ import { ConfigService } from '../../core/services/config.service';
       font-weight: 300;
     }
     .leverage-input {
-      width: 52px;
+      width: 60px;
       padding: 8px 8px;
       border-radius: 6px;
       background: rgba(255,255,255,0.05);

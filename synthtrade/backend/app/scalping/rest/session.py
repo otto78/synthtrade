@@ -247,6 +247,19 @@ async def control_session(control: Dict) -> Dict:
         if session["mode"] != "live" and not settings.exchange_demo:
             _execution_state["fee_tier"] = {"maker": 0.001, "taker": 0.001}  # default paper
         
+        # TASK-1222: Set leverage on exchange if > 1 and live/demo mode
+        leverage_val = int(control.get("leverage", session.get("leverage", 1)))
+        session["leverage"] = leverage_val
+        if leverage_val > 1 and session["mode"] in ("live", "test") and _execution_state.get("exchange"):
+            try:
+                sym_ref_lev = SymbolRef.from_okx(active_symbol) if "-" in active_symbol else SymbolRef.from_compact(active_symbol)
+                await _execution_state["exchange"].set_leverage(
+                    sym_ref_lev, leverage_val, mgn_mode="cross"
+                )
+                logger.info(f"✓ Leverage set to {leverage_val}× for {active_symbol}")
+            except Exception as e:
+                logger.warning(f"⚠ Failed to set leverage {leverage_val}× for {active_symbol}: {e}")
+        
         # Reset strategy override if there's an existing execution loop
         existing_loop = _execution_state.get("loop")
         if existing_loop:
@@ -615,7 +628,13 @@ async def download_session_logs(session_id: str) -> Response:
 
     Genera il file .txt al volo dal contenuto salvato nel DB (log_content).
     I log vengono salvati nel DB allo stop della sessione.
+
+    Retroactive fix: strips duplicate analysis summaries and non-log lines
+    from legacy log_content that was stored before the restore filter fix.
     """
+    import re as _re
+    from datetime import datetime, timezone
+
     try:
         supabase = get_supabase()
         resp = supabase.table("scalping_sessions") \
@@ -638,9 +657,27 @@ async def download_session_logs(session_id: str) -> Response:
             )
 
         symbol = row.get("symbol", "UNKNOWN")
+
+        # Retroactive cleanup: extract only actual log entry lines,
+        # stripping headers, duplicate analysis summaries, and truncation markers.
+        _log_entry_re = _re.compile(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]")
+        log_lines = [line for line in log_content.split("\n") if _log_entry_re.match(line.strip())]
+
+        safe_symbol = symbol.replace("/", "_").upper()
+        header = (
+            f"{'=' * 72}\n"
+            f" SESSION LOG DUMP\n"
+            f" Session ID : {session_id}\n"
+            f" Symbol     : {safe_symbol}\n"
+            f" Entries    : {len(log_lines)}\n"
+            f" Generated  : {datetime.now(timezone.utc).isoformat()}\n"
+            f"{'=' * 72}\n\n"
+        )
+        cleaned_content = header + "\n".join(log_lines) + "\n"
+
         filename = f"session_{symbol}_{session_id}_logs.txt"
         return Response(
-            content=log_content,
+            content=cleaned_content,
             media_type="text/plain",
             headers={"Content-Disposition": f"attachment; filename={filename}"},
         )

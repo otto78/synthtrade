@@ -151,6 +151,16 @@ class ExitBracketRequest:
 
 
 @dataclass
+class ShortAvailability:
+    """TASK-1221: Short availability info for a symbol."""
+    available: bool
+    borrow_rate_apr: float | None = None
+    max_loan_qty: float | None = None
+    max_loan_ccy: str | None = None
+    mgn_mode: str = "cross"
+
+
+@dataclass
 class ExchangeOrder:
     """Normalized order result from any exchange."""
     provider: str

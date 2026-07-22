@@ -546,6 +546,76 @@ class OkxExchangeAdapter:
             logger.warning("OKX get_trade_fee failed for %s: %s — using hardcoded fallback", symbol.okx, e)
             return _FALLBACK_FEE
 
+    # ── Short availability (TASK-1221) ────────────────────────────────────────
+
+    async def get_short_availability(self, symbol: SymbolRef) -> "ShortAvailability":
+        """Check if short selling is available for a symbol.
+
+        Calls max-loan + interest-limits to determine borrowability and APR.
+        Returns ShortAvailability with available=False on any error (no exceptions propagated).
+        """
+        from app.execution.exchange_models import ShortAvailability
+
+        try:
+            inst_id = symbol.okx
+            # 1. max-loan (cross mode — Simple account doesn't support isolated)
+            path_loan = f"/api/v5/account/max-loan?instId={inst_id}&mgnMode=cross"
+            url_loan = settings.OKX_BASE_URL.rstrip("/") + path_loan
+            headers_loan = self._sign_headers("GET", path_loan)
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp_loan = await client.get(url_loan, headers=headers_loan)
+                data_loan = resp_loan.json()
+
+            if data_loan.get("code") != "0":
+                logger.warning(
+                    "OKX max-loan failed for %s: %s %s",
+                    inst_id, data_loan.get("code"), data_loan.get("msg"),
+                )
+                return ShortAvailability(available=False)
+
+            # Find sell-side row (borrowable asset)
+            loan_rows = data_loan.get("data", [])
+            sell_rows = [r for r in loan_rows if r.get("side") == "sell"]
+            if not sell_rows:
+                return ShortAvailability(available=False)
+
+            max_loan = float(sell_rows[0].get("maxLoan", "0") or "0")
+            if max_loan <= 0:
+                return ShortAvailability(available=False)
+
+            ccy = sell_rows[0].get("ccy", symbol.base)
+
+            # 2. interest-limits for APR (private endpoint, more reliable than public)
+            path_limits = "/api/v5/account/interest-limits"
+            url_limits = settings.OKX_BASE_URL.rstrip("/") + path_limits
+            headers_limits = self._sign_headers("GET", path_limits)
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp_limits = await client.get(url_limits, headers=headers_limits)
+                data_limits = resp_limits.json()
+
+            apr = None
+            if data_limits.get("code") == "0":
+                for rec in (data_limits.get("data", [{}])[0].get("records", [])):
+                    if rec.get("ccy") == ccy:
+                        rate_str = rec.get("rate", "0")
+                        if rate_str:
+                            apr = float(rate_str) * 24 * 365  # hourly -> annualized
+                        break
+
+            return ShortAvailability(
+                available=True,
+                borrow_rate_apr=apr,
+                max_loan_qty=max_loan,
+                max_loan_ccy=ccy,
+                mgn_mode="cross",
+            )
+
+        except Exception as e:
+            logger.warning("OKX get_short_availability failed for %s: %s", symbol.okx, e)
+            return ShortAvailability(available=False)
+
     # ── Orders ────────────────────────────────────────────────────────────────
 
     async def _direct_place_market_order(self, symbol: SymbolRef, side: str, quantity: float, quote_amount: Optional[float] = None) -> dict[str, Any]:

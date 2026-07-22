@@ -7,7 +7,7 @@ import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { NgIf, NgClass, NgFor, DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SessionApiService } from '../services/session-api.service';
-import { ExchangeSymbolsService } from '../services/exchange-symbols.service';
+import { ExchangeSymbolsService, ExchangeInstrument } from '../services/exchange-symbols.service';
 import { ScalpingSession } from '../models/session.model';
 import { ConfigService } from '../../core/services/config.service';
 
@@ -60,6 +60,17 @@ import { ConfigService } from '../../core/services/config.service';
             </div>
             <div class="selected-symbol" *ngIf="selectedSymbol">
               Selezionato: <strong>{{ selectedSymbol }}</strong>
+            </div>
+            <!-- TASK-1221: Short availability badge -->
+            <div class="short-badge" *ngIf="selectedSymbol && shortAvailability !== null"
+                 [class.available]="shortAvailability?.short_available"
+                 [class.unavailable]="!shortAvailability?.short_available">
+              <span *ngIf="shortAvailability?.short_available">
+                ✅ Short disponibile — {{ (shortAvailability!.short_borrow_rate_apr! * 100) | number:'1.1-1' }}% APR
+              </span>
+              <span *ngIf="!shortAvailability?.short_available">
+                ⚠️ Short non disponibile per questo simbolo
+              </span>
             </div>
           </div>
 
@@ -354,6 +365,24 @@ import { ConfigService } from '../../core/services/config.service';
       color: var(--accent-primary, #F0B90B);
     }
 
+    /* TASK-1221: Short availability badge */
+    .short-badge {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin-top: 4px;
+    }
+    .short-badge.available {
+      background: rgba(38,166,154,0.12);
+      color: #26a69a;
+      border: 1px solid rgba(38,166,154,0.25);
+    }
+    .short-badge.unavailable {
+      background: rgba(255,183,77,0.1);
+      color: #ffb74d;
+      border: 1px solid rgba(255,183,77,0.2);
+    }
+
     /* Trade Value field */
     .trade-value-row {
       display: flex;
@@ -519,8 +548,10 @@ export class SessionControlsComponent implements OnInit {
   
   // Symbol search
   allSymbols: string[] = [];
+  allInstruments: ExchangeInstrument[] = [];
   symbolFilter = '';
   showSymbolDropdown = false;
+  shortAvailability: ExchangeInstrument | null = null;
 
   globalMode: string = 'test';
 
@@ -536,12 +567,14 @@ export class SessionControlsComponent implements OnInit {
       this.globalMode = info.mode;
       // TASK-1116.G.4: Re-fetch instruments when mode changes
       const modeParam = info.mode === 'live' ? 'live' : 'test';
-      this.exchangeSymbols.getSymbols(modeParam as 'test' | 'live').subscribe((symbols) => {
-        this.allSymbols = symbols;
+      this.exchangeSymbols.getInstruments(modeParam as 'test' | 'live').subscribe((instruments) => {
+        this.allInstruments = instruments;
+        this.allSymbols = instruments.map(i => i.symbol);
         // Update default symbol from service if current selection is not in list
-        if (symbols.length > 0 && !symbols.includes(this.selectedSymbol)) {
-          this.selectedSymbol = this.exchangeSymbols.defaultSymbol || symbols[0];
+        if (this.allSymbols.length > 0 && !this.allSymbols.includes(this.selectedSymbol)) {
+          this.selectedSymbol = this.exchangeSymbols.defaultSymbol || this.allSymbols[0];
         }
+        this.updateShortAvailability();
         this.cdr.detectChanges();
       });
     });
@@ -579,9 +612,16 @@ export class SessionControlsComponent implements OnInit {
     this.selectedSymbol = symbol;
     this.symbolFilter = symbol;
     this.showSymbolDropdown = false;
+    this.updateShortAvailability();
     // Immediately activate live chart preview with historical candles
     this.sessionApi.setPreviewSymbol(symbol);
     this.cdr.detectChanges();
+  }
+
+  /** TASK-1221: Look up short availability for the selected symbol from cached instruments */
+  private updateShortAvailability(): void {
+    const found = this.allInstruments.find(i => i.symbol === this.selectedSymbol);
+    this.shortAvailability = found || null;
   }
 
   /** Persist trade value to localStorage so it survives page reload */

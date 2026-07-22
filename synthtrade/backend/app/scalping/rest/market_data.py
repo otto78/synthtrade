@@ -71,17 +71,55 @@ async def exchange_instruments(mode: str | None = None):
                 resp.raise_for_status()
                 data = resp.json()
             raw = data.get("data", [])
-            instruments = [
-                {
-                    "symbol": item["instId"],
+
+            # TASK-1221: Check short availability for EUR pairs (once per discovery cycle)
+            short_availability: dict[str, dict] = {}
+            if settings.EXCHANGE_PROVIDER.lower() == "okx" and not is_demo:
+                try:
+                    from app.execution.exchange_models import SymbolRef, ShortAvailability
+                    from app.execution.okx_exchange import OkxExchangeAdapter
+                    adapter = OkxExchangeAdapter(
+                        api_key=settings.okx_api_key,
+                        secret=settings.okx_secret_key,
+                        passphrase=settings.okx_passphrase,
+                        demo=is_demo,
+                    )
+                    eur_instruments = [
+                        item for item in raw
+                        if item.get("quoteCcy") == "EUR" and item.get("state") == "live"
+                    ]
+                    for item in eur_instruments[:10]:  # cap at 10 to avoid rate limits
+                        inst_id = item["instId"]
+                        try:
+                            sym = SymbolRef.from_okx(inst_id)
+                            avail = await adapter.get_short_availability(sym)
+                            short_availability[inst_id] = {
+                                "short_available": avail.available,
+                                "short_borrow_rate_apr": round(avail.borrow_rate_apr, 4) if avail.borrow_rate_apr else None,
+                                "short_max_loan_qty": avail.max_loan_qty,
+                            }
+                        except Exception as e:
+                            logger.debug("Short availability check failed for %s: %s", inst_id, e)
+                            short_availability[inst_id] = {"short_available": False}
+                except Exception as e:
+                    logger.warning("Short availability batch check failed: %s", e)
+
+            instruments = []
+            for item in raw:
+                if item.get("state") != "live":
+                    continue
+                inst_id = item["instId"]
+                short_info = short_availability.get(inst_id, {})
+                instruments.append({
+                    "symbol": inst_id,
                     "base": item["baseCcy"],
                     "quote": item["quoteCcy"],
                     "status": item.get("state", "live"),
                     "provider": "okx",
-                }
-                for item in raw
-                if item.get("state") == "live"
-            ]
+                    "short_available": short_info.get("short_available", False),
+                    "short_borrow_rate_apr": short_info.get("short_borrow_rate_apr"),
+                    "short_max_loan_qty": short_info.get("short_max_loan_qty"),
+                })
             instruments.sort(key=lambda x: (x["quote"] != "EUR", x["symbol"]))
             eur_pairs = [i["symbol"] for i in instruments if i["quote"] == "EUR"]
             default_symbol = "BTC-EUR" if "BTC-EUR" in eur_pairs else (eur_pairs[0] if eur_pairs else "BTC-EUR")

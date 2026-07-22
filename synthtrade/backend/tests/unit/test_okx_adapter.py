@@ -599,3 +599,77 @@ def test_get_order_event_stream_okx(monkeypatch):
     from app.core.exchange_factory import get_order_event_stream
     stream = get_order_event_stream()
     assert isinstance(stream, OkxOrderEventStream)
+
+
+# ── TASK-1221: get_short_availability ────────────────────────────────────────
+
+def _mock_okx_response(code: str, data: list, msg: str = "") -> MagicMock:
+    """Create a mock httpx response."""
+    resp = MagicMock()
+    resp.json.return_value = {"code": code, "data": data, "msg": msg}
+    resp.status_code = 200
+    return resp
+
+
+@pytest.mark.asyncio
+async def test_get_short_availability_success(monkeypatch):
+    """max-loan>0 + interest-limits → available=True with rate."""
+    adapter = OkxExchangeAdapter(api_key="k", secret="s", passphrase="p", demo=True)
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=[
+        _mock_okx_response("0", [{"ccy": "BTC", "maxLoan": "0.00188", "mgnMode": "cross", "side": "sell"}]),
+        _mock_okx_response("0", [{"records": [{"ccy": "BTC", "rate": "0.0000612"}]}]),
+    ])
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kw: mock_client)
+
+    result = await adapter.get_short_availability(BTC_EUR)
+
+    assert result.available is True
+    assert result.max_loan_qty == pytest.approx(0.00188)
+    assert result.max_loan_ccy == "BTC"
+    assert result.borrow_rate_apr is not None
+    assert result.borrow_rate_apr > 0
+
+
+@pytest.mark.asyncio
+async def test_get_short_availability_zero_max_loan(monkeypatch):
+    """max-loan=0 → available=False."""
+    adapter = OkxExchangeAdapter(api_key="k", secret="s", passphrase="p", demo=True)
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=_mock_okx_response("0", [{"ccy": "BTC", "maxLoan": "0", "side": "sell"}]))
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kw: mock_client)
+
+    result = await adapter.get_short_availability(BTC_EUR)
+    assert result.available is False
+
+
+@pytest.mark.asyncio
+async def test_get_short_availability_endpoint_error(monkeypatch):
+    """Network error → available=False, no exception propagated."""
+    adapter = OkxExchangeAdapter(api_key="k", secret="s", passphrase="p", demo=True)
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=Exception("connection refused"))
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kw: mock_client)
+
+    result = await adapter.get_short_availability(BTC_EUR)
+    assert result.available is False
+
+
+@pytest.mark.asyncio
+async def test_get_short_availability_api_error_code(monkeypatch):
+    """OKX API returns error code → available=False."""
+    adapter = OkxExchangeAdapter(api_key="k", secret="s", passphrase="p", demo=True)
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=_mock_okx_response("51010", [], "account mode error"))
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kw: mock_client)
+
+    result = await adapter.get_short_availability(BTC_EUR)
+    assert result.available is False

@@ -73,8 +73,9 @@ async def exchange_instruments(mode: str | None = None):
             raw = data.get("data", [])
 
             # TASK-1221: Check short availability for EUR pairs (once per discovery cycle)
+            # TASK-1224 FIX: also run in demo mode — OKX demo supports short on select symbols
             short_availability: dict[str, dict] = {}
-            if settings.EXCHANGE_PROVIDER.lower() == "okx" and not is_demo:
+            if settings.EXCHANGE_PROVIDER.lower() == "okx":
                 try:
                     from app.execution.exchange_models import SymbolRef, ShortAvailability
                     from app.execution.okx_exchange import OkxExchangeAdapter

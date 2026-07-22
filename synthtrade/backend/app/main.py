@@ -143,6 +143,29 @@ async def _restore_scalping_session(db) -> None:
             db_session_id=session_id,
         )
         session_log_handler.symbol = _execution_state["session"]["symbol"]
+
+        # Restore existing log_content from DB so pre-restore logs are not lost
+        try:
+            from app.db.supabase_client import get_supabase
+            _existing = get_supabase().table("scalping_sessions") \
+                .select("log_content") \
+                .eq("id", session_id) \
+                .limit(1) \
+                .execute()
+            if _existing.data and _existing.data[0].get("log_content"):
+                _prev = _existing.data[0]["log_content"]
+                _skip = {"=", "SESSION LOG DUMP", "Session ID", "Symbol", "Entries", "Generated", "SESSION ANALYSIS SUMMARY"}
+                for _line in _prev.split("\n"):
+                    _line = _line.strip()
+                    if not _line:
+                        continue
+                    if any(_line.startswith(s) for s in _skip):
+                        continue
+                    session_log_handler._buffer.append(_line)
+                logger.info("[LIVE_LOG] Loaded %d previous log entries from DB for restore", len(session_log_handler._buffer))
+        except Exception as _e:
+            logger.warning("[LIVE_LOG] Could not load previous logs from DB: %s", _e)
+
         session_log_handler.attach()
 
         def _make_restore_persist_callback(h: SessionLogHandler) -> Callable[[str], None]:

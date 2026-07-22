@@ -158,7 +158,7 @@ class LogParser:
         'intel_score': r'score=([-\d.]+)',
         'intel_bias': r'bias=(bullish|bearish|neutral)',
         'trend_direction': r'trend=(converging|diverging|stable)',
-        'trade': r'>>> TRADE: side=(BUY|SELL)',
+        'trade': r'TRADE:.*side=(BUY|SELL)',
     }
     
     def parse_lines_to_records(self, content: str) -> List[Dict[str, Any]]:

@@ -688,6 +688,12 @@ async def get_session_log_analysis(session_id: str) -> Dict:
                    line.startswith(" SESSION ANALYSIS SUMMARY"):
                     continue
                 temp_handler._buffer.append(line)
+                # Create a minimal LogRecord so _analyze() can read _raw_records
+                rec = logging.LogRecord(
+                    name="", level=logging.INFO, pathname="", lineno=0,
+                    msg=line, args=(), exc_info=None,
+                )
+                temp_handler._raw_records.append(rec)
 
         analysis = temp_handler.get_structured_analysis()
 

@@ -92,8 +92,21 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
             entry_price_rounded = round(float(pos.entry_price), 2)
             entry_time_str = pos.entry_time.isoformat() if pos.entry_time else None
             
-            # ── Strategy 1: match via oco_order_list_id (univoco, deterministico) ──
+            # ── Guard: skip if trade already closed (prevents duplicate rows) ──
             if pos.oco_order_list_id:
+                _existing = supabase.table("scalping_trades") \
+                    .select("id, status") \
+                    .eq("oco_order_list_id", pos.oco_order_list_id) \
+                    .limit(1) \
+                    .execute()
+                if _existing.data:
+                    if _existing.data[0].get("status") == "closed":
+                        logger.debug(f"Trade already closed in DB (oco_id={pos.oco_order_list_id}), skipping duplicate close")
+                        return
+                    trade_id = _existing.data[0]["id"]
+
+            # ── Strategy 1: match via oco_order_list_id (univoco, deterministico) ──
+            if not trade_id and pos.oco_order_list_id:
                 resp = supabase.table("scalping_trades") \
                     .select("id") \
                     .eq("oco_order_list_id", pos.oco_order_list_id) \
@@ -106,6 +119,20 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
             # ── Strategy 2 (fallback): session_id + entry_price + entry_time ──
             # Usato per trade pre-TASK-825 che non hanno oco_order_list_id.
             # Arrotonda entry_price a 2 decimali per evitare mismatch floating-point.
+            if not trade_id:
+                # Guard: check if a closed row already exists for this session+price
+                _existing_fallback = supabase.table("scalping_trades") \
+                    .select("id, status") \
+                    .eq("session_id", db_sid) \
+                    .eq("entry_price", entry_price_rounded) \
+                    .limit(1) \
+                    .execute()
+                if _existing_fallback.data:
+                    if _existing_fallback.data[0].get("status") == "closed":
+                        logger.debug(f"Trade already closed in DB (session={db_sid} price={entry_price_rounded}), skipping duplicate close")
+                        return
+                    trade_id = _existing_fallback.data[0]["id"]
+
             if not trade_id:
                 # Strategy 2a: session_id + entry_price + status (no entry_time string compare
                 # to avoid Supabase timestamptz normalization mismatch)

@@ -274,8 +274,8 @@ class SessionLogHandler(logging.Handler):
                 if block_match:
                     analysis["signals"]["blocked_reasons"][block_match.group(1)] += 1
 
-            # TRADE execution
-            if ">>> TRADE:" in msg:
+            # TRADE execution (matches both ">>> TRADE:" and "[Candle] TRADE:")
+            if "TRADE:" in msg and ("side=" in msg or "side=BUY" in msg or "side=SELL" in msg):
                 analysis["trades"]["total"] += 1
                 if "side=BUY" in msg:
                     analysis["trades"]["buy"] += 1

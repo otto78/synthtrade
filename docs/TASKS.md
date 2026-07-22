@@ -13,7 +13,7 @@ _Nessun task attivo._
 > **Stato:** TASK-1220 completato (GATE PASSATO). Account in Simple mode — solo **cross margin**.
 > **Architettura:** `docs/architecture/okx-short-selling-architecture.md`
 > **Risultati spike:** `docs/analysis/okx-short-spike-results.md`
-> **Prossimo passo:** TASK-1222 — adapter margin methods
+> **Prossimo passo:** TASK-1223 (ExchangeAdapterProtocol) + TASK-1227 (Session start short_enabled)
 
 | Task | Titolo | Blocco | Stato |
 |------|--------|--------|-------|
@@ -23,8 +23,8 @@ _Nessun task attivo._
 | TASK-1223 | ExchangeAdapterProtocol — open_short | Fase 1 | ⏳ Ready (1222 done) |
 | TASK-1224 | OkxExchangeAdapter — open_short | Fase 1 | ⏳ Ready (1222,1223 done) |
 | TASK-1225 | candle_processor — invia ordine SELL | Fase 1 | ❌ Blocked (1224) |
-| TASK-1226 | _execution_state — short_enabled flag | Fase 1 | ⏳ Ready |
-| TASK-1227 | Session start — short_enabled | Fase 1 | ❌ Blocked (1226) |
+| TASK-1226 | _execution_state — short_enabled flag | Fase 1 | ✅ Done (flag + gate + toggle + 11 test) |
+| TASK-1227 | Session start — short_enabled | Fase 1 | ✅ Done (part of 1226 — session.py + DB insert) |
 | TASK-1228 | DB ops — position_side | Fase 1 | ⏳ Ready |
 | TASK-1229 | Supervisor prompt — contesto short | Fase 1 | ⏳ Ready |
 | TASK-1230 | Time-stop Layer 1+2 (MVP) | Fase 2 | ⏳ Ready (depends on 1220 only) |

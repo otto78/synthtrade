@@ -198,20 +198,32 @@ Regola non negoziabile: se `place_exit_bracket()` fallisce, l'adapter chiude sub
 
 ### 5.3 Short/Margin
 
-OKX non richiede il modello Binance "wallet separati -> transfer -> borrow -> repay" come percorso primario. Per OKX il piano e':
+OKX non richiede il modello Binance "wallet separati -> transfer -> borrow -> repay". Il conto e' unificato e il borrow avviene a livello di ordine:
 
-```text
-Segnale SELL approvato e short_enabled=true
-  -> place_market_order(tdMode=cross|isolated, side=sell, auto-borrow se confermato)
-  -> place_exit_bracket(side=buy, TP sotto entry, SL sopra entry)
-  -> auto-repay alla chiusura se supportato e validato
-```
+**Meccanica reale (verificata su documentazione ufficiale OKX):**
 
-Implicazioni:
+1. **Prerequisito:** account mode deve avere `enableSpotBorrow=true` (verificabile via `GET /api/v5/account/config`)
+2. **Apertura short:** stesso endpoint del long (`POST /api/v5/trade/order`), cambia solo `tdMode` da `cash` a `cross`/`isolated` e `side=sell`. Il borrow scatta automaticamente al fill se l'account ha enableSpotBorrow e c'e' collaterale/limite sufficiente.
+3. **Riconoscimento short a posteriori:** `GET /api/v5/account/positions` — campo `posCcy`: quote currency (EUR) = short, base currency (BTC) = long.
+4. **Chiusura short:** `place_exit_bracket(side=buy, TP sotto entry, SL sopra entry)` — stessa logica bracket gia' in uso per il long.
+5. **Repay:** automatico se l'account ha `enableSpotBorrow` + modalita' auto-repay; altrimenti esplicito via `POST /api/v5/account/quick-margin-borrow-repay`.
 
-- `WalletOrchestrator` Binance non va implementato ora.
+**Costi:**
+- Fee: 0.70% round-trip (già noto)
+- Interesse: `Liability x (APR / 365 / 24)`, accrual orario. Trascurabile per scalping breve, rilevante per posizioni lunghe (>2h)
+- Endpoint pubblico per tasso: `GET /api/v5/public/interest-rate-loan-quota` (nessuna autenticazione)
+
+**Check pre-sessione (feature da implementare):**
+- `GET /api/v5/account/max-loan?instId=<symbol>&mgnMode=cross` — se ritorna 0, short non disponibile per quel simbolo
+- `GET /api/v5/public/interest-rate-loan-quota?ccy=<asset>` — tasso interesse reale
+
+**Implicazioni:**
+- `WalletOrchestrator` Binance non serve (conto unificato OKX).
 - La futura epica short riparte da OKX margin mode e account mode.
 - Il DB deve comunque prevedere `position_side`, `margin_mode`, `borrow_asset`, `borrow_amount`, `margin_interest`, `repay_status`, ma questi campi si popolano secondo la semantica OKX.
+- **Nessuno di questi endpoint e' mai stato chiamato empiricamente sul vostro account reale.** Prima di scrivere adapter, serve uno spike read-only (stesso principio per OKX Demo e Bybit).
+
+> Rif.: `docs/recap/2026-07-21_okx-short-selling-analysis-recap.md` per dettagli completi.
 
 ---
 

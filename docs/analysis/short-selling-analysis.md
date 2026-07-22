@@ -1,4 +1,9 @@
-# Short Selling — Roadmap e Stato
+> **SUPERSEDED — 21 luglio 2026**
+> Questo documento descrive l'architettura Binance (WalletOrchestrator/MarginBorrowManager),
+> non applicabile a OKX. Riferimento attuale: `docs/architecture/okx-short-selling-architecture.md`.
+> Non avviare task da questo file.
+
+# Short Selling — Roadmap e Stato — BINANCE (Superseded)
 
 > **Tema trasversale** che emerge da: `docs/recap/2026-06-20_risk-controls-audit.md`, `docs/recap/2026-06-25_mean-reversion-short.md`, `docs/recap/2026-06-26_trailing-stop-loss.md`.
 > **Consolidato in:** `docs/recap/MASTER_RECAP.md` §4.1.

@@ -1,7 +1,12 @@
-# SynthTrade — Architettura Short Selling (Margin Spot)
+> **SUPERSEDED — 21 luglio 2026**
+> Questo documento descrive l'architettura Binance (WalletOrchestrator/MarginBorrowManager),
+> non applicabile a OKX. Riferimento attuale: `docs/architecture/okx-short-selling-architecture.md`.
+> Non avviare task da questo file.
+
+# SynthTrade — Architettura Short Selling (Margin Spot) — BINANCE (Superseded)
 **Versione:** 1.0 — Giugno 2026  
 **Scope:** Aggiunta supporto SHORT al modulo scalping live su BNBUSDC  
-**Stato:** In fase di progettazione — nessun codice implementato ancora
+**Stato:** In fase di progettazione — nessun codice implementato mai scritto. Superseded dall'architettura OKX.
 
 ---
 

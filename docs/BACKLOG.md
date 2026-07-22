@@ -18,11 +18,12 @@
 - **Impatto:** Modifica strutturale dell'integrazione exchange (REST + WebSocket + autenticazione + OCO/TP-SL + fee reali + symbol discovery + dashboard balance + collector intelligence)
 - **Default iniziale:** `OKB-EUR`, validato runtime dalla lista strumenti OKX; verificato `state=live` su endpoint pubblico OKX il 2026-07-02
 
-### Short Selling (4 fasi)
-- **Analisi:** `docs/analysis/short-selling-analysis.md`
-- **Architettura:** `docs/architecture/short-selling-architecture.md`
-- **Task corrente:** sospeso fino al cutover OKX; TASK-1000 e' superseded dal modello OKX
-- **Recap:** `docs/recap/2026-06-25_mean-reversion-short.md`, `docs/recap/2026-06-26_trailing-stop-loss.md`
+### Short Selling (OKX Spot Margin)
+- **Architettura attuale:** `docs/architecture/okx-short-selling-architecture.md`
+- **Superseded (Binance):** `docs/architecture/short-selling-architecture.md`, `docs/analysis/short-selling-analysis.md`
+- **Recap:** `docs/recap/2026-07-21_okx-short-selling-analysis-recap.md`
+- **Stato:** Cutover OKX completato, pianificazione costi in corso, zero codice. Time-stop (§6 architettura) da chiudere in sessione dedicata prima di aprire task.
+- **Prerequisito:** spike read-only API OKX (max-loan, interest-rate, account config) sul conto reale
 
 ### Trailing Stop Loss Strategy ("Growth Strategy")
 - **Analisi:** `docs/recap/2026-06-26_trailing-stop-loss.md`
@@ -35,9 +36,9 @@
 - **Dipendenze:** dati OHLCV già disponibili
 
 ### Wallet Orchestrator
-- **Task corrente:** sospeso; TASK-1000 era specifico per Binance Margin
-- **Architettura:** snapshot→resolve→execute→verify, priorità Spot→Funding→Earn
-- **Dettaglio:** `docs/analysis/short-selling-analysis.md` §3
+- **Task corrente:** cancellato. Non serve su OKX (conto unificato, nessun transfer tra wallet separati).
+- **Architettura Binance originale (superseded):** snapshot→resolve→execute→verify, priorita' Spot→Funding→Earn
+- **Nota:** TASK-1000 WalletOrchestrator e' definitivamente superseded dall'architettura OKX
 
 ### Supervisor AI — Miglioramenti
 - **Analisi:** `docs/analysis/supervisor-analysis.md`
@@ -82,7 +83,7 @@ docs/
 | File | Contenuto | Fonti |
 |------|-----------|-------|
 | `docs/analysis/regime-detection-analysis.md` | Regime misclassification, Falling Knife, MarketStructureCollector | 4 recap |
-| `docs/analysis/short-selling-analysis.md` | Short selling roadmap, dettagli tecnici, decisioni aperte | 3 recap |
+| `docs/analysis/short-selling-analysis.md` | Short selling roadmap Binance — **SUPERSEDED** | 3 recap |
 | `docs/analysis/supervisor-analysis.md` | Issue note del Supervisor, fix applicati, proposte | 3 recap |
 | `docs/analysis/collector-intelligence-analysis.md` | Stato 8 collector, priorità di fix | 2 recap |
 | `docs/analysis/oco-dust-fee-analysis.md` | Bug fee/OCO/dust risolti e da verificare | 3 recap |
@@ -95,7 +96,8 @@ docs/
 | `docs/architecture/oco-flow-architecture.md` | Specifica definitiva flusso OCO + User Data Stream (v2.1) |
 | `docs/architecture/scalping-dataflow-architecture.md` | Data flow completo modulo scalping |
 | `docs/architecture/scalping-module-plan.md` | Piano implementazione modulo scalping v2.0 |
-| `docs/architecture/short-selling-architecture.md` | Architettura short selling a 4 fasi |
+| `docs/architecture/short-selling-architecture.md` | Architettura short selling Binance — **SUPERSEDED** |
+| `docs/architecture/okx-short-selling-architecture.md` | Architettura short selling OKX (nuova fonte di verita') |
 | `docs/architecture/supervisor-implementation-plan.md` | Piano implementazione supervisor AI |
 | `docs/architecture/okx-migration-architecture.md` | Architettura definitiva migrazione Binance -> OKX |
 | `docs/architecture/roadmap-considerazioni.md` | Indice sintetico + approfondimenti unici (session log schema, criteri testnet→mainnet, audit Risk Control) |
@@ -144,4 +146,4 @@ docs/
 
 ---
 
-**Ultima modifica:** 2026-07-02 — Architettura definitiva e piano task migrazione OKX
+**Ultima modifica:** 2026-07-21 — Short selling migrato a OKX, architettura Binance marcata superseded

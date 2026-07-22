@@ -10,8 +10,7 @@ _Nessun task attivo. TASK-1166 e Fix leg detection OCO spostati in archivio il 2
 
 ### EPICA: Short Selling OKX Spot Margin — da aprire
 
-> **Stato:** Pianificazione completata (`docs/architecture/okx-short-selling-architecture.md`). La numerazione dei task (es. TASK-1220+) sara' definita all'apertura dell'epica.
-> **Prerequisito:** sessione dedicata per chiusura time-stop (architettura 6) + spike read-only API OKX sul conto reale.
-> **Non aprire task da questo blocco** finche' i prerequisiti non sono soddisfatti.
+> **Stato:** Design completo (`docs/architecture/okx-short-selling-architecture.md`). Time-stop chiuso in sessione 21/07. Pronto per spike read-only e apertura task.
+> **Prossimo passo:** T1 — spike read-only API OKX (max-loan, interest-rate, position-tiers) sul conto reale.
 
 ---

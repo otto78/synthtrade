@@ -63,12 +63,12 @@ import { ConfigService } from '../../core/services/config.service';
             </div>
             <!-- TASK-1221: Short availability badge -->
             <div class="short-badge" *ngIf="selectedSymbol && shortAvailability !== null"
-                 [class.available]="shortAvailability?.short_available"
-                 [class.unavailable]="!shortAvailability?.short_available">
-              <span *ngIf="shortAvailability?.short_available">
-                ✅ Short disponibile — {{ (shortAvailability!.short_borrow_rate_apr! * 100) | number:'1.1-1' }}% APR
+                 [class.available]="shortAvailability.short_available"
+                 [class.unavailable]="!shortAvailability.short_available">
+              <span *ngIf="shortAvailability.short_available">
+                ✅ Short disponibile — {{ (shortAvailability.short_borrow_rate_apr! * 100) | number:'1.1-1' }}% APR
               </span>
-              <span *ngIf="!shortAvailability?.short_available">
+              <span *ngIf="!shortAvailability.short_available">
                 ⚠️ Short non disponibile per questo simbolo
               </span>
             </div>
@@ -573,6 +573,7 @@ export class SessionControlsComponent implements OnInit {
         // Update default symbol from service if current selection is not in list
         if (this.allSymbols.length > 0 && !this.allSymbols.includes(this.selectedSymbol)) {
           this.selectedSymbol = this.exchangeSymbols.defaultSymbol || this.allSymbols[0];
+          this.sessionApi.setPreviewSymbol(this.selectedSymbol);
         }
         this.updateShortAvailability();
         this.cdr.detectChanges();

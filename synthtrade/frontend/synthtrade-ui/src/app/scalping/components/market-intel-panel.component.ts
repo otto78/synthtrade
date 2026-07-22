@@ -162,7 +162,7 @@ export class MarketIntelPanelComponent implements OnInit, OnDestroy {
   private _rawScore: number | null = null;
 
   /** Symbol shown in template — updated from active session */
-  symbol: string = 'OKBEUR';
+  symbol: string = 'BTC-EUR';
   private sub = new Subscription();
 
   constructor(

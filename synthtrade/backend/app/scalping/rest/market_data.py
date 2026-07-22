@@ -79,9 +79,9 @@ async def exchange_instruments(mode: str | None = None):
                     from app.execution.exchange_models import SymbolRef, ShortAvailability
                     from app.execution.okx_exchange import OkxExchangeAdapter
                     adapter = OkxExchangeAdapter(
-                        api_key=settings.okx_api_key,
-                        secret=settings.okx_secret_key,
-                        passphrase=settings.okx_passphrase,
+                        api_key=settings.exchange_api_key,
+                        secret=settings.exchange_secret_key,
+                        passphrase=settings.exchange_passphrase,
                         demo=is_demo,
                     )
                     eur_instruments = [

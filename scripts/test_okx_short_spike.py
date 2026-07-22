@@ -201,36 +201,47 @@ async def spike_account_config(rec: SpikeRecorder, client: OkxRestClient) -> Non
 # ── 1220.B — /account/max-loan ─────────────────────────────────────────────
 
 async def spike_max_loan(rec: SpikeRecorder, client: OkxRestClient, symbols: list[str]) -> None:
-    borrowable_symbols: list[str] = []
+    borrowable_isolated: list[str] = []
+    borrowable_cross: list[str] = []
     for inst_id in symbols:
-        resp = await client.get(
-            f"/api/v5/account/max-loan?instId={inst_id}&mgnMode=isolated",
-            auth=True,
-        )
-        rows = _row_list(resp)
-        loan = rows[0] if rows else {}
-        max_loan = float(loan.get("maxLoan", "0") or "0")
-        is_borrowable = max_loan > 0
-        rec.add(
-            f"1220B_max_loan_{inst_id}",
-            resp.get("code") == "0",
-            instId=inst_id,
-            maxLoan=loan.get("maxLoan"),
-            ccy=loan.get("ccy"),
-            mgnMode=loan.get("mgnMode"),
-            is_borrowable=is_borrowable,
-            http_status=resp.get("_http_status"),
-            raw_code=resp.get("code"),
-            raw_msg=resp.get("msg"),
-        )
-        if is_borrowable:
-            borrowable_symbols.append(inst_id)
+        # Test isolated first, fallback to cross if Simple mode
+        for mgn in ("isolated", "cross"):
+            resp = await client.get(
+                f"/api/v5/account/max-loan?instId={inst_id}&mgnMode={mgn}",
+                auth=True,
+            )
+            rows = _row_list(resp)
+            # Find the sell-side row (borrowable asset, not EUR collateral)
+            sell_rows = [r for r in rows if r.get("side") == "sell"]
+            loan = sell_rows[0] if sell_rows else (rows[0] if rows else {})
+            max_loan = float(loan.get("maxLoan", "0") or "0")
+            is_borrowable = max_loan > 0
+            rec.add(
+                f"1220B_max_loan_{inst_id}_{mgn}",
+                resp.get("code") == "0",
+                instId=inst_id,
+                mgnMode=mgn,
+                maxLoan=loan.get("maxLoan"),
+                ccy=loan.get("ccy"),
+                side=loan.get("side"),
+                is_borrowable=is_borrowable,
+                http_status=resp.get("_http_status"),
+                raw_code=resp.get("code"),
+                raw_msg=resp.get("msg"),
+            )
+            if is_borrowable:
+                if mgn == "isolated":
+                    borrowable_isolated.append(inst_id)
+                else:
+                    borrowable_cross.append(inst_id)
 
     rec.add(
         "1220B_max_loan_summary",
-        len(borrowable_symbols) > 0,
-        borrowable_symbols=borrowable_symbols,
+        len(borrowable_isolated) > 0 or len(borrowable_cross) > 0,
+        borrowable_isolated=borrowable_isolated,
+        borrowable_cross=borrowable_cross,
         total_tested=len(symbols),
+        note="Isolated preferred (risk segregation). Cross fallback if Simple mode only.",
     )
 
 
@@ -275,23 +286,24 @@ async def spike_interest_rates(rec: SpikeRecorder, client: OkxRestClient, symbol
 async def spike_leverage_info(rec: SpikeRecorder, client: OkxRestClient, symbols: list[str]) -> None:
     for inst_id in symbols:
         ccy = inst_id.split("-")[0]
-        resp = await client.get(
-            f"/api/v5/account/leverage-info?instType=MARGIN&ccy={ccy}&mgnMode=isolated",
-            auth=True,
-        )
-        rows = _row_list(resp)
-        info = rows[0] if rows else {}
-        rec.add(
-            f"1220D_leverage_{inst_id}",
-            resp.get("code") == "0",
-            instId=inst_id,
-            lever=info.get("lever"),
-            mgnMode=info.get("mgnMode"),
-            posSide=info.get("posSide"),
-            http_status=resp.get("_http_status"),
-            raw_code=resp.get("code"),
-            raw_msg=resp.get("msg"),
-        )
+        for mgn in ("isolated", "cross"):
+            resp = await client.get(
+                f"/api/v5/account/leverage-info?instType=MARGIN&ccy={ccy}&mgnMode={mgn}",
+                auth=True,
+            )
+            rows = _row_list(resp)
+            info = rows[0] if rows else {}
+            rec.add(
+                f"1220D_leverage_{inst_id}_{mgn}",
+                resp.get("code") == "0",
+                instId=inst_id,
+                mgnMode=mgn,
+                lever=info.get("lever"),
+                posSide=info.get("posSide"),
+                http_status=resp.get("_http_status"),
+                raw_code=resp.get("code"),
+                raw_msg=resp.get("msg"),
+            )
 
 
 # ── 1220.E — /account/positions?instType=MARGIN ────────────────────────────
@@ -374,26 +386,29 @@ async def spike_usdt_fallback(rec: SpikeRecorder, client: OkxRestClient) -> None
     usdt_symbols = ["BTC-USDT", "ETH-USDT"]
     borrowable_usdt: list[str] = []
     for inst_id in usdt_symbols:
-        resp = await client.get(
-            f"/api/v5/account/max-loan?instId={inst_id}&mgnMode=isolated",
-            auth=True,
-        )
-        rows = _row_list(resp)
-        loan = rows[0] if rows else {}
-        max_loan = float(loan.get("maxLoan", "0") or "0")
-        is_borrowable = max_loan > 0
-        rec.add(
-            f"1220I_usdt_fallback_{inst_id}",
-            resp.get("code") == "0",
-            instId=inst_id,
-            maxLoan=loan.get("maxLoan"),
-            is_borrowable=is_borrowable,
-            http_status=resp.get("_http_status"),
-            raw_code=resp.get("code"),
-            raw_msg=resp.get("msg"),
-        )
-        if is_borrowable:
-            borrowable_usdt.append(inst_id)
+        for mgn in ("isolated", "cross"):
+            resp = await client.get(
+                f"/api/v5/account/max-loan?instId={inst_id}&mgnMode={mgn}",
+                auth=True,
+            )
+            rows = _row_list(resp)
+            sell_rows = [r for r in rows if r.get("side") == "sell"]
+            loan = sell_rows[0] if sell_rows else (rows[0] if rows else {})
+            max_loan = float(loan.get("maxLoan", "0") or "0")
+            is_borrowable = max_loan > 0
+            rec.add(
+                f"1220I_usdt_fallback_{inst_id}_{mgn}",
+                resp.get("code") == "0",
+                instId=inst_id,
+                mgnMode=mgn,
+                maxLoan=loan.get("maxLoan"),
+                is_borrowable=is_borrowable,
+                http_status=resp.get("_http_status"),
+                raw_code=resp.get("code"),
+                raw_msg=resp.get("msg"),
+            )
+            if is_borrowable and inst_id not in borrowable_usdt:
+                borrowable_usdt.append(inst_id)
 
     rec.add(
         "1220I_usdt_fallback_summary",
@@ -414,20 +429,29 @@ def spike_gate_check(rec: SpikeRecorder, symbols: list[str]) -> None:
     SL_GROSS_FEE = 0.0035  # 0.35% per leg
     MAX_HOURS = 2.0  # typical max scalp duration
 
-    # Find interest rates from earlier results
+    # Find interest rates: prefer interest-limits (private, reliable) over public endpoint
     rate_map: dict[str, float] = {}
+    # First try public interest-rate-loan-quota (may return null on Simple mode)
     for r in rec.results:
         if r.name.startswith("1220C_interest_rate_"):
             ccy = r.name.replace("1220C_interest_rate_", "")
             rate = r.details.get("top_rate", 0.0)
-            if rate:
+            if rate and float(rate) > 0:
                 rate_map[ccy] = float(rate)
+    # Then override with interest-limits data (always has rates)
+    for r in rec.results:
+        if r.name == "1220G_interest_limits":
+            for rec_entry in r.details.get("data", [{}])[0].get("records", []):
+                ccy = rec_entry.get("ccy", "")
+                rate_str = rec_entry.get("rate", "0")
+                if ccy and rate_str:
+                    rate_map[ccy] = float(rate_str)
 
     # Find borrowable symbols from 1220B
     borrowable: list[str] = []
     for r in rec.results:
         if r.name == "1220B_max_loan_summary":
-            borrowable = r.details.get("borrowable_symbols", [])
+            borrowable = r.details.get("borrowable_isolated", []) + r.details.get("borrowable_cross", [])
 
     gate_results: list[dict[str, Any]] = []
     any_pass = False
@@ -488,7 +512,10 @@ async def run_spike(symbols: list[str]) -> int:
         eur_borrowable = False
         for r in rec.results:
             if r.name == "1220B_max_loan_summary":
-                eur_borrowable = len(r.details.get("borrowable_symbols", [])) > 0
+                eur_borrowable = (
+                    len(r.details.get("borrowable_isolated", [])) > 0
+                    or len(r.details.get("borrowable_cross", [])) > 0
+                )
         if not eur_borrowable:
             await spike_usdt_fallback(rec, client)
 

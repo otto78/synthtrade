@@ -1,54 +1,51 @@
 # OKX Short Selling — Spike Results (TASK-1220)
 
-> Generated: 2026-07-22 09:37 UTC (updated with fixes)
+> Generated: 2026-07-22
 > Account: LIVE (eea.okx.com) — uid 858315397756873787
 
-## CRITICAL BLOCKER
+## Risultato Finale
 
-The account is in **Simple mode** (`acctLv: 1`) with **Spot Borrow disabled** (`enableSpotBorrow: False`).
-All margin-related endpoints (max-loan, position-tiers) return error `51010: You can't complete this request under your current account mode`.
+**GATE: PASSATO** — short selling è tecnicamente possibile.
 
-**To unblock:** Manual action in OKX UI required:
-1. Switch account from Simple → **Multi-currency margin** (`acctLv: 2`)
-2. Enable **Spot borrow** (`enableSpotBorrow: true`)
+| Check | Risultato |
+|-------|-----------|
+| `enableSpotBorrow` | **`True`** ✅ |
+| `acctLv` | **`1` (Simple mode)** — solo **cross** margin |
+| BTC-EUR borrowable | **Yes** — `maxLoan: 0.00188 BTC` (cross) ✅ |
+| ETH-EUR borrowable | **Yes** — `maxLoan: 0.0644 ETH` (cross) ✅ |
+| APR reale BTC/ETH | `0.00612%/hour` = `22.3%/anno` |
+| Costo 2h scalp | `~0.015%` — trascurabile vs fee 0.70% round-trip |
+| Leva | `5x cross` ✅ |
+| Gate pre-apertura | **PASSATO** ✅ |
 
 ## Step Summary
 
 | Step | Status | Detail |
 |------|--------|--------|
-| 1220A — account/config | ✅ | `enableSpotBorrow: False`, `acctLv: 1`, `posMode: net_mode` |
-| 1220B — max-loan | ❌ | `51010: You can't complete this request under your current account mode.` |
-| 1220C — interest-rate-loan-quota | ⚠️ | `code: 0` but `rate: null` in public endpoint (possible EU restriction). Real rate from interest-limits below. |
-| 1220D — leverage-info | ✅ | `lever: 5`, `mgnMode: isolated` for BTC-EUR and ETH-EUR |
-| 1220E — positions?instType=MARGIN | ✅ | Empty list (correct — no margin positions yet) |
-| 1220F — position-tiers | ❌ | `51000: Parameter instType error` (likely requires `acctLv >= 2`) |
-| 1220G — borrow-repay-history | ❌ | `404 Not Found` (endpoint may not exist on Simple mode) |
-| 1220G — interest-limits | ✅ | **This is where real APR lives** — see table below |
-| 1220H — gate check | ❌ | Cannot pass until `enableSpotBorrow=true` |
-| 1220I — USDT fallback | ❌ | Same `51010` error — account-wide blocker |
+| 1220A — account/config | ✅ | `enableSpotBorrow: True`, `acctLv: 1` |
+| 1220B — max-loan (isolated) | ❌ | `51000` — Simple mode non supporta isolated |
+| 1220B — max-loan (cross) | ✅ | BTC: 0.00188, ETH: 0.0644 |
+| 1220C — interest-rate-loan-quota | ⚠️ | Public endpoint: rate=null (EU Simple mode). Rate reale da interest-limits. |
+| 1220D — leverage (isolated) | ❌ | `51000` — Simple mode non supporta isolated |
+| 1220D — leverage (cross) | ✅ | 5x per BTC-EUR e ETH-EUR |
+| 1220E — positions?instType=MARGIN | ✅ | Empty list (corretto) |
+| 1220F — position-tiers | ❌ | `51000` — Simple mode non supporta questo endpoint |
+| 1220G — borrow-repay-history | ❌ | 404 — non disponibile in Simple mode |
+| 1220G — interest-limits | ✅ | **Fonte APR reale**: BTC/ETH 0.0000612/h |
+| 1220H — gate check | ✅ | Passa con cross mode |
 
-## Real APR (from interest-limits)
+## Implicazioni per l'architettura
 
-| Asset | Hourly rate | APR (annualized) | Cost per 2h scalp | LoanQuota |
-|-------|-------------|-------------------|-------------------|-----------|
-| BTC | 0.0000612 | ~22.3% | ~0.015% | 10 BTC |
-| ETH | 0.0000612 | ~22.3% | ~0.015% | 200 ETH |
-| SOL | 0.0000612 | ~22.3% | ~0.015% | 4,000 SOL |
-| DOGE | 0.0000276 | ~10.1% | ~0.007% | 100,000 DOGE |
-| XRP | 0.0000276 | ~10.1% | ~0.007% | 250,000 XRP |
+1. **Cross margin (non isolated):** il conto Simple supporta solo cross. Il rischio non è segregato per posizione — una posizione short in perdita intacca tutto il saldo.
+2. **Per passare a isolated:** serve passare a Multi-currency margin (`acctLv: 2`) — azione manuale OKX UI.
+3. **position-tiers non disponibile:** con cross margin, il maintenance margin è gestito a livello di conto, non per posizione.
+4. **Limiti di prestito:** 0.00188 BTC (~€110) e 0.0644 ETH (~€195) — sufficienti per test, non per trading size significativo.
 
-**Gate evaluation:** Even at 22.3% APR, a 2-hour scalping hold costs only ~0.015% in interest — well under the 0.35% SL gross fee. Interest is **not** a blocker for scalping. The only blocker is the account mode.
+## Prossimi Passi
 
-## Leverage
-
-BTC-EUR and ETH-EUR: **5x isolated** (already set).
-
-## Next Steps
-
-1. User switches account to Multi-currency margin in OKX UI
-2. User enables Spot borrow in OKX UI
-3. Re-run `scripts/test_okx_short_spike.py` to confirm `enableSpotBorrow: true`
-4. If gate passes → proceed to TASK-1221+
+1. Aggiornare `tdMode` da `"isolated"` a `"cross"` nel codice (architettura prevedeva isolated)
+2. Procedere con TASK-1221+ usando cross margin
+3. Opzionale: passare a Multi-currency margin in futuro per isolated margin
 
 ---
 

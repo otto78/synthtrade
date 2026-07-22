@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-22T09:37:26.745249+00:00",
+  "generated_at": "2026-07-22T10:30:54.990531+00:00",
   "task": "TASK-1220",
   "results": [
     {
@@ -16,7 +16,7 @@
       "name": "1220A_account_config",
       "ok": true,
       "details": {
-        "enableSpotBorrow": false,
+        "enableSpotBorrow": true,
         "acctLv": "1",
         "acctSt": null,
         "posMode": "net_mode",
@@ -27,39 +27,76 @@
       }
     },
     {
-      "name": "1220B_max_loan_BTC-EUR",
+      "name": "1220B_max_loan_BTC-EUR_isolated",
       "ok": false,
       "details": {
         "instId": "BTC-EUR",
+        "mgnMode": "isolated",
         "maxLoan": null,
         "ccy": null,
-        "mgnMode": null,
+        "side": null,
         "is_borrowable": false,
-        "http_status": 200,
-        "raw_code": "51010",
-        "raw_msg": "You can't complete this request under your current account mode."
+        "http_status": 400,
+        "raw_code": "51000",
+        "raw_msg": "Parameter MARGIN_MODE error"
       }
     },
     {
-      "name": "1220B_max_loan_ETH-EUR",
+      "name": "1220B_max_loan_BTC-EUR_cross",
+      "ok": true,
+      "details": {
+        "instId": "BTC-EUR",
+        "mgnMode": "cross",
+        "maxLoan": "0.0018826268161452",
+        "ccy": "BTC",
+        "side": "sell",
+        "is_borrowable": true,
+        "http_status": 200,
+        "raw_code": "0",
+        "raw_msg": ""
+      }
+    },
+    {
+      "name": "1220B_max_loan_ETH-EUR_isolated",
       "ok": false,
       "details": {
         "instId": "ETH-EUR",
+        "mgnMode": "isolated",
         "maxLoan": null,
         "ccy": null,
-        "mgnMode": null,
+        "side": null,
         "is_borrowable": false,
+        "http_status": 400,
+        "raw_code": "51000",
+        "raw_msg": "Parameter MARGIN_MODE error"
+      }
+    },
+    {
+      "name": "1220B_max_loan_ETH-EUR_cross",
+      "ok": true,
+      "details": {
+        "instId": "ETH-EUR",
+        "mgnMode": "cross",
+        "maxLoan": "0.064397537720821",
+        "ccy": "ETH",
+        "side": "sell",
+        "is_borrowable": true,
         "http_status": 200,
-        "raw_code": "51010",
-        "raw_msg": "You can't complete this request under your current account mode."
+        "raw_code": "0",
+        "raw_msg": ""
       }
     },
     {
       "name": "1220B_max_loan_summary",
-      "ok": false,
+      "ok": true,
       "details": {
-        "borrowable_symbols": [],
-        "total_tested": 2
+        "borrowable_isolated": [],
+        "borrowable_cross": [
+          "BTC-EUR",
+          "ETH-EUR"
+        ],
+        "total_tested": 2,
+        "note": "Isolated preferred (risk segregation). Cross fallback if Simple mode only."
       }
     },
     {
@@ -107,12 +144,25 @@
       }
     },
     {
-      "name": "1220D_leverage_BTC-EUR",
+      "name": "1220D_leverage_BTC-EUR_isolated",
+      "ok": false,
+      "details": {
+        "instId": "BTC-EUR",
+        "mgnMode": "isolated",
+        "lever": null,
+        "posSide": null,
+        "http_status": 400,
+        "raw_code": "51000",
+        "raw_msg": "Parameter mgnMode error"
+      }
+    },
+    {
+      "name": "1220D_leverage_BTC-EUR_cross",
       "ok": true,
       "details": {
         "instId": "BTC-EUR",
+        "mgnMode": "cross",
         "lever": "5",
-        "mgnMode": "isolated",
         "posSide": "",
         "http_status": 200,
         "raw_code": "0",
@@ -120,12 +170,25 @@
       }
     },
     {
-      "name": "1220D_leverage_ETH-EUR",
+      "name": "1220D_leverage_ETH-EUR_isolated",
+      "ok": false,
+      "details": {
+        "instId": "ETH-EUR",
+        "mgnMode": "isolated",
+        "lever": null,
+        "posSide": null,
+        "http_status": 400,
+        "raw_code": "51000",
+        "raw_msg": "Parameter mgnMode error"
+      }
+    },
+    {
+      "name": "1220D_leverage_ETH-EUR_cross",
       "ok": true,
       "details": {
         "instId": "ETH-EUR",
+        "mgnMode": "cross",
         "lever": "5",
-        "mgnMode": "isolated",
         "posSide": "",
         "http_status": 200,
         "raw_code": "0",
@@ -198,8 +261,8 @@
             "debt": "0",
             "interest": "0",
             "loanAlloc": "",
-            "nextDiscountTime": "1784714400000",
-            "nextInterestTime": "1784714400000",
+            "nextDiscountTime": "1784718000000",
+            "nextInterestTime": "1784718000000",
             "records": [
               {
                 "availLoan": "",
@@ -209,7 +272,7 @@
                 "interestFreeLiab": "0",
                 "loanQuota": "10",
                 "posLoan": "",
-                "potentialBorrowingAmt": "0",
+                "potentialBorrowingAmt": "0.0000000034375488",
                 "rate": "0.0000612",
                 "surplusLmt": "10",
                 "surplusLmtDetails": {},
@@ -376,58 +439,27 @@
     },
     {
       "name": "1220H_gate_check",
-      "ok": false,
+      "ok": true,
       "details": {
         "gate_results": [
           {
             "symbol": "BTC-EUR",
-            "borrowable": false,
-            "apr": 0.0,
-            "apr_pct": "0.00%",
+            "borrowable": true,
+            "apr": 6.12e-05,
+            "apr_pct": "0.01%",
             "cost_2h_pct": "0.0000%",
-            "passes_gate": false
+            "passes_gate": true
           },
           {
             "symbol": "ETH-EUR",
-            "borrowable": false,
-            "apr": 0.0,
-            "apr_pct": "0.00%",
+            "borrowable": true,
+            "apr": 6.12e-05,
+            "apr_pct": "0.01%",
             "cost_2h_pct": "0.0000%",
-            "passes_gate": false
+            "passes_gate": true
           }
         ],
         "note": "Gate: at least one symbol must be borrowable with positive APR for short to be viable"
-      }
-    },
-    {
-      "name": "1220I_usdt_fallback_BTC-USDT",
-      "ok": false,
-      "details": {
-        "instId": "BTC-USDT",
-        "maxLoan": null,
-        "is_borrowable": false,
-        "http_status": 200,
-        "raw_code": "51010",
-        "raw_msg": "You can't complete this request under your current account mode."
-      }
-    },
-    {
-      "name": "1220I_usdt_fallback_ETH-USDT",
-      "ok": false,
-      "details": {
-        "instId": "ETH-USDT",
-        "maxLoan": null,
-        "is_borrowable": false,
-        "http_status": 200,
-        "raw_code": "51010",
-        "raw_msg": "You can't complete this request under your current account mode."
-      }
-    },
-    {
-      "name": "1220I_usdt_fallback_summary",
-      "ok": false,
-      "details": {
-        "borrowable_usdt": []
       }
     }
   ]

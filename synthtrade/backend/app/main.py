@@ -144,8 +144,11 @@ async def _restore_scalping_session(db) -> None:
         )
         session_log_handler.symbol = _execution_state["session"]["symbol"]
 
-        # Restore existing log_content from DB so pre-restore logs are not lost
+        # Restore existing log_content from DB so pre-restore logs are not lost.
+        # Only keep actual log entry lines (timestamp format), skipping headers,
+        # analysis summaries, and truncation markers to avoid contamination.
         try:
+            import re as _re
             from app.db.supabase_client import get_supabase
             _existing = get_supabase().table("scalping_sessions") \
                 .select("log_content") \
@@ -154,15 +157,16 @@ async def _restore_scalping_session(db) -> None:
                 .execute()
             if _existing.data and _existing.data[0].get("log_content"):
                 _prev = _existing.data[0]["log_content"]
-                _skip = {"=", "SESSION LOG DUMP", "Session ID", "Symbol", "Entries", "Generated", "SESSION ANALYSIS SUMMARY"}
+                _log_entry_re = _re.compile(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]")
+                _loaded = 0
                 for _line in _prev.split("\n"):
                     _line = _line.strip()
                     if not _line:
                         continue
-                    if any(_line.startswith(s) for s in _skip):
-                        continue
-                    session_log_handler._buffer.append(_line)
-                logger.info("[LIVE_LOG] Loaded %d previous log entries from DB for restore", len(session_log_handler._buffer))
+                    if _log_entry_re.match(_line):
+                        session_log_handler._buffer.append(_line)
+                        _loaded += 1
+                logger.info("[LIVE_LOG] Loaded %d previous log entries from DB for restore", _loaded)
         except Exception as _e:
             logger.warning("[LIVE_LOG] Could not load previous logs from DB: %s", _e)
 

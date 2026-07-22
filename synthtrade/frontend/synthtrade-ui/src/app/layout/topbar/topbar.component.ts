@@ -43,13 +43,13 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
         @if (engineStatus()) {
           <span
             class="engine-badge status-badge"
-            [class.running]="computedEngineStatus() === 'RUNNING'"
-            [class.stopped]="computedEngineStatus() !== 'RUNNING' && computedEngineStatus() !== 'PAUSED'"
-            [class.paused]="computedEngineStatus() === 'PAUSED'"
-            [class.offline]="computedEngineStatus() === 'OFFLINE' || computedEngineStatus() === '—'"
+            [class.running]="computedEngineStatus === 'RUNNING'"
+            [class.stopped]="computedEngineStatus !== 'RUNNING' && computedEngineStatus !== 'PAUSED'"
+            [class.paused]="computedEngineStatus === 'PAUSED'"
+            [class.offline]="computedEngineStatus === 'OFFLINE' || computedEngineStatus === '—'"
           >
             <span class="engine-indicator"></span>
-            <span class="engine-label">{{ computedEngineStatus() }}</span>
+            <span class="engine-label">{{ computedEngineStatus }}</span>
           </span>
         }
 

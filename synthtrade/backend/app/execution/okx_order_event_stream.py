@@ -221,15 +221,17 @@ class OkxOrderEventStream:
     async def _start_polling(self) -> None:
         """Fallback polling loop using REST API."""
         logger.info("OKX order stream: starting REST polling fallback (2s interval)")
-        seen_orders = set()
-        seen_algos = set()
+        seen_orders: set[str] = set()
+        seen_algos: set[str] = set()
+        algo_leg_map: dict[str, str] = {}  # algoId → actualSide ("tp"/"sl")
         
-        # Seed con ordini storici esistenti (non emetterli)
-        # NOTE: On OKX EU, algo orders (TP/SL) appear in orders-history with algoId populated
-        # TASK-XXXX: Only seed completed orders (filled/cancelled). Do NOT seed pending algos
-        # into seen_algos — when a pending algo fills, it reappears in orders-history with
-        # state="filled" and the same algoId. If already in seen_algos, the fill is silently
-        # skipped (the "seen_algos poisoning" bug that caused the 2026-07-15 TP miss).
+        # ── Seed ───────────────────────────────────────────────────────────────
+        # Seed completed orders from orders-history (non-algo) and completed algos
+        # from orders-algo-history (with actualSide for correct leg detection).
+        # Do NOT seed pending algos into seen_algos — when a pending algo fills,
+        # it reappears in orders-history with state="filled" and the same algoId.
+        # If already in seen_algos, the fill is silently skipped (the "seen_algos
+        # poisoning" bug that caused the 2026-07-15 TP miss).
         try:
             resp = await self._rest_request("GET", "/api/v5/trade/orders-history", params={"instType": "SPOT", "state": "filled"})
             for item in resp.get("data", []):
@@ -243,7 +245,22 @@ class OkxOrderEventStream:
         except Exception as e:
             logger.warning("OKX REST polling: seed orders failed: %s", e)
         
+        # Seed algo leg map from orders-algo-history (actualSide)
+        try:
+            resp_algo = await self._rest_request("GET", "/api/v5/trade/orders-algo-history", params={"ordType": "oco", "instType": "SPOT", "state": "effective"})
+            for item in resp_algo.get("data", []):
+                aid = item.get("algoId")
+                if aid:
+                    algo_leg_map[aid] = item.get("actualSide", "")
+            logger.info("OKX REST polling: seeded %d algo leg mappings", len(algo_leg_map))
+        except Exception as e:
+            logger.warning("OKX REST polling: algo-history seed failed: %s", e)
+        
+        _had_polling_error = False
+
         while self._running:
+            _cycle_had_error = False
+
             try:
                 # 1. Fetch pending (in-flight) orders — catches fills in real-time
                 resp_pend = await self._rest_request("GET", "/api/v5/trade/orders-pending", params={"instType": "SPOT"})
@@ -254,10 +271,15 @@ class OkxOrderEventStream:
                         norm = self._normalize_order(item)
                         if norm:
                             await self._emit(norm)
-                
+            except Exception as e:
+                _cycle_had_error = True
+                logger.error("OKX REST polling step 1 (pending) error: [%s] %s", type(e).__name__, e)
+
+            try:
                 # 2. Fetch recently completed orders (filled/cancelled)
-                # NOTE: On OKX EU, algo orders (TP/SL) appear in orders-history with algoId populated
-                # We need to check both regular orders and algo orders in one call
+                # On OKX EU, algo orders (TP/SL) appear in orders-history with algoId populated.
+                # Inject actualSide from algo_leg_map (built from orders-algo-history) for
+                # correct leg detection while retaining fill_price from orders-history.
                 resp_hist = await self._rest_request("GET", "/api/v5/trade/orders-history", params={"instType": "SPOT", "state": "filled"})
                 for item in resp_hist.get("data", []):
                     ord_id = item.get("ordId")
@@ -273,17 +295,40 @@ class OkxOrderEventStream:
                     # Algo order (TP/SL bracket)
                     if algo_id and algo_id not in seen_algos:
                         seen_algos.add(algo_id)
+                        # Inject actualSide if available from orders-algo-history
+                        if algo_id in algo_leg_map:
+                            item["actualSide"] = algo_leg_map[algo_id]
                         norm = self._normalize_algo_order(item)
                         if norm:
                             await self._emit(norm)
-                
-                # 3. Fetch algo orders pending/active (still need this for in-flight orders)
-                resp_algo = await self._rest_request(
+            except Exception as e:
+                _cycle_had_error = True
+                logger.error("OKX REST polling step 2 (orders-history) error: [%s] %s", type(e).__name__, e)
+
+            try:
+                # 3. Fetch completed algo orders from orders-algo-history
+                # Provides actualSide for correct leg detection and catches fills
+                # that may not yet appear in orders-history (API lag).
+                resp_algo_hist = await self._rest_request("GET", "/api/v5/trade/orders-algo-history", params={"ordType": "oco", "instType": "SPOT", "state": "effective"})
+                for item in resp_algo_hist.get("data", []):
+                    algo_id = item.get("algoId")
+                    if algo_id and algo_id not in seen_algos:
+                        seen_algos.add(algo_id)
+                        algo_leg_map[algo_id] = item.get("actualSide", "")
+                        norm = self._normalize_algo_order(item)
+                        if norm:
+                            await self._emit(norm)
+            except Exception as e:
+                logger.warning("OKX REST polling step 3 (algo-history) error: [%s] %s", type(e).__name__, e)
+
+            try:
+                # 4. Fetch algo orders pending/active (still need this for in-flight orders)
+                resp_algo_pend = await self._rest_request(
                     "GET", 
                     "/api/v5/trade/orders-algo-pending", 
                     params={"instType": "SPOT", "ordType": "oco"}
                 )
-                for item in resp_algo.get("data", []):
+                for item in resp_algo_pend.get("data", []):
                     algo_id = item.get("algoId")
                     if algo_id and algo_id not in seen_algos:
                         norm = self._normalize_algo_order(item)
@@ -292,9 +337,14 @@ class OkxOrderEventStream:
                             # Add to seen_algos ONLY after successful emit to prevent
                             # skipping the fill when it later appears in orders-history
                             seen_algos.add(algo_id)
-                
             except Exception as e:
-                logger.error("OKX REST polling error: [%s] %s", type(e).__name__, e)
+                _cycle_had_error = True
+                logger.error("OKX REST polling step 4 (algo-pending) error: [%s] %s", type(e).__name__, e)
+
+            # Recovery detection
+            if _had_polling_error and not _cycle_had_error:
+                logger.info("OKX REST polling: recovered after previous error, polling cycle OK")
+            _had_polling_error = _cycle_had_error
             
             # Sleep in chunks to allow fast shutdown
             for _ in range(10):
@@ -457,22 +507,32 @@ class OkxOrderEventStream:
 
         status = "filled" if state in ("effective", "filled") else "expired"
 
-        # Determine leg: prefer tpTriggerPx/slTriggerPx (reliable for OCO,
-        # where ordType is "oco" and doesn't contain "tp"/"sl").
-        tp_trigger = item.get("tpTriggerPx")
-        sl_trigger = item.get("slTriggerPx")
-        if tp_trigger and str(tp_trigger) not in ("", "0", "0.0"):
-            leg = "take_profit"
-        elif sl_trigger and str(sl_trigger) not in ("", "0", "0.0"):
-            leg = "stop_loss"
+        # Determine leg — priority order:
+        #   1. actualSide ("tp"/"sl") from orders-algo-history (authoritative)
+        #   2. Fill price vs trigger price comparison (works for OCO where both triggers are always set)
+        #   3. ordType string matching (last resort, works for non-OCO algo orders)
+        actual_side = item.get("actualSide", "")
+        if actual_side in ("tp", "sl"):
+            leg = "take_profit" if actual_side == "tp" else "stop_loss"
         else:
-            ord_type = item.get("ordType", "")
-            if "tp" in ord_type.lower():
-                leg = "take_profit"
-            elif "sl" in ord_type.lower():
-                leg = "stop_loss"
+            tp_trigger = float(item.get("tpTriggerPx") or 0)
+            sl_trigger = float(item.get("slTriggerPx") or 0)
+            if fill_price and (tp_trigger or sl_trigger):
+                if tp_trigger and sl_trigger:
+                    # OCO: fill closer to TP = TP, closer to SL = SL
+                    leg = "take_profit" if abs(fill_price - tp_trigger) < abs(fill_price - sl_trigger) else "stop_loss"
+                elif tp_trigger:
+                    leg = "take_profit"
+                else:
+                    leg = "stop_loss"
             else:
-                leg = "algo"
+                ord_type = item.get("ordType", "")
+                if "tp" in ord_type.lower():
+                    leg = "take_profit"
+                elif "sl" in ord_type.lower():
+                    leg = "stop_loss"
+                else:
+                    leg = "algo"
 
         return {
             "provider": "okx",

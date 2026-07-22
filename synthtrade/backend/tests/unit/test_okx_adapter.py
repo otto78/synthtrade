@@ -455,6 +455,77 @@ def test_normalize_algo_order_sl():
     assert result["leg"] == "stop_loss"
 
 
+def test_normalize_algo_order_actual_side_tp():
+    """actualSide field takes priority over trigger prices."""
+    item = {
+        "instId": "BTC-EUR", "side": "sell", "algoId": "algo103",
+        "ordId": "ord210", "state": "effective",
+        "avgPx": "93000.0", "fee": "-0.33", "feeCcy": "EUR",
+        "actualSide": "tp", "tpTriggerPx": "95000", "slTriggerPx": "85000",
+    }
+    result = OkxOrderEventStream._normalize_algo_order(item)  # type: ignore[attr-defined]
+    assert result is not None
+    assert result["leg"] == "take_profit"
+    assert result["fill_price"] == 93000.0
+
+
+def test_normalize_algo_order_actual_side_sl():
+    """actualSide="sl" overrides tpTriggerPx being non-zero."""
+    item = {
+        "instId": "BTC-EUR", "side": "sell", "algoId": "algo104",
+        "ordId": "ord211", "state": "effective",
+        "avgPx": "87000.0", "fee": "-0.31", "feeCcy": "EUR",
+        "actualSide": "sl", "tpTriggerPx": "95000", "slTriggerPx": "85000",
+    }
+    result = OkxOrderEventStream._normalize_algo_order(item)  # type: ignore[attr-defined]
+    assert result is not None
+    assert result["leg"] == "stop_loss"
+
+
+def test_normalize_algo_order_oco_fill_closer_to_tp():
+    """OCO without actualSide: fill closer to TP → take_profit."""
+    item = {
+        "instId": "BTC-EUR", "side": "sell", "algoId": "algo105",
+        "ordId": "ord212", "state": "effective",
+        "avgPx": "94500.0", "fee": "-0.30", "feeCcy": "EUR",
+        "tpTriggerPx": "95000", "slTriggerPx": "85000",
+    }
+    result = OkxOrderEventStream._normalize_algo_order(item)  # type: ignore[attr-defined]
+    assert result is not None
+    assert result["leg"] == "take_profit"
+
+
+def test_normalize_algo_order_oco_fill_closer_to_sl():
+    """OCO without actualSide: fill closer to SL → stop_loss."""
+    item = {
+        "instId": "BTC-EUR", "side": "sell", "algoId": "algo106",
+        "ordId": "ord213", "state": "effective",
+        "avgPx": "86000.0", "fee": "-0.30", "feeCcy": "EUR",
+        "tpTriggerPx": "95000", "slTriggerPx": "85000",
+    }
+    result = OkxOrderEventStream._normalize_algo_order(item)  # type: ignore[attr-defined]
+    assert result is not None
+    assert result["leg"] == "stop_loss"
+
+
+def test_normalize_algo_order_real_world_bracket_sl():
+    """
+    Real-world: bracket 3745204575738245120 — OKX returned actualSide="sl"
+    but tpTriggerPx was non-zero (OCO). Without actualSide, old code would
+    mislabel as take_profit. With actualSide, it correctly returns stop_loss.
+    """
+    item = {
+        "instId": "BTC-EUR", "side": "sell", "algoId": "3745204575738245120",
+        "ordId": "3746657746278064128", "state": "effective",
+        "avgPx": "0", "fee": "-0.00000353", "feeCcy": "BTC",
+        "actualSide": "sl", "tpTriggerPx": "57815.6", "slTriggerPx": "56335.3",
+    }
+    result = OkxOrderEventStream._normalize_algo_order(item)  # type: ignore[attr-defined]
+    assert result is not None
+    assert result["leg"] == "stop_loss"
+    assert result["bracket_id"] == "3745204575738245120"
+
+
 def test_normalize_algo_order_canceled():
     item = {
         "instId": "BTC-EUR", "side": "sell", "algoId": "algo101",

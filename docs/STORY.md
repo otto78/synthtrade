@@ -4,6 +4,29 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.23 — 2026-07-21
+
+**Milestone:** Fix leg detection OCO + resilient polling loop
+
+**Completato:**
+- ✅ **Fix leg detection `_normalize_algo_order`:** priorità `actualSide` da `orders-algo-history` (autorevole), fallback a confronto fill_price vs trigger_price (affidabile per OCO), ultimo resort `ordType` string matching
+- ✅ **Aggiunto step 3 nel polling loop:** query `orders-algo-history?ordType=oco&state=effective` per ottenere `actualSide` corretto e catturare fill con lag API
+- ✅ **Seed arricchito:** `algo_leg_map` (algoId → actualSide) popolata da `orders-algo-history` durante seed
+- ✅ **Polling loop resiliente:** ogni step ha il suo try/except isolato — un errore in uno step non blocca gli altri
+- ✅ **Recovery logging:** flag `_cycle_had_error` traccia errori per ciclo; log `recovered after previous error` al primo ciclo pulito
+- ✅ **6 nuovi test** per leg detection: `actualSide` priority, OCO fill proximity, scenario reale bracket `3745204575738245120`
+
+**Bug fix:**
+- 🔧 OCO con entrambi trigger non-zero: prima etichettava sempre `take_profit` → ora usa `actualSide` o confronto distanza
+- 🔧 Step 3 (`orders-algo-history`) con parametri errati (`instType` senza `ordType`) → aggiunto `ordType=oco`
+- 🔧 Step 3 con 400 Bad Request uccideva l'intero polling loop → isolato con try/except separato
+
+**File modificati:**
+- `synthtrade/backend/app/execution/okx_order_event_stream.py`
+- `synthtrade/backend/tests/unit/test_okx_adapter.py`
+
+---
+
 ### v1.4.22 — 2026-07-21
 
 **Milestone:** TASK-1166 completato — Refactoring totale router.py (-95.4%)

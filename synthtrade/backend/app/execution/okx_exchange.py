@@ -656,6 +656,7 @@ class OkxExchangeAdapter:
         """Get current leverage info via GET /api/v5/account/leverage-info.
 
         Returns leverage info for each currency in the instrument.
+        Includes maxLever from OKX response (maximum allowed leverage).
         Call before set_leverage to avoid redundant calls.
         """
         path = f"/api/v5/account/leverage-info?instId={symbol.okx}&mgnMode={mgn_mode}"
@@ -673,6 +674,21 @@ class OkxExchangeAdapter:
         except Exception as e:
             logger.warning("OKX get_leverage_info failed for %s: %s", symbol.okx, e)
             return {}
+
+    async def get_max_leverage(self, symbol: SymbolRef, mgn_mode: str = "cross") -> int:
+        """Get maximum allowed leverage for a symbol.
+
+        Uses get_leverage_info() and extracts maxLever from OKX response.
+        Falls back to 10 if unavailable.
+        """
+        info = await self.get_leverage_info(symbol, mgn_mode)
+        max_lever = info.get("maxLever")
+        if max_lever:
+            try:
+                return min(int(max_lever), 10)  # cap at 10 per user request
+            except (ValueError, TypeError):
+                pass
+        return 10  # default max
 
     async def get_margin_positions(self) -> list[MarginPosition]:
         """Get all margin positions via GET /api/v5/account/positions?instType=MARGIN.

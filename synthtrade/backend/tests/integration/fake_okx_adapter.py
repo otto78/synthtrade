@@ -254,7 +254,11 @@ class FakeOkxAdapter:
 
     async def get_leverage_info(self, symbol: SymbolRef, mgn_mode: str = "cross") -> dict:
         self.calls.append(f"get_leverage_info({symbol.okx})")
-        return {"lever": "1", "mgnMode": mgn_mode}
+        return {"lever": "1", "mgnMode": mgn_mode, "maxLever": "10"}
+
+    async def get_max_leverage(self, symbol: SymbolRef, mgn_mode: str = "cross") -> int:
+        self.calls.append(f"get_max_leverage({symbol.okx})")
+        return 10
 
     async def get_margin_positions(self) -> list:
         self.calls.append("get_margin_positions")

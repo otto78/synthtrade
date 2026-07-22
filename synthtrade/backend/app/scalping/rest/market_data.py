@@ -93,10 +93,17 @@ async def exchange_instruments(mode: str | None = None):
                         try:
                             sym = SymbolRef.from_okx(inst_id)
                             avail = await adapter.get_short_availability(sym)
+                            max_lev = 10  # default
+                            if avail.available:
+                                try:
+                                    max_lev = await adapter.get_max_leverage(sym, mgn_mode="cross")
+                                except Exception:
+                                    pass
                             short_availability[inst_id] = {
                                 "short_available": avail.available,
                                 "short_borrow_rate_apr": round(avail.borrow_rate_apr, 4) if avail.borrow_rate_apr else None,
                                 "short_max_loan_qty": avail.max_loan_qty,
+                                "max_leverage": max_lev,
                             }
                         except Exception as e:
                             logger.debug("Short availability check failed for %s: %s", inst_id, e)
@@ -119,6 +126,7 @@ async def exchange_instruments(mode: str | None = None):
                     "short_available": short_info.get("short_available", False),
                     "short_borrow_rate_apr": short_info.get("short_borrow_rate_apr"),
                     "short_max_loan_qty": short_info.get("short_max_loan_qty"),
+                    "max_leverage": short_info.get("max_leverage", 10),
                 })
             instruments.sort(key=lambda x: (x["quote"] != "EUR", x["symbol"]))
             eur_pairs = [i["symbol"] for i in instruments if i["quote"] == "EUR"]

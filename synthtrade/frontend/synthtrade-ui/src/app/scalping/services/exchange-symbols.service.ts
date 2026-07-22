@@ -32,6 +32,8 @@ export interface ExchangeInstrument {
   short_borrow_rate_apr?: number;
   /** TASK-1221: Maximum borrowable quantity for short */
   short_max_loan_qty?: number;
+  /** TASK-1222: Maximum allowed leverage for this symbol (capped at 10) */
+  max_leverage?: number;
 }
 
 export interface ExchangeInstrumentsResponse {

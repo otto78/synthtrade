@@ -87,7 +87,7 @@ import { ConfigService } from '../../core/services/config.service';
           </div>
 
           <div class="field">
-            <label>Valore Trade / Leva</label>
+            <label>Valore Trade</label>
             <div class="trade-value-row">
               <input
                 type="number"
@@ -98,19 +98,24 @@ import { ConfigService } from '../../core/services/config.service';
                 placeholder="100"
               />
               <span class="trade-currency">{{ getQuoteAsset() }}</span>
-              <span class="trade-separator">×</span>
-              <input
-                type="number"
-                [(ngModel)]="leverage"
-                min="1"
-                max="125"
-                step="1"
-                class="leverage-input"
-                placeholder="1"
-              />
-              <span class="trade-currency">leva</span>
+              <ng-container *ngIf="shortAvailable">
+                <span class="trade-separator">×</span>
+                <input
+                  type="number"
+                  [(ngModel)]="leverage"
+                  min="1"
+                  [max]="maxLeverage"
+                  step="1"
+                  class="leverage-input"
+                  placeholder="1"
+                />
+                <span class="trade-currency">×leva</span>
+              </ng-container>
             </div>
-            <div class="trade-hint">Importo per singolo trade · Leva margin (1× = no margin)</div>
+            <div class="trade-hint">
+              Importo per singolo trade
+              <span *ngIf="shortAvailable"> · Leva max {{ maxLeverage }}× (1=no margin)</span>
+            </div>
           </div>
         </div>
 
@@ -163,7 +168,7 @@ import { ConfigService } from '../../core/services/config.service';
 
         <!-- Trade Value edit while session is running -->
         <div class="field trade-live">
-          <label>Valore Trade / Leva <span class="hint-inline">· dal prossimo trade</span></label>
+          <label>Valore Trade <span class="hint-inline">· dal prossimo trade</span></label>
           <div class="trade-value-row">
             <input
               type="number"
@@ -174,17 +179,19 @@ import { ConfigService } from '../../core/services/config.service';
               placeholder="100"
             />
             <span class="trade-currency">{{ getQuoteAsset() }}</span>
-            <span class="trade-separator">×</span>
-            <input
-              type="number"
-              [(ngModel)]="leverage"
-              min="1"
-              max="125"
-              step="1"
-              class="leverage-input"
-              placeholder="1"
-            />
-            <span class="trade-currency">leva</span>
+            <ng-container *ngIf="shortAvailable">
+              <span class="trade-separator">×</span>
+              <input
+                type="number"
+                [(ngModel)]="leverage"
+                min="1"
+                [max]="maxLeverage"
+                step="1"
+                class="leverage-input"
+                placeholder="1"
+              />
+              <span class="trade-currency">×leva</span>
+            </ng-container>
             <button class="btn-apply" (click)="applyTradeValue()" [disabled]="applyingTradeValue">
               {{ applyingTradeValue ? '...' : '✓' }}
             </button>
@@ -413,7 +420,7 @@ import { ConfigService } from '../../core/services/config.service';
     }
     .trade-input {
       flex: 1;
-      padding: 8px 12px;
+      padding: 8px 10px;
       border-radius: 6px;
       background: rgba(255,255,255,0.05);
       color: var(--text-primary);
@@ -610,6 +617,8 @@ export class SessionControlsComponent implements OnInit {
   symbolFilter = '';
   showSymbolDropdown = false;
   shortAvailability: ExchangeInstrument | null = null;
+  shortAvailable = false;
+  maxLeverage = 10;
 
   globalMode: string = 'test';
 
@@ -686,6 +695,11 @@ export class SessionControlsComponent implements OnInit {
   private updateShortAvailability(): void {
     const found = this.allInstruments.find(i => i.symbol === this.selectedSymbol);
     this.shortAvailability = found || null;
+    this.shortAvailable = found?.short_available ?? false;
+    this.maxLeverage = Math.min(found?.max_leverage ?? 10, 10);
+    if (this.leverage > this.maxLeverage) {
+      this.leverage = this.maxLeverage;
+    }
   }
 
   /** Persist trade value to localStorage so it survives page reload */

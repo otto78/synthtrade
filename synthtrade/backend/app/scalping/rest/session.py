@@ -661,7 +661,24 @@ async def download_session_logs(session_id: str) -> Response:
         # Retroactive cleanup: extract only actual log entry lines,
         # stripping headers, duplicate analysis summaries, and truncation markers.
         _log_entry_re = _re.compile(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]")
-        log_lines = [line for line in log_content.split("\n") if _log_entry_re.match(line.strip())]
+        all_entry_lines = [line for line in log_content.split("\n") if _log_entry_re.match(line.strip())]
+
+        # Filter: keep only lines from the latest session process.
+        # After a server restart the restore loads old process logs into the new
+        # handler, so the DB ends up with entries from multiple processes
+        # (e.g. sess_ee9a6f7f and sess_67baaa03). Only the latest one matters.
+        _sess_tag_re = _re.compile(r"\[(sess_[0-9a-f]+)\]")
+        # Find the latest process tag by scanning from the end (last tag = newest)
+        active_tag = None
+        for line in reversed(all_entry_lines):
+            m = _sess_tag_re.search(line)
+            if m:
+                active_tag = m.group(1)
+                break
+        if active_tag:
+            log_lines = [l for l in all_entry_lines if f"[{active_tag}]" in l]
+        else:
+            log_lines = all_entry_lines
 
         safe_symbol = symbol.replace("/", "_").upper()
         header = (
@@ -670,6 +687,12 @@ async def download_session_logs(session_id: str) -> Response:
             f" Session ID : {session_id}\n"
             f" Symbol     : {safe_symbol}\n"
             f" Entries    : {len(log_lines)}\n"
+        )
+        if active_tag:
+            header += f" Process    : {active_tag} (latest)\n"
+            if len(all_entry_lines) != len(log_lines):
+                header += f" Filtered   : {len(all_entry_lines) - len(log_lines)} entries from older processes removed\n"
+        header += (
             f" Generated  : {datetime.now(timezone.utc).isoformat()}\n"
             f"{'=' * 72}\n\n"
         )
@@ -714,18 +737,26 @@ async def get_session_log_analysis(session_id: str) -> Dict:
         # Parse log lines back into a temporary handler for analysis
         from app.core.session_log_handler import SessionLogHandler
 
+        # Filter: keep only the latest session process entries (same logic as download)
+        _log_entry_re = _re.compile(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]")
+        _sess_tag_re = _re.compile(r"\[(sess_[0-9a-f]+)\]")
+        all_entry_lines = [line for line in log_content.split("\n") if _log_entry_re.match(line.strip())]
+        active_tag = None
+        for line in reversed(all_entry_lines):
+            m = _sess_tag_re.search(line)
+            if m:
+                active_tag = m.group(1)
+                break
+        if active_tag:
+            filtered_lines = [l for l in all_entry_lines if f"[{active_tag}]" in l]
+        else:
+            filtered_lines = all_entry_lines
+
         # Create a temp handler and replay the log content through it
         temp_handler = SessionLogHandler()
-        for line in log_content.split("\n"):
+        for line in filtered_lines:
             if line.strip():
-                # Skip header/footer lines
-                if line.startswith("=") or line.startswith(" SESSION LOG DUMP") or \
-                   line.startswith(" Session ID") or line.startswith(" Symbol") or \
-                   line.startswith(" Entries") or line.startswith(" Generated") or \
-                   line.startswith(" SESSION ANALYSIS SUMMARY"):
-                    continue
                 temp_handler._buffer.append(line)
-                # Create a minimal LogRecord so _analyze() can read _raw_records
                 rec = logging.LogRecord(
                     name="", level=logging.INFO, pathname="", lineno=0,
                     msg=line, args=(), exc_info=None,

@@ -29,9 +29,9 @@ POST /api/v5/trade/order
 }
 ```
 
-Cambia solo `tdMode` (da `cash` a `isolated`) e `side`. **Non esiste un parametro "auto-borrow" nell'ordine** — il borrow scatta automaticamente al fill se l'account ha `enableSpotBorrow=true` e c'e' collaterale/limite sufficiente.
+Cambia solo `tdMode` (da `cash` a `cross`) e `side`. **Non esiste un parametro "auto-borrow" nell'ordine** — il borrow scatta automaticamente al fill se l'account ha `enableSpotBorrow=true` e c'e' collaterale/limite sufficiente.
 
-**Decisione: isolated (non cross)** — il rischio di ogni posizione e' segregato; se una posizione short va in liquidazione, non intacca il resto del saldo. Piu' sicuro per un sistema in fase di test.
+**Decisione: cross margin** — isolato (`isolated`) richiede Multi-currency margin (`acctLv >= 2`), che a sua volta richiede saldo minimo $10k USD. Con saldo attuale ~$300, isolated non e' disponibile. Cross margin e' l'unica opzione praticabile. Il rischio e' mitigato da SL stretto, time-stop, e risk manager.
 
 ### 2.2 Riconoscimento Short a Posteriori
 

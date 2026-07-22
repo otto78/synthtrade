@@ -37,9 +37,10 @@
 ## Implicazioni per l'architettura
 
 1. **Cross margin (non isolated):** il conto Simple supporta solo cross. Il rischio non è segregato per posizione — una posizione short in perdita intacca tutto il saldo.
-2. **Per passare a isolated:** serve passare a Multi-currency margin (`acctLv: 2`) — azione manuale OKX UI.
-3. **position-tiers non disponibile:** con cross margin, il maintenance margin è gestito a livello di conto, non per posizione.
-4. **Limiti di prestito:** 0.00188 BTC (~€110) e 0.0644 ETH (~€195) — sufficienti per test, non per trading size significativo.
+2. **Isolated margin — FROZEN:** richiede Multi-currency margin (`acctLv: 2`), che a sua volta richiede saldo minimo $10k USD. Con saldo attuale ~$300, isolated non è praticabile. L'ipotesi è congelata fino a quando il saldo non raggiunge la soglia.
+3. **Sicurezza con cross margin:** SL stretto, time-stop, e risk manager impediscono perdite eccessive. Il sistema è progettato per scalping con posizioni piccole e chiusura rapida.
+4. **position-tiers non disponibile:** con cross margin, il maintenance margin è gestito a livello di conto, non per posizione.
+5. **Limiti di prestito:** 0.00188 BTC (~€110) e 0.0644 ETH (~€195) — sufficienti per test, non per trading size significativo.
 
 ## Prossimi Passi
 

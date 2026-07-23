@@ -182,8 +182,9 @@ class TestPaperModeShort:
 class TestSellEmergencyClose:
     """Verify emergency close after bracket failure uses market buy for short."""
 
-    def test_short_emergency_close_uses_buy(self):
-        """TASK-1224.G: Bracket failure for short → emergency market buy."""
+    def test_short_emergency_close_uses_sell(self):
+        """TASK-1224.G: Bracket failure for short → ClosePositionRequest(side='sell')
+        so close_position() reverses to 'buy' (market BUY to repay borrow)."""
         from app.execution.exchange_models import ClosePositionRequest, SymbolRef
 
         sym_ref = SymbolRef(base="BTC", quote="EUR")
@@ -194,7 +195,7 @@ class TestSellEmergencyClose:
         if side == "SELL":
             close_req = ClosePositionRequest(
                 symbol=sym_ref,
-                side="buy",  # close short = buy
+                side="sell",  # SHORT: close_position() reverses to "buy"
                 quantity=exec_qty,
             )
         else:
@@ -204,7 +205,7 @@ class TestSellEmergencyClose:
                 quantity=exec_qty,
             )
 
-        assert close_req.side == "buy"
+        assert close_req.side == "sell"
         assert close_req.quantity == exec_qty
 
     def test_long_emergency_close_uses_sell(self):

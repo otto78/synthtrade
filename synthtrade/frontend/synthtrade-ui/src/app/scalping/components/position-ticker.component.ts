@@ -28,7 +28,7 @@ import { Position } from '../models/position.model';
       <div *ngIf="position" class="position-content">
         <div class="row symbol-side">
           <span class="symbol">{{ position.symbol }}</span>
-          <span class="side" [ngClass]="position.side.toLowerCase()">{{ position.side }}</span>
+          <span class="side" [ngClass]="getPositionSideClass()">{{ getPositionSideLabel() }}</span>
         </div>
         
         <div class="row prices">
@@ -94,6 +94,8 @@ import { Position } from '../models/position.model';
     .side { padding: 2px 6px; border-radius: 2px; font-size: 11px; }
     .buy { background: var(--accent-success, #26a69a); color: #fff; }
     .sell { background: var(--accent-danger, #ef5350); color: #fff; }
+    .long { background: var(--accent-success, #26a69a); color: #fff; }
+    .short { background: var(--accent-danger, #ef5350); color: #fff; }
     .invested { 
       background: rgba(240,185,11,0.06); 
       border: 1px solid rgba(240,185,11,0.15); 
@@ -352,6 +354,20 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
     if (session?.trade_value) return session.trade_value;
     if (!this.position) return 0;
     return this.position.quantity * this.position.entry_price;
+  }
+
+  /** Position side label: LONG/SHORT (falls back to BUY/SELL) */
+  getPositionSideLabel(): string {
+    if (this.position?.position_side) return this.position.position_side;
+    return this.position?.side ?? '';
+  }
+
+  /** Position side CSS class: long/short (falls back to buy/sell) */
+  getPositionSideClass(): string {
+    const ps = this.position?.position_side;
+    if (ps === 'SHORT') return 'short';
+    if (ps === 'LONG') return 'long';
+    return this.position?.side?.toLowerCase() ?? '';
   }
 
   getProgressPct(): number {

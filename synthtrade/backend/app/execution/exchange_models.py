@@ -138,6 +138,7 @@ class ClosePositionRequest:
     symbol: SymbolRef
     side: OrderSide     # side of the POSITION (buy=long -> close with sell)
     quantity: float
+    margin_mode: str | None = None  # "cross" | "isolated" | None=cash (spot)
 
 
 @dataclass

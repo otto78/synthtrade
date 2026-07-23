@@ -496,7 +496,6 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                     symbol=sym_ref,
                                     side="buy" if side == "BUY" else "sell",
                                     quote_amount=_trade_val,
-                                    margin_mode="cross" if side == "SELL" else None,  # TASK-1224: cross margin for short
                                 )
                                 market_res = await exchange.place_market_order(market_request)
 
@@ -564,27 +563,21 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                         source="execution_state",
                                     )
                                     
-                                    # TASK-1128: Calculate exact bracket quantity to avoid 51008.
-                                    # OKX deducts the taker fee in the base asset before the OCO goes live.
-                                    # Strategy: read the ACTUAL available balance from OKX (most reliable),
-                                    # fall back to estimated qty if the REST call fails.
-                                    bracket_qty = exec_qty  # safe initial fallback
+                                    # TASK-1128: Calculate bracket quantity to avoid 51008.
+                                    # For BUY (long): bracket sells what was bought minus fee.
+                                    # We use exec_qty as the bracket qty — OKX handles fee deduction.
+                                    # Verify available balance is sufficient, but don't use it as qty.
+                                    bracket_qty = exec_qty
                                     if side == "BUY":
                                         try:
-                                            # Ask OKX directly what balance is available right now
                                             actual_bal = await exchange._balance_from_rest(sym_ref.base)
-                                            if actual_bal > 0:
+                                            if actual_bal > 0 and actual_bal < exec_qty:
                                                 bracket_qty = actual_bal
-                                                logger.info(f"[BRACKET_QTY] actual_balance={actual_bal:.6f} {sym_ref.base} (from REST) — using as bracket qty")
+                                                logger.warning(f"[BRACKET_QTY] actual_balance={actual_bal:.6f} < exec_qty={exec_qty:.6f}, capping bracket to balance")
                                             else:
-                                                # REST returned 0 (unlikely) — estimate fee
-                                                estimated_fee = exec_qty * entry_fee_pricing
-                                                bracket_qty = exec_qty - estimated_fee
-                                                logger.warning(f"[BRACKET_QTY] balance=0 from REST, using estimate: exec_qty={exec_qty:.6f} - fee={estimated_fee:.6f} = {bracket_qty:.6f}")
+                                                logger.info(f"[BRACKET_QTY] exec_qty={exec_qty:.6f} {sym_ref.base} (balance={actual_bal:.6f}) — using as bracket qty")
                                         except Exception as _bal_e:
-                                            estimated_fee = exec_qty * entry_fee_pricing
-                                            bracket_qty = exec_qty - estimated_fee
-                                            logger.warning(f"[BRACKET_QTY] balance REST failed ({_bal_e}), using estimate: {bracket_qty:.6f}")
+                                            logger.warning(f"[BRACKET_QTY] balance REST failed ({_bal_e}), using exec_qty: {bracket_qty:.6f}")
                                     else:
                                         # TASK-1224: SELL (short) — we're closing a borrowed position,
                                         # the bracket qty is the full exec_qty (no balance check needed)
@@ -601,7 +594,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                         sl_price=sl_price,
                                         entry_order_id=market_res.order_id,
                                         fee_tier=fee_tier_obj,
-                                        margin_mode="cross" if side == "SELL" else None,
+                                        margin_mode=settings.MARGIN_MODE if side == "SELL" else None,
                                     )
                                     bracket_res = await exchange.place_exit_bracket(bracket_req)
                                 except Exception as bracket_e:
@@ -619,8 +612,9 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                             _close_sym_ref = SymbolRef.from_okx(event.symbol.upper()) if "-" in event.symbol.upper() else SymbolRef.from_compact(event.symbol.upper())
                                             close_req = ClosePositionRequest(
                                                 symbol=_close_sym_ref,
-                                                side="buy",  # close short = buy
+                                                side="sell",  # SHORT: close_position() reverses to "buy"
                                                 quantity=exec_qty,
+                                                margin_mode=settings.MARGIN_MODE,
                                             )
                                             await exchange.close_position(close_req)
                                             logger.info(f"[BRACKET_FAILED] Emergency market buy executed: {exec_qty} {event.symbol.upper()} (close short)")
@@ -684,6 +678,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                 await broadcast_scalping_event("position", {
                                     "symbol": pos_obj.symbol,
                                     "side": pos_obj.side,
+                                    "position_side": "SHORT" if pos_obj.side == "SELL" else "LONG",
                                     "entry_price": float(pos_obj.entry_price),
                                     "current_price": float(candle.close),
                                     "entry_time": pos_obj.entry_time.isoformat(),
@@ -758,6 +753,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                             await broadcast_scalping_event("position", {
                                 "symbol": pos_obj.symbol,
                                 "side": pos_obj.side,
+                                "position_side": "SHORT" if pos_obj.side == "SELL" else "LONG",
                                 "entry_price": float(pos_obj.entry_price),
                                 "current_price": float(candle.close),
                                 "entry_time": pos_obj.entry_time.isoformat(),
@@ -919,6 +915,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                     await broadcast_scalping_event("position_update", {
                         "symbol": pos.symbol,
                         "side": pos.side,
+                        "position_side": "SHORT" if pos.side == "SELL" else "LONG",
                         "entry_price": entry_f,
                         "current_price": round(current_price_f, 2),
                         "quantity": qty_f,

@@ -28,6 +28,7 @@ export type ScalpingEventType =
 export interface TradeClosedEvent {
   symbol: string;
   side: 'BUY' | 'SELL';
+  position_side?: 'LONG' | 'SHORT';
   entry_price: number;
   exit_price: number;
   pnl: number;
@@ -96,6 +97,7 @@ export interface SignalEvent {
 export interface PositionEvent {
   symbol: string;
   side: 'BUY' | 'SELL';
+  position_side?: 'LONG' | 'SHORT';
   entry_price: number;
   current_price: number;
   entry_time?: string;

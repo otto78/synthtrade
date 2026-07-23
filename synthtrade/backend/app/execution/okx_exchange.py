@@ -665,16 +665,17 @@ class OkxExchangeAdapter:
             if not rows:
                 return ShortAvailability(available=False)
 
-            # Any row for this ccy means it's borrowable
-            borrowable = any(r.get("ccy") == ccy for r in rows)
+            # Response structure: rows[0]["basic"] = [{"ccy":"BTC","quota":"175","rate":"..."}, ...]
+            basic_list = rows[0].get("basic", []) if rows else []
+            borrowable = any(b.get("ccy") == ccy for b in basic_list)
             if not borrowable:
                 return ShortAvailability(available=False)
 
             # Extract rate if available (hourly -> annualized)
             apr = None
-            for r in rows:
-                if r.get("ccy") == ccy:
-                    rate_str = r.get("rate", "0")
+            for b in basic_list:
+                if b.get("ccy") == ccy:
+                    rate_str = b.get("rate", "0")
                     if rate_str:
                         apr = float(rate_str) * 24 * 365
                     break
@@ -887,7 +888,7 @@ class OkxExchangeAdapter:
             "sz": str(quantity),
         }
         
-        if quote_amount and side == "buy":
+        if quote_amount:
             body["tgtCcy"] = "quote_ccy"
             body["sz"] = str(quote_amount)
         
@@ -949,7 +950,7 @@ class OkxExchangeAdapter:
     async def close_position(self, request: ClosePositionRequest) -> ExchangeOrder:
         opp_side: OrderSide = "sell" if request.side == "buy" else "buy"
         return await self.place_market_order(
-            MarketOrderRequest(symbol=request.symbol, side=opp_side, quantity=request.quantity)
+            MarketOrderRequest(symbol=request.symbol, side=opp_side, quantity=request.quantity, margin_mode=request.margin_mode)
         )
 
     async def get_order_by_id(self, symbol: SymbolRef, ord_id: str) -> dict[str, Any]:

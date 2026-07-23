@@ -112,6 +112,7 @@ async def _trade_processor(symbol: str, restore_mode: bool = False):
                 await broadcast_scalping_event("position_update", {
                     "symbol": pos.symbol,
                     "side": pos.side,
+                    "position_side": "SHORT" if pos.side == "SELL" else "LONG",
                     "entry_price": entry,
                     "current_price": current,
                     "quantity": qty,

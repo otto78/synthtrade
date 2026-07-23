@@ -77,23 +77,15 @@ async def _restore_scalping_session(db) -> None:
     )
 
     # Step 2 — mode consistency check
+    # Don't mark the session as stopped — leave it running so it can be
+    # restored when the user switches to the matching mode via config_api.
     if session_mode != global_mode:
-        logger.warning(
+        logger.info(
             "Skipping session restore: session mode=%s ≠ global mode=%s. "
-            "Marking session as stopped to avoid stale state.",
+            "Session left running in DB for potential mode switch.",
             session_mode, global_mode,
         )
-        try:
-            def _db_op2():
-                db.table("scalping_sessions").update({
-                    "status": "stopped",
-                    "stopped_at": datetime.utcnow().isoformat()
-                }).eq("id", session_id).execute()
-            await asyncio.to_thread(_db_op2)
-            logger.info("Stale session %s marked as stopped", session_id)
-            guard.fail("restore_skipped: session mode does not match global mode")
-        except Exception as e:
-            logger.error("Failed to mark stale session as stopped: %s", e, exc_info=True)
+        guard.fail("restore_skipped: session mode does not match global mode")
         return
 
     # Step 3 — import _execution_state
@@ -464,6 +456,7 @@ async def _restore_scalping_session(db) -> None:
                 trade_list.append({
                     "symbol": t.get("symbol"),
                     "side": t.get("side"),
+                    "position_side": t.get("position_side", "LONG"),
                     "entry_price": t.get("entry_price", 0),
                     "exit_price": t.get("exit_price", 0),
                     "quantity": t.get("quantity", 0),

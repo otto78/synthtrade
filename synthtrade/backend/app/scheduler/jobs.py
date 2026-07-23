@@ -18,6 +18,7 @@ from app.scheduler.scalping_jobs import (
     spot_reconciliation_job,
     opportunity_monitor_job,
     verify_supervisor_outcomes_job,
+    short_timestop_job,
     set_engine as set_scalping_engine,
 )
 
@@ -258,5 +259,9 @@ def setup_scheduler(engine=None) -> AsyncIOScheduler:
         scheduler.add_job(verify_supervisor_outcomes_job, "interval",
                           minutes=5,
                           id="scalping_supervisor_outcome_verify")
+        # TASK-1225: Short time-stop (every 30 min, closes shorts open > 48h)
+        scheduler.add_job(short_timestop_job, "interval",
+                          minutes=30,
+                          id="scalping_short_timestop")
 
     return scheduler

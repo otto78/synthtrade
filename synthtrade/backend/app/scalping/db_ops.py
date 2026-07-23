@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional
 
 from app.db.supabase_client import get_supabase
@@ -22,6 +22,16 @@ async def _save_open_position_to_db(pos, db_session_id: str,
     try:
         def _db_op():
             supabase = get_supabase()
+            
+            # TASK-1226: map side to position_side for DB
+            position_side = "SHORT" if pos.side == "SELL" else "LONG"
+            
+            # TASK-1226: calculate timestop_deadline for short positions
+            timestop_deadline = None
+            if position_side == "SHORT":
+                from app.config import settings as _cfg
+                hours = getattr(_cfg, 'SCALPING_SHORT_TIMESTOP_HOURS', 48)
+                timestop_deadline = (pos.entry_time + timedelta(hours=hours)).isoformat() if pos.entry_time else None
             
             insert_data = {
                 "session_id": db_session_id,
@@ -49,6 +59,11 @@ async def _save_open_position_to_db(pos, db_session_id: str,
                 "oco_order_list_id": pos.oco_order_list_id,
                 "sl_order_id": pos.sl_order_id,
                 "tp_order_id": pos.tp_order_id,
+                # TASK-1226: short-specific columns
+                "position_side": position_side,
+                "margin_mode": "cross" if position_side == "SHORT" else None,
+                "leverage": _execution_state["session"].get("leverage"),
+                "timestop_deadline": timestop_deadline,
             }
             if signal_log_id:
                 insert_data["signal_log_id"] = signal_log_id
@@ -176,6 +191,7 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
             else:
                 # Fallback extrema ratio: insert new row if no open row found
                 logger.warning(f"No open row found for close: session={db_sid} symbol={pos.symbol} entry_price={entry_price_rounded} entry_time={entry_time_str} — inserting as new row")
+                position_side = "SHORT" if pos.side == "SELL" else "LONG"
                 supabase.table("scalping_trades").insert({
                     "session_id": db_sid,
                     "symbol": pos.symbol,
@@ -197,6 +213,10 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
                     "exchange_sl_order_id": pos.sl_order_id,
                     # Legacy
                     "oco_order_list_id": pos.oco_order_list_id,
+                    # TASK-1226: short-specific
+                    "position_side": position_side,
+                    "margin_mode": "cross" if position_side == "SHORT" else None,
+                    "leverage": _execution_state["session"].get("leverage"),
                 }).execute()
         await asyncio.to_thread(_db_op)
     except Exception as db_e:

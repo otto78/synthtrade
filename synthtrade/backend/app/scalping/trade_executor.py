@@ -243,6 +243,7 @@ async def _on_order_update(event: dict):
         await broadcast_scalping_event("trade_closed", {
             "symbol": pos.symbol,
             "side": pos.side,
+            "position_side": "SHORT" if pos.side == "SELL" else "LONG",
             "entry_price": entry_f,
             "exit_price": fill_price,
             "quantity": qty_f,
@@ -476,6 +477,7 @@ async def _close_position_and_record(pm, close_price: float, pos, reason: str = 
     trade_record = {
         "symbol": pos.symbol,
         "side": pos.side,
+        "position_side": "SHORT" if pos.side == "SELL" else "LONG",
         "entry_price": float(pos.entry_price),
         "exit_price": close_price,
         "quantity": qty,

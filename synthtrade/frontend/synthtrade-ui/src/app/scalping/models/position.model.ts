@@ -5,6 +5,7 @@
 export interface Position {
   symbol: string;
   side: 'BUY' | 'SELL';
+  position_side?: 'LONG' | 'SHORT';
   entry_price: number;
   current_price: number;
   quantity: number;

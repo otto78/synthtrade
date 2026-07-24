@@ -8,7 +8,7 @@ Usage:
     from app.execution.exchange_factory import build_exchange_adapter, build_ws_client, build_order_stream
 
     adapter = build_exchange_adapter()
-    ws_client = build_ws_client(symbols=["BTC-EUR"], demo=True)
+    ws_client = build_ws_client(symbols=["BTC-USD"], demo=True)
     order_stream = build_order_stream()
 """
 from __future__ import annotations

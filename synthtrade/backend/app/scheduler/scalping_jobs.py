@@ -5,9 +5,8 @@ esistente in app/scheduler/jobs.py. I job sono condizionali: se il flag
 corrispondente in ScalpingSettings è False, non vengono registrati.
 """
 
-import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional
 
 from app.config import settings
@@ -423,106 +422,4 @@ async def verify_supervisor_outcomes_job() -> None:
         logger.info(f"verify_supervisor_outcomes_job: updated {len(records)} records (label={label})")
     except Exception as e:
         logger.warning(f"verify_supervisor_outcomes_job error: {e}")
-
-
-async def short_timestop_job() -> None:
-    """TASK-1225.D: Time-stop fisso per posizioni short.
-
-    Ogni 30 min controlla se la posizione SHORT aperta ha superato
-    il limite massimo di ore (default 48h). Se sì:
-    1. Cancella bracket ordini (TP/SL)
-    2. Market buy di chiusura (repay automatico su OKX spot margin)
-    3. Registra il trade con exit_reason="timestop_fixed"
-
-    Pattern job-based (non asyncio.sleep): sopravvive a restart dell'app.
-    """
-    try:
-        from app.scalping.router import _execution_state
-        from app.scalping.broadcast import broadcast_scalping_event
-
-        session = _execution_state.get("session", {})
-        status = session.get("status", "idle")
-        if status not in ("running", "paused"):
-            return
-
-        pm = _execution_state.get("position_manager")
-        if pm is None:
-            return
-
-        pos = pm.get_open()
-        if pos is None:
-            return
-
-        # Solo posizioni SHORT (side="SELL")
-        if pos.side != "SELL":
-            return
-
-        # Calcola durata posizione
-        max_hours = settings.scalping.SCALPING_SHORT_TIMESTOP_HOURS
-        age = datetime.now(timezone.utc) - pos.entry_time
-        age_hours = age.total_seconds() / 3600
-
-        if age_hours < max_hours:
-            remaining = max_hours - age_hours
-            logger.debug(
-                f"Short timestop: {pos.symbol} age={age_hours:.1f}h < {max_hours}h "
-                f"(remaining={remaining:.1f}h) — no action"
-            )
-            return
-
-        # ── TIME-STOP EXPIRED: close position ──
-        logger.warning(
-            f"\033[91m⏰ SHORT TIMESTOP: {pos.symbol} age={age_hours:.1f}h > {max_hours}h — "
-            f"CLOSING position @ market\033[0m"
-        )
-
-        mode = session.get("mode", "paper")
-        exchange = _execution_state.get("exchange")
-        close_price = float(pos.entry_price)
-
-        if mode in ("live", "test") and exchange:
-            # Live/demo: cancel bracket + market buy
-            from app.execution.exchange_models import SymbolRef, ClosePositionRequest
-
-            sym_str = pos.symbol.upper()
-            try:
-                sym_ref = SymbolRef.from_okx(sym_str) if "-" in sym_str else SymbolRef.from_compact(sym_str)
-            except Exception:
-                sym_ref = SymbolRef.from_compact(sym_str)
-
-            # 1. Cancel bracket orders
-            try:
-                await exchange.cancel_open_exit_orders(sym_ref)
-                logger.info(f"[TIMESTOP] Cancelled bracket orders for {sym_str}")
-            except Exception as cancel_e:
-                logger.warning(f"[TIMESTOP] Failed to cancel bracket (non-blocking): {cancel_e}")
-
-            # 2. Market buy to close short (with retry)
-            from app.scalping.trade_executor import _live_close_position
-            try:
-                close_price = await _live_close_position(exchange, pos, float(pos.quantity))
-                logger.info(f"[TIMESTOP] Market buy executed @ {close_price} for {sym_str}")
-            except Exception as close_e:
-                logger.error(f"[TIMESTOP] Market close failed: {close_e}")
-                await broadcast_scalping_event("error", {
-                    "code": "TIMESTOP_CLOSE_FAILED",
-                    "message": f"Time-stop close failed for {sym_str}: {close_e}",
-                })
-                return
-        else:
-            # Paper mode: use current candle close price from buffer
-            loop = _execution_state.get("loop")
-            if loop and hasattr(loop, "_candle_buffer") and loop._candle_buffer and loop._candle_buffer.latest:
-                close_price = float(loop._candle_buffer.latest.close)
-
-        # 3. Record trade with exit_reason="timestop_fixed"
-        from app.scalping.trade_executor import _close_position_and_record
-        await _close_position_and_record(pm, close_price, pos, reason="timestop_fixed")
-
-        logger.warning(
-            f"\033[91m⏰ SHORT TIMESTOP CLOSED: {pos.symbol} @ {close_price} | "
-            f"age={age_hours:.1f}h (limit={max_hours}h)\033[0m"
-        )
-    except Exception as e:
-        logger.error(f"Short timestop job error: {e}")
 

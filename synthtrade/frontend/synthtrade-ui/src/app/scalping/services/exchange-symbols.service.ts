@@ -26,14 +26,6 @@ export interface ExchangeInstrument {
   status: string;
   /** Provider that returned this instrument: "okx" | "binance" */
   provider: string;
-  /** TASK-1221: Whether short selling is available for this symbol */
-  short_available?: boolean;
-  /** TASK-1221: Borrow APR for short (annualized, e.g. 0.223 = 22.3%) */
-  short_borrow_rate_apr?: number;
-  /** TASK-1221: Maximum borrowable quantity for short */
-  short_max_loan_qty?: number;
-  /** TASK-1222: Maximum allowed leverage for this symbol (capped at 10) */
-  max_leverage?: number;
 }
 
 export interface ExchangeInstrumentsResponse {

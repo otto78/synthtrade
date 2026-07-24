@@ -73,7 +73,7 @@ async def get_dashboard(
     try:
         provider = settings.EXCHANGE_PROVIDER.lower()
         if provider == "okx":
-            from app.core.okx_balance import get_total_balance_eur as _get_balance
+            from app.core.okx_balance import get_total_balance_usd as _get_balance
         else:
             from app.core.binance_balance import get_total_balance_eur as _get_balance
 
@@ -81,7 +81,7 @@ async def get_dashboard(
             asyncio.to_thread(_get_balance),
             timeout=BALANCE_TIMEOUT
         )
-        balance_eur = balance_info.get("total_eur", 0.0)
+        balance_eur = balance_info.get("total_usd", 0.0) or balance_info.get("total_eur", 0.0)
         balance_breakdown = balance_info.get("breakdown", {})
         balance_assets = balance_info.get("assets", [])
 

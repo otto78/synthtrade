@@ -23,17 +23,14 @@ from typing import Any, Dict, Optional, cast
 import httpx
 from app.config import settings
 from app.execution.exchange_models import (
-    BorrowRecord,
     ClosePositionRequest,
     ExchangeOrder,
     ExitBracketOrder,
     ExitBracketRequest,
     ExitProtectionError,
     FeeTier,
-    MarginPosition,
     MarketOrderRequest,
     OrderSide,
-    ShortAvailability,
     SymbolRef,
     SymbolRules,
     UnsupportedInstrumentError,
@@ -314,19 +311,16 @@ class OkxExchangeAdapter:
 
     # ── Symbol rules ──────────────────────────────────────────────────────────
 
-    async def get_symbol_rules(self, symbol: SymbolRef, inst_type: str = "SPOT") -> SymbolRules:
-        """Get symbol rules via direct REST (TASK-1164).
-
-        inst_type: "SPOT" (default) or "MARGIN" for margin instruments.
-        """
-        cache_key = (symbol.okx, self._demo, inst_type)
+    async def get_symbol_rules(self, symbol: SymbolRef) -> SymbolRules:
+        """Get symbol rules via direct REST (TASK-1164)."""
+        cache_key = (symbol.okx, self._demo)
         now = time.time()
         cached_ts = self._rules_cache_ts.get(cache_key, 0)
         if cache_key in self._rules_cache and (now - cached_ts) < self._rules_cache_ttl:
             return self._rules_cache[cache_key]
 
         try:
-            rules = await self._direct_fetch_symbol_rules(symbol, inst_type)
+            rules = await self._direct_fetch_symbol_rules(symbol)
             self._rules_cache[cache_key] = rules
             self._rules_cache_ts[cache_key] = now
             return rules
@@ -335,9 +329,9 @@ class OkxExchangeAdapter:
 
     # ── Direct REST fallback for symbol rules ─────────────────────────────────
 
-    async def _direct_fetch_symbol_rules(self, symbol: SymbolRef, inst_type: str = "SPOT") -> SymbolRules:
+    async def _direct_fetch_symbol_rules(self, symbol: SymbolRef) -> SymbolRules:
         """Fetch OKX symbol rules via direct REST (TASK-1164)."""
-        path = f"/api/v5/public/instruments?instType={inst_type}&instId={symbol.okx}"
+        path = f"/api/v5/public/instruments?instType=SPOT&instId={symbol.okx}"
         url = settings.OKX_BASE_URL.rstrip("/") + path
         headers = {}
         if self._demo:
@@ -552,343 +546,23 @@ class OkxExchangeAdapter:
             logger.warning("OKX get_trade_fee failed for %s: %s — using hardcoded fallback", symbol.okx, e)
             return _FALLBACK_FEE
 
-    # ── Short availability (TASK-1221) ────────────────────────────────────────
-
-    async def get_short_availability(self, symbol: SymbolRef) -> "ShortAvailability":
-        """Check if short selling is available for a symbol.
-
-        Calls max-loan + interest-limits to determine borrowability and APR.
-        In demo mode, falls back to public interest-rate-loan-quota if private
-        endpoints fail (demo accounts may not support private margin endpoints).
-        Returns ShortAvailability with available=False on any error (no exceptions propagated).
-        """
-        from app.execution.exchange_models import ShortAvailability
-
-        try:
-            inst_id = symbol.okx
-            # 1. max-loan (cross mode — Simple account doesn't support isolated)
-            path_loan = f"/api/v5/account/max-loan?instId={inst_id}&mgnMode=cross"
-            url_loan = settings.OKX_BASE_URL.rstrip("/") + path_loan
-            headers_loan = self._sign_headers("GET", path_loan)
-
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp_loan = await client.get(url_loan, headers=headers_loan)
-                data_loan = resp_loan.json()
-
-            if data_loan.get("code") != "0":
-                # TASK-1224 FIX: In demo mode, private endpoints may fail with
-                # 50101 (APIKey mismatch) or 51010 (account mode). Fall back to
-                # public endpoint to at least check if the symbol is borrowable.
-                if self._demo:
-                    logger.info(
-                        "OKX max-loan failed in demo for %s: %s %s — trying public endpoint",
-                        inst_id, data_loan.get("code"), data_loan.get("msg"),
-                    )
-                    return await self._get_short_availability_public(symbol)
-                logger.warning(
-                    "OKX max-loan failed for %s: %s %s",
-                    inst_id, data_loan.get("code"), data_loan.get("msg"),
-                )
-                return ShortAvailability(available=False)
-
-            # Find sell-side row (borrowable asset)
-            loan_rows = data_loan.get("data", [])
-            sell_rows = [r for r in loan_rows if r.get("side") == "sell"]
-            if not sell_rows:
-                return ShortAvailability(available=False)
-
-            max_loan = float(sell_rows[0].get("maxLoan", "0") or "0")
-            if max_loan <= 0:
-                return ShortAvailability(available=False)
-
-            ccy = sell_rows[0].get("ccy", symbol.base)
-
-            # 2. interest-limits for APR (private endpoint, more reliable than public)
-            path_limits = "/api/v5/account/interest-limits"
-            url_limits = settings.OKX_BASE_URL.rstrip("/") + path_limits
-            headers_limits = self._sign_headers("GET", path_limits)
-
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp_limits = await client.get(url_limits, headers=headers_limits)
-                data_limits = resp_limits.json()
-
-            apr = None
-            if data_limits.get("code") == "0":
-                for rec in (data_limits.get("data", [{}])[0].get("records", [])):
-                    if rec.get("ccy") == ccy:
-                        rate_str = rec.get("rate", "0")
-                        if rate_str:
-                            apr = float(rate_str) * 24 * 365  # hourly -> annualized
-                        break
-
-            return ShortAvailability(
-                available=True,
-                borrow_rate_apr=apr,
-                max_loan_qty=max_loan,
-                max_loan_ccy=ccy,
-                mgn_mode="cross",
-            )
-
-        except Exception as e:
-            logger.warning("OKX get_short_availability failed for %s: %s", symbol.okx, e)
-            return ShortAvailability(available=False)
-
-    async def _get_short_availability_public(self, symbol: SymbolRef) -> "ShortAvailability":
-        """TASK-1224: Fallback for demo mode — use public interest-rate-loan-quota.
-
-        The public endpoint doesn't require authentication and works in demo mode.
-        It tells us if a currency is borrowable, but max_loan_qty will be None
-        (demo accounts may not report actual limits).
-        """
-        from app.execution.exchange_models import ShortAvailability
-
-        try:
-            ccy = symbol.base
-            base_url = settings.OKX_BASE_URL.rstrip("/")
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                # Public endpoint — no auth headers needed
-                resp = await client.get(
-                    f"{base_url}/api/v5/public/interest-rate-loan-quota",
-                    params={"ccy": ccy},
-                )
-                data = resp.json()
-
-            if data.get("code") != "0":
-                logger.debug(
-                    "OKX public interest-rate-loan-quota failed for %s: %s %s",
-                    symbol.okx, data.get("code"), data.get("msg"),
-                )
-                return ShortAvailability(available=False)
-
-            # Check if the currency appears in the response (borrowable)
-            rows = data.get("data", [])
-            if not rows:
-                return ShortAvailability(available=False)
-
-            # Response structure: rows[0]["basic"] = [{"ccy":"BTC","quota":"175","rate":"..."}, ...]
-            basic_list = rows[0].get("basic", []) if rows else []
-            borrowable = any(b.get("ccy") == ccy for b in basic_list)
-            if not borrowable:
-                return ShortAvailability(available=False)
-
-            # Extract rate if available (hourly -> annualized)
-            apr = None
-            for b in basic_list:
-                if b.get("ccy") == ccy:
-                    rate_str = b.get("rate", "0")
-                    if rate_str:
-                        apr = float(rate_str) * 24 * 365
-                    break
-
-            logger.info(
-                "Short availability (public) for %s: available=True, apr=%s",
-                symbol.okx, apr,
-            )
-            return ShortAvailability(
-                available=True,
-                borrow_rate_apr=apr,
-                max_loan_qty=None,  # not available from public endpoint
-                max_loan_ccy=ccy,
-                mgn_mode="cross",
-            )
-
-        except Exception as e:
-            logger.debug("OKX public short availability failed for %s: %s", symbol.okx, e)
-            return ShortAvailability(available=False)
-
-    # ── Margin methods (TASK-1222) ─────────────────────────────────────────────
-
-    async def set_leverage(self, symbol: SymbolRef, leverage: int, mgn_mode: str = "cross", ccy: str | None = None) -> dict[str, Any]:
-        """Set leverage for a symbol via POST /api/v5/account/set-leverage.
-
-        On OKX, leverage is set per currency (ccy), not per pair.
-        For spot margin: ccy is the base asset (e.g. BTC for BTC-EUR).
-        """
-        path = "/api/v5/account/set-leverage"
-        url = settings.OKX_BASE_URL.rstrip("/") + path
-        body: dict[str, Any] = {
-            "instId": symbol.okx,
-            "lever": str(leverage),
-            "mgnMode": mgn_mode,
-        }
-        if ccy:
-            body["ccy"] = ccy
-        else:
-            body["ccy"] = symbol.base
-        headers = self._sign_headers("POST", path, json.dumps(body))
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(url, headers=headers, json=body)
-            resp.raise_for_status()
-            data = resp.json()
-            if data.get("code") != "0":
-                raise RuntimeError(
-                    f"OKX set-leverage error {data.get('code')}: {data.get('msg')}"
-                )
-            return data.get("data", [{}])[0] if data.get("data") else {}
-
-    async def get_leverage_info(self, symbol: SymbolRef, mgn_mode: str = "cross") -> dict[str, Any]:
-        """Get current leverage info via GET /api/v5/account/leverage-info.
-
-        OKX requires instType=MARGIN and ccy (not instId).
-        Returns leverage info including maxLever (maximum allowed leverage).
-        """
-        ccy = symbol.base
-        path = f"/api/v5/account/leverage-info?instType=MARGIN&ccy={ccy}&mgnMode={mgn_mode}"
-        url = settings.OKX_BASE_URL.rstrip("/") + path
-        headers = self._sign_headers("GET", path)
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
-                if data.get("code") != "0":
-                    return {}
-                items = data.get("data", [])
-                return items[0] if items else {}
-        except Exception as e:
-            logger.warning("OKX get_leverage_info failed for %s: %s", symbol.okx, e)
-            return {}
-
-    async def get_max_leverage(self, symbol: SymbolRef, mgn_mode: str = "cross") -> int:
-        """Get maximum allowed leverage for a symbol.
-
-        Uses get_leverage_info() and extracts maxLever from OKX response.
-        Falls back to 10 if unavailable.
-        """
-        info = await self.get_leverage_info(symbol, mgn_mode)
-        max_lever = info.get("maxLever")
-        if max_lever:
-            try:
-                return min(int(max_lever), 10)  # cap at 10 per user request
-            except (ValueError, TypeError):
-                pass
-        return 10  # default max
-
-    async def get_margin_positions(self) -> list[MarginPosition]:
-        """Get all margin positions via GET /api/v5/account/positions?instType=MARGIN.
-
-        Maps posCcy to side: posCcy=quote → SHORT, posCcy=base → LONG.
-        Extracts mgnRatio for risk monitoring.
-        """
-        path = "/api/v5/account/positions?instType=MARGIN"
-        url = settings.OKX_BASE_URL.rstrip("/") + path
-        headers = self._sign_headers("GET", path)
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
-                if data.get("code") != "0":
-                    logger.warning(
-                        "OKX get_margin_positions error %s: %s",
-                        data.get("code"), data.get("msg"),
-                    )
-                    return []
-                positions: list[MarginPosition] = []
-                for raw_pos in data.get("data", []):
-                    pos = raw_pos
-                    inst_id = pos.get("instId", "")
-                    if not inst_id or "-" not in inst_id:
-                        continue
-                    try:
-                        sym = SymbolRef.from_okx(inst_id)
-                    except Exception:
-                        continue
-                    pos_ccy = pos.get("posCcy", "")
-                    qty = float(pos.get("pos", "0") or "0")
-                    if qty == 0:
-                        continue
-                    # posCcy=base → LONG (buy), posCcy=quote → SHORT (sell)
-                    side: OrderSide = "buy" if pos_ccy == sym.base else "sell"
-                    positions.append(MarginPosition(
-                        symbol=sym,
-                        side=side,
-                        quantity=abs(qty),
-                        entry_price=float(pos.get("avgPx", "0") or "0"),
-                        mark_price=float(pos.get("markPx", "0") or "0"),
-                        unrealized_pnl=float(pos.get("upl", "0") or "0"),
-                        margin_ratio=float(pos.get("mgnRatio", "0") or "0"),
-                        pos_ccy=pos_ccy,
-                        lever=float(pos.get("lever", "1") or "1"),
-                        mgn_mode=pos.get("mgnMode", "cross"),
-                        raw=pos,
-                    ))
-                return positions
-        except Exception as e:
-            logger.warning("OKX get_margin_positions failed: %s", e)
-            return []
-
-    async def close_short_position(self, symbol: SymbolRef) -> ExchangeOrder:
-        """Close a short position by market buying to cover.
-
-        Same pattern as close_position() but explicitly for short.
-        Verifies posCcy before closing.
-        """
-        positions = await self.get_margin_positions()
-        short_pos = None
-        for pos in positions:
-            if pos.symbol.okx == symbol.okx and pos.side == "sell":
-                short_pos = pos
-                break
-        if not short_pos:
-            raise ExchangeOrderError(f"No short position found for {symbol.okx}")
-        return await self.place_market_order(
-            MarketOrderRequest(
-                symbol=symbol,
-                side="buy",
-                quantity=short_pos.quantity,
-                margin_mode=short_pos.mgn_mode,
-            )
-        )
-
-    async def get_borrow_repay_history(self, symbol: SymbolRef) -> list[BorrowRecord]:
-        """Get borrow/repay history via GET /api/v5/account/quick-margin-borrow-repay-history.
-
-        Returns list of BorrowRecord with borrow_amount and margin_interest.
-        """
-        path = f"/api/v5/account/quick-margin-borrow-repay-history?instId={symbol.okx}"
-        url = settings.OKX_BASE_URL.rstrip("/") + path
-        headers = self._sign_headers("GET", path)
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
-                if data.get("code") != "0":
-                    return []
-                records: list[BorrowRecord] = []
-                for raw_rec in data.get("data", []):
-                    records.append(BorrowRecord(
-                        ccy=raw_rec.get("ccy", ""),
-                        borrow_amount=float(raw_rec.get("borrowAmt", "0") or "0"),
-                        margin_interest=float(raw_rec.get("marginInterest", "0") or "0"),
-                        timestamp=raw_rec.get("ts", ""),
-                        raw=raw_rec,
-                    ))
-                return records
-        except Exception as e:
-            logger.warning("OKX get_borrow_repay_history failed for %s: %s", symbol.okx, e)
-            return []
-
     # ── Orders ────────────────────────────────────────────────────────────────
 
-    async def _direct_place_market_order(self, symbol: SymbolRef, side: str, quantity: float, quote_amount: Optional[float] = None, margin_mode: Optional[str] = None) -> dict[str, Any]:
+    async def _direct_place_market_order(self, symbol: SymbolRef, side: str, quantity: float, quote_amount: Optional[float] = None) -> dict[str, Any]:
         """Direct REST fallback per OKX market order quando CCXT fallisce."""
         path = "/api/v5/trade/order"
         url = settings.OKX_BASE_URL.rstrip("/") + path
         
-        td_mode = margin_mode if margin_mode in ("cross", "isolated") else "cash"
-        
         # Prepara il body
         body = {
             "instId": symbol.okx,
-            "tdMode": td_mode,
+            "tdMode": "cash",
             "side": side,
             "ordType": "market",
             "sz": str(quantity),
         }
         
-        if quote_amount:
+        if quote_amount and side == "buy":
             body["tgtCcy"] = "quote_ccy"
             body["sz"] = str(quote_amount)
         
@@ -928,7 +602,6 @@ class OkxExchangeAdapter:
             side=side,
             quantity=qty or quantity,
             quote_amount=quote_amount,
-            margin_mode=request.margin_mode,
         )
 
         commission, commission_asset = self._extract_commission(result)
@@ -950,7 +623,7 @@ class OkxExchangeAdapter:
     async def close_position(self, request: ClosePositionRequest) -> ExchangeOrder:
         opp_side: OrderSide = "sell" if request.side == "buy" else "buy"
         return await self.place_market_order(
-            MarketOrderRequest(symbol=request.symbol, side=opp_side, quantity=request.quantity, margin_mode=request.margin_mode)
+            MarketOrderRequest(symbol=request.symbol, side=opp_side, quantity=request.quantity)
         )
 
     async def get_order_by_id(self, symbol: SymbolRef, ord_id: str) -> dict[str, Any]:
@@ -1114,21 +787,18 @@ class OkxExchangeAdapter:
         quantity: float,
         tp_price: float,
         sl_price: float,
-        margin_mode: Optional[str] = None,
     ) -> dict[str, Any]:
         """Direct REST fallback for OKX exit bracket when CCXT create_order fails.
 
-        POST /api/v5/trade/order-algo with tdMode=cash for spot, cross/isolated for margin.
+        POST /api/v5/trade/order-algo with tdMode=cash for spot.
         Uses tpTriggerPx/slTriggerPx with -1 for market execution.
         """
         path = "/api/v5/trade/order-algo"
         url = settings.OKX_BASE_URL.rstrip("/") + path
 
-        td_mode = margin_mode if margin_mode in ("cross", "isolated") else "cash"
-
         body = {
             "instId": symbol.okx,
-            "tdMode": td_mode,
+            "tdMode": "cash",
             "side": side,
             "ordType": "oco",          # REQUIRED by OKX /api/v5/trade/order-algo (50014 without it)
             "sz": str(quantity),
@@ -1191,7 +861,6 @@ class OkxExchangeAdapter:
                 quantity=qty,
                 tp_price=tp_price,
                 sl_price=sl_price,
-                margin_mode=request.margin_mode,
             )
             algo_id = str(result.get("algoId", ""))
             logger.info(

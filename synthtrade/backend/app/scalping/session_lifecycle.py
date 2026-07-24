@@ -37,7 +37,7 @@ async def _refresh_session_balance():
         for attempt in range(1, max_retries + 1):
             try:
                 adapter = _execution_state["exchange"]
-                symbol = session.get("symbol", "BTC-EUR")
+                symbol = session.get("symbol", "BTC-USD")
 
                 # Derive quote asset from symbol (provider-neutral)
                 from app.execution.exchange_models import SymbolRef
@@ -45,7 +45,7 @@ async def _refresh_session_balance():
                     sym_ref = SymbolRef.from_okx(symbol) if "-" in symbol else SymbolRef.from_compact(symbol)
                     quote = sym_ref.quote
                 except Exception:
-                    quote = "EUR"
+                    quote = "USD"
 
                 # TASK-1107: use protocol method — works for OKX and Binance
                 bal = await adapter.get_balance(quote)

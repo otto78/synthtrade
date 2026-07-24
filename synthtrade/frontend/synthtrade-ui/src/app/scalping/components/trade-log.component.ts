@@ -41,7 +41,7 @@ import { SessionApiService } from '../services/session-api.service';
           <tbody>
             <tr *ngFor="let trade of trades">
               <td>{{ trade.timestamp | date:'MM/dd HH:mm:ss' }}</td>
-              <td [ngClass]="getPositionSideClass(trade)">{{ getPositionSideLabel(trade) }}</td>
+              <td [ngClass]="trade.side.toLowerCase()">{{ trade.side }}</td>
               <td>{{ trade.entry_price | number:'1.2-2' }}</td>
               <td>{{ trade.exit_price | number:'1.2-2' }}</td>
               <td [ngClass]="trade.pnl >= 0 ? 'profit' : 'loss'">
@@ -65,14 +65,11 @@ import { SessionApiService } from '../services/session-api.service';
     td { color: var(--text-primary); }
     .buy { color: var(--accent-success, #26a69a); }
     .sell { color: var(--accent-danger, #ef5350); }
-    .long { color: var(--accent-success, #26a69a); }
-    .short { color: var(--accent-danger, #ef5350); }
     .profit { color: var(--accent-success, #26a69a); }
     .loss { color: var(--accent-danger, #ef5350); }
     .reason-cell { font-size: 10px; opacity: 0.8; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .reason-stop-loss { color: var(--accent-danger, #ef5350); font-weight: 600; }
     .reason-take-profit { color: var(--accent-success, #26a69a); font-weight: 600; }
-    .reason-timestop { color: #F0B90B; font-weight: 600; }
   `],
 })
 export class TradeLogComponent implements OnInit, OnDestroy {
@@ -139,21 +136,7 @@ export class TradeLogComponent implements OnInit, OnDestroy {
     const r = reason.toLowerCase().replace(/\s+/g, '-');
     if (r.includes('stop-loss') || r.includes('stop_loss') || r === 'stop') return 'reason-stop-loss';
     if (r.includes('take-profit') || r.includes('take_profit') || r === 'tp' || r === 'take') return 'reason-take-profit';
-    if (r.includes('timestop')) return 'reason-timestop';
     return '';
-  }
-
-  /** Position side label: LONG/SHORT (falls back to BUY/SELL) */
-  getPositionSideLabel(trade: TradeClosedEvent): string {
-    return trade.position_side ?? trade.side;
-  }
-
-  /** Position side CSS class */
-  getPositionSideClass(trade: TradeClosedEvent): string {
-    const ps = trade.position_side;
-    if (ps === 'SHORT') return 'short';
-    if (ps === 'LONG') return 'long';
-    return trade.side.toLowerCase();
   }
 
   /** Deduplicate by unique trade key (entry_price+exit_price+symbol). */

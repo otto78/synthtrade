@@ -27,8 +27,6 @@ _execution_state: Dict[str, Any] = {
         "stopped_at": None,
         "paper_balance": 10000.0,
         "trade_value": 100.0,   # USD value per trade — set by user in UI
-        "leverage": 1,         # leverage multiplier — set by user in UI (1=no margin)
-        "short_enabled": False, # short selling allowed (requires short_available on symbol)
     },
     "trade_history": [],        # List[dict] — trade history for performance calc
     "risk_config": {

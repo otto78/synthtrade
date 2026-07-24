@@ -79,9 +79,6 @@ class ScalpingSettings(BaseSettings):
     # Modalità default
     SCALPING_DEFAULT_MODE: str = 'PAPER'
 
-    # TASK-1225: Short selling time-stop
-    SCALPING_SHORT_TIMESTOP_HOURS: int = 48  # Max hours a short position can stay open
-
     # Intelligence API Keys
     NEWSAPI_API_KEY: str = ''
     CRYPTOCOMPARE_API_KEY: str = ''
@@ -133,9 +130,6 @@ class Settings(BaseSettings):
     # Modalità trading
     TRADING_MODE: str = 'test'       # 'test' | 'live'
     ALLOW_LIVE_MODE: bool = False    # Flag sicurezza
-
-    # Margin mode for OKX orders: "cross" (margin auto-borrow) or "cash" (spot, no borrow)
-    MARGIN_MODE: str = "cross"
 
     # ── Computed: provider-neutral ───────────────────────────────
     @computed_field

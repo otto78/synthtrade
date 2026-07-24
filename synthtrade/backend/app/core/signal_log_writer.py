@@ -192,31 +192,3 @@ def log_execution_error(
         **context_kwargs
     )
     return result is not None  # Convert UUID to bool
-
-
-def log_rejected_short_unsupported(
-    session_id: str,
-    symbol: str,
-    **context_kwargs
-) -> bool:
-    """Logga decisione REJECTED per short non supportato.
-    
-    Args:
-        session_id: ID della sessione
-        symbol: Simbolo trading
-        **context_kwargs: Altri campi contesto
-    
-    Returns:
-        True se loggato con successo, False altrimenti
-    """
-    try:
-        result = log_signal_decision(
-            session_id=session_id,
-            symbol=symbol,
-            decision_type="rejected_short_unsupported",
-            decision_reason="Short selling non implementato — segnale SELL ignorato (feature futura)",
-            **context_kwargs
-        )
-        return result is not None  # Convert UUID to bool
-    except Exception:
-        return False

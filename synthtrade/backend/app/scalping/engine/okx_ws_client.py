@@ -94,7 +94,7 @@ class OkxWSClient:
     ):
         # Accept OKX format (BTC-EUR), CCXT format (BTC/EUR), or compact (BTCUSDT, BNBUSDC)
         # Normalize all to OKX instId format: BTC-EUR, BNB-USDC, etc.
-        self.symbols = [_normalize_okx_symbol(s) for s in (symbols or ["BTC-EUR"])]
+        self.symbols = [_normalize_okx_symbol(s) for s in (symbols or ["BTC-USD"])]
         self._demo = demo
         self._eu = eu
         self._reconnect_max_delay = reconnect_max_delay

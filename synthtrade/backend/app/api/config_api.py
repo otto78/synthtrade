@@ -40,7 +40,7 @@ def get_mode(_user: str = Depends(get_current_user)) -> ModeResponse:
 
 
 @router.post("/mode", status_code=status.HTTP_200_OK)
-async def set_mode(
+def set_mode(
     req: ModeUpdateRequest,
     _user: str = Depends(get_current_user),
 ) -> ModeResponse:
@@ -102,9 +102,7 @@ async def set_mode(
         logger.warning("ExchangeFactory: riconnessione adapter fallita: %s", exc)
 
     # Stop scalping session if mode is inconsistent
-    # A live session cannot run in test mode and vice versa.
-    # IMPORTANT: Do NOT mark the DB session as stopped — leave it running
-    # so it can be restored when the user switches back to the matching mode.
+    # A live session cannot run in test mode and vice versa
     try:
         from app.scalping.router import _execution_state as scalping_state
 
@@ -113,11 +111,10 @@ async def set_mode(
             sess_mode = scalping_session.get("mode", "").lower()
             if sess_mode != new_mode:
                 logger.warning(
-                    "Mode change %s → %s: stopping in-memory scalping session because its mode=%s is now inconsistent. "
-                    "DB session left running for future restore.",
+                    "Mode change %s → %s: stopping scalping session because its mode=%s is now inconsistent.",
                     old_mode, new_mode, sess_mode,
                 )
-                # Stop the in-memory scalping session only (not DB)
+                # Stop the scalping session
                 scalping_session["status"] = "idle"
                 
                 # Stop WS broadcast if running
@@ -131,7 +128,20 @@ async def set_mode(
                     except RuntimeError:
                         pass
                 
-                logger.info("In-memory scalping session stopped due to mode change from %s to %s (DB session preserved)", old_mode, new_mode)
+                # Mark DB session as stopped
+                db_sid = scalping_session.get("db_session_id")
+                if db_sid:
+                    try:
+                        from app.db.supabase_client import get_supabase
+                        supabase = get_supabase()
+                        supabase.table("scalping_sessions").update({
+                            "status": "stopped",
+                            "stopped_at": datetime.utcnow().isoformat()
+                        }).eq("id", db_sid).execute()
+                    except Exception as db_e:
+                        logger.warning(f"Failed to update scalping session in DB: {db_e}")
+                
+                logger.info("Scalping session stopped due to mode change from %s to %s", old_mode, new_mode)
     except Exception as e:
         logger.warning(f"Error checking scalping session on mode change: {e}")
 
@@ -139,32 +149,6 @@ async def set_mode(
         "Modalità cambiata con successo: %s → %s (exchange riconnesso)",
         old_mode, new_mode,
     )
-
-    # Check DB for an active session in the new mode and restore it
-    try:
-        from app.db.supabase_client import get_supabase
-        from app.main import _restore_scalping_session
-        db = get_supabase()
-        result = db.table("scalping_sessions") \
-            .select("*") \
-            .eq("status", "running") \
-            .eq("mode", new_mode.upper()) \
-            .limit(1) \
-            .execute()
-        if result.data:
-            sess = result.data[0]
-            logger.info(
-                "Mode switch %s → %s: found active session in DB (id=%s symbol=%s mode=%s), restoring...",
-                old_mode, new_mode, sess["id"], sess.get("symbol"), sess.get("mode"),
-            )
-            asyncio.create_task(
-                _restore_scalping_session(db),
-                name=f"restore-after-mode-switch-{new_mode}",
-            )
-        else:
-            logger.info("Mode switch %s → %s: no active session found in DB for mode=%s", old_mode, new_mode, new_mode)
-    except Exception as restore_e:
-        logger.warning(f"Error checking for active session after mode switch: {restore_e}")
 
     return ModeResponse(
         mode=new_mode,

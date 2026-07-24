@@ -7,7 +7,7 @@ import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { NgIf, NgClass, NgFor, DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SessionApiService } from '../services/session-api.service';
-import { ExchangeSymbolsService, ExchangeInstrument } from '../services/exchange-symbols.service';
+import { ExchangeSymbolsService } from '../services/exchange-symbols.service';
 import { ScalpingSession } from '../models/session.model';
 import { ConfigService } from '../../core/services/config.service';
 
@@ -61,17 +61,6 @@ import { ConfigService } from '../../core/services/config.service';
             <div class="selected-symbol" *ngIf="selectedSymbol">
               Selezionato: <strong>{{ selectedSymbol }}</strong>
             </div>
-            <!-- TASK-1221: Short availability badge -->
-            <div class="short-badge" *ngIf="selectedSymbol && shortAvailability !== null"
-                 [class.available]="shortAvailability.short_available"
-                 [class.unavailable]="!shortAvailability.short_available">
-              <span *ngIf="shortAvailability.short_available">
-                ✅ Short disponibile — {{ (shortAvailability.short_borrow_rate_apr! * 100) | number:'1.1-1' }}% APR
-              </span>
-              <span *ngIf="!shortAvailability.short_available">
-                ⚠️ Short non disponibile per questo simbolo
-              </span>
-            </div>
           </div>
 
           <div class="field">
@@ -87,7 +76,7 @@ import { ConfigService } from '../../core/services/config.service';
           </div>
 
           <div class="field">
-            <label>Valore Trade</label>
+            <label>Valore Trade ($)</label>
             <div class="trade-value-row">
               <input
                 type="number"
@@ -98,37 +87,8 @@ import { ConfigService } from '../../core/services/config.service';
                 placeholder="100"
               />
               <span class="trade-currency">{{ getQuoteAsset() }}</span>
-              <ng-container *ngIf="shortAvailable">
-                <input
-                  type="number"
-                  [(ngModel)]="leverage"
-                  min="1"
-                  [max]="maxLeverage"
-                  step="1"
-                  class="leverage-input"
-                  placeholder="1"
-                />
-                <span class="trade-currency">×leva</span>
-              </ng-container>
             </div>
-            <div class="trade-hint">
-              Importo per singolo trade
-              <span *ngIf="shortAvailable"> · Leva max {{ maxLeverage }}× (1=no margin)</span>
-            </div>
-          </div>
-
-          <!-- TASK-1223.E: Short selling toggle — only visible when symbol supports short -->
-          <div class="field" *ngIf="shortAvailable">
-            <label class="short-toggle-label">
-              <span>Short abilitato</span>
-              <label class="toggle-switch">
-                <input type="checkbox" [(ngModel)]="shortEnabled" />
-                <span class="toggle-slider"></span>
-              </label>
-            </label>
-            <div class="short-warning" *ngIf="shortEnabled">
-              Rischio liquidazione + interesse prestito — usare solo con capitale ridotto durante i test
-            </div>
+            <div class="trade-hint">Importo per singolo trade</div>
           </div>
         </div>
 
@@ -181,7 +141,7 @@ import { ConfigService } from '../../core/services/config.service';
 
         <!-- Trade Value edit while session is running -->
         <div class="field trade-live">
-          <label>Valore Trade <span class="hint-inline">· dal prossimo trade</span></label>
+          <label>Valore Trade ($) <span class="hint-inline">· dal prossimo trade</span></label>
           <div class="trade-value-row">
             <input
               type="number"
@@ -192,18 +152,6 @@ import { ConfigService } from '../../core/services/config.service';
               placeholder="100"
             />
             <span class="trade-currency">{{ getQuoteAsset() }}</span>
-            <ng-container *ngIf="shortAvailable">
-              <input
-                type="number"
-                [(ngModel)]="leverage"
-                min="1"
-                [max]="maxLeverage"
-                step="1"
-                class="leverage-input"
-                placeholder="1"
-              />
-              <span class="trade-currency">×leva</span>
-            </ng-container>
             <button class="btn-apply" (click)="applyTradeValue()" [disabled]="applyingTradeValue">
               {{ applyingTradeValue ? '...' : '✓' }}
             </button>
@@ -406,33 +354,15 @@ import { ConfigService } from '../../core/services/config.service';
       color: var(--accent-primary, #F0B90B);
     }
 
-    /* TASK-1221: Short availability badge */
-    .short-badge {
-      font-size: 11px;
-      padding: 4px 8px;
-      border-radius: 4px;
-      margin-top: 4px;
-    }
-    .short-badge.available {
-      background: rgba(38,166,154,0.12);
-      color: #26a69a;
-      border: 1px solid rgba(38,166,154,0.25);
-    }
-    .short-badge.unavailable {
-      background: rgba(255,183,77,0.1);
-      color: #ffb74d;
-      border: 1px solid rgba(255,183,77,0.2);
-    }
-
     /* Trade Value field */
     .trade-value-row {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
     }
     .trade-input {
       flex: 1;
-      padding: 8px 8px;
+      padding: 8px 12px;
       border-radius: 6px;
       background: rgba(255,255,255,0.05);
       color: var(--text-primary);
@@ -442,7 +372,6 @@ import { ConfigService } from '../../core/services/config.service';
       outline: none;
       transition: all 0.2s;
       min-width: 0;
-      max-width: 80px;
     }
     .trade-input:focus {
       border-color: var(--accent-primary, #F0B90B);
@@ -454,85 +383,10 @@ import { ConfigService } from '../../core/services/config.service';
       font-weight: 500;
       white-space: nowrap;
     }
-    .trade-separator {
-      font-size: 13px;
-      color: var(--text-secondary);
-      opacity: 0.5;
-      font-weight: 300;
-    }
-    .leverage-input {
-      width: 60px;
-      padding: 8px 8px;
-      border-radius: 6px;
-      background: rgba(255,255,255,0.05);
-      color: var(--text-primary);
-      border: 1px solid rgba(234,236,239,0.1);
-      font-size: 13px;
-      font-weight: 600;
-      outline: none;
-      transition: all 0.2s;
-      min-width: 0;
-      text-align: center;
-    }
-    .leverage-input:focus {
-      border-color: var(--accent-primary, #F0B90B);
-      background: rgba(255,255,255,0.08);
-    }
     .trade-hint {
       font-size: 10px;
       color: var(--text-secondary);
       opacity: 0.6;
-    }
-    .short-toggle-label {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      cursor: pointer;
-      font-size: 13px;
-      color: var(--text-primary);
-    }
-    .toggle-switch {
-      position: relative;
-      display: inline-block;
-      width: 36px;
-      height: 20px;
-      cursor: pointer;
-    }
-    .toggle-switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-    .toggle-slider {
-      position: absolute;
-      inset: 0;
-      background: rgba(255,255,255,0.1);
-      border-radius: 20px;
-      transition: background 0.2s;
-    }
-    .toggle-slider::before {
-      content: '';
-      position: absolute;
-      width: 16px;
-      height: 16px;
-      left: 2px;
-      top: 2px;
-      background: var(--text-secondary);
-      border-radius: 50%;
-      transition: transform 0.2s, background 0.2s;
-    }
-    .toggle-switch input:checked + .toggle-slider {
-      background: rgba(239,83,80,0.4);
-    }
-    .toggle-switch input:checked + .toggle-slider::before {
-      transform: translateX(16px);
-      background: #ef5350;
-    }
-    .short-warning {
-      font-size: 10px;
-      color: #ef5350;
-      margin-top: 4px;
-      line-height: 1.3;
     }
     .trade-live {
       background: rgba(240,185,11,0.04);
@@ -657,18 +511,6 @@ export class SessionControlsComponent implements OnInit {
     } catch {}
     return 100;
   })();
-
-  /** Leverage: restore from localStorage or default 1 */
-  leverage: number = (() => {
-    try {
-      const saved = localStorage.getItem('scalping_leverage');
-      if (saved !== null) {
-        const parsed = parseInt(saved, 10);
-        if (!isNaN(parsed) && parsed >= 1 && parsed <= 125) return parsed;
-      }
-    } catch {}
-    return 1;
-  })();
   
   applyingTradeValue = false;
   tradeValueApplied = false;
@@ -677,19 +519,8 @@ export class SessionControlsComponent implements OnInit {
   
   // Symbol search
   allSymbols: string[] = [];
-  allInstruments: ExchangeInstrument[] = [];
   symbolFilter = '';
   showSymbolDropdown = false;
-  shortAvailability: ExchangeInstrument | null = null;
-  shortAvailable = false;
-  /** Short enabled: restore from localStorage or default false */
-  shortEnabled: boolean = (() => {
-    try {
-      return localStorage.getItem('scalping_short_enabled') === 'true';
-    } catch {}
-    return false;
-  })();
-  maxLeverage = 10;
 
   globalMode: string = 'test';
 
@@ -705,15 +536,12 @@ export class SessionControlsComponent implements OnInit {
       this.globalMode = info.mode;
       // TASK-1116.G.4: Re-fetch instruments when mode changes
       const modeParam = info.mode === 'live' ? 'live' : 'test';
-      this.exchangeSymbols.getInstruments(modeParam as 'test' | 'live').subscribe((instruments) => {
-        this.allInstruments = instruments;
-        this.allSymbols = instruments.map(i => i.symbol);
+      this.exchangeSymbols.getSymbols(modeParam as 'test' | 'live').subscribe((symbols) => {
+        this.allSymbols = symbols;
         // Update default symbol from service if current selection is not in list
-        if (this.allSymbols.length > 0 && !this.allSymbols.includes(this.selectedSymbol)) {
-          this.selectedSymbol = this.exchangeSymbols.defaultSymbol || this.allSymbols[0];
-          this.sessionApi.setPreviewSymbol(this.selectedSymbol);
+        if (symbols.length > 0 && !symbols.includes(this.selectedSymbol)) {
+          this.selectedSymbol = this.exchangeSymbols.defaultSymbol || symbols[0];
         }
-        this.updateShortAvailability();
         this.cdr.detectChanges();
       });
     });
@@ -725,16 +553,6 @@ export class SessionControlsComponent implements OnInit {
       if (data?.trade_value && data.trade_value > 0) {
         this.tradeValue = data.trade_value;
         try { localStorage.setItem('scalping_trade_value', String(data.trade_value)); } catch {}
-      }
-      // Sync leverage from backend
-      if (data?.leverage && data.leverage > 0) {
-        this.leverage = data.leverage;
-        try { localStorage.setItem('scalping_leverage', String(data.leverage)); } catch {}
-      }
-      // Sync short_enabled from backend
-      if (data?.short_enabled !== undefined) {
-        this.shortEnabled = data.short_enabled;
-        try { localStorage.setItem('scalping_short_enabled', String(data.short_enabled)); } catch {}
       }
       this.cdr.detectChanges();
     });
@@ -761,21 +579,9 @@ export class SessionControlsComponent implements OnInit {
     this.selectedSymbol = symbol;
     this.symbolFilter = symbol;
     this.showSymbolDropdown = false;
-    this.updateShortAvailability();
     // Immediately activate live chart preview with historical candles
     this.sessionApi.setPreviewSymbol(symbol);
     this.cdr.detectChanges();
-  }
-
-  /** TASK-1221: Look up short availability for the selected symbol from cached instruments */
-  private updateShortAvailability(): void {
-    const found = this.allInstruments.find(i => i.symbol === this.selectedSymbol);
-    this.shortAvailability = found || null;
-    this.shortAvailable = found?.short_available ?? false;
-    this.maxLeverage = Math.min(found?.max_leverage ?? 10, 10);
-    if (this.leverage > this.maxLeverage) {
-      this.leverage = this.maxLeverage;
-    }
   }
 
   /** Persist trade value to localStorage so it survives page reload */
@@ -785,27 +591,12 @@ export class SessionControlsComponent implements OnInit {
     } catch {}
   }
 
-  /** Persist leverage to localStorage so it survives page reload */
-  private saveLeverage(): void {
-    try {
-      localStorage.setItem('scalping_leverage', String(this.leverage));
-    } catch {}
-  }
-
-  private saveShortEnabled(): void {
-    try {
-      localStorage.setItem('scalping_short_enabled', String(this.shortEnabled));
-    } catch {}
-  }
-
   startSession(): void {
     this.loading = true;
     this.saveTradeValue();
-    this.saveLeverage();
-    this.saveShortEnabled();
     // Map globalMode: 'live' -> 'live', 'test' -> 'test', default -> 'paper'
     const executionMode = this.globalMode === 'live' ? 'live' : (this.globalMode === 'test' ? 'test' : 'paper');
-    this.sessionApi.start(executionMode, this.selectedStrategy, this.selectedSymbol, this.tradeValue, this.leverage, this.shortEnabled).subscribe({
+    this.sessionApi.start(executionMode, this.selectedStrategy, this.selectedSymbol, this.tradeValue).subscribe({
       next: (data: ScalpingSession) => {
         this.session = data;
         this.sessionId = data.session_id || null;

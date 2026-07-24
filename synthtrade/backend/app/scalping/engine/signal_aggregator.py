@@ -161,6 +161,19 @@ class SignalAggregator:
                 is_mean_reversion_override=False
             )
 
+        if technical.type == "SELL":
+            logger.info(
+                f"{RED}[Aggregator] BLOCK: {symbol} SELL signals are permanently disabled (long-only engine){RESET}"
+            )
+            return ExecutionDecision(
+                execute=False,
+                reason="SELL signals disabled",
+                signal_type=technical.type,
+                ta_patterns=ta_patterns,
+                vol_anomaly=vol_anomaly,
+                is_mean_reversion_override=False
+            )
+
         # Conta tutti i collector che hanno risposto (non None)
         # Un collector con score 0.0 è comunque un dato valido (neutro)
         num_collectors_responded = len(market_score.breakdown) if market_score.breakdown else 0

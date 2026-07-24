@@ -29,7 +29,7 @@ from app.scalping.session_lifecycle import _sync_session_load_guard, _refresh_se
 from app.scalping.broadcast import broadcast_scalping_event
 from app.scalping.models.market import Candle
 from app.execution.exchange_models import MarketOrderRequest, ExitBracketRequest, SymbolRef
-from app.core.signal_log_writer import log_signal_decision, log_mean_reversion_decision, log_rejected_short_unsupported, log_execution_error, log_hold_decision
+from app.core.signal_log_writer import log_signal_decision, log_mean_reversion_decision, log_execution_error, log_hold_decision
 
 logger = logging.getLogger(__name__)
 
@@ -335,54 +335,12 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                         continue
 
                     if not pm.has_open():
-                        if side == "SELL":
-                            # TASK-1223.G: 3-way gate for short selling
-                            _short_enabled = session.get("short_enabled", False)
-                            _short_available = _execution_state.get("short_available", {}).get(session.get("symbol", ""), False)
 
-                            if not _short_enabled:
-                                # Gate 1: short not enabled — original behavior
-                                logger.info(f"{BOLD}{YELLOW}[Candle] TRADE BLOCKED: SHORT NOT SUPPORTED — SELL signal approved but cannot short{RESET}")
-                                _ms = _execution_state.get('loop')._last_market_score
-                                await asyncio.to_thread(
-                                    log_rejected_short_unsupported,
-                                    session_id=session.get("db_session_id") or session.get("session_id") or "",
-                                    symbol=event.symbol.upper(),
-                                    regime=_execution_state.get('loop')._current_regime.regime if _execution_state.get('loop')._current_regime else "unknown",
-                                    strategy_type=_execution_state.get('loop')._strategy.name if _execution_state.get('loop')._strategy else "unknown",
-                                    tech_signal=decision.signal_type,
-                                    tech_confidence=round(abs(decision.confidence), 3),
-                                    intel_score=float(_ms.total) if _ms else None,
-                                    intel_bias=_ms.bias if _ms else None,
-                                    trend_direction=_ms.trend_direction if _ms else None,
-                                    trend_value=float(_ms.trend_5m) if _ms and _ms.trend_5m is not None else None,
-                                )
-                                continue
 
-                            if not _short_available:
-                                # Gate 2: short enabled but symbol doesn't support it
-                                logger.info(f"{BOLD}{YELLOW}[Candle] TRADE BLOCKED: SHORT UNAVAILABLE — short enabled but {event.symbol} not borrowable{RESET}")
-                                _ms = _execution_state.get('loop')._last_market_score
-                                await asyncio.to_thread(
-                                    log_rejected_short_unsupported,
-                                    session_id=session.get("db_session_id") or session.get("session_id") or "",
-                                    symbol=event.symbol.upper(),
-                                    regime=_execution_state.get('loop')._current_regime.regime if _execution_state.get('loop')._current_regime else "unknown",
-                                    strategy_type=_execution_state.get('loop')._strategy.name if _execution_state.get('loop')._strategy else "unknown",
-                                    tech_signal=decision.signal_type,
-                                    tech_confidence=round(abs(decision.confidence), 3),
-                                    intel_score=float(_ms.total) if _ms else None,
-                                    intel_bias=_ms.bias if _ms else None,
-                                    trend_direction=_ms.trend_direction if _ms else None,
-                                    trend_value=float(_ms.trend_5m) if _ms and _ms.trend_5m is not None else None,
-                                )
-                                continue
-
-                            # Gate 3: short enabled + available — proceed with short
-                            logger.info(f"{BOLD}{GREEN}[Candle] SHORT APPROVED: short_enabled=True, short_available=True for {event.symbol}{RESET}")
-
-                        # TASK-1224: Both BUY and SELL can reach the entry flow now
-                        # (previously SELL was blocked here)
+                        # Only BUY signals reach this point (CLOSE/NONE already filtered)
+                        if side != "BUY":
+                            logger.debug(f"Skipping non-BUY signal: {side}")
+                            continue
 
                         if _check_daily_loss():
                             logger.warning("Max daily loss exceeded. Blocking new real trade.")
@@ -494,8 +452,8 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                 # This fixes sCode=51020 "Your order should meet or exceed the minimum order amount."
                                 market_request = MarketOrderRequest(
                                     symbol=sym_ref,
-                                    side="buy" if side == "BUY" else "sell",
-                                    quote_amount=_trade_val,
+                                    side="buy",  # 'buy' o 'sell'
+                                    quote_amount=_trade_val,  # OKX calcola la quantità base da sola
                                 )
                                 market_res = await exchange.place_market_order(market_request)
 
@@ -563,27 +521,28 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                         source="execution_state",
                                     )
                                     
-                                    # TASK-1128: Calculate bracket quantity to avoid 51008.
-                                    # For BUY (long): bracket sells what was bought minus fee.
-                                    # We use exec_qty as the bracket qty — OKX handles fee deduction.
-                                    # Verify available balance is sufficient, but don't use it as qty.
-                                    bracket_qty = exec_qty
+                                    # TASK-1128: Calculate exact bracket quantity to avoid 51008.
+                                    # OKX deducts the taker fee in the base asset before the OCO goes live.
+                                    # Strategy: read the ACTUAL available balance from OKX (most reliable),
+                                    # fall back to estimated qty if the REST call fails.
+                                    bracket_qty = exec_qty  # safe initial fallback
                                     if side == "BUY":
                                         try:
+                                            # Ask OKX directly what balance is available right now
                                             actual_bal = await exchange._balance_from_rest(sym_ref.base)
-                                            if actual_bal > 0 and actual_bal < exec_qty:
+                                            if actual_bal > 0:
                                                 bracket_qty = actual_bal
-                                                logger.warning(f"[BRACKET_QTY] actual_balance={actual_bal:.6f} < exec_qty={exec_qty:.6f}, capping bracket to balance")
+                                                logger.info(f"[BRACKET_QTY] actual_balance={actual_bal:.6f} {sym_ref.base} (from REST) — using as bracket qty")
                                             else:
-                                                logger.info(f"[BRACKET_QTY] exec_qty={exec_qty:.6f} {sym_ref.base} (balance={actual_bal:.6f}) — using as bracket qty")
+                                                # REST returned 0 (unlikely) — estimate fee
+                                                estimated_fee = exec_qty * entry_fee_pricing
+                                                bracket_qty = exec_qty - estimated_fee
+                                                logger.warning(f"[BRACKET_QTY] balance=0 from REST, using estimate: exec_qty={exec_qty:.6f} - fee={estimated_fee:.6f} = {bracket_qty:.6f}")
                                         except Exception as _bal_e:
-                                            logger.warning(f"[BRACKET_QTY] balance REST failed ({_bal_e}), using exec_qty: {bracket_qty:.6f}")
-                                    else:
-                                        # TASK-1224: SELL (short) — we're closing a borrowed position,
-                                        # the bracket qty is the full exec_qty (no balance check needed)
-                                        bracket_qty = exec_qty
-                                        logger.info(f"[BRACKET_QTY] short sell: bracket_qty={bracket_qty:.6f} {sym_ref.base} (borrowed)")
-                                    bracket_qty = round(bracket_qty, 8)
+                                            estimated_fee = exec_qty * entry_fee_pricing
+                                            bracket_qty = exec_qty - estimated_fee
+                                            logger.warning(f"[BRACKET_QTY] balance REST failed ({_bal_e}), using estimate: {bracket_qty:.6f}")
+                                        bracket_qty = round(bracket_qty, 8)
 
                                             
                                     bracket_req = ExitBracketRequest(
@@ -594,7 +553,6 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                         sl_price=sl_price,
                                         entry_order_id=market_res.order_id,
                                         fee_tier=fee_tier_obj,
-                                        margin_mode=settings.MARGIN_MODE if side == "SELL" else None,
                                     )
                                     bracket_res = await exchange.place_exit_bracket(bracket_req)
                                 except Exception as bracket_e:
@@ -603,26 +561,9 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
 
                                 if bracket_failed or not bracket_res:
                                     # ── CASO B: BRACKET FALLITO ──
-                                    # TASK-1224: For short, emergency close is a BUY (close borrowed position).
-                                    # For long, it's a SELL (close owned position).
-                                    if side == "SELL":
-                                        logger.error(f"BRACKET_FLOW CASO B: bracket fallito per {event.symbol} SHORT — eseguo market buy emergenza")
-                                        try:
-                                            from app.execution.exchange_models import ClosePositionRequest
-                                            _close_sym_ref = SymbolRef.from_okx(event.symbol.upper()) if "-" in event.symbol.upper() else SymbolRef.from_compact(event.symbol.upper())
-                                            close_req = ClosePositionRequest(
-                                                symbol=_close_sym_ref,
-                                                side="sell",  # SHORT: close_position() reverses to "buy"
-                                                quantity=exec_qty,
-                                                margin_mode=settings.MARGIN_MODE,
-                                            )
-                                            await exchange.close_position(close_req)
-                                            logger.info(f"[BRACKET_FAILED] Emergency market buy executed: {exec_qty} {event.symbol.upper()} (close short)")
-                                        except Exception as _close_e:
-                                            logger.error(f"[BRACKET_FAILED] Emergency close also failed: {_close_e}")
-                                    else:
-                                        logger.error(f"BRACKET_FLOW CASO B: bracket fallito per {event.symbol} — eseguo market sell emergenza")
-                                        await _handle_bracket_failed(exchange, event.symbol.upper())
+                                    # Market sell di emergenza con qty reale post-fee
+                                    logger.error(f"BRACKET_FLOW CASO B: bracket fallito per {event.symbol} — eseguo market sell emergenza")
+                                    await _handle_bracket_failed(exchange, event.symbol.upper())
                                     continue  # Nessun salvataggio DB, nessuna apertura posizione
 
                                 # ── CASO A: BRACKET RIUSCITO ──
@@ -678,7 +619,6 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                 await broadcast_scalping_event("position", {
                                     "symbol": pos_obj.symbol,
                                     "side": pos_obj.side,
-                                    "position_side": "SHORT" if pos_obj.side == "SELL" else "LONG",
                                     "entry_price": float(pos_obj.entry_price),
                                     "current_price": float(candle.close),
                                     "entry_time": pos_obj.entry_time.isoformat(),
@@ -742,18 +682,12 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                     supervisor_context["slippage_pct"] = round(abs(float(event.close) - sig_p) / sig_p * 100, 4)
                             await _save_open_position_to_db(pos_obj, session.get("db_session_id"), supervisor_context=supervisor_context, signal_log_id=_signal_log_id)
                             
-                            # TASK-1224: Update paper balance
-                            # BUY: spend quote (EUR) to buy base → balance decreases
-                            # SELL (short): borrow base, sell for quote → balance increases (proceeds from short sale)
-                            if side == "BUY":
-                                session["paper_balance"] -= float(_trade_val)
-                            else:
-                                session["paper_balance"] += float(_trade_val)
+                            # Update paper balance to reflect Free Balance
+                            session["paper_balance"] -= float(_trade_val)
                             await broadcast_scalping_event("session_restored", session.copy())
                             await broadcast_scalping_event("position", {
                                 "symbol": pos_obj.symbol,
                                 "side": pos_obj.side,
-                                "position_side": "SHORT" if pos_obj.side == "SELL" else "LONG",
                                 "entry_price": float(pos_obj.entry_price),
                                 "current_price": float(candle.close),
                                 "entry_time": pos_obj.entry_time.isoformat(),
@@ -915,7 +849,6 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                     await broadcast_scalping_event("position_update", {
                         "symbol": pos.symbol,
                         "side": pos.side,
-                        "position_side": "SHORT" if pos.side == "SELL" else "LONG",
                         "entry_price": entry_f,
                         "current_price": round(current_price_f, 2),
                         "quantity": qty_f,

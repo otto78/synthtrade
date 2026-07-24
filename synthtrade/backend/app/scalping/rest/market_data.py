@@ -1,5 +1,4 @@
 import logging
-import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -12,11 +11,6 @@ from app.scalping.broadcast import _now
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
-
-# TASK-1227 FIX: Cache short availability per symbol to avoid repeated max-loan calls
-# during active session (frontend re-requests instruments on navigation/reconnect)
-_short_availability_cache: Dict[str, dict] = {}  # key: "{symbol}:{is_demo}", value: {result, timestamp}
-_SHORT_CACHE_TTL_SECONDS = 300  # 5 minutes
 
 
 @router.get("/binance/exchange-info")
@@ -77,89 +71,17 @@ async def exchange_instruments(mode: str | None = None):
                 resp.raise_for_status()
                 data = resp.json()
             raw = data.get("data", [])
-
-            # TASK-1221: Check short availability for EUR pairs (cached per symbol)
-            # TASK-1224 FIX: also run in demo mode — OKX demo supports short on select symbols
-            # TASK-1227 FIX: cache results for 5 min; skip API calls entirely during active session
-            short_availability: dict[str, dict] = {}
-            session_active = _execution_state.get("session", {}).get("status") == "running"
-            if settings.EXCHANGE_PROVIDER.lower() == "okx":
-                try:
-                    from app.execution.exchange_models import SymbolRef, ShortAvailability
-                    from app.execution.okx_exchange import OkxExchangeAdapter
-
-                    eur_instruments = [
-                        item for item in raw
-                        if item.get("quoteCcy") == "EUR" and item.get("state") == "live"
-                    ]
-                    now = time.time()
-
-                    # During active session: only use cached values, no API calls
-                    if session_active:
-                        for item in eur_instruments[:10]:
-                            inst_id = item["instId"]
-                            cache_key = f"{inst_id}:{is_demo}"
-                            cached = _short_availability_cache.get(cache_key)
-                            if cached and (now - cached["timestamp"]) < _SHORT_CACHE_TTL_SECONDS:
-                                short_availability[inst_id] = cached["result"]
-                            else:
-                                short_availability[inst_id] = {"short_available": False}
-                        logger.debug("Instruments: session active, using cached short availability only")
-                    else:
-                        # Session not active: full check (discovery phase)
-                        adapter = OkxExchangeAdapter(
-                            api_key=settings.exchange_api_key,
-                            secret=settings.exchange_secret_key,
-                            passphrase=settings.exchange_passphrase,
-                            demo=is_demo,
-                        )
-                        for item in eur_instruments[:10]:  # cap at 10 to avoid rate limits
-                            inst_id = item["instId"]
-                            cache_key = f"{inst_id}:{is_demo}"
-                            cached = _short_availability_cache.get(cache_key)
-                            if cached and (now - cached["timestamp"]) < _SHORT_CACHE_TTL_SECONDS:
-                                short_availability[inst_id] = cached["result"]
-                                continue
-                            try:
-                                sym = SymbolRef.from_okx(inst_id)
-                                avail = await adapter.get_short_availability(sym)
-                                max_lev = 10  # default
-                                if avail.available:
-                                    try:
-                                        max_lev = await adapter.get_max_leverage(sym, mgn_mode="cross")
-                                    except Exception:
-                                        pass
-                                result = {
-                                    "short_available": avail.available,
-                                    "short_borrow_rate_apr": round(avail.borrow_rate_apr, 4) if avail.borrow_rate_apr else None,
-                                    "short_max_loan_qty": avail.max_loan_qty,
-                                    "max_leverage": max_lev,
-                                }
-                                short_availability[inst_id] = result
-                                _short_availability_cache[cache_key] = {"result": result, "timestamp": now}
-                            except Exception as e:
-                                logger.debug("Short availability check failed for %s: %s", inst_id, e)
-                                short_availability[inst_id] = {"short_available": False}
-                except Exception as e:
-                    logger.warning("Short availability batch check failed: %s", e)
-
-            instruments = []
-            for item in raw:
-                if item.get("state") != "live":
-                    continue
-                inst_id = item["instId"]
-                short_info = short_availability.get(inst_id, {})
-                instruments.append({
-                    "symbol": inst_id,
+            instruments = [
+                {
+                    "symbol": item["instId"],
                     "base": item["baseCcy"],
                     "quote": item["quoteCcy"],
                     "status": item.get("state", "live"),
                     "provider": "okx",
-                    "short_available": short_info.get("short_available", False),
-                    "short_borrow_rate_apr": short_info.get("short_borrow_rate_apr"),
-                    "short_max_loan_qty": short_info.get("short_max_loan_qty"),
-                    "max_leverage": short_info.get("max_leverage", 10),
-                })
+                }
+                for item in raw
+                if item.get("state") == "live"
+            ]
             instruments.sort(key=lambda x: (x["quote"] != "EUR", x["symbol"]))
             eur_pairs = [i["symbol"] for i in instruments if i["quote"] == "EUR"]
             default_symbol = "BTC-EUR" if "BTC-EUR" in eur_pairs else (eur_pairs[0] if eur_pairs else "BTC-EUR")
@@ -268,7 +190,7 @@ async def get_trade_history(session_id: Optional[str] = None, limit: int = 50) -
         try:
             supabase = get_supabase()
             resp = supabase.table("scalping_trades") \
-                .select("symbol, side, position_side, entry_price, exit_price, quantity, pnl, pnl_pct, entry_time, exit_time, signal_reason, status") \
+                .select("symbol, side, entry_price, exit_price, quantity, pnl, pnl_pct, entry_time, exit_time, signal_reason, status") \
                 .eq("session_id", session_id) \
                 .order("entry_time", desc=True) \
                 .limit(limit) \

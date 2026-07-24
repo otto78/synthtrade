@@ -94,7 +94,7 @@ import { StatCardComponent } from '../../shared/components/stat-card/stat-card.c
             </svg>
             <div class="chart-metrics">
               <span class="metric" [class.positive]="pnlTotal() >= 0" [class.negative]="pnlTotal() < 0">
-                P&L: {{ pnlTotal() | number:'1.2-2' }} EUR
+                P&L: {{ pnlTotal() | number:'1.2-2' }} USD
               </span>
             </div>
           } @else {
@@ -118,14 +118,14 @@ import { StatCardComponent } from '../../shared/components/stat-card/stat-card.c
                 <div class="asset-row header">
                   <span class="col-asset">Asset</span>
                   <span class="col-qty">Quantità</span>
-                  <span class="col-eur">Valore EUR</span>
+                  <span class="col-eur">Valore USD</span>
                   <span class="col-pct">% Portfolio</span>
                 </div>
                 @for (a of sortedAssets(); track a.asset) {
                   <div class="asset-row">
                     <span class="col-asset">{{ a.asset }}</span>
                     <span class="col-qty">{{ a.quantity | number:'1.4-8' }}</span>
-                    <span class="col-eur">{{ a.value_eur | currency:'EUR':'symbol':'1.2-2' }}</span>
+                    <span class="col-eur">{{ a.value_eur | currency:'USD':'symbol':'1.2-2' }}</span>
                     <span class="col-pct">{{ (a.value_eur / stats().balance_eur * 100) | number:'1.1-1' }}%</span>
                   </div>
                 }
@@ -391,7 +391,7 @@ export class DashboardPage implements OnInit, OnDestroy {
   balanceFormatted = computed(() => {
     const b = this.stats().balance_eur;
     if (b === 0 && !this.loading()) return '—';
-    return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 }).format(b);
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(b);
   });
 
   balanceLabel = computed(() => {
@@ -406,12 +406,12 @@ export class DashboardPage implements OnInit, OnDestroy {
   closedTradesStr = computed(() => {
     const count = this.stats().closed_trades_count ?? 0;
     const pnl = this.stats().closed_trades_pnl ?? 0;
-    return `${count} (${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} EUR)`;
+    return `${count} (${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} USD)`;
   });
   pnlTodayStr = computed(() => {
     const pnl = this.stats().pnl_today;
-    if (pnl === 0) return '€0.00';
-    return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', signDisplay: 'always', minimumFractionDigits: 2 }).format(pnl);
+    if (pnl === 0) return '$0.00';
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', signDisplay: 'always', minimumFractionDigits: 2 }).format(pnl);
   });
 
   llmOpen = signal(false);

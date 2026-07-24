@@ -30,7 +30,7 @@ _execution_state: Dict[str, Any] = {
     },
     "trade_history": [],        # List[dict] — trade history for performance calc
     "risk_config": {
-        "max_daily_loss": 50,
+        "session_max_loss_pct": 10,  # TASK-1230: % of starting_balance
         "max_drawdown": 10,
         "leverage": 10,
         "stop_loss_pct": 1.05,

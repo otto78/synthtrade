@@ -499,26 +499,48 @@ async def _close_position_and_record(pm, close_price: float, pos, reason: str = 
     await broadcast_scalping_event("trade_closed", trade_record)
     logger.info(f"Position closed ({reason}): {pos.side} {pos.symbol} PnL: {pnl:.2f} ({pnl_pct:.2f}%)")
 
-def _check_daily_loss() -> bool:
-    """Return True if max daily loss is exceeded."""
+def _check_session_loss() -> bool:
+    """TASK-1230: Return True if total session PnL exceeds max session loss %.
+
+    Session loss = total PnL of all trades in the session.
+    Max allowed loss = starting_balance * session_max_loss_pct / 100.
+    """
     risk_cfg = _execution_state.get("risk_config", {})
-    max_loss = float(risk_cfg.get("max_daily_loss", 50.0))
-    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    total_pnl = sum(t.get("pnl") or 0.0 for t in _execution_state["trade_history"] if t["timestamp"].startswith(now_str))
-    return total_pnl <= -max_loss
+    max_loss_pct = float(risk_cfg.get("session_max_loss_pct", 10.0))
+    trades = _execution_state["trade_history"]
+    if not trades:
+        return False
+    starting = float(
+        _execution_state["session"].get("starting_balance")
+        or _execution_state["session"].get("live_balance")
+        or _execution_state["session"].get("paper_balance")
+        or 10000.0
+    )
+    total_pnl = sum(t.get("pnl") or 0.0 for t in trades)
+    max_loss_eur = starting * max_loss_pct / 100.0
+    return total_pnl <= -max_loss_eur
 
 
 def _check_drawdown() -> bool:
-    """Return True if max drawdown from peak equity is exceeded."""
+    """TASK-1230: Return True if max drawdown from peak equity is exceeded.
+
+    Equity curve: starting_balance → +PnL trade1 → +PnL trade2 → ...
+    Drawdown = (peak - current_equity) / peak * 100
+    Uses starting_balance (persisted in DB) as base, not paper_balance.
+    """
     risk_cfg = _execution_state.get("risk_config", {})
     max_dd_pct = float(risk_cfg.get("max_drawdown", 10.0))
     trades = [t for t in _execution_state["trade_history"] if t.get("exit_price") is not None]
     if not trades:
         return False
-    base = float(_execution_state["session"].get("paper_balance") or
-                 _execution_state["session"].get("live_balance") or 10000.0)
-    equity = base
-    peak = base
+    starting = float(
+        _execution_state["session"].get("starting_balance")
+        or _execution_state["session"].get("live_balance")
+        or _execution_state["session"].get("paper_balance")
+        or 10000.0
+    )
+    equity = starting
+    peak = starting
     for t in trades:
         equity += (t.get("pnl") or 0.0)
         if equity > peak:

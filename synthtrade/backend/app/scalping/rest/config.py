@@ -65,7 +65,7 @@ async def update_risk_config(config: Dict) -> Dict:
         supabase = get_supabase()
         db_payload = {
             "id": 1,
-            "max_daily_loss": clean_cfg.get("max_daily_loss", 50),
+            "session_max_loss_pct": clean_cfg.get("session_max_loss_pct", 10),
             "max_drawdown": clean_cfg.get("max_drawdown", 10),
             "leverage": clean_cfg.get("leverage", 10),
             "stop_loss_pct": clean_cfg.get("stop_loss_pct", 1.05),

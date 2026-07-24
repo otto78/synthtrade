@@ -17,14 +17,12 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 from app.execution.exchange_models import (
-    BorrowRecord,
     ClosePositionRequest,
     ExchangeOrder,
     ExitBracketOrder,
     ExitBracketRequest,
     ExitProtectionError,
     FeeTier,
-    MarginPosition,
     MarketOrderRequest,
     SymbolRef,
     SymbolRules,

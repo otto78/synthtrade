@@ -22,7 +22,7 @@ from app.scalping.trade_executor import (
     _start_uds_if_needed,
     _handle_bracket_failed,
     _close_position_and_record,
-    _check_daily_loss,
+    _check_session_loss,
     _check_drawdown,
 )
 from app.scalping.session_lifecycle import _sync_session_load_guard, _refresh_session_balance
@@ -322,7 +322,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                         logger.debug(f"[Candle] PAUSED: skipping trade execution (status={session['status']})")
                         continue
                     side = decision.signal_type
-                    logger.info(f"{CYAN}[Candle] TRADE: side={side} has_open={pm.has_open()} daily_loss={_check_daily_loss()}{RESET}")
+                    logger.info(f"{CYAN}[Candle] TRADE: side={side} has_open={pm.has_open()} session_loss={_check_session_loss()}{RESET}")
                     
                     guard = _execution_state.get("session_load_guard")
                     if guard and not guard.is_ready():
@@ -342,8 +342,23 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                             logger.debug(f"Skipping non-BUY signal: {side}")
                             continue
 
-                        if _check_daily_loss():
-                            logger.warning("Max daily loss exceeded. Blocking new real trade.")
+                        if _check_session_loss():
+                            risk_cfg = _execution_state.get("risk_config", {})
+                            max_pct = risk_cfg.get("session_max_loss_pct", 10)
+                            starting = float(_execution_state.get("session", {}).get("starting_balance") or 0)
+                            total_pnl = sum(t.get("pnl") or 0.0 for t in _execution_state["trade_history"])
+                            logger.warning(
+                                f"SESSION LOSS LIMIT: {total_pnl:.2f}€ "
+                                f"(max {max_pct}% of {starting:.2f}€ = {starting * max_pct / 100:.2f}€). "
+                                f"Pausing session."
+                            )
+                            _execution_state["session"]["status"] = "paused"
+                            await broadcast_scalping_event("session_restored", {
+                                **_execution_state["session"].copy(),
+                                "status": "paused",
+                                "pause_reason": "SESSION_MAX_LOSS",
+                                "pause_message": f"Session loss {total_pnl:.2f}€ supera il limite {max_pct}%. Sessione in pausa.",
+                            })
                             continue
 
                         if _check_drawdown():

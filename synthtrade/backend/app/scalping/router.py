@@ -90,7 +90,7 @@ from app.scalping.trade_executor import (  # noqa: F811
     _start_uds_if_needed,
     _handle_bracket_failed,
     _close_position_and_record,
-    _check_daily_loss,
+    _check_session_loss,
     _check_drawdown,
 )
 from app.scalping.session_lifecycle import (  # noqa: F811

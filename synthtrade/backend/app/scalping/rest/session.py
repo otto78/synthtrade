@@ -181,6 +181,7 @@ async def control_session(control: Dict) -> Dict:
                     _execution_state["exchange"] = adapter
                     session["live_balance"] = available_balance
                     session["paper_balance"] = available_balance
+                    session["starting_balance"] = available_balance  # TASK-1230: fisso per session loss/drawdown
                     mode_label = "DEMO" if session_mode == "test" else "LIVE"
                     logger.info(f"✓ \033[96m\033[1mStarting balance: {available_balance} {quote_asset} [{settings.EXCHANGE_PROVIDER.upper()} {mode_label}]\033[0m")
 
@@ -304,6 +305,8 @@ async def control_session(control: Dict) -> Dict:
                         "fee_tier_certified": _execution_state.get("fee_tier_certified"),
                         "fee_tier_maker": _get_fee_rate(_execution_state.get("fee_tier") or {}, "maker", None),
                         "fee_tier_taker": _get_fee_rate(_execution_state.get("fee_tier") or {}, "taker", None),
+                        # TASK-1230: starting balance for session loss/drawdown calculation
+                        "starting_balance": session.get("starting_balance"),
                     }).execute()
                     if db_resp.data:
                         session["db_session_id"] = db_resp.data[0]["id"]

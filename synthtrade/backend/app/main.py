@@ -117,6 +117,11 @@ async def _restore_scalping_session(db) -> None:
         _execution_state["session"]["db_session_id"] = session_id
         _execution_state["session"]["started_at"]    = sess.get("started_at")
 
+        # TASK-1230: Ripristina starting_balance dal DB (persistito, sopravvive a restart)
+        db_starting_bal = sess.get("starting_balance")
+        if db_starting_bal is not None:
+            _execution_state["session"]["starting_balance"] = float(db_starting_bal)
+
         if db_trade_value is not None:
             _execution_state["session"]["trade_value"] = float(db_trade_value)
 
@@ -376,6 +381,11 @@ async def _restore_scalping_session(db) -> None:
             sym_ref = SymbolRef.from_okx(symbol) if "-" in symbol else SymbolRef.from_compact(symbol)
             quote = sym_ref.quote
             live_bal = await adapter.get_balance(quote)
+
+            # TASK-1230: Fallback per sessioni pre-migration (starting_balance non nel DB)
+            if _execution_state["session"].get("starting_balance") is None and live_bal:
+                _execution_state["session"]["starting_balance"] = live_bal
+                logger.info("TASK-1230: starting_balance fallback to live_bal=%.2f", live_bal)
 
             if has_open_position:
                 # Skip balance check - we have an open position

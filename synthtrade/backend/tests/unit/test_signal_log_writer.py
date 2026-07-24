@@ -9,7 +9,6 @@ from app.core.signal_log_writer import (
     log_mean_reversion_decision,
     log_hold_decision,
     log_execution_error,
-    log_rejected_short_unsupported
 )
 
 
@@ -228,21 +227,3 @@ class TestLogExecutionError:
         )
         
         assert result is True  # Restituisce bool per compatibilità
-
-
-class TestLogRejectedShortUnsupported:
-    """Test per log_rejected_short_unsupported."""
-    
-    @patch('app.core.signal_log_writer.get_supabase')
-    def test_log_rejected_short_unsupported(self, mock_get_supabase, mock_supabase):
-        """Test logging rifiuto short non supportato."""
-        mock_get_supabase.return_value = mock_supabase
-        
-        result = log_rejected_short_unsupported(
-            session_id="123",
-            symbol="BTCUSDT",
-            regime="ranging",
-            strategy_type="rsi_bollinger"
-        )
-        
-        assert result is True  # Restituisce bool per compatibilità  # Restituisce bool per compatibilità con altre funzioni

@@ -10,7 +10,7 @@ import { NgIf } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 
 export interface RiskConfig {
-  max_daily_loss: number;
+  session_max_loss_pct: number;
   max_drawdown: number;
   leverage: number;
   stop_loss_pct: number;
@@ -30,8 +30,8 @@ export interface RiskConfig {
 
       <div *ngIf="config" class="risk-form">
         <div class="field">
-          <label>Max Daily Loss ($)</label>
-          <input type="number" [(ngModel)]="config.max_daily_loss" />
+          <label>Session Max Loss (%)</label>
+          <input type="number" step="0.1" [(ngModel)]="config.session_max_loss_pct" />
         </div>
 
         <div class="field">
@@ -39,10 +39,12 @@ export interface RiskConfig {
           <input type="number" step="0.1" [(ngModel)]="config.max_drawdown" />
         </div>
 
+        <!-- TASK-1230: Leverage nascosto (mantenuto in DB ma non esposto in UI)
         <div class="field">
           <label>Leverage</label>
           <input type="number" [(ngModel)]="config.leverage" />
         </div>
+        -->
 
         <div class="field">
           <label>Stop Loss (%)</label>
@@ -92,7 +94,7 @@ export class RiskControlsComponent implements OnInit {
 
   private loadDefaultConfig() {
     this.config = {
-      max_daily_loss: 50,
+      session_max_loss_pct: 10,
       max_drawdown: 10,
       leverage: 10,
       stop_loss_pct: 0.3,

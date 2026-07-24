@@ -1,5 +1,9 @@
 # SynthTrade — Architettura Short Selling (OKX Spot Margin)
 
+> [!CAUTION]
+> **DOCUMENTO CANCELLATO (2026-07-24)** — L'intera epica short selling è stata cancellata.
+> Le pair EUR non sono margin-eligible su OKX EEA. Budget insufficiente per margin trading.
+> Vedi audit: `docs/analysis/audit-short-selling-cancelled.md`
 **Versione:** 1.0 — 21 luglio 2026
 **Stato:** Pianificazione — zero implementazione, prerequisiti da validare con spike read-only
 **Supersede:** `docs/architecture/short-selling-architecture.md` (Binance), `docs/analysis/short-selling-analysis.md` (Binance)

@@ -4,6 +4,19 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.x.x — 2026-07-24 — Short Selling Epica Cancellata
+
+- ❌ **EPICA SHORT SELLING CANCELLATA** — Audit definitivo ha rivelato 3 blocchi strutturali:
+  1. Le pair EUR non sono margin-eligible su OKX EEA (serve USDC)
+  2. USDT non disponibile su OKX Europe (MiCA)
+  3. Budget ~€300 insufficiente per margin trading (potentialBorrowingAmt ≈ €0)
+- **RISOLTO: Errore 51155 (Local Compliance Restriction)** — Anche in modalità Spot pura (`tdMode: cash`), il pair `BTC-USD` generava l'errore 51155 per account EU a causa delle direttive MiCA (blocco fiat USD). Risolto definitivamente passando a `BTC-EUR` (fiat consentita) o stablecoin `BTC-USDC`.
+- Rimosso tutto il codice short dal backend e frontend (TASK-1220→1227)
+- Aggiornati i default del frontend (`OKBEUR` -> `BTC-EUR`) in `market-intel-panel.component.ts` e `session-api.service.ts`
+- Focus esclusivo su ottimizzazione long trading
+
+---
+
 ### v1.4.23 — 2026-07-21
 
 **Milestone:** Fix leg detection OCO + resilient polling loop

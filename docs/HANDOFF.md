@@ -4,6 +4,33 @@
 
 ### Da: Antigravity → prossima sessione
 
+**Data:** 2026-07-24 11:40
+
+**Contesto:** Risoluzione errore 51155 OKX e pulizia finale epica short.
+
+---
+
+### ✅ Risoluzione Errore 51155 (OKX Compliance)
+
+**Problema:** Nonostante il codice fosse tornato allo Spot puro (`tdMode="cash"`), le operazioni su OKX fallivano con `51155 Local compliance restrictions`.
+**Causa:** L'errore scattava perché la sessione era avviata sulla coppia **`BTC-USD`** (valuta fiat americana), che è bloccata dalle policy MiCA per gli account retail in EU, indipendentemente dalla modalità di margin.
+**Soluzione:** L'utente ha cambiato il balance e ha avviato la sessione su `BTC-EUR`, e gli ordini BUY a mercato con relativi bracket exit (OCO) sono partiti perfettamente.
+
+### ✅ Cleanup default symbol
+
+**Fix applicati:**
+- Modificati i default del frontend in `session-api.service.ts` e `market-intel-panel.component.ts` da `OKBEUR` a `BTC-EUR` per evitare che l'app parta sulla chart sbagliata all'avvio.
+
+**Prossimi passi:**
+- Focus su strategie Long-only (mean reversion, ecc).
+- Nessun residuo short rimasto nel codice.
+
+---
+
+### Precedente Handoff
+
+### Da: Antigravity → prossima sessione
+
 **Data:** 2026-07-17 14:30
 
 **Contesto:** TASK-1166 Refactoring `router.py` — Fasi 1-4 completate.

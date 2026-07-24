@@ -1,5 +1,9 @@
 # OKX Short Selling — Spike Results (TASK-1220)
 
+> [!WARNING]
+> **RISULTATI OBSOLETI (2026-07-24)** — Lo spike usava endpoint read-only che restituivano
+> dati positivi (maxLoan > 0), ma gli ordini reali venivano rifiutati perché le pair EUR
+> non sono margin-eligible su OKX EEA. L'epica è stata cancellata.
 > Generated: 2026-07-22
 > Account: LIVE (eea.okx.com) — uid 858315397756873787
 

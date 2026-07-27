@@ -45,6 +45,23 @@
 
 ---
 
+### Dashboard: Convert balance to EUR, add session count — ✅ COMPLETED
+
+> **Problema:** Il saldo veniva mostrato in USD invece che EUR. Il totale USD non includeva correttamente EUR (0.72 EUR valorizzati a $0). Mancavano indicatori sessione scalping attiva.
+
+> **Soluzione:**
+> 1. Fixato `_get_usd_price()` in `okx_balance.py` per gestire conversione EUR→USD
+> 2. Dashboard ora usa `get_total_balance_eur()` → saldo in EUR
+> 3. Aggiunto campo `currency: "EUR"` e `active_session_count` nel response
+> 4. Rimossi PnL Oggi, Trade Chiusi Oggi, equity chart (API OKX per storico non disponibili su EEA — 404)
+> 5. Frontend: 4 card (Saldo OKX €, Strategie Attive, Trade Aperti, Sessione Scalping)
+
+> **File modificati:** `dashboard.py`, `okx_balance.py`, `dashboard.model.ts`, `dashboard.service.ts`, `dashboard.page.ts`, `dashboard.page.spec.ts`
+
+> **Branch:** `feat/dashboard-eur`
+
+---
+
 ### EPICA: Short Selling OKX Spot Margin — ❌ CANCELLED
 
 > **Stato:** Cancellata definitivamente (2026-07-24). Budget insufficiente (~€300) per margin trading su OKX EEA.

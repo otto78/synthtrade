@@ -28,19 +28,6 @@ async def get_dashboard(
     trade_repo: TradeRepository = Depends(get_trade_repo),
 ):
     db = get_supabase()
-    today = date.today().isoformat()
-
-    # ——— TRADES OGGI (con trading_mode filter) ———
-    trades = trade_repo.get_since(today)
-
-    pnl_today = 0.0
-    for t in trades:
-        if t.pnl_eur:
-            pnl_today += t.pnl_eur
-        elif t.pnl_pct and t.price and t.quantity:
-            estimated_pnl = (t.price * t.quantity) * abs(t.pnl_pct) / 100
-            pnl_today += estimated_pnl
-    pnl_today = round(pnl_today, 4)
 
     # ——— KPI: strategie attive (con trading_mode filter) ———
     active_strategies_res = _mode_filter(
@@ -65,7 +52,7 @@ async def get_dashboard(
             total_active_pnl_pct += pnl_pct
     total_active_pnl_pct = round(total_active_pnl_pct, 2)
 
-    # ——— Saldo exchange (provider-neutral) ———
+    # ——— Saldo exchange (provider-neutral) in EUR ———
     balance_eur = 0.0
     balance_breakdown = {}
     balance_assets = []
@@ -73,7 +60,7 @@ async def get_dashboard(
     try:
         provider = settings.EXCHANGE_PROVIDER.lower()
         if provider == "okx":
-            from app.core.okx_balance import get_total_balance_usd as _get_balance
+            from app.core.okx_balance import get_total_balance_eur as _get_balance
         else:
             from app.core.binance_balance import get_total_balance_eur as _get_balance
 
@@ -81,7 +68,7 @@ async def get_dashboard(
             asyncio.to_thread(_get_balance),
             timeout=BALANCE_TIMEOUT
         )
-        balance_eur = balance_info.get("total_usd", 0.0) or balance_info.get("total_eur", 0.0)
+        balance_eur = balance_info.get("total_eur", 0.0) or 0.0
         balance_breakdown = balance_info.get("breakdown", {})
         balance_assets = balance_info.get("assets", [])
 
@@ -93,32 +80,25 @@ async def get_dashboard(
     except Exception as e:
         logger.error(f"Failed to fetch balance: {e}")
 
-    # ——— KPI: trade chiusi oggi ———
-    closed_trades_count = 0
-    closed_trades_pnl = 0.0
+    # ——— Sessione scalping attiva ———
+    active_session_count = 0
     try:
-        closed_trades_today_res = _mode_filter(
-            db.table("trades").select("pnl_pct,price,quantity,fee_eur").eq("status", "CLOSED").gte("closed_at", today)
-        ).execute()
-        closed_trades_count = len(closed_trades_today_res.data or [])
-        closed_trades_pnl = 0.0
-        for t in closed_trades_today_res.data or []:
-            if t.get("pnl_pct") and t.get("price") and t.get("quantity"):
-                closed_trades_pnl += (t["price"] * t["quantity"]) * abs(t["pnl_pct"]) / 100
-        closed_trades_pnl = round(closed_trades_pnl, 2)
+        sessions_res = db.table("scalping_sessions").select("id") \
+            .in_("status", ["running", "paused"]) \
+            .execute()
+        active_session_count = len(sessions_res.data or [])
     except Exception:
-        logger.warning("Dashboard: DB query for closed trades failed (non-critical, showing 0)")
+        logger.warning("Dashboard: scalping_sessions query failed (non-critical, showing 0)")
 
     return {
         "balance": balance_eur,
         "balance_eur": balance_eur,
+        "currency": "EUR",
         "balance_breakdown": balance_breakdown,
         "balance_assets": balance_assets,
-        "pnl_today": pnl_today,
         "active_strategies_count": active_strategies_count,
         "open_trades_count": open_trades_count,
-        "closed_trades_count": closed_trades_count,
-        "closed_trades_pnl": closed_trades_pnl,
+        "active_session_count": active_session_count,
         "total_active_pnl_pct": total_active_pnl_pct,
         "engine_status": "RUNNING",
         "trading_mode": settings.TRADING_MODE,

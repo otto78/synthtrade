@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { Observable, shareReplay, timeout, catchError, of, retry, timer } from 'rxjs';
-import { DashboardStats, BalanceSnapshot } from '../models/dashboard.model';
+import { DashboardStats } from '../models/dashboard.model';
 import { environment } from '../../../environments/environment';
 
 const CACHE_TTL_MS = 30_000;
@@ -35,12 +35,13 @@ export class DashboardService {
           console.error('Dashboard stats error after retries:', err);
           return of({
             balance_eur: 0,
+            currency: 'EUR',
             balance_breakdown: {},
             balance_assets: [],
-            pnl_today: 0,
             engine_status: 'OFFLINE',
             active_strategies_count: 0,
             open_trades_count: 0,
+            active_session_count: 0,
             total_active_pnl_pct: 0,
           } as DashboardStats);
         }),
@@ -48,10 +49,5 @@ export class DashboardService {
       );
     }
     return this.stats$;
-  }
-
-  getEquityHistory(range: string = '1m'): Observable<BalanceSnapshot[]> {
-    const params = new HttpParams().set('range', range);
-    return this.http.get<BalanceSnapshot[]>(`${this.base}/equity-history`, { params });
   }
 }

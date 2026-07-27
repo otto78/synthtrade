@@ -67,6 +67,16 @@ def _get_usd_price(asset: str, ticker_map: dict) -> float:
     """Get USD price for an asset using pre-fetched ticker map."""
     if asset in ("USD", "USDT", "USDC", "BUSD", "DAI", "TUSD", "USDG", "RLUSD"):
         return 1.0
+    # EUR → USD: need inverse of EUR-USD
+    if asset == "EUR":
+        eur_usd = ticker_map.get("EUR-USD")
+        if eur_usd:
+            return float(eur_usd)
+        # Fallback: try USDT-EUR and invert
+        usdt_eur = ticker_map.get("USDT-EUR")
+        if usdt_eur and float(usdt_eur) > 0:
+            return 1.0 / float(usdt_eur)
+        return 1.08  # rough fallback EUR→USD
     # Try direct USD pair
     direct = ticker_map.get(f"{asset}-USD")
     if direct:

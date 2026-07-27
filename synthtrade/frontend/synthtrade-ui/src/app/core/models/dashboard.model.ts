@@ -13,14 +13,13 @@ export interface BalanceBreakdown {
 
 export interface DashboardStats {
   balance_eur: number;
+  currency: string;
   balance_breakdown: BalanceBreakdown;
   balance_assets: BalanceAsset[];
-  pnl_today: number;
   engine_status: string;
   active_strategies_count?: number;
   open_trades_count?: number;
-  closed_trades_count?: number;
-  closed_trades_pnl?: number;
+  active_session_count?: number;
   total_active_pnl_pct?: number;
   exchange_provider?: string;
 }

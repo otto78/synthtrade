@@ -4,6 +4,20 @@
 
 ---
 
+### Fix: Session log recap + early log capture — ✅ COMPLETED
+
+> **Problemi:**
+> 1. Il recap "SESSION ANALYSIS SUMMARY" non veniva incluso nel file .txt scaricato perché l'endpoint filtrava solo righe con timestamp.
+> 2. Il `SessionLogHandler` veniva attivato solo dopo l'insert DB, perdendo i log delle chiamate preparatorie (get_balance, get_trade_fee, get_symbol_rules).
+>
+> **Soluzioni:**
+> 1. L'endpoint `download_session_logs()` ora rigenera l'analysis al volo dalle righe di log estratte (retroattivo per tutte le sessioni con log_content).
+> 2. Il `SessionLogHandler` viene creato e attaccato subito all'inizio del start, prima delle verifiche di balance/fee. Dopo l'insert DB, l'handler early viene riutilizzato (non sovrascritto) aggiornando db_session_id e session_id.
+>
+> **File modificato:** `synthtrade/backend/app/scalping/rest/session.py`
+
+---
+
 ### TASK-1230: Session Max Loss + Drawdown Fix — 🔧 IN PROGRESS
 
 > **Problema:** `_check_drawdown()` in `trade_executor.py` usa `paper_balance` come base del calcolo. In live mode, `paper_balance` si riduce ad ogni trade aperto (candle_processor.py:686) ma non viene mai ripristinato alla chiusura (solo in paper mode, trade_executor.py:492-493). Risultato: la base del drawdown è artificialmente bassa, bloccando trade a caso.

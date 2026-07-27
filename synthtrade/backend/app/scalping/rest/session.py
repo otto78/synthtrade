@@ -130,10 +130,20 @@ async def control_session(control: Dict) -> Dict:
 
         active_symbol = control.get("symbol", session.get("symbol", "BTCUSDT"))
 
-        # ── LIVE/DEMO MODE: verify balance BEFORE setting session state ────────────
-        # TASK-1107: provider-neutral — build adapter via factory (OKX or Binance).
-        # Prevent stale state when balance check fails (HTTPException would leave
-        # a dirty session in memory, confusing the frontend on reconnect).
+        # ── SESSION LOGGING: attach handler EARLY to capture ALL logs ─────────────
+        # Anticipato qui (prima di balance/fee checks) in modo che anche le chiamate
+        # preparatorie (get_balance, get_trade_fee, get_symbol_rules) vengano catturate.
+        mem_session_id = f"sess_{uuid.uuid4().hex[:8]}"
+        early_log_handler = SessionLogHandler(
+            session_id=mem_session_id,
+            db_session_id="",  # will be set after DB insert
+        )
+        early_log_handler.symbol = active_symbol
+        early_log_handler.attach()
+        SessionContextFilter.set_session_id(mem_session_id)
+        _execution_state["session_log_handler"] = early_log_handler
+        logger.info(f"Session log capture started early for {mem_session_id} (before balance checks)")
+
         session_mode = control.get("mode", session.get("mode", "paper"))
         if session_mode in ("live", "test"):
             if not settings.exchange_api_key or not settings.exchange_secret_key:
@@ -314,16 +324,24 @@ async def control_session(control: Dict) -> Dict:
                         if guard:
                             guard.complete_phase("db_phase")
 
-                        # ── SESSION LOGGING: attach session_id to all logs + start capture ──
-                        # FIX: moved inside async after DB insert so db_session_id is available
+                        # ── SESSION LOGGING: finalize early handler with db_session_id ──
+                        # The SessionLogHandler was already created early (before balance checks).
+                        # Now we just update its metadata, set the persist callback, and
+                        # update the session_id context to the final one.
                         SessionContextFilter.set_session_id(session["session_id"])
                         db_sid = session["db_session_id"]
-                        session_log_handler = SessionLogHandler(
-                            session_id=session["session_id"],
-                            db_session_id=db_sid,
-                        )
-                        session_log_handler.symbol = active_symbol
-                        session_log_handler.attach()
+                        session_log_handler = _execution_state.get("session_log_handler")
+                        if session_log_handler:
+                            session_log_handler.db_session_id = db_sid
+                            session_log_handler.session_id = session["session_id"]
+                        else:
+                            # Fallback: create a new handler if early one was lost
+                            session_log_handler = SessionLogHandler(
+                                session_id=session["session_id"],
+                                db_session_id=db_sid,
+                            )
+                            session_log_handler.symbol = active_symbol
+                            session_log_handler.attach()
 
                         _handler_logger = logger
                         def _make_persist_callback(h: SessionLogHandler) -> Callable[[str], None]:
@@ -344,7 +362,7 @@ async def control_session(control: Dict) -> Dict:
                         session_log_handler.set_persist_callback(_make_persist_callback(session_log_handler))
                         logger.info(f"[LIVE_LOG] Persist callback configured for session {db_sid}")
                         _execution_state["session_log_handler"] = session_log_handler
-                        logger.info(f"Session log capture started for {session['session_id']}")
+                        logger.info(f"Session log capture finalized for {session['session_id']} (early session was {mem_session_id})")
 
                         _LOG_PERSIST_INTERVAL_SEC = 300
                         async def _periodic_log_persist():
@@ -650,6 +668,27 @@ async def download_session_logs(session_id: str) -> Response:
         _log_entry_re = _re.compile(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]")
         log_lines = [line for line in log_content.split("\n") if _log_entry_re.match(line.strip())]
 
+        # Regenerate the analysis summary from the raw log lines
+        analysis_section_str = ""
+        try:
+            from app.core.session_log_handler import SessionLogHandler
+            _temp_handler = SessionLogHandler()
+            for _line in log_lines:
+                _temp_handler._buffer.append(_line)
+                _rec = logging.LogRecord(
+                    name="", level=logging.INFO, pathname="", lineno=0,
+                    msg=_line, args=(), exc_info=None,
+                )
+                _temp_handler._raw_records.append(_rec)
+            _analysis = _temp_handler._analyze()
+            analysis_section_str = _temp_handler._format_analysis_section(_analysis) + "\n"
+        except Exception as _exc:
+            analysis_section_str = (
+                f"\n{'=' * 72}\n"
+                f" SESSION ANALYSIS NOT AVAILABLE: {_exc}\n"
+                f"{'=' * 72}\n\n"
+            )
+
         safe_symbol = symbol.replace("/", "_").upper()
         header = (
             f"{'=' * 72}\n"
@@ -660,7 +699,7 @@ async def download_session_logs(session_id: str) -> Response:
             f" Generated  : {datetime.now(timezone.utc).isoformat()}\n"
             f"{'=' * 72}\n\n"
         )
-        cleaned_content = header + "\n".join(log_lines) + "\n"
+        cleaned_content = header + analysis_section_str + "\n".join(log_lines) + "\n"
 
         filename = f"session_{symbol}_{session_id}_logs.txt"
         return Response(

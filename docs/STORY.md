@@ -4,6 +4,10 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.x.x — 2026-07-27 — Fix recap mancante nel download log sessioni
+
+- ✅ **Fix download session logs**: Il recap "SESSION ANALYSIS SUMMARY" non veniva incluso nel file scaricato perché l'endpoint `download_session_logs()` filtrava solo righe con timestamp, escludendo la sezione analysis. Ora l'analysis viene rigenerata al volo dalle righe di log estratte. (`session.py`)
+
 ### v1.x.x — 2026-07-24 — Short Selling Epica Cancellata
 
 - ❌ **EPICA SHORT SELLING CANCELLATA** — Audit definitivo ha rivelato 3 blocchi strutturali:

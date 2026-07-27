@@ -312,7 +312,8 @@ async def _on_uds_reconnect_sync():
         )
 
         _execution_state["position_manager"].close_position(Decimal(str(fill_price)))
-        await _update_closed_position_in_db(pos, fill_price, pnl, pnl_pct, reason)
+        await _update_closed_position_in_db(pos, fill_price, pnl, pnl_pct, reason,
+                                            fill_time=reconcile.get("fill_time"))
         await _refresh_session_balance()
         # FIX: append to trade_history so session counters are accurate
         _execution_state["trade_history"].append({

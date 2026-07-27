@@ -75,11 +75,15 @@ async def _save_open_position_to_db(pos, db_session_id: str,
         logger.warning(f"Failed to save open position to DB: {db_e}")
 
 
-async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl_pct: float, reason: str):
+async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl_pct: float, reason: str, fill_time: Optional[str] = None):
     """Update the open position row in DB to 'closed' with exit price and PnL.
     
     FIX-2026-06-21: Strategy 1 uses oco_order_list_id (univoco per trade, match deterministico).
     Strategy 2 (fallback) uses session_id + entry_price + entry_time for pre-OCO-ID trades.
+    
+    Args:
+        fill_time: ISO 8601 timestamp of the actual fill from exchange (e.g. OKX fillTime).
+                   When provided, used as exit_time instead of datetime.now().
     """
     try:
         db_sid = _execution_state["session"].get("db_session_id")
@@ -170,7 +174,7 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
                     "pnl_pct": round(pnl_pct, 2),
                     "signal_reason": reason,
                     "status": "closed",
-                    "exit_time": datetime.now(timezone.utc).isoformat(),
+                    "exit_time": fill_time or datetime.now(timezone.utc).isoformat(),
                 }).eq("id", trade_id).execute()
                 logger.debug(f"DB position closed (match via {'oco_order_list_id' if pos.oco_order_list_id else 'fallback'}): trade_id={trade_id}")
             else:
@@ -189,7 +193,7 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
                     "signal_reason": reason,
                     "status": "closed",
                     "entry_time": pos.entry_time.isoformat(),
-                    "exit_time": datetime.now(timezone.utc).isoformat(),
+                    "exit_time": fill_time or datetime.now(timezone.utc).isoformat(),
                     # TASK-1108: provider-neutral fields
                     "exchange_provider": settings.EXCHANGE_PROVIDER.lower(),
                     "exchange_bracket_id": pos.oco_order_list_id,

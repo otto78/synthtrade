@@ -309,7 +309,7 @@ async def _restore_scalping_session(db) -> None:
                                     "exit_price": fp,
                                     "pnl": round(pnl, 2),
                                     "pnl_pct": round(pnl_pct, 2),
-                                    "exit_time": datetime.now(timezone.utc).isoformat(),
+                                    "exit_time": reconcile.get("fill_time") or datetime.now(timezone.utc).isoformat(),
                                     "signal_reason": reason,
                                 }).eq("id", trade_id).execute()
                             await asyncio.to_thread(_db_close_reconciled)

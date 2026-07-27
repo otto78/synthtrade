@@ -742,6 +742,7 @@ class OkxExchangeAdapter:
                                 "ordType": fill.get("ordType", "oco"),
                                 "side": fill.get("side"),
                                 "instId": fill.get("instId"),
+                                "fillTime": fill.get("fillTime"),
                             })
                         if results:
                             return results
@@ -771,6 +772,7 @@ class OkxExchangeAdapter:
                                     "ordType": order.get("ordType", "oco"),
                                     "side": order.get("side"),
                                     "instId": order.get("instId"),
+                                    "fillTime": order.get("fillTime") or order.get("uTime"),
                                 })
         except Exception as e:
             logger.debug("get_algo_orders_history orders-history fallback failed for %s: %s", symbol, e)

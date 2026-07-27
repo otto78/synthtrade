@@ -1,6 +1,6 @@
 # TASKS.md — SynthTrade Task Tracking
 
-> **Aggiornato:** 2026-07-24. Task completati in `docs/ARCHIVE_TASKS.md`.
+> **Aggiornato:** 2026-07-27. Task completati in `docs/ARCHIVE_TASKS.md`.
 
 ---
 

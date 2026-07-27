@@ -7,6 +7,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.4.17] — 2026-07-27
+
+### Fixed
+- **Reconcile exit_time**: L'`exit_time` dei trade riconciliati dopo un restart ora usa il tempo reale di esecuzione su OKX (`fillTime`) invece di `datetime.now()`. Prima, un trade chiuso durante lo standby (es. weekend) veniva datato con il momento del recupero, non della chiusura reale.
+- **OKX fillTime propagation**: Aggiunto campo `fillTime` ai dict restituiti da `get_algo_orders_history()` (fills endpoint + orders-history fallback). La funzione `_reconcile_position_with_exchange()` ora restituisce `fill_time` nel dict di ritorno.
+- **Retroactive DB fix**: Trade `f5b25e9b` (external_close) corretto da `2026-07-27 06:46` a `2026-07-25 18:33` (tempo reale del fill su OKX).
+
+> **Files:** `okx_exchange.py`, `reconciliation.py`, `db_ops.py`, `main.py`, `pipeline.py`, `trade_executor.py`
+
+---
+
 ## [1.4.16] — 2026-07-16
 
 ### Fixed

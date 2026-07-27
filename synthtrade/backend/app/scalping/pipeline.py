@@ -200,7 +200,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         )
                         pm.close_position(Decimal(str(fp)))
                         await _update_closed_position_in_db(
-                            pos, fp, pnl, pnl_pct, reconcile["reason"]
+                            pos, fp, pnl, pnl_pct, reconcile["reason"],
+                            fill_time=reconcile.get("fill_time"),
                         )
                         # FIX: append to trade_history so session counters are accurate
                         _execution_state["trade_history"].append({

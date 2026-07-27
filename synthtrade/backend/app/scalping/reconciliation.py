@@ -1,10 +1,24 @@
 import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from app.scalping._state import _execution_state
 from app.execution.exchange_models import SymbolRef
 
 logger = logging.getLogger(__name__)
+
+
+def _fill_time_from_ms(fill_time_ms) -> Optional[str]:
+    """Convert OKX fillTime (ms string/int) to ISO 8601 UTC string."""
+    if not fill_time_ms:
+        return None
+    try:
+        ts = int(fill_time_ms)
+        if ts <= 0:
+            return None
+        return datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat()
+    except (ValueError, TypeError, OSError):
+        return None
 
 
 async def _reconcile_position_with_exchange(
@@ -88,7 +102,8 @@ async def _reconcile_position_with_exchange(
                                     "algoId=%s fill=%.4f reason=%s (attempt %d)",
                                     bracket_id, fill_price, reason, attempt + 1,
                                 )
-                                return {"fill_price": fill_price, "source": source, "reason": reason}
+                                fill_time = _fill_time_from_ms(algo.get("fillTime"))
+                                return {"fill_price": fill_price, "source": source, "reason": reason, "fill_time": fill_time}
                     # No match in this attempt — retry if attempts remain
                     if attempt < 2:
                         await asyncio.sleep(1.5)
@@ -107,6 +122,7 @@ async def _reconcile_position_with_exchange(
     fill_price: Optional[float] = None
     source = "entry_price_fallback"
     reason = "external_close_unknown_price"
+    fill_time: Optional[str] = None
 
     # Priority 1: real fills from OKX (most accurate)
     # Always fetch fills — match by bracket_id first, then by exit side
@@ -129,6 +145,7 @@ async def _reconcile_position_with_exchange(
                             reason = "stop_loss"
                         else:
                             reason = "bracket_filled"
+                        fill_time = _fill_time_from_ms(fill.get("fillTime"))
                         logger.info(
                             "[POSITION_RECONCILE] Recovered fill by bracket_id: "
                             "algoId=%s fill=%.4f reason=%s",
@@ -151,6 +168,7 @@ async def _reconcile_position_with_exchange(
                             reason = "stop_loss"
                         else:
                             reason = "external_close"
+                        fill_time = _fill_time_from_ms(fill.get("fillTime"))
                         logger.info(
                             "[POSITION_RECONCILE] Recovered fill by exit side (%s): "
                             "fill=%.4f reason=%s",
@@ -176,4 +194,4 @@ async def _reconcile_position_with_exchange(
         pos_side, symbol, fill_price, source, reason,
     )
 
-    return {"fill_price": fill_price, "source": source, "reason": reason}
+    return {"fill_price": fill_price, "source": source, "reason": reason, "fill_time": fill_time}

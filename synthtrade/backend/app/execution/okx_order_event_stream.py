@@ -341,9 +341,14 @@ class OkxOrderEventStream:
                 _cycle_had_error = True
                 logger.error("OKX REST polling step 4 (algo-pending) error: [%s] %s", type(e).__name__, e)
 
-            # Recovery detection
+            # Recovery detection — trigger reconcile to catch fills missed during outage
             if _had_polling_error and not _cycle_had_error:
                 logger.info("OKX REST polling: recovered after previous error, polling cycle OK")
+                if self._on_reconnect_sync:
+                    try:
+                        await self._on_reconnect_sync()
+                    except Exception as sync_e:
+                        logger.debug("OKX REST polling recovery sync failed: %s", sync_e)
             _had_polling_error = _cycle_had_error
             
             # Sleep in chunks to allow fast shutdown

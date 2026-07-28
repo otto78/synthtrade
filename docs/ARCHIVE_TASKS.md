@@ -4112,6 +4112,20 @@ I conteggi interni restano nell'analysis JSON (endpoint strutturato/download).
 
 ---
 
+## Fix: REST polling recovery reconciliation (2026-07-28) ✅
+
+**Status:** ✅ Done — 2026-07-28
+
+**Problema:** Quando il REST polling dell'order stream (OKX EU fallback) aveva un errore di rete e poi si riprendeva, non eseguiva una reconciliation. Se il SL/TP veniva colpito durante il gap di rete, il fill veniva perso e la posizione restava "aperta" in memoria nonostante fosse chiusa su OKX. L'unica via di recovery era il restart dell'app.
+
+**Root cause:** `_on_reconnect_sync` (che chiama `_reconcile_position_with_exchange`) veniva invocato solo al riconnessione WS, mai alla ripresa del REST polling dopo un errore.
+
+**Fix:** In `okx_order_event_stream.py`, quando il REST polling si riprende da un errore (`_had_polling_error` → False), invoca `_on_reconnect_sync()` per triggerare la reconciliation.
+
+**File modificato:** `app/execution/okx_order_event_stream.py`
+
+---
+
 ## TASK-1236: Persistenza entry_commission/exit_commission per-trade (2026-07-28) ✅
 
 **Status:** ✅ Done — 2026-07-28

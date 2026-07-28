@@ -398,6 +398,7 @@ async def _handle_bracket_failed(exchange, symbol: str):
         logger.warning(f"[TradeExec] BRACKET_FAILED: cancel_open_exit_orders failed (non-blocking): {e}")
 
     # 2. Market sell con qty reale post-fee (provider-neutral)
+    _did_liquidate = False
     try:
         # Get holdings directly from adapter (works for OKX and Binance)
         holdings = await exchange.get_holdings()
@@ -417,19 +418,21 @@ async def _handle_bracket_failed(exchange, symbol: str):
                     quantity=actual_qty,
                 )
                 await exchange.close_position(close_req)
+                _did_liquidate = True
                 logger.info(f"[TradeExec] BRACKET_FAILED: Emergency market sell executed: {actual_qty} {base_asset}")
             else:
                 logger.warning(f"[TradeExec] BRACKET_FAILED: qty={actual_qty} < minQty={min_qty} for {symbol} — impossible to sell")
         else:
-            logger.error(f"[TradeExec] BRACKET_FAILED: Balance={actual_qty} for {base_asset} — no asset to sell")
+            logger.info(f"[TradeExec] BRACKET_FAILED: Balance={actual_qty} for {base_asset} — nothing to liquidate")
     except Exception as e:
         logger.error(f"[TradeExec] BRACKET_FAILED: Emergency market sell failed for {symbol}: {e}")
 
-    # 3. Broadcast error a UI
-    await broadcast_scalping_event("error", {
-        "code": "BRACKET_FAILED",
-        "message": f"Exit bracket failed for {symbol}. Trade closed with emergency market sell, no assets locked.",
-    })
+    # 3. Broadcast error a UI (only if there was actually something to liquidate)
+    if _did_liquidate:
+        await broadcast_scalping_event("error", {
+            "code": "BRACKET_FAILED",
+            "message": f"Exit bracket failed for {symbol}. Trade closed with emergency market sell, no assets locked.",
+        })
 
 
 async def _close_position_and_record(pm, close_price: float, pos, reason: str = "signal"):

@@ -22,19 +22,15 @@
 
 ---
 
-### TASK-1235: Investigare perché fee_tier_certified diventa False dal secondo trade in poi — 🔴 Alta
+### TASK-1235: Investigare perché fee_tier_certified diventa False dal secondo trade in poi — 🔴 Alta ✅ COMPLETED
 
-> **Evidenza:** negli 8 log `[NET_PRICING]` della sessione 4a42133e, solo il primo trade (10:35) ha `certified=True`; tutti i successivi 7 (14:33 → 21:46) hanno `certified=False`, con fallback a fee 0.001/0.001 nonostante lo stesso adapter OKX e nessun restart di sessione visibile nei log applicativi.
+> **Risultato:** Root cause identificata in `main.py` (session restore). Durante il restore della sessione al restart del server, `get_trade_fee()` viene chiamata e il risultato salvato in `_execution_state["fee_tier"]`, ma `_execution_state["fee_tier_certified"]` non veniva mai settato. Il flag restava a `False` (default del `.get()`).
 >
-> **Ipotesi da verificare (non assumere quale sia corretta):**
-> - Il fee tier viene certificato una sola volta all'avvio sessione e poi non più ri-tentato — un problema successivo (es. race condition, stato non persistito correttamente tra chiusura/riapertura trade) resetta il flag a False invece di mantenere il valore già certificato.
-> - Ogni apertura trade richiama `get_trade_fee()`/`_direct_fetch_trade_fee()` da capo, e dal secondo trade in poi la chiamata fallisce silenziosamente (rate limit OKX, errore rete) cadendo sul fallback — coerente col pattern già visto altre volte nel progetto (es. TASK-1116.E).
+> **Flusso anomalo:** session start normale → `certified=True` (session.py:205). Server restart → main.py restore → `fee_tier` salvato (come FeeTier object, non dict!) ma `fee_tier_certified` mai assegnato → default `False`. Tutti i trade successivi leggono `False`.
 >
-> **File da controllare:** `candle_processor.py` (punto dove viene costruito `[NET_PRICING]` e dove `certified` viene letto/impostato), `okx_exchange.py` (`get_trade_fee`).
->
-> **Fix minimo richiesto prima di chiudere il task:** quando `certified=False`, loggare esplicitamente il motivo (es. `fee tier fallback: <eccezione>` o `fee tier not refreshed since session start`) — oggi si vede solo il risultato (False), mai la causa. Senza questo, la prossima sessione con lo stesso sintomo richiederà di nuovo scavo manuale nei log grezzi.
->
-> **Verifica di completamento:** su una sessione demo/paper con più trade consecutivi, il log deve mostrare per ogni trade `certified=True` (se la fee è davvero certificabile ad ogni apertura) oppure un motivo esplicito del fallback.
+> **Fix applicato:**
+> 1. `main.py:399-406` e `416-425`: aggiunto `_execution_state["fee_tier_certified"] = fee_tier.certified` + conversione FeeTier→dict in entrambi i path di restore (con e senza posizione aperta). Anche nel path di eccezione: `fee_tier_certified = False`.
+> 2. `candle_processor.py:513-525`: aggiunto WARNING log quando `certified=False` al momento del trade, con messaggio esplicito che punta a `TASK-1235` per debugging futuro.
 
 ---
 

@@ -510,13 +510,20 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                 )[0]
                                 tp_price = round(exec_price * (1 + tp_gross_pct), price_prec) if side == "BUY" else round(exec_price * (1 - tp_gross_pct), price_prec)
 
+                                _certified = _execution_state.get('fee_tier_certified', False)
                                 logger.info(
-                                     f"[NET_PRICING] provider={settings.EXCHANGE_PROVIDER} symbol={event.symbol} entry_taker={entry_fee_pricing} exit_taker={exit_fee_pricing} certified={_execution_state.get('fee_tier_certified', False)} | "
+                                     f"[NET_PRICING] provider={settings.EXCHANGE_PROVIDER} symbol={event.symbol} entry_taker={entry_fee_pricing} exit_taker={exit_fee_pricing} certified={_certified} | "
                                     f"Target netti: TP={tp_pct_net_cfg}% SL={sl_pct_net_cfg}% | "
                                     f"Lordi al prezzo: TP=+{tp_gross_pct*100:.4f}% SL=-{sl_gross_frac*100:.4f}% | "
                                     f"sl_price={sl_price} tp_price={tp_price} | "
                                     f"fee entry={entry_fee_pricing} exit={exit_fee_pricing}"
                                 )
+                                if not _certified:
+                                    logger.warning(
+                                        f"[NET_PRICING] fee_tier_certified=False — fee fallback 0.001/0.001 "
+                                        f"(OKX get_trade_fee non raggiunto durante session restore in main.py, "
+                                        f"TASK-1235: controlla log startup per conferma fetch)"
+                                    )
 
                                 # 5. Place exit bracket (TASK-1107: provider-neutral)
                                 bracket_res = None

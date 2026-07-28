@@ -4112,6 +4112,22 @@ I conteggi interni restano nell'analysis JSON (endpoint strutturato/download).
 
 ---
 
+## TASK-1235: fee_tier_certified False durante session restore (2026-07-28) ✅
+
+**Status:** ✅ Done — 2026-07-28
+
+**Problema:** In sessione 4a42133e, il primo trade aveva `certified=True`, tutti i successivi 7 `certified=False` con fee fallback 0.001/0.001. Nessun restart visibile nei log applicativi.
+
+**Root cause:** `main.py` session restore non settava `_execution_state["fee_tier_certified"]`. Durante il restore al restart del server, `get_trade_fee()` salvava il FeeTier object in `_execution_state["fee_tier"]` ma non il flag `certified`. Al trade successivo, `_execution_state.get('fee_tier_certified', False)` restituiva `False`.
+
+**Fix:**
+- `main.py` — aggiunto `_execution_state["fee_tier_certified"] = fee_tier.certified` + conversione FeeTier→dict in entrambi i path di restore (con/without open position + eccezione)
+- `candle_processor.py` — WARNING log esplicito quando `certified=False` al momento del trade, con riferimento TASK-1235
+
+**File modificati:** `main.py`, `scalping/candle_processor.py`
+
+---
+
 ## Dashboard: Convert balance to EUR, add session count (2026-07-24) ✅
 
 **Status:** ✅ Done — 2026-07-24

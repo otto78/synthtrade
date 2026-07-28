@@ -397,11 +397,13 @@ async def _restore_scalping_session(db) -> None:
                 # TASK-877: Recupera fee tier durante restore sessione
                 try:
                     fee_tier = await adapter.get_trade_fee(sym_ref)
-                    _execution_state["fee_tier"] = fee_tier
-                    logger.info(f"✓ Fee tier salvato durante restore: maker={fee_tier.maker}, taker={fee_tier.taker}")
+                    _execution_state["fee_tier"] = {"maker": fee_tier.maker, "taker": fee_tier.taker}
+                    _execution_state["fee_tier_certified"] = fee_tier.certified
+                    logger.info(f"✓ Fee tier salvato durante restore: maker={fee_tier.maker}, taker={fee_tier.taker} certified={fee_tier.certified}")
                 except Exception as e:
                     logger.warning(f"Impossibile recuperare fee tier durante restore: {e} — uso default 0.001")
                     _execution_state["fee_tier"] = {"maker": 0.001, "taker": 0.001}
+                    _execution_state["fee_tier_certified"] = False
                 
                 guard.complete_phase("exchange_phase")
             else:
@@ -414,11 +416,13 @@ async def _restore_scalping_session(db) -> None:
                     # TASK-877: Recupera fee tier durante restore sessione (no open position)
                     try:
                         fee_tier = await adapter.get_trade_fee(sym_ref)
-                        _execution_state["fee_tier"] = fee_tier
-                        logger.info(f"✓ Fee tier salvato durante restore: maker={fee_tier.maker}, taker={fee_tier.taker}")
+                        _execution_state["fee_tier"] = {"maker": fee_tier.maker, "taker": fee_tier.taker}
+                        _execution_state["fee_tier_certified"] = fee_tier.certified
+                        logger.info(f"✓ Fee tier salvato durante restore: maker={fee_tier.maker}, taker={fee_tier.taker} certified={fee_tier.certified}")
                     except Exception as e:
                         logger.warning(f"Impossibile recuperare fee tier durante restore: {e} — uso default 0.001")
                         _execution_state["fee_tier"] = {"maker": 0.001, "taker": 0.001}
+                        _execution_state["fee_tier_certified"] = False
                     logger.info("Live balance restored: %s %s", live_bal, quote)
                 else:
                     logger.warning(

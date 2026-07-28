@@ -190,6 +190,60 @@ class TestLogMeanReversionDecision:
         
         assert result == "test-id"  # Restituisce UUID (Optional[str])
 
+    @patch('app.core.signal_log_writer.logger')
+    @patch('app.core.signal_log_writer.get_supabase')
+    def test_mean_reversion_override_logs_info(self, mock_get_supabase, mock_logger, mock_supabase):
+        """Test che mean_reversion_override logga INFO con signal_log_id."""
+        mock_get_supabase.return_value = mock_supabase
+        
+        log_mean_reversion_decision(
+            session_id="sess-abc",
+            symbol="BTCUSDT",
+            override_reason="test",
+            regime="ranging",
+            strategy_type="rsi_bollinger"
+        )
+        
+        mock_logger.info.assert_called_once()
+        call_str = mock_logger.info.call_args[0][0]
+        assert "[SIGNAL_LOG]" in call_str
+        assert "signal_log_id=test-id" in call_str
+        assert "decision_type=mean_reversion_override" in call_str
+        assert "session=sess-abc" in call_str
+
+    @patch('app.core.signal_log_writer.logger')
+    @patch('app.core.signal_log_writer.get_supabase')
+    def test_non_override_does_not_log_info(self, mock_get_supabase, mock_logger, mock_supabase):
+        """Test che altri decision_type NON loggano INFO (solo debug)."""
+        mock_get_supabase.return_value = mock_supabase
+        
+        log_signal_decision(
+            session_id="123",
+            symbol="BTCUSDT",
+            decision_type="execute",
+            regime="ranging",
+            strategy_type="rsi_bollinger"
+        )
+        
+        mock_logger.info.assert_not_called()
+
+    @patch('app.core.signal_log_writer.logger')
+    @patch('app.core.signal_log_writer.get_supabase')
+    def test_mean_reversion_override_no_info_on_error(self, mock_get_supabase, mock_logger):
+        """Test che mean_reversion_override NON logga INFO se insert fallisce."""
+        mock_get_supabase.side_effect = Exception("DB error")
+        
+        result = log_mean_reversion_decision(
+            session_id="123",
+            symbol="BTCUSDT",
+            override_reason="test",
+            regime="ranging",
+            strategy_type="rsi_bollinger"
+        )
+        
+        assert result is None
+        mock_logger.info.assert_not_called()
+
 
 class TestLogHoldDecision:
     """Test per log_hold_decision."""

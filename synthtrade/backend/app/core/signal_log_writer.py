@@ -38,6 +38,8 @@ def log_signal_decision(
         if resp.data:
             inserted_id = resp.data[0].get("id")
             logger.debug(f"Decisione loggata su session_signal_log: {decision_type} id={inserted_id}")
+            if decision_type == "mean_reversion_override" and inserted_id:
+                logger.info(f"[SIGNAL_LOG] Scritto signal_log_id={inserted_id} decision_type=mean_reversion_override session={session_id}")
             return inserted_id
         return None
     except ValueError as e:

@@ -4035,6 +4035,26 @@ ORDER BY t.entry_time;
 
 ---
 
+## TASK-1234 — Signal log writer: log conferma esplicita per mean_reversion_override (2026-07-28) ✅
+
+**Status:** ✅ Done — 2026-07-28
+**File:** `synthtrade/backend/app/core/signal_log_writer.py`
+
+**Modifica:** Aggiunto log INFO in `log_signal_decision()` per `decision_type='mean_reversion_override'`:
+```
+[SIGNAL_LOG] Scritto signal_log_id=<uuid> decision_type=mean_reversion_override session=<id>
+```
+Log non appare su errori (ERROR-only, nessun doppio log). Gli altri decision_type restano a DEBUG.
+
+**Test:** 3 nuovi test in `test_signal_log_writer.py`:
+- `test_mean_reversion_override_logs_info` — verifica INFO con tutti i campi
+- `test_non_override_does_not_log_info` — verifica che `execute` non logghi INFO
+- `test_mean_reversion_override_no_info_on_error` — verifica che errore DB non produca INFO
+
+**Risultato:** 15/15 test passanti.
+
+---
+
 ## TASK-1231 — Cleanup: rimuovere conteggio SELL dal Session Summary (2026-07-28) ✅
 
 **Status:** ✅ Done — 2026-07-28

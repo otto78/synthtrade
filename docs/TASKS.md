@@ -16,15 +16,9 @@
 
 ---
 
-### TASK-1234: Signal log writer — Aggiungere conferma di successo esplicita — 🟡 Media
+### TASK-1234: Signal log writer — Aggiungere conferma di successo esplicita — 🟡 Media ✅ COMPLETED
 
-> **Problema:** `_log_signal_decision()`/`log_signal_decision()` in `app/core/signal_log_writer.py` logga solo gli errori (18 righe ERROR viste in una sola sessione). Non c'è modo di distinguere dai log "scrittura riuscita silenziosamente" da "scrittura mai tentata" senza query DB.
->
-> **Fix:** aggiungere un log INFO con il `signal_log_id` restituito dall'insert per i soli `decision_type='mean_reversion_override'` (più critici da tracciare). Esempio: `[SIGNAL_LOG] Scritto signal_log_id=<uuid> decision_type=mean_reversion_override`.
->
-> **Test:** verificare che il log di conferma appaia per un insert riuscito e non appaia se l'insert fallisce (deve restare ERROR-only in quel caso, nessun doppio log).
->
-> **Beneficio diretto:** le prossime sessioni permetteranno di rispondere alla domanda "quanti override sono stati davvero persistiti" leggendo solo il log, senza dover aprire Supabase.
+> **Risultato:** Aggiunto log INFO in `log_signal_decision()` per `decision_type='mean_reversion_override'` con format `[SIGNAL_LOG] Scritto signal_log_id=<uuid> decision_type=mean_reversion_override session=<id>`. Log non appare su errori (ERROR-only). 3 nuovi test: INFO presente su successo, assente su altri decision_type, assente su errore. 15/15 test passanti.
 
 ---
 

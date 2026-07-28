@@ -4,18 +4,6 @@
 
 ---
 
-### TASK-1231: Cleanup — Rimuovere conteggio SELL dal Session Summary — ✅ COMPLETED
-
-> **Problema:** Il blocco SESSION ANALYSIS SUMMARY mostrava `Segnali: ... BUY=1 SELL=0` e `Trades: 8 eseguiti | BUY=8 SELL=0`. Dato che SELL è permanentemente disabilitato (long-only engine), la colonna era morta e aggiungeva solo rumore.
->
-> **Fix:** Rimosso il breakdown BUY/SELL dalla visualizzazione in `_format_analysis_section()` in `session_log_handler.py`. I conteggi interni sono mantenuti nell'analysis JSON per il download e l'endpoint strutturato.
->
-> **File modificato:** `synthtrade/backend/app/core/session_log_handler.py`
->
-> **Commit:** TBD
-
----
-
 ### TASK-1232: Query storica — Win rate mean-reversion override segmentato per intensità bias — 🔴 Alta
 
 > **Dipendenze:** TASK-1233 (verifica integrità dati prima di fidarsi dell'aggregato)

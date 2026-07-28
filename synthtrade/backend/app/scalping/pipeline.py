@@ -199,9 +199,12 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                             fp, reconcile["reason"], pnl
                         )
                         pm.close_position(Decimal(str(fp)))
+                        _pipe_entry_comm = entry_f * qty_f * entry_fee_r
+                        _pipe_exit_comm = fp * qty_f * exit_fee_r
                         await _update_closed_position_in_db(
                             pos, fp, pnl, pnl_pct, reconcile["reason"],
                             fill_time=reconcile.get("fill_time"),
+                            entry_commission=_pipe_entry_comm, exit_commission=_pipe_exit_comm,
                         )
                         # FIX: append to trade_history so session counters are accurate
                         _execution_state["trade_history"].append({

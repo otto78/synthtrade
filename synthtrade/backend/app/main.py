@@ -304,6 +304,8 @@ async def _restore_scalping_session(db) -> None:
                             reason = reconcile["reason"]
 
                             def _db_close_reconciled():
+                                _ec = float(entry_price) * float(quantity) * entry_fee_r
+                                _xc = fp * float(quantity) * exit_fee_r
                                 db.table("scalping_trades").update({
                                     "status": "closed",
                                     "exit_price": fp,
@@ -311,6 +313,8 @@ async def _restore_scalping_session(db) -> None:
                                     "pnl_pct": round(pnl_pct, 2),
                                     "exit_time": reconcile.get("fill_time") or datetime.now(timezone.utc).isoformat(),
                                     "signal_reason": reason,
+                                    "entry_commission": _ec,
+                                    "exit_commission": _xc,
                                 }).eq("id", trade_id).execute()
                             await asyncio.to_thread(_db_close_reconciled)
 

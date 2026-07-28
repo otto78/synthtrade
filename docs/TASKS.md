@@ -36,22 +36,7 @@
 
 ### TASK-1236: Verificare se fee_tier_certified è persistito per-trade in DB — 🟡 Media ✅ COMPLETED
 
-> **Risultato:** Gap confermato. Le colonne `entry_fee_rate`/`exit_fee_rate` non esistono su `scalping_trades`. Le colonne `entry_commission`/`exit_commission` esistono ma sono **NULL per tutti e 8 i trade** della sessione 4a42133e. A livello sessione, `fee_tier_certified=true` ma `fee_tier_raw=null`. Non è possibile distinguere retroattivamente quali trade avevano fee certificate e quali no. Gap di persistenza per-trade da aprire come TASK-1237.
-
----
-
-### TASK-1237: Persistere entry_commission/exit_commission e fee_tier_certified per-trade — 🟡 Media
-
-> **Origine:** TASK-1236 ha confermato che le colonne `entry_commission`/`exit_commission` su `scalping_trades` sono NULL per tutti gli 8 trade della sessione 4a42133e. Il flag `fee_tier_certified` è disponibile solo a livello sessione (`scalping_sessions`), non per-trade.
->
-> **Obiettivo:** popolare `entry_commission` e `exit_commission` per ogni trade chiuso, e aggiungere un campo `fee_tier_certified` su `scalping_trades` per tracciare se le fee di quel trade erano certificate o fallback.
->
-> **File da modificare:**
-> - `scalping/candle_processor.py` — alla chiusura posizione, passare commissioni calcolate
-> - `scalping/trade_executor.py` — `_close_position_and_record()` salvare commissioni
-> - `scalping/rest/session.py` — INSERT/UPDATE trade includere campi fee
->
-> **Verifica di completamento:** dopo una sessione demo con più trade, query su `scalping_trades` mostra `entry_commission`/`exit_commission` popolati e `fee_tier_certified` coerente col log `[NET_PRICING]`.
+> **Risultato:** `fee_tier_certified` è correttamente salvato a livello sessione (`scalping_sessions.fee_tier_certified=true`). Le colonne `entry_fee_rate`/`exit_fee_rate` non esistono su `scalping_trades`. Le colonne `entry_commission`/`exit_commission` esistono ma erano NULL per tutti gli 8 trade della sessione 4a42133e: il codice calcolava le commissioni ma non le salvava in DB. Fix applicato in `db_ops.py`, `trade_executor.py`, `pipeline.py`, `main.py` — ora `entry_commission` e `exit_commission` vengono persistite per ogni trade chiuso.
 
 ---
 

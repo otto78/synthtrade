@@ -4112,13 +4112,19 @@ I conteggi interni restano nell'analysis JSON (endpoint strutturato/download).
 
 ---
 
-## TASK-1236: Verifica fee_tier_certified persistito per-trade (2026-07-28) ✅
+## TASK-1236: Persistenza entry_commission/exit_commission per-trade (2026-07-28) ✅
 
 **Status:** ✅ Done — 2026-07-28
 
-**Risultato:** Gap confermato. Le colonne `entry_fee_rate`/`exit_fee_rate` non esistono su `scalping_trades`. Le colonne `entry_commission`/`exit_commission` esistono ma sono NULL per tutti e 8 i trade della sessione 4a42133e. A livello sessione, `fee_tier_certified=true` ma `fee_tier_raw=null`. Non è possibile distinguere retroattivamente quali trade avevano fee certificate e quali no.
+**Problema:** Le colonne `entry_commission`/`exit_commission` su `scalping_trades` esistevano ma non venivano popolate — il codice calcolava le commissioni ma non le salvava in DB. Tutti gli 8 trade della sessione 4a42133e avevano questi campi NULL.
 
-**Gap aperto:** TASK-1237 — persistere commissioni e fee_tier_certified per-trade.
+**Fix:**
+- `db_ops.py` — `_update_closed_position_in_db()` accetta ora `entry_commission` e `exit_commission` opzionali, li include nell'UPDATE e nel fallback INSERT
+- `trade_executor.py` — `_close_position_and_record()` e UDS reconcile passano le commissioni calcolate
+- `pipeline.py` — pipeline reconcile passa le commissioni calcolate
+- `main.py` — session restore reconcile passa le commissioni calcolate
+
+**File modificati:** `scalping/db_ops.py`, `scalping/trade_executor.py`, `scalping/pipeline.py`, `main.py`
 
 ---
 

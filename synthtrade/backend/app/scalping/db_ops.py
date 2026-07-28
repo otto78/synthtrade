@@ -75,7 +75,7 @@ async def _save_open_position_to_db(pos, db_session_id: str,
         logger.warning(f"Failed to save open position to DB: {db_e}")
 
 
-async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl_pct: float, reason: str, fill_time: Optional[str] = None):
+async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl_pct: float, reason: str, fill_time: Optional[str] = None, entry_commission: Optional[float] = None, exit_commission: Optional[float] = None):
     """Update the open position row in DB to 'closed' with exit price and PnL.
     
     FIX-2026-06-21: Strategy 1 uses oco_order_list_id (univoco per trade, match deterministico).
@@ -84,6 +84,8 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
     Args:
         fill_time: ISO 8601 timestamp of the actual fill from exchange (e.g. OKX fillTime).
                    When provided, used as exit_time instead of datetime.now().
+        entry_commission: Commission paid on entry (quote currency).
+        exit_commission: Commission paid on exit (quote currency).
     """
     try:
         db_sid = _execution_state["session"].get("db_session_id")
@@ -168,19 +170,24 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
             
             if trade_id:
                 # UPDATE — modifica la riga 'open' esistente
-                supabase.table("scalping_trades").update({
+                update_data = {
                     "exit_price": close_price,
                     "pnl": round(pnl, 2),
                     "pnl_pct": round(pnl_pct, 2),
                     "signal_reason": reason,
                     "status": "closed",
                     "exit_time": fill_time or datetime.now(timezone.utc).isoformat(),
-                }).eq("id", trade_id).execute()
+                }
+                if entry_commission is not None:
+                    update_data["entry_commission"] = entry_commission
+                if exit_commission is not None:
+                    update_data["exit_commission"] = exit_commission
+                supabase.table("scalping_trades").update(update_data).eq("id", trade_id).execute()
                 logger.debug(f"DB position closed (match via {'oco_order_list_id' if pos.oco_order_list_id else 'fallback'}): trade_id={trade_id}")
             else:
                 # Fallback extrema ratio: insert new row if no open row found
                 logger.warning(f"No open row found for close: session={db_sid} symbol={pos.symbol} entry_price={entry_price_rounded} entry_time={entry_time_str} — inserting as new row")
-                supabase.table("scalping_trades").insert({
+                fallback_data = {
                     "session_id": db_sid,
                     "symbol": pos.symbol,
                     "side": pos.side,
@@ -201,7 +208,12 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
                     "exchange_sl_order_id": pos.sl_order_id,
                     # Legacy
                     "oco_order_list_id": pos.oco_order_list_id,
-                }).execute()
+                }
+                if entry_commission is not None:
+                    fallback_data["entry_commission"] = entry_commission
+                if exit_commission is not None:
+                    fallback_data["exit_commission"] = exit_commission
+                supabase.table("scalping_trades").insert(fallback_data).execute()
         await asyncio.to_thread(_db_op)
     except Exception as db_e:
         logger.warning(f"Failed to update closed position in DB: {db_e}")

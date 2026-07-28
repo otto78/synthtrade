@@ -234,7 +234,8 @@ async def _on_order_update(event: dict):
         _execution_state["trade_history"].append(trade_record)
 
         # Aggiorna DB
-        await _update_closed_position_in_db(pos, fill_price, pnl, pnl_pct, reason)
+        await _update_closed_position_in_db(pos, fill_price, pnl, pnl_pct, reason,
+                                            entry_commission=entry_commission, exit_commission=exit_commission)
 
         # Refresh live balance
         await _refresh_session_balance()
@@ -312,8 +313,11 @@ async def _on_uds_reconnect_sync():
         )
 
         _execution_state["position_manager"].close_position(Decimal(str(fill_price)))
+        _recon_entry_comm = entry_f * qty_f * entry_fee
+        _recon_exit_comm = fill_price * qty_f * exit_fee
         await _update_closed_position_in_db(pos, fill_price, pnl, pnl_pct, reason,
-                                            fill_time=reconcile.get("fill_time"))
+                                            fill_time=reconcile.get("fill_time"),
+                                            entry_commission=_recon_entry_comm, exit_commission=_recon_exit_comm)
         await _refresh_session_balance()
         # FIX: append to trade_history so session counters are accurate
         _execution_state["trade_history"].append({
@@ -498,7 +502,8 @@ async def _close_position_and_record(pm, close_price: float, pos, reason: str = 
         await broadcast_scalping_event("session_restored", _execution_state["session"].copy())
 
     # Update DB: change status from 'open' to 'closed' with exit data
-    await _update_closed_position_in_db(pos, close_price, pnl, pnl_pct, reason)
+    await _update_closed_position_in_db(pos, close_price, pnl, pnl_pct, reason,
+                                        entry_commission=entry_commission, exit_commission=exit_commission)
 
     await broadcast_scalping_event("trade_closed", trade_record)
     logger.info(f"Position closed ({reason}): {pos.side} {pos.symbol} PnL: {pnl:.2f} ({pnl_pct:.2f}%)")

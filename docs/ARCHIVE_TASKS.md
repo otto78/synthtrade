@@ -4017,6 +4017,24 @@ ORDER BY t.entry_time;
 
 ---
 
+## TASK-1232 — Win rate mean-reversion override per bucket bias (2026-07-28) ✅
+
+**Status:** ✅ Done — 2026-07-28
+**Report:** `docs/recap/2026-07-28_mean-reversion-override-analysis.md`
+
+**Risultato:** 12 trade mean-reversion override BUY analizzati su 4 sessioni.
+
+| Bucket bias | Trades | Win Rate | Avg PnL |
+|-------------|--------|----------|---------|
+| [-5, -10] | 2 | 0.0% | -€0.105 |
+| (-10, -15] | 5 | 20.0% | -€0.063 |
+| (-15, -20] | 2 | 50.0% | +€0.030 |
+| (-20, -∞) | 3 | 33.3% | -€0.013 |
+
+**Conclusione:** Win rate globale 25%. Zona potenzialmente ottimale [-15,-20] (50% win rate, 2 trade). Campione troppo piccolo per conclusions definitive. Nessuna modifica alla soglia override raccomandata.
+
+---
+
 ## TASK-1231 — Cleanup: rimuovere conteggio SELL dal Session Summary (2026-07-28) ✅
 
 **Status:** ✅ Done — 2026-07-28

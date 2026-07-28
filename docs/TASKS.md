@@ -4,17 +4,9 @@
 
 ---
 
-### TASK-1232: Query storica — Win rate mean-reversion override segmentato per intensità bias — 🔴 Alta
+### TASK-1232: Query storica — Win rate mean-reversion override segmentato per intensità bias — 🔴 Alta ✅ COMPLETED
 
-> **Dipendenze:** TASK-1233 (verifica integrità dati prima di fidarsi dell'aggregato)
->
-> **Obiettivo:** confermare o confutare con dati reali multi-sessione il pattern osservato nella sessione 4a42133e: bias fortemente bearish → override mean-reversion BUY → stop loss.
->
-> **Query:** join `session_signal_log` (`decision_type='mean_reversion_override'`) con `scalping_trades` via `signal_log_id`, bucket per `intel_score` (es. [-10,-15), [-15,-20), [-20,-30)), calcolo win rate e avg PnL per bucket. Stesso pattern già usato in `trend_analysis_report.md` (16/07).
->
-> **Output atteso:** documento tipo `docs/recap/YYYY-MM-DD_mean-reversion-override-analysis.md` con la tabella bucket→win_rate→avg_pnl e una conclusione esplicita: il pattern regge o no coi dati disponibili? Se il campione è ancora troppo piccolo (probabile, vista la bassa frequenza di trade attuale), dirlo chiaramente invece di trarre conclusioni premature.
->
-> **Non fare in questo task:** nessuna modifica a `signal_aggregator.py` o alla soglia dell'override — questo è solo il task di raccolta evidenza.
+> **Risultato:** 12 trade mean-reversion override BUY analizzati su 4 sessioni. Win rate globale 25% (3/11 chiusi). Zona potenzialmente ottimale [-15,-20] con 50% win rate (2 trade). Campione ancora troppo piccolo per conclusions definitive. Report: `docs/recap/2026-07-28_mean-reversion-override-analysis.md`.
 
 ---
 

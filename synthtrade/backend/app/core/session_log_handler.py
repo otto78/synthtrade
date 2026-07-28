@@ -338,7 +338,7 @@ class SessionLogHandler(logging.Handler):
 
         # Segnali
         s = analysis["signals"]
-        lines.append(f"Segnali: {s['total']} totali | BUY={s['buy']} SELL={s['sell']} | bloccati={s['blocked']}")
+        lines.append(f"Segnali: {s['total']} totali | bloccati={s['blocked']}")
         if s["blocked_reasons"]:
             lines.append("   Top motivi blocco:")
             for reason, count in s["blocked_reasons"].most_common(5):
@@ -346,7 +346,7 @@ class SessionLogHandler(logging.Handler):
 
         # Trade
         t = analysis["trades"]
-        lines.append(f"Trades: {t['total']} eseguiti | BUY={t['buy']} SELL={t['sell']}")
+        lines.append(f"Trades: {t['total']} eseguiti")
         lines.append(f"   OCO: {t['ocl_filled']} filled, {t['ocl_expired']} expired")
 
         # Intel score range

@@ -4,6 +4,15 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.x.x — 2026-07-28 — Analisi log sessione 4a42133e + 5 nuovi task di approfondimento
+
+- ✅ **Analisi completa log sessione 4a42133e** (10.847 righe): verificati 4 punti concordati
+- ✅ **Punto 1 (Recap mancante):** Risolto — summary presente e popolato correttamente. Creato TASK-1231 per cleanup conteggio SELL.
+- ✅ **Punto 2 (Override mean-reversion → trade):** 29 override trovati, 8 con trade reale. 18 fallimenti scrittura DB su decisioni hold, nessuno su entry. Creati TASK-1232 (query storica win rate), TASK-1233 (verifica signal_log_id), TASK-1234 (log conferma successo).
+- ✅ **Punto 3 (fee_tier_certified):** Solo trade 1/8 ha certified=True. Creati TASK-1235 (investigare causa) e TASK-1236 (verifica persistenza per-trade in DB).
+- ✅ **Punto 4 (Pesi signal score):** Confermato nessuna azione — coerente con TASK-1159 bloccato.
+- ✅ **Scoperta collaterale:** Supervisor auto-decay dalle 00:26:38 — ~15 override "fantasma" approvati ma mai eseguiti per pausa.
+
 ### v1.x.x — 2026-07-27 — Fix recap mancante nel download log sessioni
 
 - ✅ **Fix download session logs**: Il recap "SESSION ANALYSIS SUMMARY" non veniva incluso nel file scaricato perché l'endpoint `download_session_logs()` filtrava solo righe con timestamp, escludendo la sezione analysis. Ora l'analysis viene rigenerata al volo dalle righe di log estratte. (`session.py`)

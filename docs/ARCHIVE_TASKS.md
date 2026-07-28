@@ -3985,3 +3985,89 @@ Il Trade Log mostra solo l'orario (es. `8:19 AM`, `9:36 AM`, `2:25 AM`) senza la
 - Polling loop resiliente: ogni step con try/except isolato
 - Recovery logging per monitoraggio
 
+---
+
+## TASK-1231 — Cleanup: rimuovere conteggio SELL dal Session Summary (2026-07-28) ✅
+
+**Status:** ✅ Done — 2026-07-28
+**File:** `synthtrade/backend/app/core/session_log_handler.py`
+
+**Problema:** SESSION ANALYSIS SUMMARY mostrava `BUY=... SELL=...` sia per segnali che per trade. SELL è permanentemente disabilitato (long-only engine) — colonna dead weight.
+
+**Fix:** Rimosso breakdown BUY/SELL da `_format_analysis_section()`:
+- `Segnali: {n} totali | bloccati={n}` (prima: `BUY={n} SELL={n}`)
+- `Trades: {n} eseguiti` (prima: `BUY={n} SELL={n}`)
+
+I conteggi interni restano nell'analysis JSON (endpoint strutturato/download).
+
+---
+
+## TASK-1230 — Session Max Loss + Drawdown Fix (2026-07-24) ✅
+
+**Status:** ✅ Done — 2026-07-24
+**Commit:** `975b492 feat(TASK-1230): session max loss + drawdown fix`
+
+**Problema:** `_check_drawdown()` usava `paper_balance` come base del calcolo. In live mode, `paper_balance` si riduceva ad ogni trade aperto ma non veniva ripristinato alla chiusura, rendendo la base del drawdown artificialmente bassa e bloccando trade a caso. `_check_daily_loss()` calcolava la perdita su base giornaliera, inadatta per sessioni multi-giorno.
+
+**Soluzione:**
+- `starting_balance` salvato in DB (`scalping_sessions`) all'avvio sessione, ripristinato al restart con fallback
+- `_check_drawdown()` riscritto per usare `starting_balance` come base
+- `_check_daily_loss()` sostituita con `_check_session_loss()`: `total_pnl <= -(starting_balance * session_max_loss_pct / 100)` → pausa forzata
+- `session_max_loss_pct` aggiunto al risk config (default 10%)
+- Leverage nascosto nel frontend (mantenuto in DB)
+
+**Files modificati:**
+- `supabase/migrations/task1230_session_loss_starting_balance` — colonne `starting_balance`, `session_max_loss_pct`
+- `scalping/rest/session.py` — salvataggio starting_balance all'avvio
+- `main.py` — ripristino starting_balance al restart (con fallback pre-migration)
+- `scalping/trade_executor.py` — `_check_drawdown()` riscritto + `_check_session_loss()` implementata
+- `scalping/candle_processor.py` — usa `_check_session_loss()`, pausa su breach
+- `scalping/rest/config.py` — persistenza `session_max_loss_pct`
+- `scalping/_state.py` — default `session_max_loss_pct: 10`
+- `frontend/risk-controls.component.ts` — UI: session_max_loss_pct, leverage nascosto
+
+---
+
+## Fix: Session log recap + early log capture (2026-07-27) ✅
+
+**Status:** ✅ Done — 2026-07-27
+
+**Problemi:**
+1. Il recap "SESSION ANALYSIS SUMMARY" non veniva incluso nel file .txt scaricato perché l'endpoint filtrava solo righe con timestamp.
+2. Il `SessionLogHandler` veniva attivato solo dopo l'insert DB, perdendo i log delle chiamate preparatorie (get_balance, get_trade_fee, get_symbol_rules).
+
+**Soluzioni:**
+1. L'endpoint `download_session_logs()` ora rigenera l'analysis al volo dalle righe di log estratte (retroattivo per tutte le sessioni con log_content).
+2. Il `SessionLogHandler` viene creato e attaccato subito all'inizio del start, prima delle verifiche di balance/fee. Dopo l'insert DB, l'handler early viene riutilizzato (non sovrascritto) aggiornando db_session_id e session_id.
+
+**File modificato:** `synthtrade/backend/app/scalping/rest/session.py`
+
+---
+
+## Dashboard: Convert balance to EUR, add session count (2026-07-24) ✅
+
+**Status:** ✅ Done — 2026-07-24
+
+**Problema:** Il saldo veniva mostrato in USD invece che EUR. Il totale USD non includeva correttamente EUR (0.72 EUR valorizzati a $0). Mancavano indicatori sessione scalping attiva.
+
+**Soluzione:**
+1. Fixato `_get_usd_price()` in `okx_balance.py` per gestire conversione EUR→USD
+2. Dashboard ora usa `get_total_balance_eur()` → saldo in EUR
+3. Aggiunto campo `currency: "EUR"` e `active_session_count` nel response
+4. Rimossi PnL Oggi, Trade Chiusi Oggi, equity chart (API OKX per storico non disponibili su EEA — 404)
+5. Frontend: 4 card (Saldo OKX €, Strategie Attive, Trade Aperti, Sessione Scalping)
+
+**File modificati:** `dashboard.py`, `okx_balance.py`, `dashboard.model.ts`, `dashboard.service.ts`, `dashboard.page.ts`, `dashboard.page.spec.ts`
+
+---
+
+## EPICA: Short Selling OKX Spot Margin (2026-07-24) ❌ CANCELLED
+
+**Status:** ❌ Cancelled — 2026-07-24
+
+**Stato:** Cancellata definitivamente. Budget insufficiente (~€300) per margin trading su OKX EEA.
+
+**Audit:** Vedi `docs/analysis/audit-short-selling-cancelled.md`
+
+**Decisione:** Tutto il codice short è stato rimosso. Focus esclusivo su long trading.
+

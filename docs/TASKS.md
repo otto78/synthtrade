@@ -34,24 +34,24 @@
 
 ---
 
-### TASK-1236: Verificare se fee_tier_certified è persistito per-trade in DB — 🟡 Media
+### TASK-1236: Verificare se fee_tier_certified è persistito per-trade in DB — 🟡 Media ✅ COMPLETED
 
-> **Dipendenze:** nessuna (query read-only), utile eseguirlo insieme a TASK-1233
+> **Risultato:** Gap confermato. Le colonne `entry_fee_rate`/`exit_fee_rate` non esistono su `scalping_trades`. Le colonne `entry_commission`/`exit_commission` esistono ma sono **NULL per tutti e 8 i trade** della sessione 4a42133e. A livello sessione, `fee_tier_certified=true` ma `fee_tier_raw=null`. Non è possibile distinguere retroattivamente quali trade avevano fee certificate e quali no. Gap di persistenza per-trade da aprire come TASK-1237.
+
+---
+
+### TASK-1237: Persistere entry_commission/exit_commission e fee_tier_certified per-trade — 🟡 Media
+
+> **Origine:** TASK-1236 ha confermato che le colonne `entry_commission`/`exit_commission` su `scalping_trades` sono NULL per tutti gli 8 trade della sessione 4a42133e. Il flag `fee_tier_certified` è disponibile solo a livello sessione (`scalping_sessions`), non per-trade.
 >
-> **Obiettivo:** dallo schema noto (TASK-1108/1114), `fee_tier_certified`/`fee_tier_raw` sembrano vivere su `scalping_sessions`, mentre `entry_fee_rate`/`exit_fee_rate` dovrebbero vivere su `scalping_trades`. Nella sessione analizzata il flag certified cambia dentro la stessa sessione (True poi False) — se il campo DB è solo a livello sessione, quell'informazione va persa: non si potrà più distinguere a posteriori quale degli 8 trade aveva fee certificate e quale no.
+> **Obiettivo:** popolare `entry_commission` e `exit_commission` per ogni trade chiuso, e aggiungere un campo `fee_tier_certified` su `scalping_trades` per tracciare se le fee di quel trade erano certificate o fallback.
 >
-> **Query:**
-> ```sql
-> SELECT id, entry_time, entry_fee_rate, exit_fee_rate
-> FROM scalping_trades
-> WHERE session_id = '4a42133e-cf22-4824-96ce-c37fc0406245'
-> ORDER BY entry_time;
+> **File da modificare:**
+> - `scalping/candle_processor.py` — alla chiusura posizione, passare commissioni calcolate
+> - `scalping/trade_executor.py` — `_close_position_and_record()` salvare commissioni
+> - `scalping/rest/session.py` — INSERT/UPDATE trade includere campi fee
 >
-> SELECT fee_tier_certified, fee_tier_raw FROM scalping_sessions
-> WHERE id = '4a42133e-cf22-4824-96ce-c37fc0406245';
-> ```
->
-> **Verifica di completamento:** se `entry_fee_rate`/`exit_fee_rate` sono popolati per-trade con valori diversi tra i trade (coerente coi log: trade 1 con fee certificate, gli altri col fallback 0.001), il gap è già chiuso — basta documentarlo. Se invece i valori sono NULL o identici per tutti gli 8 trade nonostante il log mostri certified diverso, è un gap reale da aprire come task di fix separato (non in questo task, che resta di sola verifica).
+> **Verifica di completamento:** dopo una sessione demo con più trade, query su `scalping_trades` mostra `entry_commission`/`exit_commission` popolati e `fee_tier_certified` coerente col log `[NET_PRICING]`.
 
 ---
 

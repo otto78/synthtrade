@@ -4112,6 +4112,16 @@ I conteggi interni restano nell'analysis JSON (endpoint strutturato/download).
 
 ---
 
+## TASK-1236: Verifica fee_tier_certified persistito per-trade (2026-07-28) ✅
+
+**Status:** ✅ Done — 2026-07-28
+
+**Risultato:** Gap confermato. Le colonne `entry_fee_rate`/`exit_fee_rate` non esistono su `scalping_trades`. Le colonne `entry_commission`/`exit_commission` esistono ma sono NULL per tutti e 8 i trade della sessione 4a42133e. A livello sessione, `fee_tier_certified=true` ma `fee_tier_raw=null`. Non è possibile distinguere retroattivamente quali trade avevano fee certificate e quali no.
+
+**Gap aperto:** TASK-1237 — persistere commissioni e fee_tier_certified per-trade.
+
+---
+
 ## TASK-1235: fee_tier_certified False durante session restore (2026-07-28) ✅
 
 **Status:** ✅ Done — 2026-07-28

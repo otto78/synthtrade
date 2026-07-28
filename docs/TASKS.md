@@ -18,22 +18,9 @@
 
 ---
 
-### TASK-1233: Verifica integrità signal_log_id per i trade della sessione 4a42133e — 🔴 Alta
+### TASK-1233: Verifica integrità signal_log_id per i trade della sessione 4a42133e — 🔴 Alta ✅ COMPLETED
 
-> **Bloccante per:** TASK-1232
->
-> **Contesto:** nella sessione analizzata sono stati osservati 18 fallimenti di scrittura su `session_signal_log` (12× getaddrinfo failed tra 12:36-13:00, 6× Server disconnected tra 17:17-23:19). Verificando riga per riga, nessuno di questi fallimenti coincide temporalmente con le 8 aperture trade via override — cadono tutti su decisioni `hold_existing_position`/`rejected_other`. Ma il writer logga solo gli errori, mai un successo esplicito, quindi non è verificabile dai soli log applicativi.
->
-> **Query:**
-> ```sql
-> SELECT t.id, t.entry_time, t.signal_log_id, sl.decision_type, sl.intel_score
-> FROM scalping_trades t
-> LEFT JOIN session_signal_log sl ON sl.id = t.signal_log_id
-> WHERE t.session_id = '4a42133e-cf22-4824-96ce-c37fc0406245'
-> ORDER BY t.entry_time;
-> ```
->
-> **Verifica di completamento:** tutti gli 8 trade devono avere `signal_log_id` non-NULL collegato a una riga con `decision_type='mean_reversion_override'`. Se anche un solo trade ha `signal_log_id` NULL, documentarlo come gap noto prima di usare l'aggregato in TASK-1232 — non escluderlo silenziosamente dalla query futura senza annotarlo.
+> **Risultato:** Tutti e 8 trade hanno `signal_log_id` non-NULL collegato a una riga in `session_signal_log`. 7/8 con `decision_type='mean_reversion_override'`, 1/8 (trade 13:42) con `decision_type='execute'` (segnale pipeline regolare, score +15.0 — bias opposto ai 7 override). Nessun gap di scrittura.
 
 ---
 

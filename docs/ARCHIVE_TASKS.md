@@ -3987,6 +3987,36 @@ Il Trade Log mostra solo l'orario (es. `8:19 AM`, `9:36 AM`, `2:25 AM`) senza la
 
 ---
 
+## TASK-1233 — Verifica integrità signal_log_id trade sessione 4a42133e (2026-07-28) ✅
+
+**Status:** ✅ Done — 2026-07-28
+
+**Query eseguita:**
+```sql
+SELECT t.id, t.entry_time, t.signal_log_id, sl.decision_type, sl.intel_score
+FROM scalping_trades t
+LEFT JOIN session_signal_log sl ON sl.id = t.signal_log_id
+WHERE t.session_id = '4a42133e-cf22-4824-96ce-c37fc0406245'
+ORDER BY t.entry_time;
+```
+
+**Risultato:** Tutti e 8 trade hanno `signal_log_id` non-NULL collegato a una riga in `session_signal_log`. Nessun gap di scrittura.
+
+| # | Ora | decision_type | intel_score |
+|---|-----|--------------|-------------|
+| 1 | 08:35 | mean_reversion_override | -15.10 |
+| 2 | 12:33 | mean_reversion_override | -12.00 |
+| 3 | **13:42** | **execute** | **+15.00** |
+| 4 | 13:59 | mean_reversion_override | -12.20 |
+| 5 | 14:22 | mean_reversion_override | -8.90 |
+| 6 | 15:19 | mean_reversion_override | -11.30 |
+| 7 | 15:38 | mean_reversion_override | -16.10 |
+| 8 | 19:46 | mean_reversion_override | -8.60 |
+
+**Anomalia:** 1 trade su 8 ha `decision_type='execute'` (pipeline regolare, score +15.0, bias opposto ai 7 override). Da considerare nell'analisi TASK-1232.
+
+---
+
 ## TASK-1231 — Cleanup: rimuovere conteggio SELL dal Session Summary (2026-07-28) ✅
 
 **Status:** ✅ Done — 2026-07-28

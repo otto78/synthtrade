@@ -65,19 +65,18 @@ import { Position } from '../models/position.model';
         <div class="progress-container">
           <div class="progress-labels">
             <span class="label-sl">SL</span>
-            <span class="label-current">{{ position.pnl_pct | number:'1.1-1' }}%</span>
+            <span class="label-current">{{ getProgressText() }}</span>
             <span class="label-tp">TP</span>
           </div>
-          <div class="progress-state" [ngClass]="getProgressClass()">{{ getProgressText() }}</div>
           <div class="progress-bar">
             <div class="progress-fill" [style.width.%]="getProgressPct()" [ngClass]="getProgressClass()"></div>
+            <div class="entry-marker" [style.left.%]="getEntryPct()"></div>
             <div class="breakeven-marker" [style.left.%]="getBreakevenPct()"></div>
           </div>
           <div class="breakeven-row">
             <span class="breakeven-tag">BE {{ getBreakevenPctValue() | number:'1.2-2' }}%</span>
             <span class="breakeven-status" [ngClass]="isAboveBreakeven() ? 'above' : 'below'">
               {{ isAboveBreakeven() ? 'Above Breakeven' : 'Below Breakeven' }}
-              <span class="be-diff">({{ getBreakevenDiff() >= 0 ? '+' : '' }}{{ getBreakevenDiff() | number:'1.2-2' }}%)</span>
             </span>
           </div>
         </div>
@@ -163,9 +162,9 @@ import { Position } from '../models/position.model';
     .label-current { color: var(--text-primary); font-weight: 700; }
     .label-tp { color: var(--accent-success, #26a69a); font-weight: 600; }
     .progress-bar {
-      height: 10px;
+      height: 20px;
       background: rgba(255,255,255,0.12);
-      border-radius: 5px;
+      border-radius: 10px;
       position: relative;
     }
     .progress-state {
@@ -189,15 +188,24 @@ import { Position } from '../models/position.model';
     .progress-fill.success {
       background: linear-gradient(90deg, #26a69a, #4db6ac);
     }
+    .entry-marker {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 4px;
+      background: rgba(255,255,255,0.45);
+      transform: translateX(-2px);
+      z-index: 2;
+    }
     .breakeven-marker {
       position: absolute;
       top: -2px;
-      width: 2px;
-      height: 14px;
-      background: #F0B90B;
+      width: 3px;
+      height: 16px;
+      background: #42A5F5;
       border-radius: 1px;
-      transform: translateX(-1px);
-      z-index: 2;
+      transform: translateX(-1.5px);
+      z-index: 3;
     }
     .breakeven-row {
       display: flex;
@@ -356,24 +364,17 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
 
   getProgressPct(): number {
     if (!this.position) return 0;
-    const { side, entry_price, current_price, stop_loss_pct, take_profit_pct } = this.position;
-    const slDist = Math.abs(stop_loss_pct ?? 1.0);
-    const tpDist = Math.abs(take_profit_pct ?? 1.0);
-    const totalRange = slDist + tpDist;
-    if (totalRange <= 0) return 0;
+    const { side, current_price, stop_loss_price, take_profit_price } = this.position;
+    if (!stop_loss_price || !take_profit_price) return 0;
 
     if (side === 'BUY') {
-      const slNet = entry_price * (1 - slDist / 100);
-      const tpNet = entry_price * (1 + tpDist / 100);
-      const range = tpNet - slNet;
+      const range = take_profit_price - stop_loss_price;
       if (range <= 0) return 0;
-      return Math.max(0, Math.min(100, ((current_price - slNet) / range) * 100));
+      return Math.max(0, Math.min(100, ((current_price - stop_loss_price) / range) * 100));
     }
-    const slNet = entry_price * (1 + slDist / 100);
-    const tpNet = entry_price * (1 - tpDist / 100);
-    const range = slNet - tpNet;
+    const range = stop_loss_price - take_profit_price;
     if (range <= 0) return 0;
-    return Math.max(0, Math.min(100, ((slNet - current_price) / range) * 100));
+    return Math.max(0, Math.min(100, ((stop_loss_price - current_price) / range) * 100));
   }
 
   getProgressText(): string {
@@ -397,27 +398,36 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
    */
   getBreakevenPct(): number {
     if (!this.position) return 50;
-    const { side, entry_price, stop_loss_pct, take_profit_pct, breakeven_pct } = this.position;
-    const slDist = Math.abs(stop_loss_pct ?? 1.0);
-    const tpDist = Math.abs(take_profit_pct ?? 1.0);
-    const totalRange = slDist + tpDist;
-    if (totalRange <= 0) return 50;
+    const { side, entry_price, stop_loss_price, take_profit_price, breakeven_pct } = this.position;
+    if (!stop_loss_price || !take_profit_price) return 50;
 
     const bePct = breakeven_pct ?? 0.2;
     if (side === 'BUY') {
-      const slNet = entry_price * (1 - slDist / 100);
-      const tpNet = entry_price * (1 + tpDist / 100);
       const bePrice = entry_price * (1 + bePct / 100);
-      const range = tpNet - slNet;
+      const range = take_profit_price - stop_loss_price;
       if (range <= 0) return 50;
-      return Math.max(0, Math.min(100, ((bePrice - slNet) / range) * 100));
+      return Math.max(0, Math.min(100, ((bePrice - stop_loss_price) / range) * 100));
     }
-    const slNet = entry_price * (1 + slDist / 100);
-    const tpNet = entry_price * (1 - tpDist / 100);
     const bePrice = entry_price * (1 - bePct / 100);
-    const range = slNet - tpNet;
+    const range = stop_loss_price - take_profit_price;
     if (range <= 0) return 50;
-    return Math.max(0, Math.min(100, ((slNet - bePrice) / range) * 100));
+    return Math.max(0, Math.min(100, ((stop_loss_price - bePrice) / range) * 100));
+  }
+
+  /** Entry position on the progress bar (0-100%) */
+  getEntryPct(): number {
+    if (!this.position) return 50;
+    const { side, entry_price, stop_loss_price, take_profit_price } = this.position;
+    if (!stop_loss_price || !take_profit_price) return 50;
+
+    if (side === 'BUY') {
+      const range = take_profit_price - stop_loss_price;
+      if (range <= 0) return 50;
+      return Math.max(0, Math.min(100, ((entry_price - stop_loss_price) / range) * 100));
+    }
+    const range = stop_loss_price - take_profit_price;
+    if (range <= 0) return 50;
+    return Math.max(0, Math.min(100, ((stop_loss_price - entry_price) / range) * 100));
   }
 
   /** Breakeven price (entry + round-trip fees) */

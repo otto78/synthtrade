@@ -7,7 +7,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [1.4.17] — 2026-07-27
+## [1.4.18] — 2026-07-29
+
+### Fixed
+- **Progress bar su prezzi lordi**: `getProgressPct()` e `getBreakevenPct()` ora usano `stop_loss_price`/`take_profit_price` (prezzi lordi reali del bracket OCO) come estremi della barra, invece di ricostruire una scala virtuale da percentuali nette. La barra ora è allineata 1:1 con i prezzi reali su OKX — niente più falso "Near TP" al 95% quando manca ancora il 58% del movimento al trigger reale.
+- **Entry marker**: Aggiunto `getEntryPct()` e marker visivo (linea grigia 4px) sulla barra, mostra dove è stato aperto il trade rispetto alla forbice SL-TP.
+- **Rimossa ridondanza PnL%**: Il PnL% non è più ripetuto nella label sopra la barra né dopo "Above/Below Breakeven" — resta solo nella riga PnL principale.
+
+> **Files:** `position-ticker.component.ts`
+
+---
+
+
 
 ### Fixed
 - **Reconcile exit_time**: L'`exit_time` dei trade riconciliati dopo un restart ora usa il tempo reale di esecuzione su OKX (`fillTime`) invece di `datetime.now()`. Prima, un trade chiuso durante lo standby (es. weekend) veniva datato con il momento del recupero, non della chiusura reale.

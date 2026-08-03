@@ -4,6 +4,34 @@
 
 ### Da: Antigravity → prossima sessione
 
+**Data:** 2026-08-03 09:45
+
+**Contesto:** Fix bug timestamp riconciliazione exit_time OKX post-riavvio weekend e fix formattazione data/ora trade log sessioni frontend.
+
+---
+
+### ✅ Fix 1 — Timestamp riconciliazione exit_time (`okx_exchange.py`)
+- **Problema:** Post-riavvio del weekend, i trade riconciliati mostravano come `exit_time` l'orario di esecuzione della riconciliazione (`datetime.now()`) invece del reale timestamp di fill su OKX.
+- **Root Cause:** OKX `/api/v5/trade/fills` utilizza la chiave `ts` per il timestamp dei fill e non `fillTime`. L'adapter `okx_exchange.py` (L.745) eseguiva `fill.get("fillTime")` che ritornava sempre `None`.
+- **Fix:** Modificato in `fill.get("fillTime") or fill.get("ts")`. Ora `exit_time` viene estratto correttamente dal fill OKX.
+
+---
+
+### ✅ Fix 2 — Formattazione data/ora trade log sessioni (`logs.page.ts`)
+- **Problema:** La tabella dei trade nel dettaglio sessione mostrava solo l'ora (`HH:mm`) per `entry_time`, rendendo ambigua la data dei trade.
+- **Fix:** In `logs.page.ts` (L.184), aggiornato il pipe di formattazione a `dd/MM/yy HH:mm` e rinominata l'intestazione da `Ora` a `Data/Ora`, allineandola allo Storico Trade.
+
+---
+
+### ⚠️ Punto Aperto Residuo
+- **`position_manager.py` (Live close path):** Il percorso di chiusura in-memory/live imposta ancora `closed_at = datetime.now()` al momento della ricezione/gestione dell'evento di chiusura anziché adottare il timestamp esatto dal payload dell'exchange/WS. Resta da gestire in un task separato.
+
+---
+
+### Precedente Handoff
+
+### Da: Antigravity → prossima sessione
+
 **Data:** 2026-07-28 09:30
 
 **Contesto:** Analisi completa log sessione 4a42133e (10.847 righe) — 5 nuovi task creati per approfondimento e fix.

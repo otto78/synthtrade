@@ -14,7 +14,7 @@
 
 ---
 
-### TASK-1238 — Fix VWAP Reversion: logica BUY/SELL invertita 🔴 In Progress
+### TASK-1238 — Fix VWAP Reversion: logica BUY/SELL invertita ✅ Completato
 
 > **Priorità**: CRITICA — la strategia vwap_reversion genera segnali opposti a quelli attesi
 > **File**: `synthtrade/backend/app/scalping/strategies/vwap_reversion.py`
@@ -32,7 +32,7 @@
 
 ---
 
-### TASK-1239 — Fix btc_change_24h_pct: campo OKX "chg" inesistente 🔴 In Progress
+### TASK-1239 — Fix btc_change_24h_pct: campo OKX "chg" inesistente ✅ Completato
 
 > **Priorità**: CRITICA — il supervisor e il regime detector ricevono sempre 0% di variazione
 > 24h, rendendo il contesto macro cieco per tutte le decisioni di sessione.
@@ -52,7 +52,7 @@
 
 ---
 
-### TASK-1240 — Rimuovere generazione segnali SELL dalle strategie 🟡 Todo
+### TASK-1240 — Rimuovere generazione segnali SELL dalle strategie ✅ Completato
 
 > **Priorità**: ALTA — i segnali SELL vengono già bloccati nell'aggregator, ma le strategie
 > li generano ancora internamente causando rumore computazionale e potenziali distorsioni
@@ -72,7 +72,7 @@
 
 ---
 
-### TASK-1241 — Persistere signal_score e intelligence fields nel DB 🟡 Todo
+### TASK-1241 — Persistere signal_score e intelligence fields nel DB ✅ Completato
 
 > **Priorità**: ALTA — senza questi dati non è possibile analizzare la correlazione tra
 > qualità del segnale e outcome del trade, né implementare filtri basati su score minimo.

@@ -4,6 +4,12 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.x.x — 2026-08-03 — Fix Timestamp Riconciliazione OKX + Formattazione Data Frontend
+
+- ✅ **Bug Riconciliazione Exit Time OKX (`okx_exchange.py` L.745):** Identificata root cause sul timestamp dei fills OKX (`/api/v5/trade/fills`). L'API restituisce `ts` anziché `fillTime`, causando il ritorno di `None` e il fallback di `exit_time` a `datetime.now()` (orario di riconciliazione) dopo un riavvio del weekend. Risolto usando `fill.get("fillTime") or fill.get("ts")`.
+- ✅ **Fix Display Data Frontend (`logs.page.ts` L.184):** La tabella dei trade nella fisarmonica delle sessioni mostrava solo l'orario (`HH:mm`) per `entry_time`. Aggiornato il format ad includere la data (`dd/MM/yy HH:mm`) e rinominata l'intestazione della colonna da `Ora` a `Data/Ora` per allineamento al tab Storico Trade.
+- ℹ️ **Gap Noto Residuo:** In `position_manager.py`, il percorso di chiusura live imposta ancora `closed_at = datetime.now()` anziché adottare il timestamp reale dall'exchange/WS.
+
 ### v1.x.x — 2026-07-28 — Analisi log sessione 4a42133e + 5 nuovi task di approfondimento
 
 - ✅ **Analisi completa log sessione 4a42133e** (10.847 righe): verificati 4 punti concordati

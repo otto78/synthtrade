@@ -174,14 +174,14 @@ const PAGE_SIZE = 50;
                       <table class="trades-table">
                         <thead>
                           <tr>
-                            <th>Ora</th><th>Pair</th><th>Tipo</th><th>Entry</th><th>Exit</th>
+                            <th>Data/Ora</th><th>Pair</th><th>Tipo</th><th>Entry</th><th>Exit</th>
                             <th>Q.tà</th><th>Durata</th><th>P&L</th><th>P&L %</th><th>Motivo</th>
                           </tr>
                         </thead>
                         <tbody>
                           @for (t of sessionTrades(); track trackByTrade($index, t)) {
                             <tr>
-                              <td class="cell-date">{{ t.entry_time | date:'HH:mm' }}</td>
+                              <td class="cell-date">{{ t.entry_time | date:'dd/MM/yy HH:mm' }}</td>
                               <td class="cell-pair">{{ t.symbol }}</td>
                               <td class="cell-side" [ngClass]="{ buy: t.side === 'BUY', sell: t.side === 'SELL' }">{{ t.side }}</td>
                               <td class="cell-price">{{ t.entry_price | number:'1.2-6' }}</td>

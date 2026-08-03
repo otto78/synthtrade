@@ -67,6 +67,12 @@ async def _save_open_position_to_db(pos, db_session_id: str,
                     "candlestick_pattern": supervisor_context.get("candlestick_pattern"),
                     "volume_anomaly": supervisor_context.get("volume_anomaly"),
                     "support_resistance_data": supervisor_context.get("support_resistance_data"),
+                    # TASK-1241: intelligence fields — erano sempre NULL perché non inclusi qui.
+                    # Richiedono che il router li aggiunga al supervisor_context al momento dell'ingresso.
+                    "signal_score": supervisor_context.get("signal_score"),
+                    "funding_rate_at_entry": supervisor_context.get("funding_rate_at_entry"),
+                    "fear_greed_at_entry": supervisor_context.get("fear_greed_at_entry"),
+                    "cvd_trend_at_entry": supervisor_context.get("cvd_trend_at_entry"),
                 })
             
             supabase.table("scalping_trades").insert(insert_data).execute()

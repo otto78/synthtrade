@@ -1,11 +1,13 @@
-"""MomentumBaseStrategy — strategia semplice prezzo vs EMA20.
+"""MomentumBaseStrategy — strategia semplice prezzo vs EMA9.
 
 Genera segnali piu' frequenti delle altre strategie:
-- Prezzo > EMA20 + margine 0.1% → BUY (confidence 0.5)
-- Prezzo < EMA20 - margine 0.1% → SELL (confidence 0.5)
+- Prezzo > EMA9 + margine 0.01% → BUY (confidence 0.7)
+- Prezzo <= EMA9 + margine → NONE (long-only: no SELL/SHORT in EU)
 
 Utile come fallback per far partire i trade in attesa
 che condizioni ideali si presentino (v2.0 architecture).
+
+TASK-1240: segnali SELL rimossi (permanentemente disabilitati in EU spot).
 """
 
 import logging
@@ -60,12 +62,8 @@ class MomentumBaseStrategy(AbstractScalpingStrategy):
                 confidence=0.7,  # Aumentato da 0.5 per passare combined confidence check
                 source=self.name,
             )
-        elif close < ema - margin:
-            return TechnicalSignal(
-                type="SELL",
-                confidence=0.7,  # Aumentato da 0.5 per passare combined confidence check
-                source=self.name,
-            )
 
-        logger.debug(f"Momentum signal NONE: price within margin band")
+        # TASK-1240: segnali SELL rimossi — long-only engine (EU spot, no short consentito).
+        # Il blocco SELL nell'aggregator era già permanente; qui puliamo alla fonte.
+        logger.debug(f"Momentum signal NONE: price within margin band or below EMA")
         return TechnicalSignal(type="NONE", confidence=0.0, source=self.name)

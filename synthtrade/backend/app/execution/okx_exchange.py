@@ -443,7 +443,9 @@ class OkxExchangeAdapter:
                         continue
                     ticker = cast(dict[str, Any], ticker_data.get("data", [{}])[0])
                     price = float(ticker.get("last") or 0.0)
-                    change_24h_pct = float(ticker.get("chg") or 0.0) * 100
+                    # TASK-1239: OKX non restituisce "chg" — calcolo manuale da open24h e last.
+                    _open24h = float(ticker.get("open24h") or 0.0)
+                    change_24h_pct = round(((price - _open24h) / _open24h * 100) if _open24h > 0 else 0.0, 2)
 
                 # Get 1h candles for 1h change
                 candles_path = f"/api/v5/market/candles?instId={btc_symbol}&bar=1H&limit=2"
@@ -742,7 +744,9 @@ class OkxExchangeAdapter:
                                 "ordType": fill.get("ordType", "oco"),
                                 "side": fill.get("side"),
                                 "instId": fill.get("instId"),
-                                "fillTime": fill.get("fillTime"),
+                                # OKX /api/v5/trade/fills usa "ts" come timestamp (ms),
+                                # non "fillTime" (che è solo sulle algo orders).
+                                "fillTime": fill.get("fillTime") or fill.get("ts"),
                             })
                         if results:
                             return results
@@ -929,9 +933,43 @@ class OkxExchangeAdapter:
             return []
 
     async def cancel_open_exit_orders(self, symbol: SymbolRef) -> None:
-        """Cancel all pending regular orders via direct REST (TASK-1164)."""
+        """Cancel all pending exit orders (regular + OCO algo) via direct REST."""
+        total_cancelled = 0
+
+        # 1. Cancel pending OCO algo orders (TASK-1237)
         try:
-            # 1. Fetch pending orders
+            a_path = "/api/v5/trade/orders-algo-pending"
+            a_qs = f"instType=SPOT&instId={symbol.okx}&ordType=oco"
+            a_url = settings.OKX_BASE_URL.rstrip("/") + a_path
+            a_headers = self._sign_headers("GET", a_path + "?" + a_qs)
+            a_params = {"instType": "SPOT", "instId": symbol.okx, "ordType": "oco"}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                a_resp = await client.get(a_url, headers=a_headers, params=a_params)
+                if a_resp.status_code == 200:
+                    a_data = a_resp.json()
+                    if a_data.get("code") == "0":
+                        for o in a_data.get("data", []):
+                            algo_id = o.get("algoId")
+                            if not algo_id:
+                                continue
+                            try:
+                                ca_path = "/api/v5/trade/cancel-algos"
+                                ca_body = {"instId": symbol.okx, "algoId": algo_id, "ordType": "oco"}
+                                ca_url = settings.OKX_BASE_URL.rstrip("/") + ca_path
+                                ca_headers = self._sign_headers("POST", ca_path, json.dumps(ca_body))
+                                async with httpx.AsyncClient(timeout=10.0) as ca_client:
+                                    ca_resp = await ca_client.post(ca_url, headers=ca_headers, json=ca_body)
+                                    if ca_resp.status_code == 200 and ca_resp.json().get("code") == "0":
+                                        total_cancelled += 1
+                                    else:
+                                        logger.warning("OKX cancel algo %s failed: %s", algo_id, ca_resp.text)
+                            except Exception as ce:
+                                logger.warning("OKX cancel_algo %s failed: %s", algo_id, ce)
+        except Exception as ae:
+            logger.warning("OKX cancel algo check failed for %s: %s", symbol.okx, ae)
+
+        # 2. Cancel regular pending orders (existing logic)
+        try:
             path = "/api/v5/trade/orders-pending"
             query_string = f"instType=SPOT&instId={symbol.okx}"
             url = settings.OKX_BASE_URL.rstrip("/") + path
@@ -939,41 +977,31 @@ class OkxExchangeAdapter:
             params = {"instType": "SPOT", "instId": symbol.okx}
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url, headers=headers, params=params)
-                if resp.status_code != 200:
-                    logger.warning("OKX cancel_open_exit_orders fetch HTTP %s for %s", resp.status_code, symbol.okx)
-                    return
-                data = resp.json()
-                if data.get("code") != "0":
-                    logger.warning("OKX cancel_open_exit_orders fetch error %s for %s", data.get("msg"), symbol.okx)
-                    return
-                raw_orders = data.get("data", [])
-
-            if not raw_orders:
-                return
-
-            # 2. Cancel each order
-            cancelled = 0
-            for o in raw_orders:
-                order_id = o.get("ordId")
-                if not order_id:
-                    continue
-                try:
-                    c_path = "/api/v5/trade/cancel-order"
-                    c_url = settings.OKX_BASE_URL.rstrip("/") + c_path
-                    c_body = {"instType": "SPOT", "instId": symbol.okx, "ordId": order_id}
-                    c_headers = self._sign_headers("POST", c_path, json.dumps(c_body))
-                    async with httpx.AsyncClient(timeout=10.0) as client:
-                        c_resp = await client.post(c_url, headers=c_headers, json=c_body)
-                        if c_resp.status_code == 200 and c_resp.json().get("code") == "0":
-                            cancelled += 1
-                        else:
-                            logger.warning("OKX cancel order %s failed: %s", order_id, c_resp.text)
-                except Exception as ce:
-                    logger.warning("OKX cancel_order %s failed: %s", order_id, ce)
-            if cancelled:
-                logger.info("OKX: cancelled %d open orders for %s", cancelled, symbol.okx)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("code") == "0":
+                        for o in data.get("data", []):
+                            order_id = o.get("ordId")
+                            if not order_id:
+                                continue
+                            try:
+                                c_path = "/api/v5/trade/cancel-order"
+                                c_url = settings.OKX_BASE_URL.rstrip("/") + c_path
+                                c_body = {"instType": "SPOT", "instId": symbol.okx, "ordId": order_id}
+                                c_headers = self._sign_headers("POST", c_path, json.dumps(c_body))
+                                async with httpx.AsyncClient(timeout=10.0) as client:
+                                    c_resp = await client.post(c_url, headers=c_headers, json=c_body)
+                                    if c_resp.status_code == 200 and c_resp.json().get("code") == "0":
+                                        total_cancelled += 1
+                                    else:
+                                        logger.warning("OKX cancel order %s failed: %s", order_id, c_resp.text)
+                            except Exception as ce:
+                                logger.warning("OKX cancel_order %s failed: %s", order_id, ce)
         except Exception as e:
-            logger.warning("OKX cancel_open_exit_orders failed for %s: %s", symbol.okx, e)
+            logger.warning("OKX cancel regular orders failed for %s: %s", symbol.okx, e)
+
+        if total_cancelled:
+            logger.info("OKX: cancelled %d open exit orders for %s", total_cancelled, symbol.okx)
 
     async def _direct_fetch_order_detail(self, order_id: str) -> Optional[dict[str, Any]]:
         """Fetch order details via direct OKX REST (TASK-1164)."""

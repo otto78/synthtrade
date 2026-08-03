@@ -100,7 +100,7 @@
 
 ---
 
-### TASK-1242 — Trend Filter: bloccare BUY quando BTC sotto EMA20 4h 🟡 Todo
+### TASK-1242 — Trend Filter: bloccare BUY quando BTC sotto EMA20 4h ✅ Completato
 
 > **Priorità**: ALTA (Fase 2)
 > **File**: `synthtrade/backend/app/scalping/engine/signal_aggregator.py`

@@ -367,13 +367,35 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                             await broadcast_scalping_event("error", {"code": "MAX_DRAWDOWN", "message": f"Max drawdown exceeded. Trading bloccato."})
                             continue
 
-                        # --- COMPILE SUPERVISOR CONTEXT ---
-                        supervisor_context = {}
+                        macro = {}
                         try:
                             exchange = _execution_state.get("exchange")
                             if exchange:
                                 macro = await exchange.get_btc_macro_context()
-                                supervisor_context.update(macro)
+                        except Exception as e_mac:
+                            logger.warning(f"Failed to fetch macro context for filter: {e_mac}")
+
+                        # TASK-1242: Macro Trend Filter (Fase 2)
+                        # Blocca BUY se BTC < EMA20 4h o in forte dump orario
+                        if side == "BUY":
+                            btc_price = macro.get("btc_price_at_entry", 0.0)
+                            ema20_4h = macro.get("btc_ema20_4h", 0.0)
+                            change_1h = macro.get("btc_change_1h_pct", 0.0)
+                            
+                            if ema20_4h > 0 and btc_price < ema20_4h:
+                                logger.warning(f"MACRO TREND FILTER: BTC price {btc_price} < EMA20 4h {ema20_4h}. Blocking BUY.")
+                                await broadcast_scalping_event("warn", {"code": "MACRO_TREND", "reason": f"BTC ({btc_price}) sotto EMA20 4h ({ema20_4h})"})
+                                continue
+                                
+                            if change_1h < -0.5:
+                                logger.warning(f"MACRO TREND FILTER: BTC 1h change {change_1h}% < -0.5%. Blocking BUY.")
+                                await broadcast_scalping_event("warn", {"code": "MACRO_TREND", "reason": f"Forte discesa oraria BTC ({change_1h}%)"})
+                                continue
+
+                        # --- COMPILE SUPERVISOR CONTEXT ---
+                        supervisor_context = {}
+                        try:
+                            supervisor_context.update(macro)
 
                             supervisor_context["candlestick_pattern"] = getattr(decision, "ta_patterns", None)
                             supervisor_context["volume_anomaly"] = getattr(decision, "vol_anomaly", False)

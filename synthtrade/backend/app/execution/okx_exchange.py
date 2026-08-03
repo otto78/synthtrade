@@ -473,13 +473,37 @@ class OkxExchangeAdapter:
                 elif change_1h_pct > 2.0:
                     regime = "rally"
 
+                # Get 4h candles for EMA20
+                ema20_4h = 0.0
+                try:
+                    candles_4h_path = f"/api/v5/market/candles?instId={btc_symbol}&bar=4H&limit=100"
+                    candles_4h_url = settings.OKX_BASE_URL.rstrip("/") + candles_4h_path
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        candles_4h_resp = await client.get(candles_4h_url)
+                        candles_4h_resp.raise_for_status()
+                        candles_4h_data = candles_4h_resp.json()
+                        if candles_4h_data.get("code") == "0":
+                            candles_4h = candles_4h_data.get("data", [])
+                            if candles_4h:
+                                # OKX returns newest first. Reverse to get oldest first.
+                                closes = [float(c[4] or 0) for c in reversed(candles_4h)]
+                                if closes:
+                                    ema20 = closes[0]
+                                    alpha = 2 / (20 + 1)
+                                    for close_val in closes[1:]:
+                                        ema20 = (close_val - ema20) * alpha + ema20
+                                    ema20_4h = ema20
+                except Exception as e_4h:
+                    logger.warning(f"Failed to fetch 4h candles for EMA20: {e_4h}")
+
                 return {
                     "btc_price_at_entry": price,
                     "btc_change_1h_pct": round(change_1h_pct, 2),
                     "btc_change_24h_pct": round(change_24h_pct, 2),
+                    "btc_ema20_4h": round(ema20_4h, 2),
                     "macro_regime": regime,
                 }
-            except Exception:
+            except Exception as e:
                 continue
         raise RuntimeError("Could not fetch BTC macro context from any endpoint")
 

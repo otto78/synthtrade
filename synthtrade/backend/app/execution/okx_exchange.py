@@ -978,7 +978,7 @@ class OkxExchangeAdapter:
                                 continue
                             try:
                                 ca_path = "/api/v5/trade/cancel-algos"
-                                ca_body = {"instId": symbol.okx, "algoId": algo_id, "ordType": "oco"}
+                                ca_body = [{"instId": symbol.okx, "algoId": algo_id}]
                                 ca_url = settings.OKX_BASE_URL.rstrip("/") + ca_path
                                 ca_headers = self._sign_headers("POST", ca_path, json.dumps(ca_body))
                                 async with httpx.AsyncClient(timeout=10.0) as ca_client:

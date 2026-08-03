@@ -374,16 +374,30 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                             if exchange:
                                 macro = await exchange.get_btc_macro_context()
                                 supervisor_context.update(macro)
-                            
+
                             supervisor_context["candlestick_pattern"] = getattr(decision, "ta_patterns", None)
                             supervisor_context["volume_anomaly"] = getattr(decision, "vol_anomaly", False)
-                            
-                            supervisor_context["regime_classified"] = getattr(decision, "regime", None)
+
+                            # TASK-1241: fix regime_classified — ExecutionDecision non ha .regime,
+                            # la fonte corretta è _execution_state["loop"]._current_regime.regime
+                            _loop = _execution_state.get("loop")
+                            _current_regime = getattr(_loop, "_current_regime", None) if _loop else None
+                            supervisor_context["regime_classified"] = (
+                                _current_regime.regime if _current_regime and hasattr(_current_regime, "regime") else None
+                            )
+
                             supervisor_context["strategy_rejection_reason"] = getattr(decision, "reason", None)
                             supervisor_context["signal_price"] = float(candle.close)
+
+                            # TASK-1241: persist signal_score — _ms è già disponibile in questo scope
+                            # (assegnato a L.277 prima del branch is_mean_reversion_override).
+                            # _ms è un SignalScore con .total (float -100..+100) e .breakdown (dict per collector).
+                            supervisor_context["signal_score"] = float(_ms.total) if _ms else None
+
                         except Exception as ctx_e:
                             logger.warning(f"Failed to compile supervisor context: {ctx_e}")
                         # ----------------------------------
+
 
                         # Mode and trade values
                         _mode = _execution_state["session"].get("mode", "paper")
@@ -543,30 +557,12 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                         source="execution_state",
                                     )
                                     
-                                    # TASK-1128: Calculate exact bracket quantity to avoid 51008.
-                                    # OKX deducts the taker fee in the base asset before the OCO goes live.
-                                    # Strategy: read the ACTUAL available balance from OKX (most reliable),
-                                    # fall back to estimated qty if the REST call fails.
-                                    bracket_qty = exec_qty  # safe initial fallback
-                                    if side == "BUY":
-                                        try:
-                                            # Ask OKX directly what balance is available right now
-                                            actual_bal = await exchange._balance_from_rest(sym_ref.base)
-                                            if actual_bal > 0:
-                                                bracket_qty = actual_bal
-                                                logger.info(f"[BRACKET_QTY] actual_balance={actual_bal:.6f} {sym_ref.base} (from REST) — using as bracket qty")
-                                            else:
-                                                # REST returned 0 (unlikely) — estimate fee
-                                                estimated_fee = exec_qty * entry_fee_pricing
-                                                bracket_qty = exec_qty - estimated_fee
-                                                logger.warning(f"[BRACKET_QTY] balance=0 from REST, using estimate: exec_qty={exec_qty:.6f} - fee={estimated_fee:.6f} = {bracket_qty:.6f}")
-                                        except Exception as _bal_e:
-                                            estimated_fee = exec_qty * entry_fee_pricing
-                                            bracket_qty = exec_qty - estimated_fee
-                                            logger.warning(f"[BRACKET_QTY] balance REST failed ({_bal_e}), using estimate: {bracket_qty:.6f}")
-                                        bracket_qty = round(bracket_qty, 8)
+                                    # FIX: Use exec_qty from the market order fill (the actual BTC received).
+                                    # DO NOT read _balance_from_rest() — that returns the FULL spot balance.
+                                    # DO NOT subtract estimated fees — the fee is in EUR (quote ccy) on OKX spot,
+                                    # so the full filled BTC amount is available for the bracket.
+                                    bracket_qty = round(exec_qty, 8)
 
-                                            
                                     bracket_req = ExitBracketRequest(
                                         symbol=sym_ref,
                                         side="sell" if side == "BUY" else "buy",
@@ -827,9 +823,9 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                     tp_price = entry_f * (1 + _net_to_gross_pct(_tp_cfg, _ef3, _xf3) / 100) if pos.side == "BUY" else entry_f * (1 - _net_to_gross_pct(_tp_cfg, _ef3, _xf3) / 100)
                     # TASK-1129: usa i veri prezzi TP/SL piazzati su OKX se disponibili
                     # (fallback al ricalcolo da percentuali per posizioni pre-fix / restore).
-                    if pos.sl_price is not None:
+                    if pos.sl_price is not None and float(pos.sl_price) > 0:
                         sl_price = float(pos.sl_price)
-                    if pos.tp_price is not None:
+                    if pos.tp_price is not None and float(pos.tp_price) > 0:
                         tp_price = float(pos.tp_price)
                     
                     # TASK-885: Calcola target netti TP/SL (fee tier round-trip)

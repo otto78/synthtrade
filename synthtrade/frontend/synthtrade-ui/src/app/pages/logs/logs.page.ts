@@ -535,7 +535,7 @@ export class LogsPage implements OnInit, OnDestroy {
     switch (reason) {
       case 'take_profit':      return 'Take Profit';
       case 'stop_loss':        return 'Stop Loss';
-      case 'stop_loss_secure': return '🔒 Stop Loss Secure';
+      case 'stop_loss_secure': return 'Stop Loss Breakeven';
       case 'bracket_filled':   return 'Bracket (unknown)';
       case 'bracket_unknown':  return 'Bracket (unknown)';
       case 'manual':           return 'Manual Close';

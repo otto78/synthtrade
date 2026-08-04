@@ -34,7 +34,7 @@ import { Position } from '../models/position.model';
         <!-- TASK-1243: Profit Lock badge — mostrato quando il break-even è stato attivato -->
         <div *ngIf="position.profit_lock_active" class="profit-lock-banner">
           <span class="lock-icon">🔒</span>
-          <span class="lock-text">PROFIT LOCK ATTIVO</span>
+          <span class="lock-text">STOP LOSS BREAKEVEN ATTIVO</span>
           <span class="lock-sl">SL → {{ position.stop_loss_price | number:'1.2-2' }}</span>
         </div>
         
@@ -93,7 +93,7 @@ import { Position } from '../models/position.model';
           </div>
           <div class="profit-lock-status" *ngIf="position.profit_lock_active">
             <span class="lock-status-icon">🔒</span>
-            <span class="lock-status-text">Breakeven superato! Qualsiasi cosa accada, non perdi soldi.</span>
+            <span class="lock-status-text">Stop Loss Breakeven attivato — questo trade non può chiudersi in perdita.</span>
           </div>
         </div>
       </div>

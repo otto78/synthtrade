@@ -153,9 +153,9 @@ async def scalping_websocket(ws: WebSocket):
         tp_gross_pct = _net_to_gross_pct(tp_pct_cfg, _ef, _xf) / 100
         sl_price = entry_f * (1 - sl_gross_frac) if pos.side == "BUY" else entry_f * (1 + sl_gross_frac)
         tp_price = entry_f * (1 + tp_gross_pct) if pos.side == "BUY" else entry_f * (1 - tp_gross_pct)
-        if pos.sl_price is not None:
+        if pos.sl_price is not None and float(pos.sl_price) > 0:
             sl_price = float(pos.sl_price)
-        if pos.tp_price is not None:
+        if pos.tp_price is not None and float(pos.tp_price) > 0:
             tp_price = float(pos.tp_price)
 
         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})

@@ -111,7 +111,23 @@ async def _live_close_position(exchange, pos, qty: float) -> float:
     if close_res is None:
         raise RuntimeError(f"Failed to close live position for {sym_str} after 3 attempts")
 
-    close_price = float(close_res.average_price or pos.entry_price)
+    close_price = float(close_res.average_price or 0.0)
+    # TASK-1186: OKX async market orders might return avgPx="" (0.0). Poll via GET.
+    if close_price <= 0 and hasattr(exchange, 'get_order_by_id') and close_res.order_id:
+        try:
+            await asyncio.sleep(0.5)
+            poll_res = await exchange.get_order_by_id(sym_ref, close_res.order_id)
+            avg_px = float(poll_res.get("avgPx") or 0.0)
+            if avg_px > 0:
+                close_price = avg_px
+                logger.info(f"Retrieved async avgPx {close_price} for {close_res.order_id}")
+        except Exception as e:
+            logger.warning(f"Failed to poll async avgPx for {close_res.order_id}: {e}")
+
+    # Fallback to entry_price only if polling fails
+    if close_price <= 0:
+        close_price = float(pos.entry_price)
+
     logger.info(f"LIVE Market Close executed @ {close_price} [{settings.EXCHANGE_PROVIDER.upper()}]")
     return close_price
 
@@ -344,7 +360,7 @@ async def _on_uds_reconnect_sync():
             "quantity": qty_f,
             "pnl": round(pnl, 2),
             "pnl_pct": round(pnl_pct, 2),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": reconcile.get("fill_time") or datetime.now(timezone.utc).isoformat(),
             "signal_reason": reason,
         })
 
@@ -358,7 +374,7 @@ async def _on_uds_reconnect_sync():
             "pnl_pct": round(pnl_pct, 2),
             "source": reconcile["source"],
             "reason": reason,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": reconcile.get("fill_time") or datetime.now(timezone.utc).isoformat(),
         })
 
     except Exception as e:

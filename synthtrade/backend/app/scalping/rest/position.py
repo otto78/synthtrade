@@ -86,8 +86,8 @@ async def get_position() -> Optional[Dict]:
     # TASK-1127: Fees are now positive for base level accounts
     sl_price_calc = _sl_price_from_entry(entry, pos.side, sl_pct, _ef_p, _xf_p)[0]
     tp_price_calc = entry * (1 + _net_to_gross_pct(tp_pct, _ef_p, _xf_p) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(tp_pct, _ef_p, _xf_p) / 100)
-    stop_loss_price = float(pos.sl_price) if pos.sl_price is not None else sl_price_calc
-    take_profit_price = float(pos.tp_price) if pos.tp_price is not None else tp_price_calc
+    stop_loss_price = float(pos.sl_price) if pos.sl_price is not None and float(pos.sl_price) > 0 else sl_price_calc
+    take_profit_price = float(pos.tp_price) if pos.tp_price is not None and float(pos.tp_price) > 0 else tp_price_calc
 
     return {
         "symbol": pos.symbol,

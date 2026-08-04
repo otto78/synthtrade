@@ -134,17 +134,17 @@ class TestStrategySelector:
         strategy = selector.select(regime)
         assert strategy.name == "rsi_bollinger"
 
-    def test_selects_stoch_rsi_for_volatile(self):
+    def test_selects_vwap_reversion_for_volatile(self):
         selector = StrategySelector()
         regime = MarketRegime(regime="volatile", confidence=0.7)
         strategy = selector.select(regime)
-        assert strategy.name == "stoch_rsi_bb_squeeze"
+        assert strategy.name == "vwap_reversion"
 
-    def test_default_is_momentum_base(self):
+    def test_default_is_vwap_reversion(self):
         selector = StrategySelector()
         regime = MarketRegime(regime="unknown", confidence=0.5)
         strategy = selector.select(regime)
-        assert strategy.name == "momentum_base"
+        assert strategy.name == "vwap_reversion"
 
     def test_custom_map_override(self):
         custom = {"trending_up": "rsi_bollinger", "ranging": "ema_cross"}

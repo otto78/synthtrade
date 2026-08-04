@@ -67,11 +67,8 @@ import { ConfigService } from '../../core/services/config.service';
             <label>Strategia</label>
             <select [(ngModel)]="selectedStrategy" class="select">
               <option value="ema_cross">EMA Cross</option>
-              <option value="rsi_bollinger">RSI con Bollinger</option>
-              <option value="stoch_rsi_bb_squeeze">Stoch RSI con Bollinger Bands Squeeze</option>
+              <option value="rsi_bollinger">RSI + Bollinger</option>
               <option value="vwap_reversion">VWAP Reversion</option>
-              <option value="momentum_base">Momentum Base</option>
-              <option value="scalping_v2">Scalping</option>
             </select>
           </div>
 
@@ -498,7 +495,7 @@ export class SessionControlsComponent implements OnInit {
   session: ScalpingSession | null = null;
   sessionId: string | null = null;
   selectedSymbol = 'BTC-EUR';
-  selectedStrategy = 'momentum_base';
+  selectedStrategy = 'vwap_reversion';
   
   /** Trade value: restore from localStorage or default 100 */
   tradeValue: number = (() => {

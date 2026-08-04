@@ -17,11 +17,11 @@ logger = logging.getLogger(__name__)
 
 # TASK-904: fallback hardcoded — il mapping reale viene da ScalpingConfigLoader
 _FALLBACK_REGIME_ALLOWED_STRATEGIES: Dict[str, List[str]] = {
-    "ranging":        ["rsi_bollinger", "momentum_base", "stoch_rsi_bb_squeeze"],
-    "volatile":       ["stoch_rsi_bb_squeeze", "momentum_base"],
+    "ranging":        ["rsi_bollinger"],
+    "volatile":       ["vwap_reversion"],
     "trending_up":    ["ema_cross"],
-    "trending_down":  ["ema_cross"],
-    "unknown":        ["momentum_base"],
+    "trending_down":  ["rsi_bollinger"],
+    "unknown":        ["vwap_reversion"],
 }
 
 from app.config import settings
@@ -330,9 +330,9 @@ class SupervisorScheduler:
             # TASK-904: legge da config_loader (DB-driven) con fallback hardcoded
             try:
                 from app.scalping.config_loader import get_scalping_config
-                allowed = get_scalping_config().regime_allowed_strategies.get(current_regime, ["momentum_base"])
+                allowed = get_scalping_config().regime_allowed_strategies.get(current_regime, ["vwap_reversion"])
             except Exception:
-                allowed = _FALLBACK_REGIME_ALLOWED_STRATEGIES.get(current_regime, ["momentum_base"])
+                allowed = _FALLBACK_REGIME_ALLOWED_STRATEGIES.get(current_regime, ["vwap_reversion"])
             if decision.new_strategy not in allowed:
                 logger.warning(
                     f"⛔ Supervisor ha proposto '{decision.new_strategy}' "

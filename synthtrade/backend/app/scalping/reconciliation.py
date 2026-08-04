@@ -104,11 +104,20 @@ async def _reconcile_position_with_exchange(
                 total_bal = None
 
         if total_bal is not None and total_bal >= min_qty:
+            # TASK-1237: confronto con la quantità del trade, non total_bal >= min_qty.
+            # total_bal può includere BTC accumulato da altre attività.
+            # Se total_bal è vicino a quantity (±20%), la posizione è ancora aperta.
+            diff_ratio = abs(total_bal - quantity) / quantity if quantity > 0 else 1.0
+            if diff_ratio <= 0.20:
+                logger.info(
+                    "[POSITION_RECONCILE] %s %s still open on exchange (balance=%.6f matches expected quantity=%.6f, diff=%.2f%%)",
+                    pos_side, symbol, total_bal, quantity, diff_ratio * 100,
+                )
+                return None
             logger.info(
-                "[POSITION_RECONCILE] %s %s still open on exchange (balance=%.6f >= minQty=%.6f)",
-                pos_side, symbol, total_bal, min_qty,
+                "[POSITION_RECONCILE] %s %s balance=%.6f (diff=%.2f%%) ≠ expected quantity=%.6f — position closed externally, proceeding to find fill price",
+                pos_side, symbol, total_bal, diff_ratio * 100, quantity,
             )
-            return None
 
         logger.info(
             "[POSITION_RECONCILE] %s %s balance=%.6f < minQty=%.6f — position closed externally",

@@ -33,8 +33,8 @@ _execution_state: Dict[str, Any] = {
         "session_max_loss_pct": 10,  # TASK-1230: % of starting_balance
         "max_drawdown": 10,
         "leverage": 10,
-        "stop_loss_pct": 1.05,
-        "take_profit_pct": 1.55,
+        "stop_loss_pct": 0.5,
+        "take_profit_pct": 0.8,
     },
     "pending_live_close": False,  # set to True when a live BUY is executed
     "session_load_guard": SessionLoadGuard(),

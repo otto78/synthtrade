@@ -161,6 +161,7 @@ class TestSupervisorScheduler:
             updater=mock_updater,
             score_engine=mock_engine,
         )
+        scheduler._running = True
 
         # Run single tick
         await scheduler._tick()

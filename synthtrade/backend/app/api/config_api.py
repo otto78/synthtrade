@@ -103,6 +103,7 @@ def set_mode(
 
     # Stop scalping session if mode is inconsistent
     # A live session cannot run in test mode and vice versa
+    # TASK-1237: Must close open positions before stopping (same as session stop handler)
     try:
         from app.scalping.router import _execution_state as scalping_state
 
@@ -114,9 +115,51 @@ def set_mode(
                     "Mode change %s → %s: stopping scalping session because its mode=%s is now inconsistent.",
                     old_mode, new_mode, sess_mode,
                 )
-                # Stop the scalping session
                 scalping_session["status"] = "idle"
-                
+
+                # TASK-1237: Close any open position before stopping session
+                pm = scalping_state.get("position_manager")
+                pos = pm.get_open() if pm else None
+                if pos:
+                    async def _close_pos_and_exchange():
+                        from app.scalping.trade_executor import _close_position_and_record
+                        from app.execution.exchange_models import SymbolRef
+                        _exchange = scalping_state.get("exchange")
+                        cp = float(pos.entry_price)
+                        try:
+                            if _exchange:
+                                sr = SymbolRef.from_okx(pos.symbol) if "-" in pos.symbol else SymbolRef.from_compact(pos.symbol)
+                                await _exchange.cancel_open_exit_orders(sr)
+                            await _close_position_and_record(pm, cp, pos, reason="mode_change")
+                            logger.info(f"Position force-closed @ {cp} due to mode change")
+                        except Exception as ce:
+                            logger.error(f"Force close failed during mode change: {ce}")
+                        finally:
+                            if _exchange:
+                                try:
+                                    await _exchange.close()
+                                except Exception:
+                                    pass
+                                scalping_state["exchange"] = None
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            loop.create_task(_close_pos_and_exchange(), name="mode-change-close")
+                    except RuntimeError:
+                        logger.warning("No running event loop for mode-change close")
+                else:
+                    # No position — close exchange inline
+                    exch = scalping_state.get("exchange")
+                    if exch:
+                        try:
+                            import asyncio
+                            loop = asyncio.get_event_loop()
+                            if loop.is_running():
+                                loop.create_task(exch.close(), name="close-exchange")
+                            scalping_state["exchange"] = None
+                        except Exception:
+                            pass
+
                 # Stop WS broadcast if running
                 if scalping_state.get("loop") or scalping_state.get("ws_client"):
                     from app.scalping.router import _stop_ws_broadcast

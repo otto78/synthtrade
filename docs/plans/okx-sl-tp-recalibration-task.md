@@ -1,5 +1,7 @@
 # TASK-OKX-RECAL — Ricalibrazione SL/TP su fee OKX reali
 
+> **⚠️ SUPERATO (29 luglio 2026):** Il fee reale confermato sull'account è taker **0,10%** (round-trip 0,20%), non 0,35% taker come ipotizzato da questo piano. Vedi `docs/recap/2026-07-29_recap-consolidamento-strategie.md` §1. I target attuali in produzione (SL netto 0,50% / TP netto 0,80%) sono sostenibili sul fee reale. Questo piano resta come documentazione storica ma **non va più seguito**.
+>
 > Data: 13 luglio 2026
 > Priorità: ALTA — bloccante prima di qualunque nuova sessione live/demo
 > Motivazione: la migrazione a Bybit si è fermata a TASK-1200.A (accesso API custom bloccato per account EU retail — solo "Connetti ad applicazioni di terze parti", nessuna chiave System-generated disponibile). Si resta su OKX. Lo SL a 0,3% non è mai stato ricalibrato sul fee reale (0,20% maker / 0,35% taker, confermato via screenshot "Il mio livello di commissioni"), nonostante fosse già documentato come matematicamente impossibile con questo fee.

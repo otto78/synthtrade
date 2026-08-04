@@ -130,7 +130,7 @@ class TestStrategySelectorDBDriven:
     def test_get_name_for_regime_from_config(self):
         selector = StrategySelector()
         regime = MarketRegime(regime="volatile", confidence=0.7)
-        assert selector.get_name_for_regime(regime) == "stoch_rsi_bb_squeeze"
+        assert selector.get_name_for_regime(regime) == "vwap_reversion"
 
     def test_unknown_regime_defaults_to_ema_cross(self):
         """Regime non mappato → fallback ema_cross."""
@@ -147,9 +147,9 @@ class TestSupervisorSchedulerRegimeAllowed:
         """Il fallback hardcoded nel scheduler corrisponde ai default."""
         from app.scalping.supervisor.supervisor_scheduler import _FALLBACK_REGIME_ALLOWED_STRATEGIES
         assert _FALLBACK_REGIME_ALLOWED_STRATEGIES == {
-            "ranging":        ["rsi_bollinger", "momentum_base", "stoch_rsi_bb_squeeze"],
-            "volatile":       ["stoch_rsi_bb_squeeze", "momentum_base"],
+            "ranging":        ["rsi_bollinger"],
+            "volatile":       ["vwap_reversion"],
             "trending_up":    ["ema_cross"],
-            "trending_down":  ["ema_cross"],
-            "unknown":        ["momentum_base"],
+            "trending_down":  ["rsi_bollinger"],
+            "unknown":        ["vwap_reversion"],
         }

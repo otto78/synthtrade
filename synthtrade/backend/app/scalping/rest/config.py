@@ -68,8 +68,8 @@ async def update_risk_config(config: Dict) -> Dict:
             "session_max_loss_pct": clean_cfg.get("session_max_loss_pct", 10),
             "max_drawdown": clean_cfg.get("max_drawdown", 10),
             "leverage": clean_cfg.get("leverage", 10),
-            "stop_loss_pct": clean_cfg.get("stop_loss_pct", 1.05),
-            "take_profit_pct": clean_cfg.get("take_profit_pct", 1.55),
+            "stop_loss_pct": clean_cfg.get("stop_loss_pct", 0.5),
+            "take_profit_pct": clean_cfg.get("take_profit_pct", 0.8),
         }
         supabase.table("scalping_risk_config").upsert(db_payload).execute()
         logger.info("Persisted risk config to Supabase")

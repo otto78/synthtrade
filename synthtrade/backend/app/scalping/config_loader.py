@@ -19,19 +19,19 @@ logger = logging.getLogger(__name__)
 # TASK-904: default mapping regime -> strategia (usato se DB non ha override)
 _DEFAULT_REGIME_STRATEGY_MAP = {
     "trending_up": "ema_cross",
-    "trending_down": "ema_cross",
+    "trending_down": "rsi_bollinger",
     "ranging": "rsi_bollinger",
-    "volatile": "stoch_rsi_bb_squeeze",
-    "unknown": "momentum_base",
+    "volatile": "vwap_reversion",
+    "unknown": "vwap_reversion",
 }
 
 # TASK-904: default mapping regime -> strategie consentite (usato se DB non ha override)
 _DEFAULT_REGIME_ALLOWED_STRATEGIES = {
-    "ranging":        ["rsi_bollinger", "momentum_base", "stoch_rsi_bb_squeeze"],
-    "volatile":       ["stoch_rsi_bb_squeeze", "momentum_base"],
+    "ranging":        ["rsi_bollinger"],
+    "volatile":       ["vwap_reversion"],
     "trending_up":    ["ema_cross"],
-    "trending_down":  ["ema_cross"],
-    "unknown":        ["momentum_base"],
+    "trending_down":  ["rsi_bollinger"],
+    "unknown":        ["vwap_reversion"],
 }
 
 

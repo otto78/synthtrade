@@ -78,9 +78,9 @@ async def _trade_processor(symbol: str, restore_mode: bool = False):
                 tp = entry * (1 + _net_to_gross_pct(_tp_cfg4, _ef4, _xf4) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(_tp_cfg4, _ef4, _xf4) / 100)
                 # TASK-1129: usa i veri prezzi TP/SL piazzati su OKX se disponibili
                 # (fallback al ricalcolo da percentuali per posizioni pre-fix / restore).
-                if pos.sl_price is not None:
+                if pos.sl_price is not None and float(pos.sl_price) > 0:
                     sl = float(pos.sl_price)
-                if pos.tp_price is not None:
+                if pos.tp_price is not None and float(pos.tp_price) > 0:
                     tp = float(pos.tp_price)
                 
                 gross_pnl = (current - entry) * qty if pos.side == "BUY" else (entry - current) * qty

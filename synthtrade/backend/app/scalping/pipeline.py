@@ -215,7 +215,7 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                             "quantity": qty_f,
                             "pnl": round(pnl, 2),
                             "pnl_pct": round(pnl_pct, 2),
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "timestamp": reconcile.get("fill_time") or datetime.now(timezone.utc).isoformat(),
                             "signal_reason": reconcile["reason"],
                         })
                         await broadcast_scalping_event("position_reconciled_externally", {

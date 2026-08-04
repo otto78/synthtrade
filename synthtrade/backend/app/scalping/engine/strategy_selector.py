@@ -39,10 +39,10 @@ class StrategySelector:
             # Fallback hardcoded se config_loader non disponibile
             return {
                 "trending_up": "ema_cross",
-                "trending_down": "ema_cross",
+                "trending_down": "rsi_bollinger",
                 "ranging": "rsi_bollinger",
-                "volatile": "stoch_rsi_bb_squeeze",
-                "unknown": "momentum_base",
+                "volatile": "vwap_reversion",
+                "unknown": "vwap_reversion",
             }
 
     def select(self, regime: MarketRegime) -> Optional[AbstractScalpingStrategy]:

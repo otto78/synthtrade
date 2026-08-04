@@ -8,7 +8,7 @@ import uuid
 from typing import Any, Callable, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 from app.scalping._state import _execution_state
 from app.scalping.broadcast import _now, broadcast_scalping_event
@@ -254,6 +254,17 @@ async def control_session(control: Dict) -> Dict:
         _execution_state["trade_history"] = []
         _execution_state["position_manager"] = PositionManager()
         
+        # TASK-1237: Sync risk_config from DB at session start to avoid stale defaults
+        try:
+            db_risk = get_supabase().table("scalping_risk_config").select("*").eq("id", 1).execute()
+            if db_risk.data:
+                db_config = db_risk.data[0]
+                _execution_state["risk_config"] = {
+                    k: v for k, v in db_config.items() if k not in ("id", "updated_at")
+                }
+                logger.info(f"Risk config synced from DB at session start: TP={db_config.get('take_profit_pct')}% SL={db_config.get('stop_loss_pct')}%")
+        except Exception as risk_sync_e:
+            logger.warning(f"Could not sync risk_config from DB (using defaults): {risk_sync_e}")
         # TASK-877: Inizializza fee tier (default per paper trading, sovrascritto per live/demo)
         if session["mode"] != "live" and not settings.exchange_demo:
             _execution_state["fee_tier"] = {"maker": 0.001, "taker": 0.001}  # default paper
@@ -454,6 +465,7 @@ async def control_session(control: Dict) -> Dict:
             close_price: float = float(pos.entry_price)
             _mode_stop = _execution_state["session"].get("mode", "paper")
             exchange_stop = _execution_state.get("exchange")
+            _close_failed = False
 
             # Use latest candle price if available for more accurate close.
             # PAPER MODE: only use candle price if it's from the mock generator
@@ -477,25 +489,11 @@ async def control_session(control: Dict) -> Dict:
                 try:
                     open_orders_before = await exchange_stop.get_open_orders(pos.symbol)
                     if open_orders_before:
-                        ccxt_sym = exchange_stop._get_ccxt_symbol(pos.symbol)
-                        for o in open_orders_before:
-                            try:
-                                await exchange_stop.client.cancel_order(o["id"], ccxt_sym)
-                            except Exception:
-                                pass
-                        logger.info(f"Cancellati {len(open_orders_before)} ordini OCO per stop sessione")
-
-                        # Attendi conferma cancellazione (race condition protection)
-                        await asyncio.sleep(0.5)
-                        for _retry in range(3):
-                            remaining = await exchange_stop.get_open_orders(pos.symbol)
-                            if not remaining:
-                                break
-                            await asyncio.sleep(0.3)
-                        else:
-                            logger.warning(f"OCO orders still active after 3 retries for {pos.symbol}")
+                        # TASK-1237: OKX adapter è REST-only (no CCXT). La cancellazione
+                        # OCO è gestita da cancel_open_exit_orders dentro _live_close_position.
+                        logger.info(f"Trovati {len(open_orders_before)} ordini aperti per {pos.symbol}")
                 except Exception as cancel_e:
-                    logger.warning(f"OCO cancel on stop failed (non-blocking): {cancel_e}")
+                    logger.warning(f"OCO check on stop failed (non-blocking): {cancel_e}")
 
             # Close position at market
             try:
@@ -503,9 +501,12 @@ async def control_session(control: Dict) -> Dict:
                 logger.info(f"Position force-closed at market @ {close_price} due to session stop")
             except Exception as e:
                 logger.error(f"Error force closing position during session stop: {e}", exc_info=True)
+                _close_failed = True
                 if pos.status == "open" and _mode_stop != "live":
                     pm.close_position(Decimal(str(close_price)))
         
+        # Track close failure flag for live safety net below
+        _close_failed_live = pos and _close_failed and _mode_stop == "live"
         # Stop WS client and pipeline
         asyncio.create_task(
             _stop_ws_broadcast(),
@@ -522,7 +523,7 @@ async def control_session(control: Dict) -> Dict:
             _execution_state["supervisor_scheduler"].stop()
             _execution_state["supervisor_scheduler"] = None
         
-    # ── SESSION LOGGING: save log content to DB (deploy-safe) ──
+        # ── SESSION LOGGING: save log content to DB (deploy-safe) ──
         session_log_handler = _execution_state.pop("session_log_handler", None)
         mem_session_id = session.get("session_id")
         db_sid_for_log = session.get("db_session_id")
@@ -546,6 +547,24 @@ async def control_session(control: Dict) -> Dict:
             session_log_handler.detach()
         # Clear session_id from log context
         SessionContextFilter.set_session_id(None)
+
+        # TASK-1237: if close failed in LIVE mode, DON'T clear session state or close exchange
+        # so the user can retry the stop or manually fix the position.
+        if _close_failed_live:
+            logger.critical(
+                f"LIVE position close FAILED for {pos.symbol}. "
+                f"Exchange kept open for manual intervention. "
+                f"Position is ORPHANED — check OKX and close manually."
+            )
+            # Keep exchange open, keep session state for retry
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "status": "error",
+                    "error": f"Failed to close position for {pos.symbol}. "
+                             f"Check OKX and close manually, then retry stop.",
+                }
+            )
 
         # Clear session state
         session["session_id"] = None

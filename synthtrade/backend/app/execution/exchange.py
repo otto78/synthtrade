@@ -546,3 +546,21 @@ class BinanceExchangeAdapter:
             logger.error(f"get_trade_fee failed for {symbol}: {e}")
             # Fallback al default 0.1% se l'endpoint fallisce
             return {"maker": 0.001, "taker": 0.001}
+
+    # TASK-1243: stub — Binance legacy adapter non supporta amend-algos OCO
+    async def amend_exit_bracket_stop_loss(
+        self,
+        symbol,
+        algo_id: str,
+        new_sl_trigger_px: float,
+        req_id: str | None = None,
+    ) -> dict:
+        """Not supported on Binance legacy adapter (TASK-1243).
+
+        OKX-specific OCO amend does not have a Binance equivalent.
+        Raises NotImplementedError to prevent silent no-ops.
+        """
+        raise NotImplementedError(
+            "amend_exit_bracket_stop_loss is not supported on BinanceExchangeAdapter. "
+            "break_even feature requires OKX provider."
+        )

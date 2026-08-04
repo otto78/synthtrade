@@ -51,6 +51,13 @@ class Position:
     # TASK-1185: OKX ordId dell'ordine market di apertura.
     # Distinto da order_id (legacy) — salvato come exchange_order_id in DB.
     entry_order_id: Optional[str] = None
+    # TASK-1243: Break-even profit lock state.
+    # break_even_triggered è una transizione MONOTONA (false -> true, mai il contrario).
+    # Aggiornata SOLO dopo conferma HTTP da OKX (amend_exit_bracket_stop_loss).
+    # Persistita in DB per evitare un secondo amend dopo restart.
+    break_even_triggered: bool = False
+    break_even_activated_at: Optional[datetime] = None
+    break_even_sl_price: Optional[Decimal] = None
 
 
 class PositionManager:

@@ -7,6 +7,25 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.4.26] — 2026-08-04
+
+### Added
+- **TASK-1243 — Break-even profit lock OCO OKX:** quando la posizione raggiunge +0.15% netto (circa +0.35% lordo con fee taker 0.10%+0.10%), il sistema amenda lo SL del bracket OCO esistente tramite `POST /api/v5/trade/amend-algos` portandolo a un target di +0.05% netto. L'identità dell'ordine è sempre l'`algoId` esatto (mai match per simbolo/lato). La feature è off-by-default (`BREAK_EVEN_ENABLED=false` in `scalping_runtime_config`).
+- **`app/scalping/break_even.py`:** nuovo modulo autonomo con logica trigger, quantizzazione tick, lock async per-algoId, amend OKX, aggiornamento memoria/DB/WS. Transizione `break_even_triggered` monotona (false→true, mai indietro).
+- **`amend_exit_bracket_stop_loss()`** su `OkxExchangeAdapter`: POST `/api/v5/trade/amend-algos` con doppio check `code=="0"` e `sCode=="0"`, `newSlOrdPx="-1"` (market stop), `reqId` tracciato nei log.
+- **Schema DB:** colonne `break_even_triggered`, `break_even_activated_at`, `break_even_sl_price` su `scalping_trades`.
+- **Restore startup:** `main.py` ripristina i 3 campi break_even dal DB per impedire un secondo amend dopo restart.
+- **Broadcast WS:** evento `trailing_stop_activated` e campo `profit_lock_active` in ogni `position_update`.
+- **22 test automatici** verdi in `tests/test_task_1243.py` (pricing, trigger, sicurezza, adapter OKX, DB, restore).
+- **Script spike:** `scripts/test_okx_amend_oco.py` per validazione OKX Demo.
+
+### Verified — Prova live 2026-08-04
+Sessione `6701e55b`, algoId `3802582373171404800`, BTC-EUR:
+- Entry 55154.6 EUR → trigger a 55368.0 EUR (net_pct=+0.186%) → SL amendato da 54988.75 a **55292.70** EUR in 0.77s
+- Trade chiuso a 55291.0 EUR → **PnL +0.01 EUR (+0.05%)** — senza break-even sarebbe stato ~-0.06 EUR se SL colpito
+
+---
+
 ## [1.4.25] — 2026-08-04
 
 ### Added

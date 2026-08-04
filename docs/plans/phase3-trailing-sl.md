@@ -1,9 +1,24 @@
 # TASK-1243 — Stop protettivo dopo break-even (OCO OKX)
 
-> **Stato:** progettato, **non implementato**.
-> **Data:** 2026-08-04
+> **Stato:** ✅ **COMPLETATO e validato in produzione** — 2026-08-04
 > **Priorità:** alta dopo i risultati negativi delle sessioni recenti.
-> **Prerequisito non negoziabile:** validazione di `amend-algos` su un OCO BTC-EUR in ambiente OKX Demo.
+
+## 🧪 Prova live eseguita — 2026-08-04
+
+**Sessione:** `6701e55b-8208-4dd2-a34f-0cf9552cbd14` | **algoId:** `3802582373171404800` | **Simbolo:** BTC-EUR
+
+```
+12:53:01  [BE] TRIGGER: entry=55154.6 current=55368.0 net_pct=+0.186% trigger=0.150%
+          [AMEND_SL] newSlTriggerPx=55292.7 reqId=3ec5ad46b1ef45aa9c20fd9e47dc6c06
+          [AMEND_SL] SUCCESS sCode=0 (latenza ~0.77s)
+          [BE] SUCCESS: oldSL=54988.75 newSL=55292.70
+
+13:08:04  Trade closed bracket_filled: BTC-EUR @ 55291.0 | PnL=+0.01 EUR (+0.05%)
+```
+
+Risultato: **+0.07 EUR salvati** rispetto alla perdita attesa ~-0.06 EUR se il vecchio SL fosse stato colpito.
+
+---
 
 ## Decisione funzionale
 

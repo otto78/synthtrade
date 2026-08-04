@@ -262,3 +262,11 @@ class ExchangeAdapterProtocol(Protocol):
     ) -> list[dict[str, Any]]: ...
     # TASK-1186: fetch singolo ordine market per ordId — usato per recuperare avgPx reale post-fill
     async def get_order_by_id(self, symbol: SymbolRef, ord_id: str) -> dict[str, Any]: ...
+    # TASK-1243: amend SL di un OCO esistente (break-even profit lock)
+    async def amend_exit_bracket_stop_loss(
+        self,
+        symbol: SymbolRef,
+        algo_id: str,
+        new_sl_trigger_px: float,
+        req_id: str | None = None,
+    ) -> dict[str, Any]: ...

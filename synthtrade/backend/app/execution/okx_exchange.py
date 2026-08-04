@@ -691,6 +691,88 @@ class OkxExchangeAdapter:
             logger.warning("[GET_ORDER_BY_ID] Failed for ordId=%s: %s", ord_id, e)
             return {}
 
+    async def amend_exit_bracket_stop_loss(
+        self,
+        symbol: SymbolRef,
+        algo_id: str,
+        new_sl_trigger_px: float,
+        req_id: str | None = None,
+    ) -> dict[str, Any]:
+        """TASK-1243: Amend the SL leg of an existing OCO bracket via POST /api/v5/trade/amend-algos.
+
+        Raises ExchangeOrderError if:
+        - HTTP call fails
+        - top-level code != "0"
+        - per-result sCode != "0"
+
+        The TP leg is left unchanged. newSlOrdPx="-1" means market stop (OKX default).
+        Only the exact algoId is touched — never match by symbol/side.
+
+        Returns:
+            Raw OKX response data dict (first element of "data" array).
+        """
+        import uuid as _uuid
+        path = "/api/v5/trade/amend-algos"
+        url = settings.OKX_BASE_URL.rstrip("/") + path
+
+        body: dict[str, Any] = {
+            "instId": symbol.okx,
+            "algoId": str(algo_id),
+            "newSlTriggerPx": str(round(new_sl_trigger_px, 8)),
+            "newSlOrdPx": "-1",  # market stop — no guaranteed price but immediate execution
+        }
+        if req_id:
+            body["reqId"] = str(req_id)
+        else:
+            body["reqId"] = str(_uuid.uuid4()).replace("-", "")[:32]
+
+        body_str = json.dumps(body)
+        headers = self._sign_headers("POST", path, body=body_str)
+        headers["Content-Type"] = "application/json"
+
+        logger.info(
+            "[AMEND_SL] algoId=%s instId=%s newSlTriggerPx=%s reqId=%s",
+            algo_id, symbol.okx, new_sl_trigger_px, body["reqId"],
+        )
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(url, headers=headers, content=body_str)
+                resp.raise_for_status()
+                payload = resp.json()
+        except httpx.HTTPStatusError as e:
+            raise ExchangeOrderError(
+                f"[AMEND_SL] HTTP {e.response.status_code} for algoId={algo_id}: {e}"
+            ) from e
+        except Exception as e:
+            raise ExchangeOrderError(
+                f"[AMEND_SL] Request failed for algoId={algo_id}: {e}"
+            ) from e
+
+        # Top-level code check
+        top_code = payload.get("code")
+        if top_code != "0":
+            raise ExchangeOrderError(
+                f"[AMEND_SL] OKX rejected amend algoId={algo_id}: "
+                f"code={top_code} msg={payload.get('msg')} body={body}"
+            )
+
+        # Per-result sCode check (OKX batch response pattern)
+        data_list = payload.get("data", [])
+        result = data_list[0] if data_list else {}
+        s_code = str(result.get("sCode", ""))
+        if s_code != "0":
+            raise ExchangeOrderError(
+                f"[AMEND_SL] OKX per-result error algoId={algo_id}: "
+                f"sCode={s_code} sMsg={result.get('sMsg')} reqId={body['reqId']}"
+            )
+
+        logger.info(
+            "[AMEND_SL] SUCCESS algoId=%s newSlTriggerPx=%s reqId=%s sCode=%s",
+            algo_id, new_sl_trigger_px, body["reqId"], s_code,
+        )
+        return result
+
     async def get_open_orders(self, symbol: str) -> list[dict[str, Any]]:
         """Return open orders for a symbol (both regular and algo/OCO).
 

@@ -62,6 +62,11 @@ class ScalpingConfigLoader:
             "SCALPING_REGIME_TREND_THRESHOLD_PCT":   settings.scalping.SCALPING_REGIME_TREND_THRESHOLD_PCT,
             "SCALPING_REGIME_VOLATILE_THRESHOLD":    settings.scalping.SCALPING_REGIME_VOLATILE_THRESHOLD,
             "SCALPING_TA_VOLUME_ANOMALY_MULTIPLIER": settings.scalping.SCALPING_TA_VOLUME_ANOMALY_MULTIPLIER,
+            # TASK-1243: Break-even profit lock — feature flag OFF by default.
+            # Attivare solo dopo validazione spike OKX Demo e almeno 20 trade paper.
+            "BREAK_EVEN_ENABLED": False,
+            "BREAK_EVEN_TRIGGER_NET_PCT": 0.15,  # circa +0.35% lordo con fee 0.10%+0.10%
+            "BREAK_EVEN_LOCK_NET_PCT": 0.05,      # nuovo SL circa +0.25% lordo
         }
         # TASK-904: regime -> strategia default (override via DB con chiavi REGIME_STRATEGY_*)
         for regime, strategy in _DEFAULT_REGIME_STRATEGY_MAP.items():

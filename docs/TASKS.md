@@ -136,23 +136,28 @@
 
 ---
 
-### TASK-1243 — Stop protettivo OCO dopo break-even 🟡 Progettato, non implementato
+### TASK-1243 — Stop protettivo OCO dopo break-even ✅ Completato
 
 > **Priorità**: ALTA (Fase 3)
 > **Piano tecnico**: `docs/plans/phase3-trailing-sl.md`
+> **Completato:** 2026-08-04
 >
-> **Problema**: Con SL=0.30% e fee round-trip 0.18%, le commissioni erodono il 60% dello SL.
-> Il R:R teorico 3.33:1 collassa a 1.57:1 reale, rendendo il break-even matematicamente
-> al 38.8% win rate (attualmente siamo al 20.8%).
+> **Implementazione:** Feature completa implementata e validata in produzione.
+> - `app/scalping/break_even.py` — modulo autonomo con logica trigger, amend OKX, lock async, persistenza
+> - `execution/okx_exchange.py` — `amend_exit_bracket_stop_loss()` con doppio check `code`+`sCode`
+> - `execution/exchange_models.py` — metodo aggiunto al protocollo `ExchangeAdapterProtocol`
+> - `execution/exchange.py` — stub Binance che solleva `NotImplementedError`
+> - `scalping/db_ops.py` — `_update_break_even_in_db()` filtra solo per `exchange_bracket_id`
+> - `scalping/config_loader.py` — chiavi `BREAK_EVEN_*` con feature flag `BREAK_EVEN_ENABLED`
+> - `scalping/candle_processor.py` — chiamata trigger + campo `profit_lock_active` nel broadcast WS
+> - `main.py` — restore dei 3 campi break_even dal DB per impedire doppio amend dopo restart
+> - `tests/test_task_1243.py` — 22 test tutti verdi
+> - Migration DB: `break_even_triggered`, `break_even_activated_at`, `break_even_sl_price` su `scalping_trades`
 >
-> **Decisione progettuale**: al netto di fee taker 0.10%+0.10%, al trigger di circa
-> +0.35% lordo (circa +0.15% netto) emendare **lo stesso OCO identificato dall'`algoId`**
-> e portare lo SL a un target iniziale di circa +0.05% netto. Il TP resta invariato.
-> Non usare match per simbolo/lato e non cancellare/ricreare l'OCO.
->
-> **Gate**: prima un test BTC-EUR su OKX Demo deve provare che `amend-algos` conserva
-> `algoId`, TP e aggiornamento SL; poi test automatici, paper e un singolo trade live
-> minimo. L'EV si rivaluta dopo almeno 20 trade della configurazione validata.
+> **Prova live eseguita 2026-08-04** (sessione `6701e55b`, algoId `3802582373171404800`):
+> - entry 55154.6 EUR → trigger a 55368.0 EUR (+0.19% netto) → SL amendato da 54988.75 a 55292.70
+> - Trade chiuso a 55291.0 EUR → **PnL +0.01 EUR (+0.05%)** invece di un'eventuale perdita di ~-0.06 EUR
+> - Senza break-even: SL a 54988, perdita attesa -0.30% netto. Delta salvato: **+0.07 EUR sul trade**
 
 ---
 

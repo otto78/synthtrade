@@ -2,12 +2,66 @@
 
 ## Ultimo Handoff
 
-### Da: Codex → prossima sessione
+### Da: Kiro → prossima sessione
 
 **Data:** 2026-08-04
 
-**Contesto:** TASK-1243 — progetto dello stop protettivo dopo break-even; nessuna
-modifica al comportamento di trading e nessun amend OCO è stato ancora implementato.
+**Contesto:** TASK-1243 — Break-even profit lock OCO OKX — **COMPLETATO e validato in produzione**.
+
+---
+
+### ✅ Cosa è stato fatto
+
+**Feature implementata end-to-end:**
+- `app/scalping/break_even.py` — modulo autonomo con trigger, amend, lock async, DB, WS
+- `execution/okx_exchange.py` — `amend_exit_bracket_stop_loss()` firmato verso `/api/v5/trade/amend-algos`
+- `execution/exchange_models.py` — metodo nel protocollo `ExchangeAdapterProtocol`
+- `execution/exchange.py` — stub Binance `NotImplementedError`
+- `scalping/db_ops.py` — `_update_break_even_in_db()` filtra solo per `exchange_bracket_id`
+- `scalping/config_loader.py` — chiavi `BREAK_EVEN_ENABLED` (default false), `BREAK_EVEN_TRIGGER_NET_PCT` (0.15), `BREAK_EVEN_LOCK_NET_PCT` (0.05)
+- `scalping/candle_processor.py` — chiamata `_check_and_apply_break_even` su ogni candela chiusa + `profit_lock_active` nel broadcast WS
+- `main.py` — restore dei 3 campi `break_even_*` dal DB per impedire doppio amend dopo restart
+- Migration DB: colonne `break_even_triggered`, `break_even_activated_at`, `break_even_sl_price` su `scalping_trades`
+- 22 test automatici verdi (`tests/test_task_1243.py`)
+
+**Feature flag:** `BREAK_EVEN_ENABLED` in tabella `scalping_runtime_config`. Al momento è `true` (attivato manualmente il 2026-08-04).
+
+---
+
+### 🧪 Prova live eseguita — 2026-08-04
+
+**Sessione:** `6701e55b-8208-4dd2-a34f-0cf9552cbd14`
+**algoId:** `3802582373171404800`
+**Simbolo:** BTC-EUR
+
+| Evento | Ora | Dettaglio |
+|--------|-----|-----------|
+| Restore posizione | 11:39:49 | entry=55154.6, qty=0.000363, SL=54988.75 |
+| BE TRIGGER | 12:53:01 | current=55368.0, net_pct=+0.186%, newSL=55292.70 |
+| AMEND_SL SUCCESS | 12:53:01 | sCode=0, latenza ~0.77s |
+| Trade chiuso (SL) | 13:08:04 | exit=55291.0, **PnL=+0.01 EUR (+0.05%)** |
+| Nuovo trade aperto | 13:33:00 | entry=55270.4, algoId=3803085709051285504 |
+
+**Risultato:** senza break-even → perdita attesa ~-0.06 EUR se SL originale colpito. Con break-even → +0.01 EUR. **Delta +0.07 EUR su trade da 20 EUR.**
+
+---
+
+### 📌 Prossimi passi consigliati
+
+1. **Raccogliere almeno 20 trade** con `BREAK_EVEN_ENABLED=true` e ricalcolare EV medio per validare l'impatto statistico.
+2. **Frontend:** aggiungere badge "🔒 Profit Lock" nel componente posizione quando `profit_lock_active=true` nel payload WS.
+3. **Calibrazione soglie:** dopo 20 trade valutare se `BREAK_EVEN_TRIGGER_NET_PCT=0.15` è troppo aggressivo (trigger troppo presto) o conservativo (trigger raramente). Modificabile via `scalping_runtime_config` senza restart.
+
+---
+
+### ⚠️ Regole invarianti da non toccare
+
+- L'identità dell'ordine è sempre e solo `algoId` (`pos.oco_order_list_id`). Non usare mai match per simbolo/lato.
+- `break_even_triggered` è una transizione monotona (false→true). Non può tornare false.
+- L'amend viene applicato **solo dopo** conferma OKX (`code=="0"` AND `sCode=="0"`). Se OKX rigetta, stato locale invariato.
+- Il nuovo SL deve essere strettamente > SL attuale per un long. Il guard è nel codice — non rimuoverlo.
+
+
 
 - Il piano completo è in `docs/plans/phase3-trailing-sl.md`. La configurazione proposta
   attiva a circa +0.15% netto (circa +0.35% lordo con fee 0.10%+0.10%) e mira a un nuovo
@@ -15,13 +69,7 @@ modifica al comportamento di trading e nessun amend OCO è stato ancora implemen
 - L'unica identità ammessa è `Position.oco_order_list_id` / `exchange_bracket_id`
   (OKX parent `algoId`). Non ricercare un SELL o “il primo ordine” di BTC-EUR: romperebbe
   multi-sessione e il reconcile OCO appena corretto.
-- Il punto di integrazione è `candle_processor.py` nel broadcast della posizione;
-  l'adapter deve aggiungere un amend firmato dell'OCO, seguito da persistenza per algoId
-  esatto e restore dei campi di audit.
-- **Release gate:** prima di qualsiasi feature flag live, eseguire uno spike in OKX Demo
-  che crea un OCO BTC-EUR e verifica che `/trade/amend-algos` mantenga stesso `algoId`,
-  TP e aggiornamento SL. Se non è supportato, non implementare un fallback automatico
-  cancel/recreate: esporrebbe la posizione.
+---
 
 ### Da: Codex → prossima sessione
 

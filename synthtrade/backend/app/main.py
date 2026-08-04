@@ -412,6 +412,18 @@ async def _restore_scalping_session(db) -> None:
                             pos_obj.tp_price = Decimal(str(ot["tp_price"]))
                         if ot.get("sl_price"):
                             pos_obj.sl_price = Decimal(str(ot["sl_price"]))
+                        # TASK-1243: ripristina stato break-even per evitare un secondo amend dopo restart
+                        pos_obj.break_even_triggered = bool(ot.get("break_even_triggered", False))
+                        if ot.get("break_even_activated_at"):
+                            from datetime import datetime, timezone
+                            try:
+                                pos_obj.break_even_activated_at = datetime.fromisoformat(
+                                    str(ot["break_even_activated_at"]).replace("Z", "+00:00")
+                                )
+                            except Exception:
+                                pos_obj.break_even_activated_at = None
+                        if ot.get("break_even_sl_price"):
+                            pos_obj.break_even_sl_price = Decimal(str(ot["break_even_sl_price"]))
                         # TASK-1187: ripristina entry_order_id (ordId market) e
                         # exchange_bracket_id (algoId OCO) dal DB per tracciabilità
                         # completa e disponibilità nei path di reconcile.

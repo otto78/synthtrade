@@ -223,3 +223,42 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
         await asyncio.to_thread(_db_op)
     except Exception as db_e:
         logger.warning(f"Failed to update closed position in DB: {db_e}")
+
+
+async def _update_break_even_in_db(
+    exchange_bracket_id: str,
+    new_sl_price: float,
+    activated_at: "datetime",
+) -> None:
+    """TASK-1243: Persist break-even activation in DB.
+
+    Aggiorna SOLO la riga identificata dall'algoId (exchange_bracket_id).
+    Non usa session_id né symbol come chiave — identity is the exact algoId.
+    Il campo sl_price viene aggiornato al nuovo valore per coerenza con il valore live su OKX.
+
+    Se la riga non viene trovata (e.g. trade non ancora inserito per race condition),
+    logga un warning ma NON solleva eccezione — lo stop su OKX è già stato modificato
+    con successo prima di questa chiamata, quindi la protezione è attiva.
+    """
+    try:
+        def _db_op():
+            supabase = get_supabase()
+            result = supabase.table("scalping_trades").update({
+                "break_even_triggered": True,
+                "break_even_activated_at": activated_at.isoformat() if hasattr(activated_at, "isoformat") else str(activated_at),
+                "break_even_sl_price": round(float(new_sl_price), 8),
+                "sl_price": round(float(new_sl_price), 2),
+            }).eq("exchange_bracket_id", str(exchange_bracket_id)).eq("status", "open").execute()
+            if not result.data:
+                logger.warning(
+                    "[BREAK_EVEN_DB] No open row found for exchange_bracket_id=%s — "
+                    "SL amend was confirmed on OKX but DB not updated. "
+                    "Will be corrected on next reconcile.",
+                    exchange_bracket_id,
+                )
+        await asyncio.to_thread(_db_op)
+    except Exception as db_e:
+        logger.error(
+            "[BREAK_EVEN_DB] Failed to persist break-even for bracket_id=%s: %s",
+            exchange_bracket_id, db_e,
+        )

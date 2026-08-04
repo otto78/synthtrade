@@ -18,6 +18,7 @@ from app.scalping.pricing import (
     _sl_gross_fraction,
 )
 from app.scalping.db_ops import _save_open_position_to_db
+from app.scalping.break_even import _check_and_apply_break_even
 from app.scalping.trade_executor import (
     _start_uds_if_needed,
     _handle_bracket_failed,
@@ -885,7 +886,16 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                     
                     # Clamp to [-100, 100]
                     progress_pct = max(-100.0, min(100.0, progress_pct))
-                    
+
+                    # TASK-1243: Break-even profit lock — valuta il trigger su candela chiusa.
+                    # Eseguito PRIMA del broadcast così position_update porta già il nuovo SL.
+                    # No-op se feature flag off, posizione paper, o già attivato.
+                    await _check_and_apply_break_even(pos, current_price_f, session)
+
+                    # Rilegge sl_price dopo eventuale amend (potrebbe essere cambiato)
+                    if pos.sl_price is not None and float(pos.sl_price) > 0:
+                        sl_price = float(pos.sl_price)
+
                     await broadcast_scalping_event("position_update", {
                         "symbol": pos.symbol,
                         "side": pos.side,
@@ -905,6 +915,9 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                         "sl_distance_pct": round(max(0, (entry_f - current_price_f) / (entry_f - sl_price) * 100) if pos.side == "BUY" and (entry_f - sl_price) > 0 else 0, 1),
                         "tp_distance_pct": round(min(100, (current_price_f - entry_f) / (tp_price - entry_f) * 100) if pos.side == "BUY" and (tp_price - entry_f) > 0 else 0, 1),
                         "breakeven_pct": round((_get_fee_rate(fee_tier, "taker", 0.001) + _get_fee_rate(fee_tier, "taker", 0.001)) * 100, 2),
+                        # TASK-1243: profit lock state per frontend
+                        "profit_lock_active": pos.break_even_triggered,
+                        "profit_lock_sl_price": round(float(pos.break_even_sl_price), 4) if pos.break_even_sl_price else None,
                     })
                     logger.debug(f"Position update broadcast @ {current_price_f}: PnL={pnl:.2f} ({pnl_pct:.2f}%) progress={progress_pct:.1f}%")
             except Exception as e:

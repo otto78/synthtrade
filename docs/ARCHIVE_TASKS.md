@@ -4239,3 +4239,33 @@ I conteggi interni restano nell'analysis JSON (endpoint strutturato/download).
 
 > **Risultato:** `getProgressPct()` e `getBreakevenPct()` riscritte per usare `stop_loss_price`/`take_profit_price` anziché percentuali nette virtuali. Aggiunto `getEntryPct()` con marker visivo. Rimossa ridondanza PnL% dalla barra. Vedi `docs/CHANGELOG.md` per dettagli.
 
+
+
+---
+
+### TASK-1243 — Stop protettivo OCO dopo break-even ✅ Completato
+
+> **Completato:** 2026-08-04
+> **Fase:** Fase 3 — Revisione TP/SL
+
+**Problema risolto:** Con SL=0.50% e fee round-trip 0.20%, le commissioni erodono il profitto dei trade in gain che poi invertono. Il sistema ora alza automaticamente lo SL a profit lock quando la posizione supera una soglia netta configurabile.
+
+**Implementazione:**
+- `app/scalping/break_even.py` — nuovo modulo con logica trigger, amend OKX, lock async per-algoId, persistenza DB+WS. Transizione `break_even_triggered` monotona.
+- `execution/okx_exchange.py` — `amend_exit_bracket_stop_loss()` verso `POST /api/v5/trade/amend-algos`, doppio check `code=="0"` e `sCode=="0"`, `newSlOrdPx="-1"` (market stop), reqId tracciato.
+- `execution/exchange_models.py` — metodo nel protocollo `ExchangeAdapterProtocol`.
+- `execution/exchange.py` — stub Binance `NotImplementedError`.
+- `scalping/db_ops.py` — `_update_break_even_in_db()` filtra solo per `exchange_bracket_id`.
+- `scalping/config_loader.py` — chiavi `BREAK_EVEN_ENABLED` (off by default), `BREAK_EVEN_TRIGGER_NET_PCT=0.15`, `BREAK_EVEN_LOCK_NET_PCT=0.05`.
+- `scalping/candle_processor.py` — chiamata `_check_and_apply_break_even` su candela chiusa + `profit_lock_active` nel broadcast WS.
+- `main.py` — restore dei 3 campi `break_even_*` dal DB per impedire doppio amend dopo restart.
+- Migration DB: `break_even_triggered`, `break_even_activated_at`, `break_even_sl_price` su `scalping_trades`.
+- 22 test automatici verdi in `tests/test_task_1243.py`.
+- Script spike `scripts/test_okx_amend_oco.py` per validazione OKX Demo.
+
+**Prova live 2026-08-04** (sessione `6701e55b`, algoId `3802582373171404800`):
+- entry 55154.6 EUR → trigger a 55368.0 EUR (net=+0.186%) → SL amendato 54988.75 → 55292.70 in 0.77s
+- Trade chiuso a 55291.0 EUR → **PnL +0.01 EUR (+0.05%)** vs attesa ~-0.06 EUR senza feature
+- Delta salvato: **+0.07 EUR** su trade da 20 EUR
+
+**Riferimento piano:** `docs/plans/phase3-trailing-sl.md`

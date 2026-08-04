@@ -30,6 +30,13 @@ import { Position } from '../models/position.model';
           <span class="symbol">{{ position.symbol }}</span>
           <span class="side" [ngClass]="position.side.toLowerCase()">{{ position.side }}</span>
         </div>
+
+        <!-- TASK-1243: Profit Lock badge — mostrato quando il break-even è stato attivato -->
+        <div *ngIf="position.profit_lock_active" class="profit-lock-banner">
+          <span class="lock-icon">🔒</span>
+          <span class="lock-text">PROFIT LOCK ATTIVO</span>
+          <span class="lock-sl">SL → {{ position.stop_loss_price | number:'1.2-2' }}</span>
+        </div>
         
         <div class="row prices">
           <span>Entry: {{ position.entry_price | number:'1.2-2' }}</span>
@@ -49,8 +56,11 @@ import { Position } from '../models/position.model';
         
         <!-- Exit Targets -->
         <div class="exit-targets">
-          <div class="target sl">
-            <span class="target-label">Stop Loss</span>
+          <div class="target sl" [class.lock-active]="position.profit_lock_active">
+            <span class="target-label">
+              Stop Loss
+              <span *ngIf="position.profit_lock_active" class="lock-badge-small">🔒</span>
+            </span>
             <span class="target-price">{{ position.stop_loss_price | number:'1.2-2' }}</span>
             <span class="target-pct">({{ position.stop_loss_pct_net ?? position.stop_loss_pct | number:'1.2-2' }}%)</span>
           </div>
@@ -71,13 +81,19 @@ import { Position } from '../models/position.model';
           <div class="progress-bar">
             <div class="progress-fill" [style.width.%]="getProgressPct()" [ngClass]="getProgressClass()"></div>
             <div class="entry-marker" [style.left.%]="getEntryPct()"></div>
-            <div class="breakeven-marker" [style.left.%]="getBreakevenPct()"></div>
+            <!-- Marker breakeven: nascosto quando profit lock attivo (è già stato superato, non serve più) -->
+            <div *ngIf="!position.profit_lock_active" class="breakeven-marker" [style.left.%]="getBreakevenPct()"></div>
           </div>
-          <div class="breakeven-row">
+          <!-- Riga breakeven: sostituita da messaggio di allerta se profit lock attivo -->
+          <div class="breakeven-row" *ngIf="!position.profit_lock_active">
             <span class="breakeven-tag">BE {{ getBreakevenPctValue() | number:'1.2-2' }}%</span>
             <span class="breakeven-status" [ngClass]="isAboveBreakeven() ? 'above' : 'below'">
-              {{ isAboveBreakeven() ? 'Above Breakeven' : 'Below Breakeven' }}
+              {{ isAboveBreakeven() ? '↑ Above Breakeven' : '↓ Below Breakeven' }}
             </span>
+          </div>
+          <div class="profit-lock-status" *ngIf="position.profit_lock_active">
+            <span class="lock-status-icon">🔒</span>
+            <span class="lock-status-text">Breakeven superato! Qualsiasi cosa accada, non perdi soldi.</span>
           </div>
         </div>
       </div>
@@ -240,6 +256,71 @@ import { Position } from '../models/position.model';
       text-transform: none;
       letter-spacing: 0;
     }
+
+    /* TASK-1243: Profit Lock styles */
+    .profit-lock-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(90deg, rgba(240,185,11,0.15), rgba(240,185,11,0.06));
+      border: 1px solid rgba(240,185,11,0.45);
+      border-radius: 8px;
+      padding: 8px 12px;
+      animation: lockPulse 2s ease-in-out infinite;
+    }
+    @keyframes lockPulse {
+      0%, 100% { border-color: rgba(240,185,11,0.45); }
+      50%       { border-color: rgba(240,185,11,0.85); }
+    }
+    .lock-icon { font-size: 16px; }
+    .lock-text {
+      font-size: 11px;
+      font-weight: 800;
+      color: #F0B90B;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      flex: 1;
+    }
+    .lock-sl {
+      font-size: 11px;
+      font-weight: 700;
+      color: rgba(240,185,11,0.8);
+    }
+    .target.lock-active {
+      border-left-color: #F0B90B;
+      background: rgba(240,185,11,0.06);
+    }
+    .profit-lock-row {
+      margin-top: 12px;
+      padding: 8px 10px;
+      background: rgba(240,185,11,0.08);
+      border-radius: 6px;
+      border: 1px solid rgba(240,185,11,0.25);
+    }
+    .lock-row-text {
+      font-size: 11px;
+      font-weight: 600;
+      color: #F0B90B;
+      line-height: 1.4;
+    }
+    /* fallback per il vecchio profit-lock-status se presente */
+    .profit-lock-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 12px;
+      padding: 7px 10px;
+      background: rgba(240,185,11,0.08);
+      border-radius: 6px;
+      border: 1px solid rgba(240,185,11,0.25);
+    }
+    .lock-status-icon { font-size: 14px; }
+    .lock-status-text {
+      font-size: 11px;
+      font-weight: 600;
+      color: #F0B90B;
+      line-height: 1.4;
+    }
   `],
 })
 export class PositionTickerComponent implements OnInit, OnDestroy {
@@ -291,6 +372,9 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
         take_profit_pct: event.take_profit_pct,
         trade_value_usd: event.trade_value_usd ?? (event.quantity ? event.quantity * event.entry_price : undefined),
         breakeven_pct: event.breakeven_pct,
+        // TASK-1243: profit lock
+        profit_lock_active: event.profit_lock_active ?? this.position?.profit_lock_active ?? false,
+        profit_lock_sl_price: event.profit_lock_sl_price ?? this.position?.profit_lock_sl_price,
       };
       this.cdr.markForCheck();
       this.cdr.detectChanges();

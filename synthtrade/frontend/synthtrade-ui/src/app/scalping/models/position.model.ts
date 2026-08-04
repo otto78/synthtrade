@@ -27,4 +27,7 @@ export interface Position {
   trade_value_usd?: number;
   // Breakeven: round-trip fee percentage (entry taker + exit maker)
   breakeven_pct?: number;
+  // TASK-1243: profit lock (break-even amend attivato)
+  profit_lock_active?: boolean;
+  profit_lock_sl_price?: number;
 }

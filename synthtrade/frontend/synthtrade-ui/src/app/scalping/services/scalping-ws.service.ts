@@ -108,6 +108,9 @@ export interface PositionEvent {
   stop_loss_pct?: number;
   take_profit_pct?: number;
   breakeven_pct?: number;
+  // TASK-1243: profit lock (break-even amend attivato)
+  profit_lock_active?: boolean;
+  profit_lock_sl_price?: number;
 }
 
 /** Strategy parameter values — extensible for different strategy types */

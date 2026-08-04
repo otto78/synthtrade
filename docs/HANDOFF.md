@@ -6,6 +6,27 @@
 
 **Data:** 2026-08-04
 
+**Contesto:** TASK-1243 — progetto dello stop protettivo dopo break-even; nessuna
+modifica al comportamento di trading e nessun amend OCO è stato ancora implementato.
+
+- Il piano completo è in `docs/plans/phase3-trailing-sl.md`. La configurazione proposta
+  attiva a circa +0.15% netto (circa +0.35% lordo con fee 0.10%+0.10%) e mira a un nuovo
+  SL di circa +0.05% netto. Non è un profitto garantito perché lo SL OCO esegue a mercato.
+- L'unica identità ammessa è `Position.oco_order_list_id` / `exchange_bracket_id`
+  (OKX parent `algoId`). Non ricercare un SELL o “il primo ordine” di BTC-EUR: romperebbe
+  multi-sessione e il reconcile OCO appena corretto.
+- Il punto di integrazione è `candle_processor.py` nel broadcast della posizione;
+  l'adapter deve aggiungere un amend firmato dell'OCO, seguito da persistenza per algoId
+  esatto e restore dei campi di audit.
+- **Release gate:** prima di qualsiasi feature flag live, eseguire uno spike in OKX Demo
+  che crea un OCO BTC-EUR e verifica che `/trade/amend-algos` mantenga stesso `algoId`,
+  TP e aggiornamento SL. Se non è supportato, non implementare un fallback automatico
+  cancel/recreate: esporrebbe la posizione.
+
+### Da: Codex → prossima sessione
+
+**Data:** 2026-08-04
+
 **Contesto:** TASK-1244 — correzione definitiva della riconciliazione delle chiusure OCO OKX mentre l'app era offline.
 
 ### Riparazione storico già chiuso

@@ -136,21 +136,23 @@
 
 ---
 
-### TASK-1243 — Revisione struttura TP/SL: ridurre impatto fee su SL stretto 🟡 Todo
+### TASK-1243 — Stop protettivo OCO dopo break-even 🟡 Progettato, non implementato
 
-> **Priorità**: MEDIA (Fase 3)
-> **File**: `scalping_risk_config` (tabella DB) + eventuale codice di default
+> **Priorità**: ALTA (Fase 3)
+> **Piano tecnico**: `docs/plans/phase3-trailing-sl.md`
 >
 > **Problema**: Con SL=0.30% e fee round-trip 0.18%, le commissioni erodono il 60% dello SL.
 > Il R:R teorico 3.33:1 collassa a 1.57:1 reale, rendendo il break-even matematicamente
 > al 38.8% win rate (attualmente siamo al 20.8%).
 >
-> **Opzioni da valutare (in ordine di preferenza)**:
->   A. Allargare SL a 0.50%, TP a 1.50% — stessa ratio teorica, fee meno impattanti (36%)
->   B. Trailing SL: sposta SL a break-even dopo +0.30% gain
->   C. Abbassare TP a 0.60% per aumentare frequenza di vincita (da validare con backtest)
+> **Decisione progettuale**: al netto di fee taker 0.10%+0.10%, al trigger di circa
+> +0.35% lordo (circa +0.15% netto) emendare **lo stesso OCO identificato dall'`algoId`**
+> e portare lo SL a un target iniziale di circa +0.05% netto. Il TP resta invariato.
+> Non usare match per simbolo/lato e non cancellare/ricreare l'OCO.
 >
-> **Acceptance**: almeno 20 trade live con nuova configurazione e EV stimato > 0.
+> **Gate**: prima un test BTC-EUR su OKX Demo deve provare che `amend-algos` conserva
+> `algoId`, TP e aggiornamento SL; poi test automatici, paper e un singolo trade live
+> minimo. L'EV si rivaluta dopo almeno 20 trade della configurazione validata.
 
 ---
 

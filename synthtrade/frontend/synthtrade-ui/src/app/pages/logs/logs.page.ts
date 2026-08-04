@@ -538,7 +538,6 @@ export class LogsPage implements OnInit, OnDestroy {
       case 'stop_loss':           return 'Stop Loss';
       case 'stop_loss_breakeven': return 'Stop Loss Breakeven';
       case 'stop_loss_trailing':  return 'Stop Loss Trailing';
-      case 'stop_loss_trailing':  return 'Stop Loss Trailing';
       case 'bracket_filled':      return 'Bracket (unknown)';
       case 'bracket_unknown':     return 'Bracket (unknown)';
       case 'manual':              return 'Manual Close';

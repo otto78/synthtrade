@@ -57,11 +57,13 @@ async def run_spike(symbol_str: str = "BTC-EUR", interval_sec: int = 15) -> dict
     rules = await adapter.get_symbol_rules(sym)
     price = await adapter.get_ticker_price(symbol_str)
 
-    trade_value = 12.0
+    trade_value = 25.0  # EUR — usa quote_amount per evitare errori di quantità minima
     qty = max(rules.round_qty(trade_value / price), rules.min_sz)
 
-    logger.info("[RATE_SPIKE] BUY %s qty=%.8f @ %.2f", symbol_str, qty, price)
-    buy = await adapter.place_market_order(MarketOrderRequest(symbol=sym, side="buy", quantity=qty))
+    logger.info("[RATE_SPIKE] BUY %s qty=%.8f @ %.2f (o quote_amount=%.2f EUR)", symbol_str, qty, price, trade_value)
+    buy = await adapter.place_market_order(MarketOrderRequest(
+        symbol=sym, side="buy", quantity=qty, quote_amount=trade_value
+    ))
     exec_price = buy.average_price or price
 
     tp_price = rules.round_price(exec_price * 1.008)   # +0.8%

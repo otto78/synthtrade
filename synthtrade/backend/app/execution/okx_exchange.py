@@ -734,78 +734,126 @@ class OkxExchangeAdapter:
 
         return results
 
-    async def get_algo_orders_history(self, symbol: str) -> list[dict[str, Any]]:
-        """Return algo orders history for a symbol (OCO/TP/SL fills).
+    async def get_algo_orders_history(
+        self, symbol: str, bracket_id: Optional[str] = None
+    ) -> list[dict[str, Any]]:
+        """Return the *verified* fill produced by a specific OKX OCO bracket.
 
-        Used by _on_uds_reconnect_sync to detect if a bracket was executed
-        during disconnection. Returns filled/cancelled algo orders.
-        
-        NOTE: OKX EU accounts may have limited permissions on algo endpoints.
-        Falls back to /api/v5/trade/fills endpoint which shows actual fills.
+        A trade fill alone does not reliably carry the parent ``algoId``.  Querying
+        all fills for an instrument and selecting the latest sell is therefore
+        unsafe: another strategy/session can trade the same instrument.  We first
+        resolve the persisted OCO ``algoId`` through ``orders-algo-history``, then
+        fetch fills only for that OCO's child order id(s).
+
+        The normalized result intentionally keeps the historical method name for
+        the provider-neutral adapter contract, but contains at most one bracket.
+        An empty list means that the close is not yet verifiable and callers must
+        not synthesize a closure from an unrelated fill.
         """
+        if not bracket_id:
+            logger.warning("Cannot reconcile OKX bracket without a persisted algoId for %s", symbol)
+            return []
+
         sym_ref = SymbolRef.from_okx(symbol) if "-" in symbol else SymbolRef.from_compact(symbol)
-        results: list[dict] = []
+        bracket_id = str(bracket_id)
 
-        # Try fills endpoint first (shows actual trade executions)
         try:
-            path = "/api/v5/trade/fills"
-            query_string = f"instType=SPOT&instId={sym_ref.okx}"
+            # The algo-history endpoint is the authoritative parent -> child-order
+            # mapping.  Do not replace it with the generic /fills endpoint.
+            path = "/api/v5/trade/orders-algo-history"
+            query_string = (
+                f"algoId={bracket_id}&instId={sym_ref.okx}&instType=SPOT&ordType=oco"
+            )
             url = settings.OKX_BASE_URL.rstrip("/") + path
             headers = self._sign_headers("GET", path + "?" + query_string)
-            params = {"instType": "SPOT", "instId": sym_ref.okx}
+            params = {
+                "algoId": bracket_id,
+                "instId": sym_ref.okx,
+                "instType": "SPOT",
+                "ordType": "oco",
+            }
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, headers=headers, params=params)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if data.get("code") == "0":
-                        # Convert fills to algo-like format for compatibility
-                        for fill in data.get("data", []):
-                            results.append({
-                                "algoId": fill.get("algoId"),
-                                "state": "effective",  # fills are always filled
-                                "avgPx": fill.get("fillPx"),
-                                "fillPx": fill.get("fillPx"),
-                                "ordType": fill.get("ordType", "oco"),
-                                "side": fill.get("side"),
-                                "instId": fill.get("instId"),
-                                # OKX /api/v5/trade/fills usa "ts" come timestamp (ms),
-                                # non "fillTime" (che è solo sulle algo orders).
-                                "fillTime": fill.get("fillTime") or fill.get("ts"),
-                            })
-                        if results:
-                            return results
-        except Exception as e:
-            logger.debug("get_algo_orders_history fills fallback failed for %s: %s", symbol, e)
+                response = await client.get(url, headers=headers, params=params)
+                response.raise_for_status()
+                payload = response.json()
+                if payload.get("code") != "0":
+                    logger.warning(
+                        "OKX algo history rejected bracket=%s: code=%s msg=%s",
+                        bracket_id, payload.get("code"), payload.get("msg"),
+                    )
+                    return []
 
-        # Fallback: try orders-history for any filled algo orders
-        try:
-            path = "/api/v5/trade/orders-history"
-            query_string = f"instType=SPOT&instId={sym_ref.okx}&state=filled"
-            url = settings.OKX_BASE_URL.rstrip("/") + path
-            headers = self._sign_headers("GET", path + "?" + query_string)
-            params = {"instType": "SPOT", "instId": sym_ref.okx, "state": "filled"}
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, headers=headers, params=params)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if data.get("code") == "0":
-                        for order in data.get("data", []):
-                            # Check if this is an algo order (has algoId)
-                            if order.get("algoId"):
-                                results.append({
-                                    "algoId": order.get("algoId"),
-                                    "state": "effective",
-                                    "avgPx": order.get("avgPx"),
-                                    "fillPx": order.get("fillPx"),
-                                    "ordType": order.get("ordType", "oco"),
-                                    "side": order.get("side"),
-                                    "instId": order.get("instId"),
-                                    "fillTime": order.get("fillTime") or order.get("uTime"),
-                                })
-        except Exception as e:
-            logger.debug("get_algo_orders_history orders-history fallback failed for %s: %s", symbol, e)
+                algo = next(
+                    (item for item in payload.get("data", []) if str(item.get("algoId")) == bracket_id),
+                    None,
+                )
+                if not algo or algo.get("state") != "effective":
+                    return []
 
-        return results
+                child_order_ids = []
+                if algo.get("ordId"):
+                    child_order_ids.append(str(algo["ordId"]))
+                child_order_ids.extend(
+                    str(order_id) for order_id in (algo.get("ordIdList") or []) if order_id
+                )
+                child_order_ids = list(dict.fromkeys(child_order_ids))
+                if not child_order_ids:
+                    logger.info(
+                        "OKX OCO bracket=%s is effective but child order id is not available yet",
+                        bracket_id,
+                    )
+                    return []
+
+                fills: list[dict[str, Any]] = []
+                for order_id in child_order_ids:
+                    fills_path = "/api/v5/trade/fills"
+                    fills_query = f"instType=SPOT&instId={sym_ref.okx}&ordId={order_id}"
+                    fills_headers = self._sign_headers("GET", fills_path + "?" + fills_query)
+                    fills_response = await client.get(
+                        settings.OKX_BASE_URL.rstrip("/") + fills_path,
+                        headers=fills_headers,
+                        params={"instType": "SPOT", "instId": sym_ref.okx, "ordId": order_id},
+                    )
+                    fills_response.raise_for_status()
+                    fills_payload = fills_response.json()
+                    if fills_payload.get("code") == "0":
+                        fills.extend(fills_payload.get("data", []))
+
+            valid_fills = [
+                fill for fill in fills
+                if str(fill.get("ordId")) in child_order_ids
+                and float(fill.get("fillPx") or 0) > 0
+                and float(fill.get("fillSz") or 0) > 0
+            ]
+            if not valid_fills:
+                return []
+
+            total_size = sum(float(fill["fillSz"]) for fill in valid_fills)
+            average_price = sum(
+                float(fill["fillPx"]) * float(fill["fillSz"]) for fill in valid_fills
+            ) / total_size
+            fill_time = max(
+                ((fill.get("fillTime") or fill.get("ts") or "0") for fill in valid_fills),
+                key=lambda value: int(value or 0),
+            )
+            actual_side = (algo.get("actualSide") or "").lower()
+            return [{
+                "algoId": bracket_id,
+                "state": "effective",
+                "avgPx": str(average_price),
+                "fillPx": str(average_price),
+                "fillTime": fill_time,
+                "ordType": f"oco_{actual_side}" if actual_side in {"tp", "sl"} else "oco",
+                "side": algo.get("side"),
+                "instId": sym_ref.okx,
+                "ordId": child_order_ids[0],
+            }]
+        except Exception as exc:
+            logger.warning(
+                "Unable to resolve OKX OCO bracket=%s for %s: %s",
+                bracket_id, symbol, exc,
+            )
+            return []
 
 
     # ── Exit bracket (TP/SL algo order) ──────────────────────────────────────

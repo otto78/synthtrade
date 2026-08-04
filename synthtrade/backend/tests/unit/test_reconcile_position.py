@@ -4,8 +4,8 @@ TASK-1184 — Test unitari per _reconcile_position_with_exchange.
 Copre i 5 scenari documentati nel task:
   A. balance >= min_qty → position still open → return None
   B. balance < min_qty + bracket_id match in fills → fill da avgPx, reason=take_profit/stop_loss
-  C. balance < min_qty + match per exit side → fill da fills, reason=external_close
-  D. balance < min_qty + nessun match → fill = entry_price, reason=external_close_unknown_price
+  C. un fill dello stesso lato ma di un altro OCO non chiude il trade
+  D. balance < min_qty + nessun fill OCO verificato → nessuna chiusura sintetica
   E. balance check fallisce (exception) + bracket_id in algo history → fill recuperato con retry
 
 Esegui con:
@@ -52,7 +52,7 @@ class MockExchange:
             raise RuntimeError("Balance check failed (simulated)")
         return self._balance
 
-    async def get_algo_orders_history(self, symbol: str):
+    async def get_algo_orders_history(self, symbol: str, bracket_id=None):
         return self._fills
 
 
@@ -121,7 +121,7 @@ async def test_scenario_B_closed_by_bracket_take_profit():
     assert result is not None, "Expected reconcile result, got None"
     assert result["fill_price"] == 55000.0, f"fill_price mismatch: {result}"
     assert result["reason"] == "take_profit", f"reason mismatch: {result}"
-    assert result["source"] == "fills", f"source mismatch: {result}"
+    assert result["source"] == "oco_verified_fill", f"source mismatch: {result}"
 
 
 @pytest.mark.asyncio
@@ -147,13 +147,13 @@ async def test_scenario_B_closed_by_bracket_stop_loss():
     assert result["reason"] == "stop_loss"
 
 
-# ── SCENARIO C: chiusa per exit side (senza bracket_id match) ─────────────────
+# ── SCENARIO C: un fill di un altro OCO non può chiudere il trade ─────────────
 
 @pytest.mark.asyncio
-async def test_scenario_C_closed_by_exit_side():
+async def test_scenario_C_does_not_use_other_oco_exit_side():
     """
-    SCENARIO C: balance < min_qty + fills per exit_side ma senza bracket_id match
-    → reason=external_close, source=fills.
+    SCENARIO C: il saldo indica zero, ma l'unica vendita disponibile appartiene
+    a un altro OCO sullo stesso simbolo. Non deve essere usata come chiusura.
     """
     fills = [
         {
@@ -168,10 +168,7 @@ async def test_scenario_C_closed_by_exit_side():
     exchange = MockExchange(holdings={"BTC": 0.0}, min_sz=0.00001, fills=fills)
     result = await _reconcile(exchange, bracket_id="algo_mio_che_non_matcha")
 
-    assert result is not None
-    assert result["fill_price"] == 52000.0
-    assert result["source"] == "fills"
-    assert result["reason"] in ("external_close", "take_profit", "stop_loss")
+    assert result is None
 
 
 # ── SCENARIO D: chiusa ma nessun fill recuperato ─────────────────────────────
@@ -179,17 +176,14 @@ async def test_scenario_C_closed_by_exit_side():
 @pytest.mark.asyncio
 async def test_scenario_D_no_fill_found_uses_entry_price():
     """
-    SCENARIO D: balance < min_qty + nessun fill trovato.
-    Fallback: fill_price = entry_price, reason=external_close_unknown_price.
+    SCENARIO D: balance < min_qty + nessun fill OCO verificato.
+    Non usare entry_price come exit fittizia: il trade resta da riconciliare.
     """
     exchange = MockExchange(holdings={"BTC": 0.0}, min_sz=0.00001, fills=[])
     entry_price = 50000.0
     result = await _reconcile(exchange, entry_price=entry_price, bracket_id="algo_inesistente")
 
-    assert result is not None
-    assert result["fill_price"] == entry_price, f"Expected entry_price fallback, got {result}"
-    assert result["reason"] == "external_close_unknown_price"
-    assert result["source"] == "entry_price_fallback"
+    assert result is None
 
 
 # ── SCENARIO E: balance check fallisce, algo history di recovery ──────────────
@@ -218,7 +212,7 @@ async def test_scenario_E_balance_fails_recovers_from_algo_history():
         async def get_balance(self, asset: str):
             raise RuntimeError("Network error (simulated)")
 
-        async def get_algo_orders_history(self, symbol: str):
+        async def get_algo_orders_history(self, symbol: str, bracket_id=None):
             return self._fills
 
     exchange = FailingBalanceExchange(fills=fills)

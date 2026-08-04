@@ -7,6 +7,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.4.24] — 2026-08-04
+
+### Fixed
+- **Riconciliazione OCO OKX post-offline:** eliminata l'associazione pericolosa tra una posizione e l'ultima vendita dello stesso simbolo. Il reconcile ora risolve l'`algoId` OCO salvato nel trade, recupera l'`ordId` figlio da `orders-algo-history` e legge soltanto i fill di quell'ordine.
+- **Prezzo/data di chiusura reali:** il prezzo è una media ponderata dei partial fill dell'ordine figlio e `exit_time` deriva dal `fillTime` reale più recente, non dall'orario di riavvio.
+- **Fail-safe:** in assenza di una catena OCO verificabile il sistema non registra più una chiusura sintetica a prezzo entry né usa una vendita estranea; conserva il trade per una successiva riconciliazione sicura.
+
+> **Files:** `okx_exchange.py`, `reconciliation.py`, `exchange_models.py`, test unitari OCO.
+
+---
+
 ## [1.4.18] — 2026-07-29
 
 ### Fixed

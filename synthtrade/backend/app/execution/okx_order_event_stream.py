@@ -222,6 +222,9 @@ class OkxOrderEventStream:
         """Fallback polling loop using REST API."""
         logger.info("OKX order stream: starting REST polling fallback (2s interval)")
         seen_orders: set[str] = set()
+        # Only terminal OCO executions belong here.  An ``algoId`` stays the same
+        # while an OCO moves from pending to effective, so recording a pending
+        # algo here would suppress its later fill event.
         seen_algos: set[str] = set()
         algo_leg_map: dict[str, str] = {}  # algoId → actualSide ("tp"/"sl")
         
@@ -255,6 +258,17 @@ class OkxOrderEventStream:
             logger.info("OKX REST polling: seeded %d algo leg mappings", len(algo_leg_map))
         except Exception as e:
             logger.warning("OKX REST polling: algo-history seed failed: %s", e)
+
+        # A process may have been offline while the bracket filled.  The initial
+        # history seed intentionally de-duplicates old exchange events, therefore
+        # run the exact-bracket reconcile once after seeding.  The callback uses
+        # the position's saved algoId; it never infers a close from an unrelated
+        # SELL order.
+        if self._on_reconnect_sync:
+            try:
+                await self._on_reconnect_sync()
+            except Exception as sync_e:
+                logger.warning("OKX REST polling initial OCO reconcile failed: %s", sync_e)
         
         _had_polling_error = False
 
@@ -334,9 +348,9 @@ class OkxOrderEventStream:
                         norm = self._normalize_algo_order(item)
                         if norm:
                             await self._emit(norm)
-                            # Add to seen_algos ONLY after successful emit to prevent
-                            # skipping the fill when it later appears in orders-history
-                            seen_algos.add(algo_id)
+                        # Do not add pending algos to seen_algos.  The same algoId
+                        # is reported again when the TP/SL is effective; marking it
+                        # here was the direct cause of missed OCO fills on OKX EU.
             except Exception as e:
                 _cycle_had_error = True
                 logger.error("OKX REST polling step 4 (algo-pending) error: [%s] %s", type(e).__name__, e)
@@ -480,6 +494,7 @@ class OkxOrderEventStream:
             "commission": commission,
             "commission_asset": commission_asset,
             "leg": "market",
+            "fill_time": OkxOrderEventStream._to_iso_time(item.get("fillTime") or item.get("uTime")),
         }
 
     @staticmethod
@@ -551,7 +566,20 @@ class OkxOrderEventStream:
             "commission": commission,
             "commission_asset": commission_asset,
             "leg": leg,
+            "fill_time": OkxOrderEventStream._to_iso_time(item.get("fillTime") or item.get("uTime")),
         }
+
+    @staticmethod
+    def _to_iso_time(value: object) -> Optional[str]:
+        """Convert OKX millisecond timestamps to the DB's UTC ISO representation."""
+        if value in (None, "", "0", 0):
+            return None
+        try:
+            from datetime import datetime, timezone
+            return datetime.fromtimestamp(float(value) / 1000, tz=timezone.utc).isoformat()
+        except (TypeError, ValueError, OSError):
+            logger.debug("OKX order stream: invalid fill timestamp %r", value)
+            return None
 
     # ── Factory ───────────────────────────────────────────────────────────────
 

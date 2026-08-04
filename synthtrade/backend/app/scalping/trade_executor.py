@@ -142,6 +142,12 @@ async def _on_order_update(event: dict):
     # ⚠️ Se la posizione è già chiusa o non è il nostro bracket → exit silenzioso
     if not pos:
         return
+    # OKX spot exits are correlated exclusively by the parent OCO algoId.  Do
+    # not let a generic market/order-history event close a position: multiple
+    # sessions can trade the same symbol and their later SELLs are unrelated.
+    if event.get("provider") == "okx" and not pos.oco_order_list_id:
+        logger.warning("[TradeExec] ORDER_STREAM: OKX position has no saved OCO algoId — refusing uncorrelated close")
+        return
     if pos.oco_order_list_id and order_list_id != pos.oco_order_list_id:
         logger.debug(f"[TradeExec] ORDER_STREAM: event bracket_id={order_list_id} != pos.bracket_id={pos.oco_order_list_id} — skip")
         return
@@ -162,7 +168,11 @@ async def _on_order_update(event: dict):
             reason = "bracket_filled"
 
         if fill_price <= 0:
-            logger.warning(f"[TradeExec] ORDER_STREAM: FILLED event with fill_price=0 for {symbol} orderId={order_id} — skip close")
+            # ``orders-algo-history`` can report the effective OCO before the
+            # child fill price is exposed.  Reconcile the exact parent algoId,
+            # rather than writing a synthetic close price or matching any SELL.
+            logger.info(f"[TradeExec] ORDER_STREAM: OCO fill without price for {symbol}; reconciling bracket={order_list_id}")
+            await _on_uds_reconnect_sync()
             return
 
         # TASK-878: Calcola PnL con commissioni reali
@@ -219,6 +229,11 @@ async def _on_order_update(event: dict):
         # Chiudi posizione in memoria
         _execution_state["position_manager"].close_position(Decimal(str(fill_price)))
 
+        # Keep the exchange fill timestamp consistently in DB, in-memory history
+        # and the UI event.  ``datetime.now`` is only a fallback for providers
+        # that do not publish a fill time.
+        fill_time = event.get("fill_time")
+
         # Aggiorna trade history
         trade_record = {
             "symbol": pos.symbol,
@@ -228,13 +243,14 @@ async def _on_order_update(event: dict):
             "quantity": qty_f,
             "pnl": round(pnl, 2),
             "pnl_pct": round(pnl_pct, 2),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": fill_time or datetime.now(timezone.utc).isoformat(),
             "signal_reason": reason,
         }
         _execution_state["trade_history"].append(trade_record)
 
         # Aggiorna DB
         await _update_closed_position_in_db(pos, fill_price, pnl, pnl_pct, reason,
+                                            fill_time=fill_time,
                                             entry_commission=entry_commission, exit_commission=exit_commission)
 
         # Refresh live balance
@@ -250,7 +266,7 @@ async def _on_order_update(event: dict):
             "pnl": round(pnl, 2),
             "pnl_pct": round(pnl_pct, 2),
             "signal_reason": reason,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": fill_time or datetime.now(timezone.utc).isoformat(),
         })
 
         logger.info(f"\033[92m[TradeExec] Trade closed {reason}: {pos.symbol} @ {fill_price} | PnL={pnl:.2f} ({pnl_pct:.2f}%)\033[0m")

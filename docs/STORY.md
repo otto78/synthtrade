@@ -4,6 +4,14 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.24 — 2026-08-04 — Reconcile OCO deterministico e multi-session ready
+
+- ✅ **Root cause corretta:** `get_algo_orders_history()` interrogava prima i fill globali della coppia. Un fill non porta in modo affidabile l'identità del parent OCO, quindi il precedente fallback per `side=sell` poteva chiudere un trade della sessione sbagliata.
+- ✅ **Catena di identità:** `scalping_trades.exchange_bracket_id` (OKX `algoId`) → `GET /trade/orders-algo-history?algoId=…` → `ordId`/`ordIdList` dell'ordine figlio → `GET /trade/fills?ordId=…`.
+- ✅ **Dati di chiusura:** prezzo medio ponderato per eventuali partial fill e `fillTime` del fill finale come `exit_time` persistito/broadcast.
+- ✅ **Safety boundary:** senza match esatto OCO il reconcile non aggiorna DB/UI con dati inventati. Questo evita collisioni tra operazioni manuali, strategie diverse e future multi-sessioni sullo stesso simbolo.
+- ✅ **Verifica:** 7 test unitari verdi, incluso un fill SELL appartenente a un OCO differente sullo stesso BTC-EUR.
+
 ### v1.x.x — 2026-08-03 — Fix Timestamp Riconciliazione OKX + Formattazione Data Frontend
 
 - ✅ **Bug Riconciliazione Exit Time OKX (`okx_exchange.py` L.745):** Identificata root cause sul timestamp dei fills OKX (`/api/v5/trade/fills`). L'API restituisce `ts` anziché `fillTime`, causando il ritorno di `None` e il fallback di `exit_time` a `datetime.now()` (orario di riconciliazione) dopo un riavvio del weekend. Risolto usando `fill.get("fillTime") or fill.get("ts")`.

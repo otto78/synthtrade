@@ -482,6 +482,17 @@ def test_normalize_algo_order_actual_side_sl():
     assert result["leg"] == "stop_loss"
 
 
+def test_normalize_algo_order_preserves_okx_fill_time():
+    item = {
+        "instId": "BTC-EUR", "side": "sell", "algoId": "algo-fill-time",
+        "ordId": "ord-fill-time", "state": "effective", "avgPx": "87000.0",
+        "actualSide": "sl", "fillTime": "1785835084000",
+    }
+    result = OkxOrderEventStream._normalize_algo_order(item)  # type: ignore[attr-defined]
+    assert result is not None
+    assert result["fill_time"] == "2026-08-04T09:18:04+00:00"
+
+
 def test_normalize_algo_order_oco_fill_closer_to_tp():
     """OCO without actualSide: fill closer to TP → take_profit."""
     item = {

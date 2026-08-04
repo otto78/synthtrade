@@ -1,6 +1,16 @@
 # TASKS.md — SynthTrade Task Tracking
 
-> **Aggiornato:** 2026-08-03. Task completati in `docs/ARCHIVE_TASKS.md`.
+> **Aggiornato:** 2026-08-04. Task completati in `docs/ARCHIVE_TASKS.md`.
+
+---
+
+### TASK-1244 — Reconcile OKX: correlazione OCO stretta post-offline ✅ Completato
+
+> **Priorità:** CRITICA — impedisce che una vendita di un altro trade/sessione chiuda una riga DB errata.
+>
+> **Fix:** la riconciliazione ora segue `exchange_bracket_id`/`algoId` → `orders-algo-history` → `ordId` figlio → `/trade/fills?ordId=…`. I fill vengono aggregati con prezzo medio ponderato e usano il `fillTime` reale. Sono stati eliminati sia il fallback per lato SELL sul simbolo sia la chiusura fittizia a entry price. Se il fill OCO non è ancora verificabile, il trade rimane aperto localmente per un retry sicuro.
+>
+> **Compatibilità futura:** questa identità è specifica del trade e non del simbolo; evita collisioni quando più sessioni opereranno sullo stesso strumento.
 
 ---
 

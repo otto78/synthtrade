@@ -253,10 +253,70 @@ async def _restore_scalping_session(db) -> None:
                     .select("*") \
                     .eq("session_id", session_id) \
                     .eq("status", "open") \
-                    .limit(1) \
+                    .order("entry_time", desc=True) \
                     .execute()
             open_trades = await asyncio.to_thread(_db_op_open)
             if open_trades.data and sym_ref:
+                # Reconcile *every* older open record first.  A stale row must
+                # never be paired with a later SELL by symbol or chronology: each
+                # close is accepted only when OKX confirms its own parent OCO
+                # algoId.  The newest row is handled by the normal restore path
+                # below, so an actually active OCO remains in memory.
+                older_unverified: list[str] = []
+                if len(open_trades.data) > 1:
+                    from app.scalping.router import _reconcile_position_with_exchange, _get_fee_rate
+                    for stale_ot in open_trades.data[1:]:
+                        stale_bracket_id = stale_ot.get("exchange_bracket_id") or stale_ot.get("oco_order_list_id")
+                        stale_entry = float(stale_ot.get("entry_price") or 0)
+                        stale_qty = float(stale_ot.get("quantity") or 0)
+                        if not stale_bracket_id or stale_entry <= 0 or stale_qty <= 0:
+                            older_unverified.append(str(stale_ot.get("id", "unknown")))
+                            continue
+                        stale_reconcile = await _reconcile_position_with_exchange(
+                            symbol=stale_ot.get("symbol", symbol),
+                            pos_side=stale_ot.get("side", "BUY"),
+                            entry_price=stale_entry,
+                            quantity=stale_qty,
+                            exchange=adapter,
+                            bracket_id=stale_bracket_id,
+                        )
+                        if stale_reconcile is None:
+                            older_unverified.append(str(stale_ot.get("id", "unknown")))
+                            continue
+
+                        stale_fill = float(stale_reconcile["fill_price"])
+                        stale_side = stale_ot.get("side", "BUY")
+                        stale_gross = ((stale_fill - stale_entry) * stale_qty if stale_side == "BUY"
+                                       else (stale_entry - stale_fill) * stale_qty)
+                        stale_fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+                        stale_entry_fee = stale_entry * stale_qty * _get_fee_rate(stale_fee_tier, "taker", 0.001)
+                        stale_exit_fee = stale_fill * stale_qty * _get_fee_rate(stale_fee_tier, "taker", 0.001)
+                        stale_pnl = stale_gross - stale_entry_fee - stale_exit_fee
+
+                        def _close_stale_trade(row_id=stale_ot.get("id"), fill=stale_fill, pnl=stale_pnl,
+                                               reason=stale_reconcile["reason"], fill_time=stale_reconcile.get("fill_time"),
+                                               entry_fee=stale_entry_fee, exit_fee=stale_exit_fee):
+                            db.table("scalping_trades").update({
+                                "status": "closed", "exit_price": fill,
+                                "pnl": round(pnl, 2),
+                                "pnl_pct": round((pnl / (stale_entry * stale_qty)) * 100, 2),
+                                "exit_time": fill_time or datetime.now(timezone.utc).isoformat(),
+                                "signal_reason": reason,
+                                "entry_commission": entry_fee, "exit_commission": exit_fee,
+                            }).eq("id", row_id).execute()
+
+                        await asyncio.to_thread(_close_stale_trade)
+                        logger.info("[POSITION_RECONCILE] Startup: closed stale OCO trade %s via algoId=%s",
+                                    stale_ot.get("id"), stale_bracket_id)
+
+                if older_unverified:
+                    # We cannot know whether an old OCO is still live while a
+                    # newer record also exists.  Keep any latest verified
+                    # position protected, but block new entries until the user
+                    # or a later exact-OCO reconciliation resolves the anomaly.
+                    _execution_state["session"]["status"] = "paused"
+                    logger.error("[POSITION_RECONCILE] Multiple open DB trades include unverified OCOs %s; session paused to prevent a duplicate entry", older_unverified)
+
                 ot = open_trades.data[0]
                 symbol_ot = ot.get("symbol", symbol)
                 side = ot.get("side", "BUY")
@@ -393,7 +453,11 @@ async def _restore_scalping_session(db) -> None:
 
             if has_open_position:
                 # Skip balance check - we have an open position
-                _execution_state["session"]["status"] = "running"
+                # Preserve a reconciliation safety pause set above; a restore
+                # must not silently re-enable trading while another OCO row is
+                # still unverified.
+                if _execution_state["session"].get("status") != "paused":
+                    _execution_state["session"]["status"] = "running"
                 _execution_state["session"]["live_balance"] = live_bal or 0
                 _execution_state["session"]["paper_balance"] = live_bal or 0
                 logger.info("Live balance noted (position already open): %s %s", live_bal, quote)

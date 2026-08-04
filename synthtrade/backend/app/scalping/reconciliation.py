@@ -21,6 +21,42 @@ def _fill_time_from_ms(fill_time_ms) -> Optional[str]:
         return None
 
 
+async def _get_verified_bracket_fills(exchange, symbol: str, bracket_id: str) -> list[dict[str, Any]]:
+    """Fetch only fills causally linked to ``bracket_id``.
+
+    ``get_algo_orders_history`` gained the optional id argument with the OKX
+    adapter.  The TypeError fallback keeps old third-party/test adapters working,
+    while the caller still performs an exact ``algoId`` match below.
+    """
+    try:
+        return await exchange.get_algo_orders_history(symbol, bracket_id=bracket_id)
+    except TypeError:
+        return await exchange.get_algo_orders_history(symbol)
+
+
+def _matched_bracket_fill(fills: list[dict[str, Any]], bracket_id: str) -> Optional[Dict[str, Any]]:
+    """Return a usable fill only when its parent OCO id is exactly matched."""
+    for fill in fills:
+        if str(fill.get("algoId")) != str(bracket_id) or fill.get("state") != "effective":
+            continue
+        try:
+            fill_price = float(fill.get("avgPx") or fill.get("fillPx") or 0)
+        except (TypeError, ValueError):
+            continue
+        if fill_price <= 0:
+            continue
+        order_type = (fill.get("ordType") or "").lower()
+        reason = "take_profit" if "tp" in order_type else "stop_loss" if "sl" in order_type else "bracket_filled"
+        return {
+            "fill_price": fill_price,
+            "source": "oco_verified_fill",
+            "reason": reason,
+            "fill_time": _fill_time_from_ms(fill.get("fillTime") or fill.get("ts")),
+            "exit_order_id": fill.get("ordId"),
+        }
+    return None
+
+
 async def _reconcile_position_with_exchange(
     symbol: str,
     pos_side: str,
@@ -36,7 +72,9 @@ async def _reconcile_position_with_exchange(
     Returns a dict with fill_price, source, reason if the position was
     closed externally (TP/SL hit while bot was offline).
 
-    Source priority: algo_history > ticker > entry_price_fallback.
+    A persisted bracket_id is an identity boundary: only a fill linked to that
+    exact OCO may close the local trade.  If it cannot be verified yet, return
+    None and retain the trade open locally rather than corrupting its history.
     """
     _exchange = exchange or _execution_state.get("exchange")
     if not _exchange:
@@ -84,26 +122,16 @@ async def _reconcile_position_with_exchange(
         if bracket_id:
             for attempt in range(3):
                 try:
-                    algo_history = await _exchange.get_algo_orders_history(symbol)
-                    for algo in algo_history:
-                        if algo.get("algoId") == bracket_id and algo.get("state") == "effective":
-                            fill_price = float(algo.get("avgPx") or algo.get("fillPx") or 0)
-                            if fill_price > 0:
-                                source = "algo_history"
-                                ord_type = algo.get("ordType", "").lower()
-                                if "tp" in ord_type:
-                                    reason = "take_profit"
-                                elif "sl" in ord_type:
-                                    reason = "stop_loss"
-                                else:
-                                    reason = "bracket_filled"
-                                logger.info(
-                                    "[POSITION_RECONCILE] Balance check failed but recovered fill from algo history: "
-                                    "algoId=%s fill=%.4f reason=%s (attempt %d)",
-                                    bracket_id, fill_price, reason, attempt + 1,
-                                )
-                                fill_time = _fill_time_from_ms(algo.get("fillTime"))
-                                return {"fill_price": fill_price, "source": source, "reason": reason, "fill_time": fill_time}
+                    match = _matched_bracket_fill(
+                        await _get_verified_bracket_fills(_exchange, symbol, bracket_id), bracket_id
+                    )
+                    if match:
+                        logger.info(
+                            "[POSITION_RECONCILE] Balance check failed but recovered verified OCO fill: "
+                            "algoId=%s fill=%.4f reason=%s (attempt %d)",
+                            bracket_id, match["fill_price"], match["reason"], attempt + 1,
+                        )
+                        return match
                     # No match in this attempt — retry if attempts remain
                     if attempt < 2:
                         await asyncio.sleep(1.5)
@@ -119,79 +147,31 @@ async def _reconcile_position_with_exchange(
                     logger.warning("[POSITION_RECONCILE] Algo history fallback failed after 3 attempts: %s", hist_e)
         return None
 
-    fill_price: Optional[float] = None
-    source = "entry_price_fallback"
-    reason = "external_close_unknown_price"
-    fill_time: Optional[str] = None
-
-    # Priority 1: real fills from OKX (most accurate)
-    # Always fetch fills — match by bracket_id first, then by exit side
-    exit_side = "sell" if pos_side == "BUY" else "buy"
-    try:
-        fills = await _exchange.get_algo_orders_history(symbol)
-
-        # Priority 1a: match by bracket_id if available
-        if bracket_id:
-            for fill in fills:
-                if fill.get("algoId") == bracket_id and fill.get("state") == "effective":
-                    fp = float(fill.get("avgPx") or fill.get("fillPx") or 0)
-                    if fp > 0:
-                        fill_price = fp
-                        source = "fills"
-                        ord_type = fill.get("ordType", "").lower()
-                        if "tp" in ord_type:
-                            reason = "take_profit"
-                        elif "sl" in ord_type:
-                            reason = "stop_loss"
-                        else:
-                            reason = "bracket_filled"
-                        fill_time = _fill_time_from_ms(fill.get("fillTime"))
-                        logger.info(
-                            "[POSITION_RECONCILE] Recovered fill by bracket_id: "
-                            "algoId=%s fill=%.4f reason=%s",
-                            bracket_id, fill_price, reason,
-                        )
-                        break
-
-        # Priority 1b: match by exit side (most recent fill for the closing side)
-        if fill_price is None or fill_price <= 0:
-            for fill in fills:
-                if fill.get("side", "").lower() == exit_side:
-                    fp = float(fill.get("avgPx") or fill.get("fillPx") or 0)
-                    if fp > 0:
-                        fill_price = fp
-                        source = "fills"
-                        ord_type = fill.get("ordType", "").lower()
-                        if "tp" in ord_type:
-                            reason = "take_profit"
-                        elif "sl" in ord_type:
-                            reason = "stop_loss"
-                        else:
-                            reason = "external_close"
-                        fill_time = _fill_time_from_ms(fill.get("fillTime"))
-                        logger.info(
-                            "[POSITION_RECONCILE] Recovered fill by exit side (%s): "
-                            "fill=%.4f reason=%s",
-                            exit_side, fill_price, reason,
-                        )
-                        break
-    except Exception as hist_e:
-        logger.warning("[POSITION_RECONCILE] Fills fetch failed: %s", hist_e)
-
-    # Priority 2: entry price fallback (PnL unreliable)
-    if fill_price is None or fill_price <= 0:
-        fill_price = entry_price
-        source = "entry_price_fallback"
-        reason = "external_close_unknown_price"
-        logger.warning(
-            "[POSITION_RECONCILE] No fill price recovered — using entry_price=%.4f as fallback. "
-            "PnL will be inaccurate!",
-            entry_price,
+    # Never infer an exit from the instrument's generic order stream.  In a
+    # multi-session setup this is actively unsafe, and it is already ambiguous
+    # when the account has manual trades on the same pair.
+    if not bracket_id:
+        logger.error(
+            "[POSITION_RECONCILE] %s appears closed but has no persisted OCO algoId; "
+            "retaining local trade rather than associating an unrelated fill",
+            symbol,
         )
+        return None
 
-    logger.info(
-        "[POSITION_RECONCILE] %s %s closed externally | fill=%.4f source=%s reason=%s",
-        pos_side, symbol, fill_price, source, reason,
-    )
-
-    return {"fill_price": fill_price, "source": source, "reason": reason, "fill_time": fill_time}
+    try:
+        match = _matched_bracket_fill(
+            await _get_verified_bracket_fills(_exchange, symbol, bracket_id), bracket_id
+        )
+        if match:
+            logger.info(
+                "[POSITION_RECONCILE] Recovered verified OCO fill: algoId=%s fill=%.4f reason=%s",
+                bracket_id, match["fill_price"], match["reason"],
+            )
+            return match
+        logger.warning(
+            "[POSITION_RECONCILE] Balance indicates %s is closed, but no verified fill exists for OCO algoId=%s; retaining local trade for retry",
+            symbol, bracket_id,
+        )
+    except Exception as hist_e:
+        logger.warning("[POSITION_RECONCILE] Verified OCO fill lookup failed: %s", hist_e)
+    return None

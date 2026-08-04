@@ -2,6 +2,29 @@
 
 ## Ultimo Handoff
 
+### Da: Codex → prossima sessione
+
+**Data:** 2026-08-04
+
+**Contesto:** TASK-1244 — correzione definitiva della riconciliazione delle chiusure OCO OKX mentre l'app era offline.
+
+### ✅ Diagnosi e fix
+- Il codice precedente chiamava `get_algo_orders_history()`, ma l'adapter interrogava prima `/api/v5/trade/fills` per l'intero simbolo e ritornava subito. Il reconcile, se l'`algoId` non compariva in quel fill, sceglieva la prima vendita `side=sell`: non era una correlazione con l'OCO e poteva usare il trade di un'altra sessione.
+- `OkxExchangeAdapter.get_algo_orders_history(symbol, bracket_id)` ora legge `orders-algo-history` per lo specifico `algoId` salvato nel DB, estrae il child `ordId` e richiede i fill soltanto per quell'ordine. Restituisce prezzo medio ponderato, `actualSide` (TP/SL) e `fillTime` reale.
+- `reconciliation.py` accetta una chiusura solo con match esatto `algoId`. Rimossi fallback ``exit side`` e ``entry_price``; se l'API non ha ancora propagato il fill, la posizione locale non viene chiusa/corrotta e il retry successivo resta sicuro.
+
+### 🧪 Verifica eseguita
+- `.venv\\Scripts\\python.exe -m pytest synthtrade/backend/tests/unit/test_reconcile_position.py synthtrade/backend/tests/unit/test_okx_oco_reconciliation.py -q`
+- Risultato: **7 passed**. `ruff` non è installato nel virtualenv.
+
+### 📌 Test manuale raccomandato
+1. Aprire un trade live con OCO, annotare `exchange_bracket_id` nella riga `scalping_trades`.
+2. Fermare il backend, lasciare scattare SL o TP su OKX, riavviare.
+3. Verificare che `exit_price`/`exit_time` coincidano con il fill del child `ordId` dell'OCO e che la riga diventi `closed`; sia dashboard sia pagina Log leggono la stessa riga DB.
+4. In caso di ritardo API, verificare il warning ``no verified fill exists``: non deve comparire una chiusura a entry price.
+
+---
+
 ### Da: Antigravity → prossima sessione
 
 **Data:** 2026-08-03 09:45

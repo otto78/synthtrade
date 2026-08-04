@@ -47,7 +47,7 @@ import { SessionApiService } from '../services/session-api.service';
               <td [ngClass]="trade.pnl >= 0 ? 'profit' : 'loss'">
                 {{ trade.pnl | number:'1.2-2' }}
               </td>
-              <td class="reason-cell" [ngClass]="getReasonClass(trade.signal_reason)">{{ trade.signal_reason || '-' }}</td>
+              <td class="reason-cell" [ngClass]="getReasonClass(trade.signal_reason)">{{ formatReason(trade.signal_reason) }}</td>
             </tr>
           </tbody>
         </table>
@@ -67,9 +67,10 @@ import { SessionApiService } from '../services/session-api.service';
     .sell { color: var(--accent-danger, #ef5350); }
     .profit { color: var(--accent-success, #26a69a); }
     .loss { color: var(--accent-danger, #ef5350); }
-    .reason-cell { font-size: 10px; opacity: 0.8; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .reason-cell { font-size: 10px; opacity: 0.8; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .reason-stop-loss { color: var(--accent-danger, #ef5350); font-weight: 600; }
     .reason-take-profit { color: var(--accent-success, #26a69a); font-weight: 600; }
+    .reason-stop-loss-secure { color: #F0B90B; font-weight: 700; }
   `],
 })
 export class TradeLogComponent implements OnInit, OnDestroy {
@@ -134,9 +135,27 @@ export class TradeLogComponent implements OnInit, OnDestroy {
   getReasonClass(reason: string | undefined): string {
     if (!reason) return '';
     const r = reason.toLowerCase().replace(/\s+/g, '-');
+    if (r === 'stop_loss_secure') return 'reason-stop-loss-secure';
     if (r.includes('stop-loss') || r.includes('stop_loss') || r === 'stop') return 'reason-stop-loss';
     if (r.includes('take-profit') || r.includes('take_profit') || r === 'tp' || r === 'take') return 'reason-take-profit';
     return '';
+  }
+
+  /** Converte signal_reason raw (snake_case) in etichetta leggibile. */
+  formatReason(reason: string | undefined): string {
+    if (!reason) return '—';
+    switch (reason) {
+      case 'take_profit':       return 'Take Profit';
+      case 'stop_loss':         return 'Stop Loss';
+      case 'stop_loss_secure':  return '🔒 Stop Loss Secure';
+      case 'bracket_filled':    return 'Bracket Filled';
+      case 'manual':            return 'Manual Close';
+      case 'stop':              return 'Stop Loss';
+      case 'tp':                return 'Take Profit';
+      default:
+        // fallback: sostituisce underscore con spazio e capitalizza ogni parola
+        return reason.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
   }
 
   /** Deduplicate by unique trade key (entry_price+exit_price+symbol). */

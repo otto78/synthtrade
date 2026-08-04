@@ -175,13 +175,15 @@ async def _on_order_update(event: dict):
         if leg == "take_profit":
             reason = "take_profit"
         elif leg == "stop_loss":
-            reason = "stop_loss"
+            # TASK-1243: se il profit lock era attivo questo SL era già in profitto
+            reason = "stop_loss_secure" if getattr(pos, "break_even_triggered", False) else "stop_loss"
         elif order_id and pos.tp_order_id and order_id == pos.tp_order_id:
             reason = "take_profit"
         elif order_id and pos.sl_order_id and order_id == pos.sl_order_id:
-            reason = "stop_loss"
+            reason = "stop_loss_secure" if getattr(pos, "break_even_triggered", False) else "stop_loss"
         else:
-            reason = "bracket_filled"
+            # bracket_filled generico: se break-even era attivo ed è uscito in positivo → secure
+            reason = "stop_loss_secure" if getattr(pos, "break_even_triggered", False) else "bracket_filled"
 
         if fill_price <= 0:
             # ``orders-algo-history`` can report the effective OCO before the

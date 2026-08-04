@@ -194,7 +194,7 @@ const PAGE_SIZE = 50;
                               <td class="cell-pnl" [ngClass]="{ positive: (t.pnl_pct ?? 0) >= 0, negative: (t.pnl_pct ?? 0) < 0 }">
                                 {{ t.pnl_pct != null ? ((t.pnl_pct >= 0 ? '+' : '') + (t.pnl_pct | number:'1.2-2') + '%') : '—' }}
                               </td>
-                              <td class="cell-reason">{{ t.signal_reason ?? '—' }}</td>
+                              <td class="cell-reason" [ngClass]="getReasonClass(t.signal_reason)">{{ formatReason(t.signal_reason) }}</td>
                             </tr>
                           }
                         </tbody>
@@ -245,7 +245,10 @@ const PAGE_SIZE = 50;
     .cell-price, .cell-exit, .cell-qty { font-family: monospace; color: var(--text-primary); }
     .cell-pnl, .cell-pnl-eur { font-family: monospace; font-weight: 700; }
     .cell-duration { font-family: monospace; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-    .cell-reason { font-size: 11px; color: var(--text-secondary); max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cell-reason { font-size: 11px; color: var(--text-secondary); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .reason-sl     { color: var(--accent-danger, #ef5350); font-weight: 600; }
+    .reason-tp     { color: var(--accent-success, #26a69a); font-weight: 600; }
+    .reason-secure { color: #F0B90B; font-weight: 700; }
     .positive { color: var(--color-buy); }
     .negative { color: var(--color-sell); }
     .pagination { display: flex; align-items: center; gap: 12px; margin-top: 16px; justify-content: flex-end; }
@@ -524,5 +527,30 @@ export class LogsPage implements OnInit, OnDestroy {
 
   trackByTrade(index: number, trade: SessionTradeLog): string {
     return trade.entry_time + trade.symbol + trade.side;
+  }
+
+  /** Converte signal_reason raw in etichetta leggibile. */
+  formatReason(reason: string | undefined | null): string {
+    if (!reason) return '—';
+    switch (reason) {
+      case 'take_profit':      return 'Take Profit';
+      case 'stop_loss':        return 'Stop Loss';
+      case 'stop_loss_secure': return '🔒 Stop Loss Secure';
+      case 'bracket_filled':   return 'Bracket Filled';
+      case 'manual':           return 'Manual Close';
+      case 'stop':             return 'Stop Loss';
+      case 'tp':               return 'Take Profit';
+      default:
+        return reason.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+  }
+
+  /** Classe CSS per colorare la cella reason. */
+  getReasonClass(reason: string | undefined | null): string {
+    if (!reason) return '';
+    if (reason === 'stop_loss_secure') return 'reason-secure';
+    if (reason.includes('stop_loss') || reason === 'stop') return 'reason-sl';
+    if (reason.includes('take_profit') || reason === 'tp') return 'reason-tp';
+    return '';
   }
 }

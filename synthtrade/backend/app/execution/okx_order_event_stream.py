@@ -537,14 +537,28 @@ class OkxOrderEventStream:
         else:
             tp_trigger = float(item.get("tpTriggerPx") or 0)
             sl_trigger = float(item.get("slTriggerPx") or 0)
-            if fill_price and (tp_trigger or sl_trigger):
-                if tp_trigger and sl_trigger:
-                    # OCO: fill closer to TP = TP, closer to SL = SL
-                    leg = "take_profit" if abs(fill_price - tp_trigger) < abs(fill_price - sl_trigger) else "stop_loss"
-                elif tp_trigger:
-                    leg = "take_profit"
+            if tp_trigger and sl_trigger:
+                # OCO con entrambi i trigger: usa fill_price se disponibile,
+                # altrimenti l'ultimo prezzo conosciuto (avgPx/fillPx).
+                # Se nemmeno quello c'è, confronta solo i trigger stessi
+                # (SL trigger < TP trigger per long: non aiuta senza fill).
+                # Preferisce confronto col fill_price quando disponibile.
+                if fill_price:
+                    leg = "take_profit" if abs(fill_price - tp_trigger) <= abs(fill_price - sl_trigger) else "stop_loss"
                 else:
-                    leg = "stop_loss"
+                    # Senza fill price: fallback su ordType, poi algo
+                    ord_type = item.get("ordType", "")
+                    if "tp" in ord_type.lower():
+                        leg = "take_profit"
+                    elif "sl" in ord_type.lower():
+                        leg = "stop_loss"
+                    else:
+                        # Ultimo resort: ignoto ma può solo essere TP o SL
+                        leg = "bracket_unknown"
+            elif tp_trigger:
+                leg = "take_profit"
+            elif sl_trigger:
+                leg = "stop_loss"
             else:
                 ord_type = item.get("ordType", "")
                 if "tp" in ord_type.lower():
@@ -552,7 +566,7 @@ class OkxOrderEventStream:
                 elif "sl" in ord_type.lower():
                     leg = "stop_loss"
                 else:
-                    leg = "algo"
+                    leg = "bracket_unknown"
 
         return {
             "provider": "okx",

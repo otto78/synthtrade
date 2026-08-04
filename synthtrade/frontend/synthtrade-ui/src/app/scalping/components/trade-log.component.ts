@@ -148,7 +148,8 @@ export class TradeLogComponent implements OnInit, OnDestroy {
       case 'take_profit':       return 'Take Profit';
       case 'stop_loss':         return 'Stop Loss';
       case 'stop_loss_secure':  return '🔒 Stop Loss Secure';
-      case 'bracket_filled':    return 'Bracket Filled';
+      case 'bracket_filled':    return 'Bracket (unknown)';
+      case 'bracket_unknown':   return 'Bracket (unknown)';
       case 'manual':            return 'Manual Close';
       case 'stop':              return 'Stop Loss';
       case 'tp':                return 'Take Profit';

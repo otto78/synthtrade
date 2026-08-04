@@ -182,7 +182,10 @@ async def _on_order_update(event: dict):
         elif order_id and pos.sl_order_id and order_id == pos.sl_order_id:
             reason = "stop_loss_secure" if getattr(pos, "break_even_triggered", False) else "stop_loss"
         else:
-            # bracket_filled generico: se break-even era attivo ed è uscito in positivo → secure
+            # bracket_unknown / algo: leg non determinabile (fill_price assente + no actualSide).
+            # Un OCO può chiudersi solo per TP o SL — non esiste una terza opzione.
+            # Se break-even era attivo l'uscita era comunque in profitto → secure.
+            # Altrimenti teniamo bracket_filled come indicatore diagnostico.
             reason = "stop_loss_secure" if getattr(pos, "break_even_triggered", False) else "bracket_filled"
 
         if fill_price <= 0:

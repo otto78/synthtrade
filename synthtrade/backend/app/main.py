@@ -87,7 +87,7 @@ async def _restore_scalping_session(db) -> None:
             def _db_op2():
                 db.table("scalping_sessions").update({
                     "status": "stopped",
-                    "stopped_at": datetime.utcnow().isoformat()
+                    "stopped_at": datetime.now(timezone.utc).isoformat()
                 }).eq("id", session_id).execute()
             await asyncio.to_thread(_db_op2)
             logger.info("Stale session %s marked as stopped", session_id)
@@ -424,6 +424,9 @@ async def _restore_scalping_session(db) -> None:
                                 pos_obj.break_even_activated_at = None
                         if ot.get("break_even_sl_price"):
                             pos_obj.break_even_sl_price = Decimal(str(ot["break_even_sl_price"]))
+                        # TASK-1246: ripristina trailing_step (solo telemetria/UI).
+                        # Il prezzo SL reale è già in sl_price — non ricalcolare da step count.
+                        pos_obj.trailing_step = int(ot.get("trailing_step") or 0)
                         # TASK-1187: ripristina entry_order_id (ordId market) e
                         # exchange_bracket_id (algoId OCO) dal DB per tracciabilità
                         # completa e disponibilità nei path di reconcile.

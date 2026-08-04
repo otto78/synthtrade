@@ -31,10 +31,12 @@ import { Position } from '../models/position.model';
           <span class="side" [ngClass]="position.side.toLowerCase()">{{ position.side }}</span>
         </div>
 
-        <!-- TASK-1243: Profit Lock badge — mostrato quando il break-even è stato attivato -->
-        <div *ngIf="position.profit_lock_active" class="profit-lock-banner">
+        <!-- TASK-1243/1246: banner step-aware -->
+        <div *ngIf="position.profit_lock_active" class="profit-lock-banner" [class.trailing-active]="(position.trailing_step ?? 0) > 0">
           <span class="lock-icon">🔒</span>
-          <span class="lock-text">STOP LOSS BREAKEVEN ATTIVO</span>
+          <span class="lock-text">
+            {{ (position.trailing_step ?? 0) > 0 ? 'TRAILING STOP — Step ' + position.trailing_step : 'STOP LOSS BREAKEVEN ATTIVO' }}
+          </span>
           <span class="lock-sl">SL → {{ position.stop_loss_price | number:'1.2-2' }}</span>
         </div>
         
@@ -268,6 +270,16 @@ import { Position } from '../models/position.model';
       padding: 8px 12px;
       animation: lockPulse 2s ease-in-out infinite;
     }
+    .profit-lock-banner.trailing-active {
+      background: linear-gradient(90deg, rgba(66,165,245,0.15), rgba(66,165,245,0.06));
+      border-color: rgba(66,165,245,0.55);
+    }
+    .profit-lock-banner.trailing-active .lock-text {
+      color: #42A5F5;
+    }
+    .profit-lock-banner.trailing-active .lock-sl {
+      color: rgba(66,165,245,0.8);
+    }
     @keyframes lockPulse {
       0%, 100% { border-color: rgba(240,185,11,0.45); }
       50%       { border-color: rgba(240,185,11,0.85); }
@@ -375,6 +387,8 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
         // TASK-1243: profit lock
         profit_lock_active: event.profit_lock_active ?? this.position?.profit_lock_active ?? false,
         profit_lock_sl_price: event.profit_lock_sl_price ?? this.position?.profit_lock_sl_price,
+        // TASK-1246: trailing step
+        trailing_step: event.trailing_step ?? this.position?.trailing_step ?? 0,
       };
       this.cdr.markForCheck();
       this.cdr.detectChanges();

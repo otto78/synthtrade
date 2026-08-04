@@ -58,6 +58,10 @@ class Position:
     break_even_triggered: bool = False
     break_even_activated_at: Optional[datetime] = None
     break_even_sl_price: Optional[Decimal] = None
+    # TASK-1246: Trailing stop step counter (solo telemetria/UI).
+    # Il prezzo SL reale è sempre in sl_price — trailing_step NON viene usato
+    # per ricostruire prezzi al restore (immune a cambio di step_size a runtime).
+    trailing_step: int = 0
 
 
 class PositionManager:

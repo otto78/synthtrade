@@ -20,7 +20,7 @@ from decimal import Decimal, ROUND_DOWN, ROUND_UP
 
 from app.scalping._state import _execution_state
 from app.scalping.pricing import _expected_net_pct_at_exit, _exit_price_ratio, _get_fee_rate
-from app.scalping.db_ops import _update_break_even_in_db
+from app.scalping.db_ops import _update_break_even_in_db, _update_trailing_in_db
 from app.scalping.broadcast import broadcast_scalping_event
 from app.scalping.config_loader import get_scalping_config
 from app.scalping.engine.position_manager import PositionStatus
@@ -238,3 +238,190 @@ async def _check_and_apply_break_even(
             })
         except Exception as ws_e:
             logger.warning("[BE] Broadcast WS fallito: %s", ws_e)
+
+
+
+async def _check_and_apply_trailing(
+    pos,
+    current_price: float,
+    session: dict,
+) -> None:
+    """TASK-1246: Trailing stop progressivo post break-even.
+
+    Chiamare su ogni candela chiusa DOPO _check_and_apply_break_even.
+    No-op se break_even_triggered=False, trailing_enabled=False, o guard fallisce.
+
+    Il guard dinamico confronta next_trigger con tp_net_pct - safety_margin
+    invece di un contatore fisso: immune a cambio TP da Supervisor a runtime.
+
+    Il prezzo SL reale è sempre in pos.sl_price (fonte di verità al restore).
+    pos.trailing_step è solo telemetria/UI.
+    """
+    # ── Guard 1: solo se break-even già attivato ─────────────────────────────
+    if not pos.break_even_triggered:
+        return
+
+    # ── Guard 2: solo OPEN live con algoId ───────────────────────────────────
+    if pos.status != PositionStatus.OPEN:
+        return
+    if session.get("mode", "paper") != "live":
+        return
+    algo_id = pos.oco_order_list_id
+    if not algo_id:
+        return
+
+    # ── Guard 3: feature flag ─────────────────────────────────────────────────
+    cfg = get_scalping_config()
+    if not cfg.get("TRAILING_ENABLED", False):
+        return
+
+    step_net = float(cfg.get("TRAILING_STEP_NET_PCT", 0.15))
+    buffer_net = float(cfg.get("TRAILING_BUFFER_NET_PCT", 0.10))
+    safety_margin = float(cfg.get("TRAILING_SAFETY_MARGIN_NET_PCT", 0.10))
+
+    # ── Calcola il prossimo trigger ───────────────────────────────────────────
+    be_trigger = float(cfg.get("BREAK_EVEN_TRIGGER_NET_PCT", 0.15))
+    next_trigger_net = be_trigger + (pos.trailing_step + 1) * step_net
+
+    # ── Guard 4: distanza dinamica dal TP (immune a cambio runtime) ───────────
+    risk_cfg = _execution_state.get("risk_config", {})
+    tp_net_pct = float(risk_cfg.get("take_profit_pct", 0.80))
+    if next_trigger_net >= tp_net_pct - safety_margin:
+        logger.debug(
+            "[TRAIL] next_trigger=%.4f%% >= tp_net=%.4f%% - safety=%.4f%% — cap raggiunto per %s",
+            next_trigger_net, tp_net_pct, safety_margin, algo_id,
+        )
+        return
+
+    # ── Calcola net_pct corrente ──────────────────────────────────────────────
+    entry_f = float(pos.entry_price)
+    if entry_f <= 0 or current_price <= 0:
+        return
+
+    fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+    ef = _get_fee_rate(fee_tier, "taker", 0.001)
+    xf = _get_fee_rate(fee_tier, "taker", 0.001)
+
+    net_pct = _expected_net_pct_at_exit(entry_f, current_price, pos.side, ef, xf)
+    if net_pct < next_trigger_net:
+        logger.debug(
+            "[TRAIL] net_pct=%.4f%% < next_trigger=%.4f%% — nessun step per %s",
+            net_pct, next_trigger_net, algo_id,
+        )
+        return
+
+    # ── Calcola nuovo SL ─────────────────────────────────────────────────────
+    new_sl_net = next_trigger_net - buffer_net
+    ratio = _exit_price_ratio(new_sl_net, ef, xf)
+    new_sl_raw = entry_f * ratio if pos.side.upper() == "BUY" else entry_f / ratio
+
+    exchange = _execution_state.get("exchange")
+    if not exchange:
+        logger.warning("[TRAIL] Exchange non disponibile per algoId=%s", algo_id)
+        return
+
+    symbol_str = pos.symbol
+    try:
+        sym_ref = SymbolRef.from_okx(symbol_str) if "-" in symbol_str else SymbolRef.from_compact(symbol_str)
+        rules = await exchange.get_symbol_rules(sym_ref)
+        tick_sz = rules.tick_sz
+    except Exception as e:
+        logger.warning("[TRAIL] Symbol rules non disponibili per %s: %s", symbol_str, e)
+        tick_sz = 0.01
+        sym_ref = SymbolRef.from_okx(symbol_str) if "-" in symbol_str else SymbolRef.from_compact(symbol_str)
+
+    new_sl_price = _quantize_price(new_sl_raw, tick_sz, pos.side)
+
+    # ── Guard 5: mai peggiorare lo SL (confronto su prezzo assoluto) ──────────
+    current_sl = float(pos.sl_price) if pos.sl_price else 0.0
+    if pos.side.upper() == "BUY":
+        if new_sl_price <= current_sl:
+            logger.warning(
+                "[TRAIL] Nuovo SL %.4f <= SL attuale %.4f per algoId=%s — skip",
+                new_sl_price, current_sl, algo_id,
+            )
+            return
+        if new_sl_price >= current_price:
+            logger.warning(
+                "[TRAIL] Nuovo SL %.4f >= prezzo corrente %.4f per algoId=%s — skip",
+                new_sl_price, current_price, algo_id,
+            )
+            return
+    else:
+        if new_sl_price >= current_sl and current_sl > 0:
+            return
+
+    # ── Lock per-algoId ───────────────────────────────────────────────────────
+    lock = _get_lock_for_algo(algo_id)
+    if lock.locked():
+        logger.debug("[TRAIL] Lock già acquisito per algoId=%s, skip candela corrente", algo_id)
+        return
+
+    async with lock:
+        import uuid as _uuid
+        req_id = _uuid.uuid4().hex[:32]
+        new_step = pos.trailing_step + 1
+
+        logger.info(
+            "[TRAIL] STEP %d: algoId=%s entry=%.4f current=%.4f net=%.4f%% "
+            "next_trigger=%.4f%% newSL=%.4f reqId=%s",
+            new_step, algo_id, entry_f, current_price, net_pct,
+            next_trigger_net, new_sl_price, req_id,
+        )
+
+        # ── Chiama OKX amend ──────────────────────────────────────────────────
+        try:
+            await exchange.amend_exit_bracket_stop_loss(
+                symbol=sym_ref,
+                algo_id=algo_id,
+                new_sl_trigger_px=new_sl_price,
+                req_id=req_id,
+            )
+        except (ExchangeOrderError, NotImplementedError) as e:
+            logger.error(
+                "[TRAIL] amend FALLITO step %d algoId=%s: %s — stato locale invariato",
+                new_step, algo_id, e,
+            )
+            return
+        except Exception as e:
+            logger.error("[TRAIL] Errore inatteso step %d algoId=%s: %s", new_step, algo_id, e)
+            return
+
+        # ── Solo dopo conferma OKX: aggiorna memoria ──────────────────────────
+        old_sl = current_sl
+        pos.sl_price = Decimal(str(new_sl_price))
+        pos.trailing_step = new_step
+
+        logger.info(
+            "[TRAIL] SUCCESS step %d: algoId=%s oldSL=%.4f newSL=%.4f reqId=%s",
+            new_step, algo_id, old_sl, new_sl_price, req_id,
+        )
+
+        # ── Persisti su DB ────────────────────────────────────────────────────
+        try:
+            await _update_trailing_in_db(
+                exchange_bracket_id=algo_id,
+                new_sl_price=new_sl_price,
+                trailing_step=new_step,
+            )
+        except Exception as db_e:
+            logger.error("[TRAIL] DB persist fallito step %d algoId=%s: %s", new_step, algo_id, db_e)
+
+        # ── Broadcast WS ──────────────────────────────────────────────────────
+        try:
+            await broadcast_scalping_event("trailing_stop_updated", {
+                "algo_id": algo_id,
+                "symbol": pos.symbol,
+                "side": pos.side,
+                "entry_price": entry_f,
+                "current_price": current_price,
+                "step": new_step,
+                "old_sl_price": round(old_sl, 4),
+                "new_sl_price": round(new_sl_price, 4),
+                "next_trigger_net_pct": round(next_trigger_net, 4),
+                "new_sl_net_pct": round(new_sl_net, 4),
+                "net_pct_at_step": round(net_pct, 4),
+                "req_id": req_id,
+            })
+        except Exception as ws_e:
+            logger.warning("[TRAIL] Broadcast WS fallito: %s", ws_e)

@@ -111,6 +111,8 @@ export interface PositionEvent {
   // TASK-1243: profit lock (break-even amend attivato)
   profit_lock_active?: boolean;
   profit_lock_sl_price?: number;
+  // TASK-1246: trailing stop step (solo UI/telemetria)
+  trailing_step?: number;
 }
 
 /** Strategy parameter values — extensible for different strategy types */

@@ -71,6 +71,7 @@ import { SessionApiService } from '../services/session-api.service';
     .reason-stop-loss { color: var(--accent-danger, #ef5350); font-weight: 600; }
     .reason-take-profit { color: var(--accent-success, #26a69a); font-weight: 600; }
     .reason-stop-loss-secure { color: #F0B90B; font-weight: 700; }
+    .reason-trailing { color: #42A5F5; font-weight: 700; }
   `],
 })
 export class TradeLogComponent implements OnInit, OnDestroy {
@@ -136,6 +137,7 @@ export class TradeLogComponent implements OnInit, OnDestroy {
     if (!reason) return '';
     const r = reason.toLowerCase().replace(/\s+/g, '-');
     if (r === 'stop_loss_breakeven') return 'reason-stop-loss-secure';
+    if (r === 'stop_loss_trailing') return 'reason-trailing';
     if (r.includes('stop-loss') || r.includes('stop_loss') || r === 'stop') return 'reason-stop-loss';
     if (r.includes('take-profit') || r.includes('take_profit') || r === 'tp' || r === 'take') return 'reason-take-profit';
     return '';
@@ -145,14 +147,15 @@ export class TradeLogComponent implements OnInit, OnDestroy {
   formatReason(reason: string | undefined): string {
     if (!reason) return '—';
     switch (reason) {
-      case 'take_profit':       return 'Take Profit';
-      case 'stop_loss':         return 'Stop Loss';
+      case 'take_profit':          return 'Take Profit';
+      case 'stop_loss':            return 'Stop Loss';
       case 'stop_loss_breakeven':  return 'Stop Loss Breakeven';
-      case 'bracket_filled':    return 'Bracket (unknown)';
-      case 'bracket_unknown':   return 'Bracket (unknown)';
-      case 'manual':            return 'Manual Close';
-      case 'stop':              return 'Stop Loss';
-      case 'tp':                return 'Take Profit';
+      case 'stop_loss_trailing':   return 'Stop Loss Trailing';
+      case 'bracket_filled':       return 'Bracket (unknown)';
+      case 'bracket_unknown':      return 'Bracket (unknown)';
+      case 'manual':               return 'Manual Close';
+      case 'stop':                 return 'Stop Loss';
+      case 'tp':                   return 'Take Profit';
       default:
         // fallback: sostituisce underscore con spazio e capitalizza ogni parola
         return reason.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());

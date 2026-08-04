@@ -500,3 +500,230 @@ class TestQuantizePrice:
         # tick_sz=0 → restituisce il prezzo invariato
         result = _quantize_price(50123.456, tick_sz=0, side="BUY")
         assert result == pytest.approx(50123.456)
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. Test _check_and_apply_trailing (TASK-1246)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+class TestTrailingStop:
+    """Test logica trailing stop progressivo."""
+
+    async def _run_trailing(self, pos, current_price, session, exchange, config_overrides=None):
+        from app.scalping.break_even import _check_and_apply_trailing
+        config_defaults = {
+            "BREAK_EVEN_ENABLED": True,
+            "BREAK_EVEN_TRIGGER_NET_PCT": 0.15,
+            "BREAK_EVEN_LOCK_NET_PCT": 0.05,
+            "TRAILING_ENABLED": True,
+            "TRAILING_STEP_NET_PCT": 0.15,
+            "TRAILING_BUFFER_NET_PCT": 0.10,
+            "TRAILING_SAFETY_MARGIN_NET_PCT": 0.10,
+        }
+        if config_overrides:
+            config_defaults.update(config_overrides)
+        cfg_mock = MagicMock()
+        cfg_mock.get.side_effect = lambda k, d=None: config_defaults.get(k, d)
+        state = {
+            "exchange": exchange,
+            "fee_tier": {"maker": 0.001, "taker": 0.001},
+            "risk_config": {"take_profit_pct": 0.80},
+        }
+        with patch("app.scalping.break_even._execution_state", state), \
+             patch("app.scalping.break_even.get_scalping_config", return_value=cfg_mock), \
+             patch("app.scalping.break_even._update_trailing_in_db", new_callable=AsyncMock), \
+             patch("app.scalping.break_even.broadcast_scalping_event", new_callable=AsyncMock):
+            await _check_and_apply_trailing(pos, current_price, session)
+
+    def _make_pos_with_be(self, entry=50000.0, sl=50125.0, trailing_step=0):
+        pos = _make_position(entry=entry, sl_price=sl, be_triggered=True)
+        pos.trailing_step = trailing_step
+        return pos
+
+    async def test_no_trailing_without_breakeven(self):
+        """Se break_even_triggered=False il trailing non scatta."""
+        exchange = _make_exchange_mock()
+        pos = _make_position(entry=50000.0, sl_price=49800.0, be_triggered=False)
+        await self._run_trailing(pos, 50300.0, _make_session(), exchange)
+        exchange.amend_exit_bracket_stop_loss.assert_not_called()
+
+    async def test_no_trailing_when_flag_off(self):
+        """TRAILING_ENABLED=False → nessun amend."""
+        exchange = _make_exchange_mock()
+        pos = self._make_pos_with_be()
+        await self._run_trailing(pos, 50300.0, _make_session(), exchange,
+                                  {"TRAILING_ENABLED": False})
+        exchange.amend_exit_bracket_stop_loss.assert_not_called()
+
+    async def test_step1_fires_above_threshold(self):
+        """Step 1 scatta quando net >= be_trigger(0.15) + step(0.15) = 0.30%."""
+        exchange = _make_exchange_mock()
+        pos = self._make_pos_with_be(entry=50000.0, sl=50125.0, trailing_step=0)
+        # +0.50% lordo ≈ +0.30% netto
+        await self._run_trailing(pos, 50250.0, _make_session(), exchange)
+        exchange.amend_exit_bracket_stop_loss.assert_called_once()
+        assert pos.trailing_step == 1
+        assert float(pos.sl_price) > 50125.0
+
+    async def test_step1_not_fires_below_threshold(self):
+        """Sotto soglia step 1 (0.30% netto) nessun amend."""
+        exchange = _make_exchange_mock()
+        pos = self._make_pos_with_be(entry=50000.0, sl=50125.0, trailing_step=0)
+        await self._run_trailing(pos, 50150.0, _make_session(), exchange)
+        exchange.amend_exit_bracket_stop_loss.assert_not_called()
+
+    async def test_sl_never_decreases(self):
+        """Nuovo SL deve sempre essere > SL attuale."""
+        exchange = _make_exchange_mock()
+        from app.scalping.pricing import _exit_price_ratio
+        high_sl = 50000.0 * _exit_price_ratio(0.35, 0.001, 0.001)
+        pos = self._make_pos_with_be(entry=50000.0, sl=high_sl, trailing_step=3)
+        await self._run_trailing(pos, 50400.0, _make_session(), exchange)
+        exchange.amend_exit_bracket_stop_loss.assert_not_called()
+
+    async def test_cap_dynamic_tp_distance(self):
+        """Step bloccato quando next_trigger >= tp_net - safety_margin."""
+        exchange = _make_exchange_mock()
+        # step=5: next_trigger = 0.15 + 6*0.15 = 1.05% > tp(0.80%) - margin(0.10%) = 0.70%
+        pos = self._make_pos_with_be(entry=50000.0, sl=50125.0, trailing_step=5)
+        await self._run_trailing(pos, 50600.0, _make_session(), exchange)
+        exchange.amend_exit_bracket_stop_loss.assert_not_called()
+
+    async def test_state_not_mutated_on_exchange_error(self):
+        """Errore OKX → stato locale invariato."""
+        exchange = _make_exchange_mock(amend_ok=False)
+        pos = self._make_pos_with_be(entry=50000.0, sl=50125.0, trailing_step=0)
+        old_sl = float(pos.sl_price)
+        await self._run_trailing(pos, 50250.0, _make_session(), exchange)
+        assert pos.trailing_step == 0
+        assert float(pos.sl_price) == old_sl
+
+    async def test_restore_trailing_step_is_telemetry_only(self):
+        """trailing_step viene ripristinato dal DB ma sl_price è la vera fonte."""
+        from app.scalping.engine.position_manager import Position
+        pos = Position(
+            symbol="BTC-EUR", side="BUY",
+            entry_price=Decimal("50000"), quantity=Decimal("0.001"),
+        )
+        pos.break_even_triggered = True
+        pos.trailing_step = 2
+        pos.sl_price = Decimal("50250.00")  # prezzo reale dal DB
+        pos.oco_order_list_id = "algo_test"
+        assert float(pos.sl_price) == 50250.0
+        assert pos.trailing_step == 2
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. Test _check_and_apply_trailing (TASK-1246)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+class TestTrailingStop:
+    """Test logica trailing stop progressivo."""
+
+    async def _run_trailing(self, pos, current_price, session, exchange, config_overrides=None):
+        from app.scalping.break_even import _check_and_apply_trailing
+        config_defaults = {
+            "BREAK_EVEN_ENABLED": True,
+            "BREAK_EVEN_TRIGGER_NET_PCT": 0.15,
+            "BREAK_EVEN_LOCK_NET_PCT": 0.05,
+            "TRAILING_ENABLED": True,
+            "TRAILING_STEP_NET_PCT": 0.15,
+            "TRAILING_BUFFER_NET_PCT": 0.10,
+            "TRAILING_SAFETY_MARGIN_NET_PCT": 0.10,
+        }
+        if config_overrides:
+            config_defaults.update(config_overrides)
+        cfg_mock = MagicMock()
+        cfg_mock.get.side_effect = lambda k, d=None: config_defaults.get(k, d)
+        state = {
+            "exchange": exchange,
+            "fee_tier": {"maker": 0.001, "taker": 0.001},
+            "risk_config": {"take_profit_pct": 0.80},
+        }
+        with patch("app.scalping.break_even._execution_state", state), \
+             patch("app.scalping.break_even.get_scalping_config", return_value=cfg_mock), \
+             patch("app.scalping.break_even._update_trailing_in_db", new_callable=AsyncMock), \
+             patch("app.scalping.break_even.broadcast_scalping_event", new_callable=AsyncMock):
+            await _check_and_apply_trailing(pos, current_price, session)
+
+    def _make_pos_with_be(self, entry=50000.0, sl=50125.0, trailing_step=0):
+        pos = _make_position(entry=entry, sl_price=sl, be_triggered=True)
+        pos.trailing_step = trailing_step
+        return pos
+
+    async def test_no_trailing_without_breakeven(self):
+        """Se break_even_triggered=False il trailing non scatta."""
+        exchange = _make_exchange_mock()
+        pos = _make_position(entry=50000.0, sl_price=49800.0, be_triggered=False)
+        await self._run_trailing(pos, 50300.0, _make_session(), exchange)
+        exchange.amend_exit_bracket_stop_loss.assert_not_called()
+
+    async def test_no_trailing_when_flag_off(self):
+        """TRAILING_ENABLED=False → nessun amend."""
+        exchange = _make_exchange_mock()
+        pos = self._make_pos_with_be()
+        await self._run_trailing(pos, 50300.0, _make_session(), exchange,
+                                  {"TRAILING_ENABLED": False})
+        exchange.amend_exit_bracket_stop_loss.assert_not_called()
+
+    async def test_step1_fires_above_threshold(self):
+        """Step 1 scatta quando net >= be_trigger(0.15) + step(0.15) = 0.30%."""
+        exchange = _make_exchange_mock()
+        pos = self._make_pos_with_be(entry=50000.0, sl=50125.0, trailing_step=0)
+        # 50252 → net ≈ +0.30% netto (soglia esatta +0.30%, prezzo lordo ~50250.45)
+        await self._run_trailing(pos, 50260.0, _make_session(), exchange)
+        exchange.amend_exit_bracket_stop_loss.assert_called_once()
+        assert pos.trailing_step == 1
+        assert float(pos.sl_price) > 50125.0
+
+    async def test_step1_not_fires_below_threshold(self):
+        """Sotto soglia step 1 (0.30% netto) nessun amend."""
+        exchange = _make_exchange_mock()
+        pos = self._make_pos_with_be(entry=50000.0, sl=50125.0, trailing_step=0)
+        # +0.20% lordo ≈ ~0.0% netto — sotto soglia
+        await self._run_trailing(pos, 50100.0, _make_session(), exchange)
+        exchange.amend_exit_bracket_stop_loss.assert_not_called()
+
+    async def test_sl_never_decreases(self):
+        """Nuovo SL deve sempre essere > SL attuale."""
+        exchange = _make_exchange_mock()
+        from app.scalping.pricing import _exit_price_ratio
+        high_sl = 50000.0 * _exit_price_ratio(0.35, 0.001, 0.001)
+        pos = self._make_pos_with_be(entry=50000.0, sl=high_sl, trailing_step=3)
+        await self._run_trailing(pos, 50400.0, _make_session(), exchange)
+        exchange.amend_exit_bracket_stop_loss.assert_not_called()
+
+    async def test_cap_dynamic_tp_distance(self):
+        """Step bloccato quando next_trigger >= tp_net - safety_margin."""
+        exchange = _make_exchange_mock()
+        # step=5: next = 0.15 + 6*0.15 = 1.05% > tp(0.80%) - margin(0.10%) = 0.70%
+        pos = self._make_pos_with_be(entry=50000.0, sl=50125.0, trailing_step=5)
+        await self._run_trailing(pos, 50600.0, _make_session(), exchange)
+        exchange.amend_exit_bracket_stop_loss.assert_not_called()
+
+    async def test_state_not_mutated_on_exchange_error(self):
+        """Errore OKX → stato locale invariato."""
+        exchange = _make_exchange_mock(amend_ok=False)
+        pos = self._make_pos_with_be(entry=50000.0, sl=50125.0, trailing_step=0)
+        old_sl = float(pos.sl_price)
+        await self._run_trailing(pos, 50250.0, _make_session(), exchange)
+        assert pos.trailing_step == 0
+        assert float(pos.sl_price) == old_sl
+
+    def test_restore_trailing_step_is_telemetry_only(self):
+        """trailing_step dal DB è solo UI — sl_price è la vera fonte di verità."""
+        from app.scalping.engine.position_manager import Position
+        pos = Position(
+            symbol="BTC-EUR", side="BUY",
+            entry_price=Decimal("50000"), quantity=Decimal("0.001"),
+        )
+        pos.break_even_triggered = True
+        pos.trailing_step = 2
+        pos.sl_price = Decimal("50250.00")
+        pos.oco_order_list_id = "algo_test"
+        assert float(pos.sl_price) == 50250.0
+        assert pos.trailing_step == 2

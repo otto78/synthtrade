@@ -18,7 +18,7 @@ from app.scalping.pricing import (
     _sl_gross_fraction,
 )
 from app.scalping.db_ops import _save_open_position_to_db
-from app.scalping.break_even import _check_and_apply_break_even
+from app.scalping.break_even import _check_and_apply_break_even, _check_and_apply_trailing
 from app.scalping.trade_executor import (
     _start_uds_if_needed,
     _handle_bracket_failed,
@@ -891,6 +891,10 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                     # Eseguito PRIMA del broadcast così position_update porta già il nuovo SL.
                     # No-op se feature flag off, posizione paper, o già attivato.
                     await _check_and_apply_break_even(pos, current_price_f, session)
+
+                    # TASK-1246: Trailing stop progressivo — eseguito dopo il break-even.
+                    # No-op se break_even_triggered=False o trailing_enabled=False.
+                    await _check_and_apply_trailing(pos, current_price_f, session)
 
                     # Rilegge sl_price dopo eventuale amend (potrebbe essere cambiato)
                     if pos.sl_price is not None and float(pos.sl_price) > 0:

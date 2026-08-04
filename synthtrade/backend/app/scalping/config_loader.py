@@ -67,6 +67,12 @@ class ScalpingConfigLoader:
             "BREAK_EVEN_ENABLED": False,
             "BREAK_EVEN_TRIGGER_NET_PCT": 0.15,  # circa +0.35% lordo con fee 0.10%+0.10%
             "BREAK_EVEN_LOCK_NET_PCT": 0.05,      # nuovo SL circa +0.25% lordo
+            # TASK-1246: Trailing stop progressivo — feature flag OFF by default.
+            # Attivare solo dopo: spike rate limit OK + ≥20 trade paper con break-even.
+            "TRAILING_ENABLED": False,
+            "TRAILING_STEP_NET_PCT": 0.15,         # ogni 0.15% netto guadagnato in più si avanza
+            "TRAILING_BUFFER_NET_PCT": 0.10,        # distanza SL dal trigger corrente
+            "TRAILING_SAFETY_MARGIN_NET_PCT": 0.10, # distanza minima tra next_trigger e TP netto
         }
         # TASK-904: regime -> strategia default (override via DB con chiavi REGIME_STRATEGY_*)
         for regime, strategy in _DEFAULT_REGIME_STRATEGY_MAP.items():

@@ -1,6 +1,6 @@
 {
   "name": "synthtrade-ui",
-  "version": "1.4.24",
+  "version": "1.4.25",
   "scripts": {
     "ng": "ng",
     "start": "ng serve --port 4208",

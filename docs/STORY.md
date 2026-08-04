@@ -4,6 +4,11 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.25 — 2026-08-04 — Job di riparazione storico OKX verificabile
+
+- ✅ Aggiunto `scripts/repair_okx_trade_history.py`: genera un report JSON read-only per sessione o per lista di trade e propone correzioni soltanto quando il parent OCO, il child order e il fill OKX coincidono.
+- ✅ L'applicazione richiede il report preesistente e il token esplicito `APPLY_OKX_REPAIR`; i casi incompleti restano `skip_*` per revisione manuale.
+
 ### v1.4.24 — 2026-08-04 — Reconcile OCO deterministico e multi-session ready
 
 - ✅ **Root cause corretta:** `get_algo_orders_history()` interrogava prima i fill globali della coppia. Un fill non porta in modo affidabile l'identità del parent OCO, quindi il precedente fallback per `side=sell` poteva chiudere un trade della sessione sbagliata.

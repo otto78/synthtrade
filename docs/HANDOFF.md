@@ -8,6 +8,10 @@
 
 **Contesto:** TASK-1244 — correzione definitiva della riconciliazione delle chiusure OCO OKX mentre l'app era offline.
 
+### Riparazione storico già chiuso
+- `scripts/repair_okx_trade_history.py` non modifica nulla per default. Eseguire il dry-run con `--session-id <uuid> --report C:\tmp\okx-repair.json`, verificare le righe `update_verified`, quindi applicare con `--apply --report ... --confirm APPLY_OKX_REPAIR`.
+- Il job non usa matching per simbolo/lato e scarta i casi senza catena `algoId → ordId → fill`. Non eseguire gli script storici `fix_db.py`/`list_db.py`: sono stati rimossi perché non sicuri.
+
 ### ✅ Diagnosi e fix
 - Il codice precedente chiamava `get_algo_orders_history()`, ma l'adapter interrogava prima `/api/v5/trade/fills` per l'intero simbolo e ritornava subito. Il reconcile, se l'`algoId` non compariva in quel fill, sceglieva la prima vendita `side=sell`: non era una correlazione con l'OCO e poteva usare il trade di un'altra sessione.
 - `OkxExchangeAdapter.get_algo_orders_history(symbol, bracket_id)` ora legge `orders-algo-history` per lo specifico `algoId` salvato nel DB, estrae il child `ordId` e richiede i fill soltanto per quell'ordine. Restituisce prezzo medio ponderato, `actualSide` (TP/SL) e `fillTime` reale.

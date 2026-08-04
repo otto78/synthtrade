@@ -7,6 +7,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.4.25] — 2026-08-04
+
+### Added
+- **Riparazione storico OCO controllata:** `scripts/repair_okx_trade_history.py` genera prima un report JSON in dry-run. Solo un secondo comando esplicito (`--apply --confirm APPLY_OKX_REPAIR`) può aggiornare le righe verificate.
+- **Guardrail:** il job accetta esclusivamente la catena `trade → algoId OCO → child ordId → fill`. Righe senza OCO, fill non verificato o provider diverso vengono saltate e riportate, mai corrette per simbolo/lato/cronologia.
+
+---
+
 ## [1.4.24] — 2026-08-04
 
 ### Fixed

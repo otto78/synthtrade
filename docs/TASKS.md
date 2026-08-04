@@ -164,6 +164,14 @@
 
 ---
 
+### TASK-1245 — Riparazione controllata storico trade OCO OKX ✅ Completato
+
+> **File:** `scripts/repair_okx_trade_history.py`
+>
+> Il job opera in due fasi: dry-run JSON obbligatorio e applicazione esplicita del report. Corregge solo trade collegabili senza ambiguità a `exchange_bracket_id`/`oco_order_list_id` e al fill del child order. Non usare `--apply` prima di avere verificato il report.
+
+---
+
 ### TASK-1166 — Consolidamento a 3 Strategie Runtime ✅ Completato
 
 > **Stato:** Tutte le fasi completate il 30/07/2026.

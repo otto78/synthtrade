@@ -135,7 +135,7 @@ export class TradeLogComponent implements OnInit, OnDestroy {
   getReasonClass(reason: string | undefined): string {
     if (!reason) return '';
     const r = reason.toLowerCase().replace(/\s+/g, '-');
-    if (r === 'stop_loss_secure') return 'reason-stop-loss-secure';
+    if (r === 'stop_loss_breakeven') return 'reason-stop-loss-secure';
     if (r.includes('stop-loss') || r.includes('stop_loss') || r === 'stop') return 'reason-stop-loss';
     if (r.includes('take-profit') || r.includes('take_profit') || r === 'tp' || r === 'take') return 'reason-take-profit';
     return '';
@@ -147,7 +147,7 @@ export class TradeLogComponent implements OnInit, OnDestroy {
     switch (reason) {
       case 'take_profit':       return 'Take Profit';
       case 'stop_loss':         return 'Stop Loss';
-      case 'stop_loss_secure':  return 'Stop Loss Breakeven';
+      case 'stop_loss_breakeven':  return 'Stop Loss Breakeven';
       case 'bracket_filled':    return 'Bracket (unknown)';
       case 'bracket_unknown':   return 'Bracket (unknown)';
       case 'manual':            return 'Manual Close';

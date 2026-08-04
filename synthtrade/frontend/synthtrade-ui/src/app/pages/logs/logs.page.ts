@@ -535,7 +535,7 @@ export class LogsPage implements OnInit, OnDestroy {
     switch (reason) {
       case 'take_profit':      return 'Take Profit';
       case 'stop_loss':        return 'Stop Loss';
-      case 'stop_loss_secure': return 'Stop Loss Breakeven';
+      case 'stop_loss_breakeven': return 'Stop Loss Breakeven';
       case 'bracket_filled':   return 'Bracket (unknown)';
       case 'bracket_unknown':  return 'Bracket (unknown)';
       case 'manual':           return 'Manual Close';
@@ -549,7 +549,7 @@ export class LogsPage implements OnInit, OnDestroy {
   /** Classe CSS per colorare la cella reason. */
   getReasonClass(reason: string | undefined | null): string {
     if (!reason) return '';
-    if (reason === 'stop_loss_secure') return 'reason-secure';
+    if (reason === 'stop_loss_breakeven') return 'reason-secure';
     if (reason.includes('stop_loss') || reason === 'stop') return 'reason-sl';
     if (reason.includes('take_profit') || reason === 'tp') return 'reason-tp';
     return '';

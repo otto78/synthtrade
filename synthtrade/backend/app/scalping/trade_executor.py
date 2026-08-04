@@ -182,11 +182,21 @@ async def _on_order_update(event: dict):
         elif order_id and pos.sl_order_id and order_id == pos.sl_order_id:
             reason = "stop_loss_breakeven" if getattr(pos, "break_even_triggered", False) else "stop_loss"
         else:
-            # bracket_unknown / algo: leg non determinabile (fill_price assente + no actualSide).
-            # Un OCO può chiudersi solo per TP o SL — non esiste una terza opzione.
-            # Se break-even era attivo l'uscita era comunque in profitto → secure.
-            # Altrimenti teniamo bracket_filled come indicatore diagnostico.
-            reason = "stop_loss_breakeven" if getattr(pos, "break_even_triggered", False) else "bracket_filled"
+            # Ultimo fallback: confronta fill_price con entry_price.
+            # Un OCO su un long può chiudersi SOLO in due modi:
+            #   fill < entry → Stop Loss (prezzo sceso sotto SL)
+            #   fill > entry → Take Profit (prezzo salito sopra TP)
+            # Questo è deterministico al 100% e non richiede actualSide.
+            entry_f = float(pos.entry_price)
+            if fill_price > 0 and entry_f > 0:
+                if fill_price >= entry_f:
+                    reason = "take_profit"
+                else:
+                    reason = "stop_loss_breakeven" if getattr(pos, "break_even_triggered", False) else "stop_loss"
+            else:
+                # fill_price non disponibile: impossibile determinare il leg.
+                # Non dovrebbe mai accadere a questo punto del codice.
+                reason = "stop_loss_breakeven" if getattr(pos, "break_even_triggered", False) else "bracket_filled"
 
         if fill_price <= 0:
             # ``orders-algo-history`` can report the effective OCO before the

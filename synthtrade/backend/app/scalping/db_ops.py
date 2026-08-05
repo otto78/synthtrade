@@ -296,35 +296,3 @@ async def _update_trailing_in_db(
             exchange_bracket_id, db_e,
         )
 
-
-
-async def _update_trailing_in_db(
-    exchange_bracket_id: str,
-    new_sl_price: float,
-    trailing_step: int,
-) -> None:
-    """TASK-1246: Persist trailing stop step in DB.
-
-    Aggiorna sl_price e trailing_step sulla riga identificata da exchange_bracket_id.
-    Non usa session_id né symbol come chiave — identity is the exact algoId.
-    trailing_step è solo telemetria/UI: il prezzo reale su OKX è sl_price.
-    """
-    try:
-        def _db_op():
-            supabase = get_supabase()
-            result = supabase.table("scalping_trades").update({
-                "sl_price": round(float(new_sl_price), 2),
-                "trailing_step": trailing_step,
-            }).eq("exchange_bracket_id", str(exchange_bracket_id)).eq("status", "open").execute()
-            if not result.data:
-                logger.warning(
-                    "[TRAILING_DB] No open row found for exchange_bracket_id=%s — "
-                    "SL amend confermato su OKX ma DB non aggiornato.",
-                    exchange_bracket_id,
-                )
-        await asyncio.to_thread(_db_op)
-    except Exception as db_e:
-        logger.error(
-            "[TRAILING_DB] Failed to persist trailing step for bracket_id=%s: %s",
-            exchange_bracket_id, db_e,
-        )

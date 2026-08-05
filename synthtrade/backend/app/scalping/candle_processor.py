@@ -43,6 +43,58 @@ BOLD = "\033[1m"
 DIM = "\033[2m"
 RESET = "\033[0m"
 
+
+async def _wait_for_fill(
+    exchange,
+    sym_ref,
+    order_id: str,
+    fallback_price: float,
+    fallback_qty: float,
+    max_attempts: int = 20,
+    sleep_sec: float = 0.25,
+) -> tuple[float, float]:
+    """Attendere il fill reale di un market order prima di piazzare il bracket.
+
+    OKX riempie i market order in modo asincrono: la POST restituisce subito
+    l'ordId ma avgPx/accFillSz possono essere ancora vuoti e il saldo BTC non
+    accreditato sul ledger. Piazzare il bracket SELL in quel momento produce
+    sCode 51008 ("available BTC balance is insufficient, and your available
+    margin ... too low for borrowing"). Questo helper fa polling su
+    GET /trade/order finché state=filled e ritorna (avgPx, accFillSz) reali.
+
+    Provider-neutral: se l'adapter non espone get_order_by_id (es. Binance
+    legacy) salta il polling e ritorna subito i fallback.
+    """
+    if not order_id or not hasattr(exchange, "get_order_by_id"):
+        return fallback_price, fallback_qty
+
+    price = fallback_price
+    qty = fallback_qty
+    for _attempt in range(max_attempts):
+        try:
+            polled = await exchange.get_order_by_id(sym_ref, order_id)
+            state = (polled.get("state") or "").lower()
+            acc_fill = float(polled.get("accFillSz") or 0)
+            avg_px = float(polled.get("avgPx") or 0)
+            if state == "filled" and acc_fill > 0:
+                price = avg_px if avg_px > 0 else price
+                qty = acc_fill
+                logger.info(
+                    "ASYNC FILL: ordId=%s state=filled accFillSz=%.8f avgPx=%.2f",
+                    order_id, acc_fill, avg_px,
+                )
+                return price, qty
+        except Exception as poll_e:
+            logger.warning(f"ASYNC FILL: poll failed for ordId={order_id}: {poll_e}")
+        await asyncio.sleep(sleep_sec)
+
+    logger.warning(
+        "ASYNC FILL: ordId=%s non confermato filled dopo %.1fs — uso fallback calcolato",
+        order_id, max_attempts * sleep_sec,
+    )
+    return price, qty
+
+
 async def _candle_processor(symbol: str, restore_mode: bool = False):
     """Consume candle_queue and broadcast + feed execution loop.
     
@@ -515,6 +567,18 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                 # Using market_res.quantity here gives 20 EUR misread as OKB.
                                 # Correct fallback: use _qty_precise (pre-calculated base qty).
                                 exec_qty = float(market_res.filled) if market_res.filled and float(market_res.filled) > 0 else _qty_precise
+
+                                # Attendi il fill reale prima di piazzare il bracket.
+                                # OKX riempie in modo asincrono: senza questo polling il
+                                # bracket SELL partirebbe con availBal BTC=0 -> sCode 51008.
+                                # Aggiorna exec_price/exec_qty con avgPx/accFillSz reali.
+                                exec_price, exec_qty = await _wait_for_fill(
+                                    exchange,
+                                    sym_ref,
+                                    market_res.order_id,
+                                    exec_price,
+                                    exec_qty,
+                                )
 
                                 # TASK-886: commissione reale dell'entry, dalla risposta dell'ordine market
                                 entry_commission_real = float(market_res.commission or 0.0)

@@ -31,15 +31,6 @@ import { Position } from '../models/position.model';
           <span class="side" [ngClass]="position.side.toLowerCase()">{{ position.side }}</span>
         </div>
 
-        <!-- TASK-1243/1246: banner step-aware -->
-        <div *ngIf="position.profit_lock_active" class="profit-lock-banner" [class.trailing-active]="(position.trailing_step ?? 0) > 0">
-          <span class="lock-icon">🔒</span>
-          <span class="lock-text">
-            {{ (position.trailing_step ?? 0) > 0 ? 'TRAILING STOP — Step ' + position.trailing_step : 'STOP LOSS BREAKEVEN ATTIVO' }}
-          </span>
-          <span class="lock-sl">SL → {{ position.stop_loss_price | number:'1.2-2' }}</span>
-        </div>
-        
         <div class="row prices">
           <span>Entry: {{ position.entry_price | number:'1.2-2' }}</span>
           <span>Date: {{ formatEntryTime() }}</span>

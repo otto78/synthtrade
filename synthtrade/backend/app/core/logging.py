@@ -41,6 +41,32 @@ class SessionContextFilter(logging.Filter):
 SESSION_FORMAT = "%(asctime)s [%(levelname)s]%(session_id)s %(name)s: %(message)s"
 
 
+class _ConnectionLostNoiseFilter(logging.Filter):
+    """Sopprime il rumore asyncio proactor emesso quando una connessione WS cade.
+
+    Su Windows, quando il PC va in sleep o la rete si interrompe, asyncio logga
+    a livello ERROR lo stack di ``_ProactorBasePipeTransport._call_connection_lost``
+    con ``ConnectionResetError [WinError 10054]``. È un evento fisiologico:
+    i client WS (okx_ws_client, user_data_stream) gestiscono già il reconnect e
+    loggano il loro stesso messaggio a INFO/WARNING. Lo stack asyncio è quindi
+    ridondante e inquinante — va filtato.
+    """
+
+    _NOISE_TOKENS = (
+        "_ProactorBasePipeTransport",
+        "call_connection_lost",
+        "WinError 10054",
+        "ConnectionResetError",
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        if message.startswith("Exception in callback"):
+            if any(token in message for token in self._NOISE_TOKENS):
+                return False
+        return True
+
+
 class _ColorFormatter(logging.Formatter):
     """Formatter con colori ANSI: ERROR=rosso, WARNING=giallo, INFO=default."""
 
@@ -103,12 +129,20 @@ def setup_logging():
         "uvicorn",
         "uvicorn.error",
         "watchfiles",
-        "asyncio",
     ):
         lib_logger = logging.getLogger(logger_name)
         lib_logger.handlers.clear()
         lib_logger.setLevel(logging.WARNING)
         lib_logger.propagate = True  # Let root handler format them
+
+    # asyncio: keep WARNING but drop the redundant proactor connection-lost
+    # traceback dump (WinError 10054) — the WS clients already log their own
+    # reconnect at INFO/WARNING.
+    asyncio_logger = logging.getLogger("asyncio")
+    asyncio_logger.handlers.clear()
+    asyncio_logger.setLevel(logging.WARNING)
+    asyncio_logger.addFilter(_ConnectionLostNoiseFilter())
+    asyncio_logger.propagate = True
 
     # uvicorn.access: suppress the built-in access log (it re-creates its own
     # CustomFormatter after lifespan), route HTTP request logs through our app loggers instead.

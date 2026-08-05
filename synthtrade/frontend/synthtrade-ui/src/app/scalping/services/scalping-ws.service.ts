@@ -107,12 +107,17 @@ export interface PositionEvent {
   take_profit_price?: number;
   stop_loss_pct?: number;
   take_profit_pct?: number;
+  // TASK-885: Net targets (fee-adjusted)
+  stop_loss_pct_net?: number;
+  take_profit_pct_net?: number;
   breakeven_pct?: number;
   // TASK-1243: profit lock (break-even amend attivato)
   profit_lock_active?: boolean;
   profit_lock_sl_price?: number;
   // TASK-1246: trailing stop step (solo UI/telemetria)
   trailing_step?: number;
+  // TASK-1247: rendimento netto % effettivo al prezzo SL corrente (post amend)
+  sl_net_pct?: number;
 }
 
 /** Strategy parameter values — extensible for different strategy types */

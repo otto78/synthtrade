@@ -4,6 +4,23 @@
 
 ---
 
+### TASK-1247 — Position ticker: SL dinamico con segno e stati colore (BE→giallo, trailing→verde) ✅ Completato
+
+> **Priorità:** MEDIA (UI/telemetria — nessun impatto sulla logica di trading).
+> **File:**
+>   - Backend: `candle_processor.py`, `router.py`, `scalping/rest/position.py`
+>   - Frontend: `position-ticker.component.ts`, `position.model.ts`, `scalping-ws.service.ts`
+
+**Problema**: la tab Stop Loss mostrava la percentuale di config (es. `(0.50%)`) senza segno e non cambiava mai quando lo SL veniva amendato da break-even/trailing. `trailing_step` non veniva inviato dal backend (impossibile distinguere BE da trailing) e lo stato `profit_lock_active` si perdeva al refresh pagina.
+
+**Implementato:**
+- Backend: payload `position`/`position_update`/REST arricchiti con `trailing_step`, `profit_lock_active` (iniziale/restore) e `sl_net_pct` = rendimento netto % effettivo al prezzo SL corrente (`_expected_net_pct_at_exit`, fee-adjusted). Aggiunti anche a `position` di apertura live.
+- Frontend: `formatSlPct()`/`formatTpPct()` (segno `-`/`+`, senza parentesi, 2 decimali), `isTrailing()` (step ≥ 1). Tab SL: rossa → gialla (BE, `lock-active`) → verde (trailing, `trailing-active`). Font percentuali 10→13px bold. Messaggio sotto la progress bar: giallo per BE, verde "Trailing Stop attivo — Step N · profitto protetto a +X.XX%" per trailing.
+- Fix mapping WS/REST: `stop_loss_pct_net`/`take_profit_pct_net`/`sl_net_pct`/`trailing_step` ora propagati nel componente (prima `_net` e `sl_net_pct` non venivano mappati → la percentuale restava statica).
+- Verifica: `tsc --noEmit` ok + 38/38 test backend verdi.
+
+---
+
 ### TASK-1244 — Reconcile OKX: correlazione OCO stretta post-offline ✅ Completato
 
 > **Priorità:** CRITICA — impedisce che una vendita di un altro trade/sessione chiuda una riga DB errata.

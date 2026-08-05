@@ -4,6 +4,12 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.27 — 2026-08-05 — TASK-1247 position ticker: SL dinamico con segno e stati colore
+
+- ✅ **Backend — payload position arricchiti** (`candle_processor.py`, `router.py`, `rest/position.py`): aggiunti `trailing_step`, `profit_lock_active` (mancava nello stato iniziale WS e nel REST restore) e `sl_net_pct` = rendimento netto % effettivo al prezzo SL corrente post-amend, calcolato con `_expected_net_pct_at_exit` (fee-adjusted). Ora il frontend può distinguere break-even (step 0) da trailing (step ≥ 1) e mostrare il vero SL protetto.
+- ✅ **Frontend — position ticker**: percentuali senza parentesi con segno (`-0.50%` / `+0.80%`) e font più grande (13px bold); tab SL con 3 stati colore (rosso → giallo break-even → verde trailing); messaggio sotto la progress bar verde con step e percentuale protetta per il trailing. Corretto il mapping WS/REST che non propagava i campi `*_net` e `sl_net_pct` (la % restava statica).
+- ✅ **Verifica**: `tsc --noEmit` ok, 38/38 test backend verdi. Nessun cambiamento alla logica di trading (solo telemetria/UI).
+
 ### v1.4.26 — 2026-08-05 — TASK-1246 trailing stop: chiusura gap migration + fix fill asincrono OKX
 
 - ✅ **Migration `trailing_step` applicata** su `scalping_trades` (`int NOT NULL DEFAULT 0`): la colonna mancava mentre `TRAILING_ENABLED=true` era già attivo nel runtime config — ora lo step trailing persiste e si ripristina correttamente al restart (telemetria/UI; `sl_price` resta la fonte di verità del prezzo).

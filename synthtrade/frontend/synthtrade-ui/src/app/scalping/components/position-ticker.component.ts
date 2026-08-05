@@ -49,18 +49,18 @@ import { Position } from '../models/position.model';
         
         <!-- Exit Targets -->
         <div class="exit-targets">
-          <div class="target sl" [class.lock-active]="position.profit_lock_active">
+          <div class="target sl" [class.lock-active]="position.profit_lock_active" [class.trailing-active]="isTrailing()">
             <span class="target-label">
               Stop Loss
               <span *ngIf="position.profit_lock_active" class="lock-badge-small">🔒</span>
             </span>
             <span class="target-price">{{ position.stop_loss_price | number:'1.2-2' }}</span>
-            <span class="target-pct">({{ position.stop_loss_pct_net ?? position.stop_loss_pct | number:'1.2-2' }}%)</span>
+            <span class="target-pct">{{ formatSlPct() }}</span>
           </div>
           <div class="target tp">
             <span class="target-label">Take Profit</span>
             <span class="target-price">{{ position.take_profit_price | number:'1.2-2' }}</span>
-            <span class="target-pct">(+{{ position.take_profit_pct_net ?? position.take_profit_pct | number:'1.2-2' }}%)</span>
+            <span class="target-pct">{{ formatTpPct() }}</span>
           </div>
         </div>
         
@@ -84,9 +84,13 @@ import { Position } from '../models/position.model';
               {{ isAboveBreakeven() ? '↑ Above Breakeven' : '↓ Below Breakeven' }}
             </span>
           </div>
-          <div class="profit-lock-status" *ngIf="position.profit_lock_active">
+          <div class="profit-lock-status" *ngIf="position.profit_lock_active && !isTrailing()">
             <span class="lock-status-icon">🔒</span>
             <span class="lock-status-text">Stop Loss Breakeven attivato — questo trade non può chiudersi in perdita.</span>
+          </div>
+          <div class="trailing-status" *ngIf="isTrailing()">
+            <span class="lock-status-icon">🔒</span>
+            <span class="lock-status-text">Trailing Stop attivo — Step {{ position.trailing_step }} · profitto protetto a {{ formatSlPct() }}</span>
           </div>
         </div>
       </div>
@@ -153,7 +157,8 @@ import { Position } from '../models/position.model';
       color: var(--text-primary);
     }
     .target-pct {
-      font-size: 10px;
+      font-size: 13px;
+      font-weight: 700;
       color: var(--text-secondary);
     }
     
@@ -293,6 +298,11 @@ import { Position } from '../models/position.model';
       border-left-color: #F0B90B;
       background: rgba(240,185,11,0.06);
     }
+    /* TASK-1247: trailing stop attivo (step >= 1) — tab SL verde */
+    .target.sl.trailing-active {
+      border-left-color: var(--accent-success, #26a69a);
+      background: rgba(38,166,154,0.08);
+    }
     .profit-lock-row {
       margin-top: 12px;
       padding: 8px 10px;
@@ -322,6 +332,24 @@ import { Position } from '../models/position.model';
       font-size: 11px;
       font-weight: 600;
       color: #F0B90B;
+      line-height: 1.4;
+    }
+    /* TASK-1247: stato trailing attivo — messaggio verde */
+    .trailing-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 12px;
+      padding: 7px 10px;
+      background: rgba(38,166,154,0.1);
+      border-radius: 6px;
+      border: 1px solid rgba(38,166,154,0.35);
+    }
+    .trailing-status .lock-status-icon { font-size: 14px; }
+    .trailing-status .lock-status-text {
+      font-size: 11px;
+      font-weight: 600;
+      color: #26a69a;
       line-height: 1.4;
     }
   `],
@@ -373,6 +401,8 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
         take_profit_price: event.take_profit_price,
         stop_loss_pct: event.stop_loss_pct,
         take_profit_pct: event.take_profit_pct,
+        stop_loss_pct_net: event.stop_loss_pct_net,
+        take_profit_pct_net: event.take_profit_pct_net,
         trade_value_usd: event.trade_value_usd ?? (event.quantity ? event.quantity * event.entry_price : undefined),
         breakeven_pct: event.breakeven_pct,
         // TASK-1243: profit lock
@@ -380,6 +410,8 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
         profit_lock_sl_price: event.profit_lock_sl_price ?? this.position?.profit_lock_sl_price,
         // TASK-1246: trailing step
         trailing_step: event.trailing_step ?? this.position?.trailing_step ?? 0,
+        // TASK-1247: SL net % effettivo (post amend break-even/trailing)
+        sl_net_pct: event.sl_net_pct ?? this.position?.sl_net_pct,
       };
       this.cdr.markForCheck();
       this.cdr.detectChanges();
@@ -408,7 +440,12 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
       take_profit_price?: number;
       stop_loss_pct?: number;
       take_profit_pct?: number;
+      stop_loss_pct_net?: number;
+      take_profit_pct_net?: number;
       breakeven_pct?: number;
+      profit_lock_active?: boolean;
+      trailing_step?: number;
+      sl_net_pct?: number;
     }
     this.http.get<PositionApiResponse | null>(this.POSITION_API).subscribe({
       next: (pos) => {
@@ -429,7 +466,12 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
             take_profit_price: pos.take_profit_price ?? pos.entry_price * 1.005,
             stop_loss_pct: pos.stop_loss_pct ?? -0.3,
             take_profit_pct: pos.take_profit_pct ?? 0.5,
+            stop_loss_pct_net: pos.stop_loss_pct_net,
+            take_profit_pct_net: pos.take_profit_pct_net,
             breakeven_pct: pos.breakeven_pct,
+            profit_lock_active: pos.profit_lock_active ?? false,
+            trailing_step: pos.trailing_step ?? 0,
+            sl_net_pct: pos.sl_net_pct,
           };
           this.cdr.markForCheck();
           this.cdr.detectChanges();
@@ -449,6 +491,37 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
     if (session?.trade_value) return session.trade_value;
     if (!this.position) return 0;
     return this.position.quantity * this.position.entry_price;
+  }
+
+  /** True quando il trailing stop è attivo (almeno uno step applicato). */
+  isTrailing(): boolean {
+    return (this.position?.trailing_step ?? 0) >= 1;
+  }
+
+  /**
+   * Percentuale SL con segno. Usa il valore netto effettivo al prezzo SL corrente
+   * (sl_net_pct, ricalcolato dal backend dopo break-even/trailing); fallback al
+   * target netto di config come valore negativo (es. -0.30%).
+   */
+  formatSlPct(): string {
+    const p = this.position;
+    if (!p) return '';
+    let val: number;
+    if (p.sl_net_pct !== undefined && p.sl_net_pct !== null) {
+      val = p.sl_net_pct;
+    } else {
+      const cfg = p.stop_loss_pct_net ?? p.stop_loss_pct ?? 0;
+      val = cfg >= 0 ? -cfg : cfg;
+    }
+    return `${val >= 0 ? '+' : ''}${val.toFixed(2)}%`;
+  }
+
+  /** Percentuale TP con segno + (es. +0.80%). */
+  formatTpPct(): string {
+    const p = this.position;
+    if (!p) return '';
+    const val = p.take_profit_pct_net ?? p.take_profit_pct ?? 0;
+    return `${val >= 0 ? '+' : ''}${val.toFixed(2)}%`;
   }
 
   getProgressPct(): number {

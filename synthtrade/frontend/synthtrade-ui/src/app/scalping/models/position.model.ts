@@ -32,4 +32,6 @@ export interface Position {
   profit_lock_sl_price?: number;
   // TASK-1246: trailing stop step (solo UI/telemetria)
   trailing_step?: number;
+  // TASK-1247: rendimento netto % effettivo al prezzo SL corrente (post amend)
+  sl_net_pct?: number;
 }

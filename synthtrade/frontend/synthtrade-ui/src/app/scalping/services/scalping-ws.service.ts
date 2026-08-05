@@ -34,6 +34,8 @@ export interface TradeClosedEvent {
   pnl_pct: number;
   timestamp: string;
   signal_reason?: string;
+  // TASK-1248: passo del trailing stop al momento della chiusura (UI)
+  trailing_step?: number;
 }
 
 export interface IntelligenceEvent {

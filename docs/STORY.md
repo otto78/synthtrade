@@ -4,6 +4,14 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.28 — 2026-08-05 — TASK-1248 trailing stop: reason corretta nei log (Stop Loss Trailing in verde)
+
+- ✅ **Backend — `_resolve_close_reason()` position-aware** (`trade_executor.py`): il motivo di chiusura non si basa più sul confronto `fill >= entry` (che classificava come take-profit uno stop ricalcato in profitto). TP solo se il fill è al livello `pos.tp_price` (±0.1%) o leg/order-id TP; altrimenti `stop_loss_trailing` (trailing_step ≥ 1), `stop_loss_breakeven` (BE attivo), `stop_loss`, fallback legacy su entry.
+- ✅ **`trailing_step` propagato end-to-end**: trade_record, broadcast `trade_closed`, `_on_uds_reconnect_sync`, `_close_position_and_record`, reconcile (`_reconcile_position_with_exchange`/`_matched_bracket_fill` → reason `stop_loss_trailing`/`stop_loss_breakeven`), restore `pipeline.py`, persistenza DB (`_update_closed_position_in_db`), API trade-history (`market_data.py`), restore (`main.py`).
+- ✅ **Frontend**: `formatReason(reason, trailingStep)` → label `Stop Loss Trailing (step N)` in verde (`#26a69a`); `TradeClosedEvent.trailing_step?: number` e `LogEntry.trailing_step?: number`.
+- ✅ **DB retroattivo**: sessione `d253c56e` — `d595f87b` (step 2) e `f7aa9ee4` (step 1) corretti a `stop_loss_trailing` (verificati via `orders-algo-history` OKX: `actualSide="sl"` su entrambi).
+- ✅ **Verifica**: 44/44 test backend verdi + `tsc --noEmit` ok. Nessun cambiamento alla logica di trading (solo telemetria/log).
+
 ### v1.4.27 — 2026-08-05 — TASK-1247 position ticker: SL dinamico con segno e stati colore
 
 - ✅ **Backend — payload position arricchiti** (`candle_processor.py`, `router.py`, `rest/position.py`): aggiunti `trailing_step`, `profit_lock_active` (mancava nello stato iniziale WS e nel REST restore) e `sl_net_pct` = rendimento netto % effettivo al prezzo SL corrente post-amend, calcolato con `_expected_net_pct_at_exit` (fee-adjusted). Ora il frontend può distinguere break-even (step 0) da trailing (step ≥ 1) e mostrare il vero SL protetto.

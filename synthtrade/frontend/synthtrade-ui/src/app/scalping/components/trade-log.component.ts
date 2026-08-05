@@ -47,7 +47,7 @@ import { SessionApiService } from '../services/session-api.service';
               <td [ngClass]="trade.pnl >= 0 ? 'profit' : 'loss'">
                 {{ trade.pnl | number:'1.2-2' }}
               </td>
-              <td class="reason-cell" [ngClass]="getReasonClass(trade.signal_reason)">{{ formatReason(trade.signal_reason) }}</td>
+              <td class="reason-cell" [ngClass]="getReasonClass(trade.signal_reason)">{{ formatReason(trade.signal_reason, trade.trailing_step) }}</td>
             </tr>
           </tbody>
         </table>
@@ -71,7 +71,8 @@ import { SessionApiService } from '../services/session-api.service';
     .reason-stop-loss { color: var(--accent-danger, #ef5350); font-weight: 600; }
     .reason-take-profit { color: var(--accent-success, #26a69a); font-weight: 600; }
     .reason-stop-loss-secure { color: #F0B90B; font-weight: 700; }
-    .reason-trailing { color: #42A5F5; font-weight: 700; }
+    /* TASK-1248: lo stop in trailing chiude in profitto → verde come il TP */
+    .reason-trailing { color: var(--accent-success, #26a69a); font-weight: 700; }
   `],
 })
 export class TradeLogComponent implements OnInit, OnDestroy {
@@ -144,13 +145,13 @@ export class TradeLogComponent implements OnInit, OnDestroy {
   }
 
   /** Converte signal_reason raw (snake_case) in etichetta leggibile. */
-  formatReason(reason: string | undefined): string {
+  formatReason(reason: string | undefined, trailingStep?: number): string {
     if (!reason) return '—';
     switch (reason) {
       case 'take_profit':          return 'Take Profit';
       case 'stop_loss':            return 'Stop Loss';
       case 'stop_loss_breakeven':  return 'Stop Loss Breakeven';
-      case 'stop_loss_trailing':   return 'Stop Loss Trailing';
+      case 'stop_loss_trailing':   return trailingStep ? `Stop Loss Trailing (step ${trailingStep})` : 'Stop Loss Trailing';
       case 'bracket_filled':       return 'Bracket (unknown)';
       case 'bracket_unknown':      return 'Bracket (unknown)';
       case 'manual':               return 'Manual Close';

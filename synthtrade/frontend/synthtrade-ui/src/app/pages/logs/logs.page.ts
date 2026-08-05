@@ -194,7 +194,7 @@ const PAGE_SIZE = 50;
                               <td class="cell-pnl" [ngClass]="{ positive: (t.pnl_pct ?? 0) >= 0, negative: (t.pnl_pct ?? 0) < 0 }">
                                 {{ t.pnl_pct != null ? ((t.pnl_pct >= 0 ? '+' : '') + (t.pnl_pct | number:'1.2-2') + '%') : '—' }}
                               </td>
-                              <td class="cell-reason" [ngClass]="getReasonClass(t.signal_reason)">{{ formatReason(t.signal_reason) }}</td>
+                              <td class="cell-reason" [ngClass]="getReasonClass(t.signal_reason)">{{ formatReason(t.signal_reason, t.trailing_step) }}</td>
                             </tr>
                           }
                         </tbody>
@@ -249,7 +249,8 @@ const PAGE_SIZE = 50;
     .reason-sl     { color: var(--accent-danger, #ef5350); font-weight: 600; }
     .reason-tp     { color: var(--accent-success, #26a69a); font-weight: 600; }
     .reason-secure { color: #F0B90B; font-weight: 700; }
-    .reason-trailing { color: #42A5F5; font-weight: 700; }
+    /* TASK-1248: lo stop in trailing chiude in profitto → verde come il TP */
+    .reason-trailing { color: var(--accent-success, #26a69a); font-weight: 700; }
     .positive { color: var(--color-buy); }
     .negative { color: var(--color-sell); }
     .pagination { display: flex; align-items: center; gap: 12px; margin-top: 16px; justify-content: flex-end; }
@@ -531,13 +532,13 @@ export class LogsPage implements OnInit, OnDestroy {
   }
 
   /** Converte signal_reason raw in etichetta leggibile. */
-  formatReason(reason: string | undefined | null): string {
+  formatReason(reason: string | undefined | null, trailingStep?: number): string {
     if (!reason) return '—';
     switch (reason) {
       case 'take_profit':         return 'Take Profit';
       case 'stop_loss':           return 'Stop Loss';
       case 'stop_loss_breakeven': return 'Stop Loss Breakeven';
-      case 'stop_loss_trailing':  return 'Stop Loss Trailing';
+      case 'stop_loss_trailing':  return trailingStep ? `Stop Loss Trailing (step ${trailingStep})` : 'Stop Loss Trailing';
       case 'bracket_filled':      return 'Bracket (unknown)';
       case 'bracket_unknown':     return 'Bracket (unknown)';
       case 'manual':              return 'Manual Close';
@@ -552,7 +553,6 @@ export class LogsPage implements OnInit, OnDestroy {
   getReasonClass(reason: string | undefined | null): string {
     if (!reason) return '';
     if (reason === 'stop_loss_breakeven') return 'reason-secure';
-    if (reason === 'stop_loss_trailing') return 'reason-trailing';
     if (reason === 'stop_loss_trailing') return 'reason-trailing';
     if (reason.includes('stop_loss') || reason === 'stop') return 'reason-sl';
     if (reason.includes('take_profit') || reason === 'tp') return 'reason-tp';

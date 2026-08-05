@@ -4,6 +4,24 @@
 
 ---
 
+### TASK-1248 — Trailing stop: reason errata nei log (Stop Loss Trailing in verde) ✅ Completato
+
+> **Priorità:** MEDIA (telemetria/log — nessun impatto sulla logica di trading).
+> **File:**
+>   - Backend: `scalping/trade_executor.py`, `scalping/reconciliation.py`, `scalping/pipeline.py`, `scalping/db_ops.py`, `scalping/rest/market_data.py`, `main.py`
+>   - Frontend: `trade-log.component.ts`, `logs.page.ts`, `logs.model.ts`, `scalping-ws.service.ts`
+
+**Problema**: i trade chiusi da trailing stop apparivano nei log come "Take Profit" invece che come "Stop Loss Trailing (step N)" in verde. Root cause: il blocco di determinazione reason in `_on_order_update` confrontava `fill_price >= entry` → `take_profit`, ignorando che uno stop ricalcato (amended) può chiudere in profitto. Confermato via API OKX (`orders-algo-history`): i bracket trailing hanno `actualSide="sl"`, non TP.
+
+**Implementato:**
+- Backend: nuova `_resolve_close_reason()` position-aware in `trade_executor.py` — TP solo se il fill è al livello `pos.tp_price` (±0.1%) o leg/order-id TP; altrimenti `stop_loss_trailing` (trailing_step ≥ 1), `stop_loss_breakeven` (BE attivo), `stop_loss`; fallback legacy su entry_price.
+- `trailing_step` propagato in: trade_record, broadcast `trade_closed`, `_on_uds_reconnect_sync`, `_close_position_and_record`, `_reconcile_position_with_exchange`/`_matched_bracket_fill` (reason `stop_loss_trailing`/`stop_loss_breakeven`), restore `pipeline.py`, `_update_closed_position_in_db` (DB), API trade-history (`market_data.py`), restore (`main.py`).
+- Frontend: `formatReason(reason, trailingStep)` → label `Stop Loss Trailing (step N)` se step > 0; CSS `.reason-trailing` verde (`#26a69a`); `TradeClosedEvent.trailing_step?: number` e `LogEntry.trailing_step?: number`.
+- DB retroattivo: sessione `d253c56e` — `d595f87b` (step 2) e `f7aa9ee4` (step 1) → `signal_reason='stop_loss_trailing'` (verificati via OKX `actualSide="sl"`).
+- Verifica: 44/44 test backend verdi + `tsc --noEmit` ok.
+
+---
+
 ### TASK-1247 — Position ticker: SL dinamico con segno e stati colore (BE→giallo, trailing→verde) ✅ Completato
 
 > **Priorità:** MEDIA (UI/telemetria — nessun impatto sulla logica di trading).

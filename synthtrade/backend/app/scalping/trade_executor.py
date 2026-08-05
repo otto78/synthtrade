@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -135,6 +135,53 @@ async def _live_close_position(exchange, pos, qty: float) -> float:
 from app.scalping.db_ops import _save_open_position_to_db, _update_closed_position_in_db
 
 
+def _resolve_close_reason(pos, leg: str, order_id: Optional[str], fill_price: float, entry_price: float) -> str:
+    """TASK-1248: Determina il motivo reale di chiusura in modo position-aware.
+
+    Quando break-even/trailing è attivo, un fill sopra l'entry NON è per forza
+    un take-profit: lo stop loss ricalcato (amended) può chiudere in profitto.
+    Il WS algo-orders di OKX può riportare trigger SL stantii (pre-amend) e/o
+    mancare di actualSide, portando il confronto fill-vs-trigger a classificare
+    come "take_profit" uno stop in trailing. Qui usiamo il prezzo TP reale
+    (pos.tp_price) come discriminante:
+      - fill al livello TP            -> take_profit (TP pieno)
+      - trailing attivo (step >= 1)   -> stop_loss_trailing
+      - break-even attivo (step == 0) -> stop_loss_breakeven
+      - altrimenti leg/order-id/fill  -> stop_loss / take_profit storico
+    """
+    side = (pos.side or "BUY").upper()
+    tp_price = float(pos.tp_price) if pos.tp_price else 0.0
+    trailing_step = int(getattr(pos, "trailing_step", 0) or 0)
+    break_even_active = bool(getattr(pos, "break_even_triggered", False))
+
+    at_tp_level = False
+    if tp_price > 0 and fill_price > 0:
+        tolerance = abs(tp_price) * 0.001  # 0.1% del prezzo TP (molto sotto il gap SL-TP)
+        if side == "BUY":
+            at_tp_level = fill_price >= tp_price - tolerance
+        else:
+            at_tp_level = fill_price <= tp_price + tolerance
+
+    if at_tp_level:
+        return "take_profit"
+    if trailing_step > 0:
+        return "stop_loss_trailing"
+    if break_even_active:
+        return "stop_loss_breakeven"
+
+    if leg == "take_profit":
+        return "take_profit"
+    if leg == "stop_loss":
+        return "stop_loss"
+    if order_id and pos.tp_order_id and order_id == pos.tp_order_id:
+        return "take_profit"
+    if order_id and pos.sl_order_id and order_id == pos.sl_order_id:
+        return "stop_loss"
+    if entry_price > 0:
+        return "take_profit" if fill_price >= entry_price else "stop_loss"
+    return "bracket_filled"
+
+
 async def _on_order_update(event: dict):
     """Handler UDS — chiamato su ogni executionReport FILLED/EXPIRED.
 
@@ -169,34 +216,12 @@ async def _on_order_update(event: dict):
         return
 
     if status == "filled":
-        # Determina se è TP o SL:
-        # 1. Da campo leg (OKX algo-orders lo fornisce direttamente)
-        # 2. Da orderId matching (Binance legacy)
-        if leg == "take_profit":
-            reason = "take_profit"
-        elif leg == "stop_loss":
-            # TASK-1243: se il profit lock era attivo questo SL era già in profitto
-            reason = "stop_loss_breakeven" if getattr(pos, "break_even_triggered", False) else "stop_loss"
-        elif order_id and pos.tp_order_id and order_id == pos.tp_order_id:
-            reason = "take_profit"
-        elif order_id and pos.sl_order_id and order_id == pos.sl_order_id:
-            reason = "stop_loss_breakeven" if getattr(pos, "break_even_triggered", False) else "stop_loss"
-        else:
-            # Ultimo fallback: confronta fill_price con entry_price.
-            # Un OCO su un long può chiudersi SOLO in due modi:
-            #   fill < entry → Stop Loss (prezzo sceso sotto SL)
-            #   fill > entry → Take Profit (prezzo salito sopra TP)
-            # Questo è deterministico al 100% e non richiede actualSide.
-            entry_f = float(pos.entry_price)
-            if fill_price > 0 and entry_f > 0:
-                if fill_price >= entry_f:
-                    reason = "take_profit"
-                else:
-                    reason = "stop_loss_breakeven" if getattr(pos, "break_even_triggered", False) else "stop_loss"
-            else:
-                # fill_price non disponibile: impossibile determinare il leg.
-                # Non dovrebbe mai accadere a questo punto del codice.
-                reason = "stop_loss_breakeven" if getattr(pos, "break_even_triggered", False) else "bracket_filled"
+        # Determina il motivo di chiusura (TASK-1248): position-aware.
+        # Distingue il trailing stop (stop in profitto) dal take-profit pieno
+        # anche quando OKX riporta un leg stantio o fallisce il confronto
+        # fill-vs-trigger dopo l'amend dello stop.
+        entry_f = float(pos.entry_price)
+        reason = _resolve_close_reason(pos, leg, order_id, float(fill_price), entry_f)
 
         if fill_price <= 0:
             # ``orders-algo-history`` can report the effective OCO before the
@@ -207,7 +232,6 @@ async def _on_order_update(event: dict):
             return
 
         # TASK-878: Calcola PnL con commissioni reali
-        entry_f = float(pos.entry_price)
         qty_f = float(pos.quantity)
         gross_pnl = (fill_price - entry_f) * qty_f if pos.side == "BUY" else (entry_f - fill_price) * qty_f
         
@@ -276,6 +300,8 @@ async def _on_order_update(event: dict):
             "pnl_pct": round(pnl_pct, 2),
             "timestamp": fill_time or datetime.now(timezone.utc).isoformat(),
             "signal_reason": reason,
+            # TASK-1248: passo del trailing stop al momento della chiusura (UI)
+            "trailing_step": int(getattr(pos, "trailing_step", 0) or 0),
         }
         _execution_state["trade_history"].append(trade_record)
 
@@ -298,6 +324,8 @@ async def _on_order_update(event: dict):
             "pnl_pct": round(pnl_pct, 2),
             "signal_reason": reason,
             "timestamp": fill_time or datetime.now(timezone.utc).isoformat(),
+            # TASK-1248: passo del trailing stop al momento della chiusura (UI)
+            "trailing_step": int(getattr(pos, "trailing_step", 0) or 0),
         })
 
         logger.info(f"\033[92m[TradeExec] Trade closed {reason}: {pos.symbol} @ {fill_price} | PnL={pnl:.2f} ({pnl_pct:.2f}%)\033[0m")
@@ -332,6 +360,8 @@ async def _on_uds_reconnect_sync():
             quantity=float(pos.quantity),
             exchange=exchange,
             bracket_id=bracket_id,
+            trailing_step=int(getattr(pos, "trailing_step", 0) or 0),
+            break_even_triggered=bool(getattr(pos, "break_even_triggered", False)),
         )
         if reconcile is None:
             return  # Position still open on exchange
@@ -377,6 +407,8 @@ async def _on_uds_reconnect_sync():
             "pnl_pct": round(pnl_pct, 2),
             "timestamp": reconcile.get("fill_time") or datetime.now(timezone.utc).isoformat(),
             "signal_reason": reason,
+            # TASK-1248: passo del trailing stop al momento della chiusura (UI)
+            "trailing_step": int(getattr(pos, "trailing_step", 0) or 0),
         })
 
         await broadcast_scalping_event("position_reconciled_externally", {
@@ -390,6 +422,8 @@ async def _on_uds_reconnect_sync():
             "source": reconcile["source"],
             "reason": reason,
             "timestamp": reconcile.get("fill_time") or datetime.now(timezone.utc).isoformat(),
+            # TASK-1248: passo del trailing stop al momento della chiusura (UI)
+            "trailing_step": int(getattr(pos, "trailing_step", 0) or 0),
         })
 
     except Exception as e:
@@ -538,6 +572,8 @@ async def _close_position_and_record(pm, close_price: float, pos, reason: str = 
         "pnl_pct": round(pnl_pct, 2),
         "timestamp": now_ts.isoformat(),
         "signal_reason": reason,
+        # TASK-1248: passo del trailing stop al momento della chiusura (UI)
+        "trailing_step": int(getattr(pos, "trailing_step", 0) or 0),
     }
     _execution_state["trade_history"].append(trade_record)
 

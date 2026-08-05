@@ -28,4 +28,6 @@ export interface SessionTradeLog {
   exit_time?: string;
   signal_reason?: string;
   status?: string;
+  // TASK-1248: passo del trailing stop al momento della chiusura (UI)
+  trailing_step?: number;
 }

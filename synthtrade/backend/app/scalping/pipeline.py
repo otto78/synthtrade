@@ -180,6 +180,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                         quantity=float(pos.quantity),
                         exchange=exchange,
                         bracket_id=bracket_id,
+                        trailing_step=int(getattr(pos, "trailing_step", 0) or 0),
+                        break_even_triggered=bool(getattr(pos, "break_even_triggered", False)),
                     )
                     if reconcile:
                         fp = reconcile["fill_price"]
@@ -217,6 +219,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                             "pnl_pct": round(pnl_pct, 2),
                             "timestamp": reconcile.get("fill_time") or datetime.now(timezone.utc).isoformat(),
                             "signal_reason": reconcile["reason"],
+                            # TASK-1248: passo del trailing stop al momento della chiusura (UI)
+                            "trailing_step": int(getattr(pos, "trailing_step", 0) or 0),
                         })
                         await broadcast_scalping_event("position_reconciled_externally", {
                             "symbol": pos.symbol,
@@ -228,6 +232,8 @@ async def _start_ws_broadcast(symbol: str, restore_mode: bool = False):
                             "pnl_pct": round(pnl_pct, 2),
                             "reason": reconcile["reason"],
                             "source": reconcile["source"],
+                            # TASK-1248: passo del trailing stop al momento della chiusura (UI)
+                            "trailing_step": int(getattr(pos, "trailing_step", 0) or 0),
                         })
         except Exception as restore_e:
             logger.warning(f"[Pipeline] RECONCILE: Reconcile after WS connect failed: {restore_e}")

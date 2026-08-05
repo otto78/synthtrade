@@ -100,6 +100,8 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
         def _db_op():
             supabase = get_supabase()
             trade_id = None
+            # TASK-1248: passo del trailing stop al momento della chiusura (persistito anche sul close)
+            trailing_step = int(getattr(pos, "trailing_step", 0) or 0)
             # Pre-compute fallback values (used in Strategy 2 and extrema ratio)
             entry_price_rounded = round(float(pos.entry_price), 2)
             entry_time_str = pos.entry_time.isoformat() if pos.entry_time else None
@@ -183,6 +185,7 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
                     "signal_reason": reason,
                     "status": "closed",
                     "exit_time": fill_time or datetime.now(timezone.utc).isoformat(),
+                    "trailing_step": trailing_step,
                 }
                 if entry_commission is not None:
                     update_data["entry_commission"] = entry_commission
@@ -214,6 +217,7 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
                     "exchange_sl_order_id": pos.sl_order_id,
                     # Legacy
                     "oco_order_list_id": pos.oco_order_list_id,
+                    "trailing_step": trailing_step,
                 }
                 if entry_commission is not None:
                     fallback_data["entry_commission"] = entry_commission

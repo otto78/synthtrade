@@ -568,6 +568,8 @@ async def _restore_scalping_session(db) -> None:
                     "pnl_pct": t.get("pnl_pct", 0),
                     "timestamp": t.get("exit_time") or t.get("entry_time"),
                     "signal_reason": t.get("signal_reason", ""),
+                    # TASK-1248: passo del trailing stop al momento della chiusura (UI)
+                    "trailing_step": t.get("trailing_step", 0),
                 })
             _execution_state["trade_history"] = trade_list
             logger.info("Restored %d historical trades for session %s", len(trade_list), session_id)

@@ -34,7 +34,13 @@ async def _get_verified_bracket_fills(exchange, symbol: str, bracket_id: str) ->
         return await exchange.get_algo_orders_history(symbol)
 
 
-def _matched_bracket_fill(fills: list[dict[str, Any]], bracket_id: str) -> Optional[Dict[str, Any]]:
+def _matched_bracket_fill(
+    fills: list[dict[str, Any]],
+    bracket_id: str,
+    *,
+    trailing_step: int = 0,
+    break_even_triggered: bool = False,
+) -> Optional[Dict[str, Any]]:
     """Return a usable fill only when its parent OCO id is exactly matched."""
     for fill in fills:
         if str(fill.get("algoId")) != str(bracket_id) or fill.get("state") != "effective":
@@ -46,7 +52,20 @@ def _matched_bracket_fill(fills: list[dict[str, Any]], bracket_id: str) -> Optio
         if fill_price <= 0:
             continue
         order_type = (fill.get("ordType") or "").lower()
-        reason = "take_profit" if "tp" in order_type else "stop_loss" if "sl" in order_type else "bracket_filled"
+        # TASK-1248: uno stop in profitto (leg sl) con trailing/break-even attivo
+        # non è un take-profit. ordType può essere "oco_sl"/"oco_tp" (verificato
+        # da get_algo_orders_history) oppure "oco" senza actualSide.
+        if "tp" in order_type:
+            reason = "take_profit"
+        elif "sl" in order_type:
+            if trailing_step > 0:
+                reason = "stop_loss_trailing"
+            elif break_even_triggered:
+                reason = "stop_loss_breakeven"
+            else:
+                reason = "stop_loss"
+        else:
+            reason = "bracket_filled"
         return {
             "fill_price": fill_price,
             "source": "oco_verified_fill",
@@ -65,6 +84,8 @@ async def _reconcile_position_with_exchange(
     *,
     exchange=None,
     bracket_id: Optional[str] = None,
+    trailing_step: int = 0,
+    break_even_triggered: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Verify on the exchange whether a position is still open.
 
@@ -132,7 +153,9 @@ async def _reconcile_position_with_exchange(
             for attempt in range(3):
                 try:
                     match = _matched_bracket_fill(
-                        await _get_verified_bracket_fills(_exchange, symbol, bracket_id), bracket_id
+                        await _get_verified_bracket_fills(_exchange, symbol, bracket_id), bracket_id,
+                        trailing_step=trailing_step,
+                        break_even_triggered=break_even_triggered,
                     )
                     if match:
                         logger.info(
@@ -169,7 +192,9 @@ async def _reconcile_position_with_exchange(
 
     try:
         match = _matched_bracket_fill(
-            await _get_verified_bracket_fills(_exchange, symbol, bracket_id), bracket_id
+            await _get_verified_bracket_fills(_exchange, symbol, bracket_id), bracket_id,
+            trailing_step=trailing_step,
+            break_even_triggered=break_even_triggered,
         )
         if match:
             logger.info(

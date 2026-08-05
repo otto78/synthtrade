@@ -190,7 +190,7 @@ async def get_trade_history(session_id: Optional[str] = None, limit: int = 50) -
         try:
             supabase = get_supabase()
             resp = supabase.table("scalping_trades") \
-                .select("symbol, side, entry_price, exit_price, quantity, pnl, pnl_pct, entry_time, exit_time, signal_reason, status") \
+                .select("symbol, side, entry_price, exit_price, quantity, pnl, pnl_pct, entry_time, exit_time, signal_reason, status, trailing_step") \
                 .eq("session_id", session_id) \
                 .order("entry_time", desc=True) \
                 .limit(limit) \

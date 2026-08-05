@@ -4,6 +4,17 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+### v1.4.26 — 2026-08-05 — TASK-1246 trailing stop: chiusura gap migration + fix fill asincrono OKX
+
+- ✅ **Migration `trailing_step` applicata** su `scalping_trades` (`int NOT NULL DEFAULT 0`): la colonna mancava mentre `TRAILING_ENABLED=true` era già attivo nel runtime config — ora lo step trailing persiste e si ripristina correttamente al restart (telemetria/UI; `sl_price` resta la fonte di verità del prezzo).
+- ✅ **Fix flaky test** `test_polling_is_async_not_blocking` (`test_wait_for_fill.py`): la soglia `loop.time()` era troppo stretta per la granularità del proactor loop Windows → `time.monotonic()` con soglia tollerante.
+- ✅ **Dedup `_update_trailing_in_db`** in `db_ops.py` (doppia definizione rimossa).
+- ✅ **`_wait_for_fill()`** in `candle_processor.py` (commit `68eddb5`): polling del fill reale OKX (`GET /trade/order`) prima di piazzare il bracket SELL — evita sCode 51008 quando `avgPx`/`accFillSz` non sono ancora disponibili. Provider-neutral con fallback.
+- ✅ **Filtro rumore asyncio** WinError 10054 in `core/logging.py` — i client WS loggano già il loro reconnect a INFO/WARNING.
+- ✅ Frontend: cleanup banner profit-lock step-aware in `position-ticker.component.ts` (il lock state resta visibile via `profit-lock-status`).
+- ✅ **38/38 test verdi** (`test_wait_for_fill.py` 8 + `test_task_1243.py` 30).
+- ⏳ **GATE pre-live TASK-1246 ancora pendente**: spike `scripts/test_okx_amend_rate.py` su OKX Demo (6 amend consecutivi) e validazione statistica ≥20 trade con `trailing_enabled=true`.
+
 ### v1.4.25 — 2026-08-04 — Job di riparazione storico OKX verificabile
 
 - ✅ Aggiunto `scripts/repair_okx_trade_history.py`: genera un report JSON read-only per sessione o per lista di trade e propone correzioni soltanto quando il parent OCO, il child order e il fill OKX coincidono.

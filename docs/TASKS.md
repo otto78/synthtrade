@@ -1,6 +1,6 @@
 # TASKS.md — SynthTrade Task Tracking
 
-> **Aggiornato:** 2026-08-04. Task completati in `docs/ARCHIVE_TASKS.md`.
+> **Aggiornato:** 2026-08-05. Task completati in `docs/ARCHIVE_TASKS.md`.
 
 ---
 
@@ -162,6 +162,36 @@
 ---
 
 
+
+### TASK-1246 — Trailing stop progressivo post break-even (OCO OKX) 🟡 In corso
+
+> **Priorità**: ALTA (Fase 3 — dopo TASK-1243 validato in produzione).
+> **Piano**: `docs/plans/trailing-stop-progressive.md`.
+> **Stato**: implementazione completata e committata; migration `trailing_step` applicata; GATE pre-live pendente.
+
+**Implementato (commits `0bc59b0`, `68eddb5`):**
+- `break_even.py` — `_check_and_apply_trailing()` con step progressivi post-BE, guard dinamico
+  `next_trigger < tp_net - safety_margin` (immune a cambio TP a runtime), `sl_price` come fonte di verità al restore
+- `config_loader.py` — `TRAILING_ENABLED`(false), `TRAILING_STEP_NET_PCT`(0.15), `TRAILING_BUFFER_NET_PCT`(0.10),
+  `TRAILING_SAFETY_MARGIN_NET_PCT`(0.10)
+- `position_manager.py` — `trailing_step: int = 0` (solo telemetria/UI)
+- `db_ops.py` — `_update_trailing_in_db()` filtrato per `exchange_bracket_id` (dedup funzione duplicata)
+- `main.py` — restore `trailing_step` dal DB (mai ricalcolato da step count)
+- `candle_processor.py` — `_wait_for_fill()` polling del fill asincrono OKX prima del bracket (fix sCode 51008)
+- `core/logging.py` — filtro rumore asyncio WinError 10054 (WS reconnect già loggato dai client)
+- Frontend — banner step-aware (poi semplificato), reason `stop_loss_trailing`, campo `trailing_step` nel WS
+- `scripts/test_okx_amend_rate.py` — spike 6 amend consecutivi su OKX Demo
+- Migration DB: `scalping_trades.trailing_step int NOT NULL DEFAULT 0` (applicata 2026-08-05)
+- Test: 38/38 verdi (`test_wait_for_fill.py` + `test_task_1243.py`)
+
+**Config runtime attuale (DB):** `BREAK_EVEN_ENABLED=true`, `TRAILING_ENABLED=true`.
+
+**GATE pre-live pendenti:**
+1. Eseguire `scripts/test_okx_amend_rate.py` su OKX Demo → nessun HTTP 429 né sCode rate-limit su 6 amend consecutivi
+2. Validazione statistica: ≥20 trade con trailing attivo prima di considerare la feature stabile
+3. Query storica sui TP (p25 gross_pct < 0.45%?) per confermare `TRAILING_STEP_NET_PCT=0.15`
+
+---
 
 ### BUG-2026-08-03 — Fix reconcile exit_time timestamp OKX + frontend date display ✅ Completato
 

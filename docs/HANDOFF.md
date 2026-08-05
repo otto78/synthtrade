@@ -2,6 +2,36 @@
 
 ## Ultimo Handoff
 
+### Da: sessione TASK-1246 (trailing stop) → prossima sessione
+
+**Data:** 2026-08-05
+
+**Contesto:** TASK-1246 (trailing stop progressivo post break-even) — implementazione completata, migration `trailing_step` applicata. GATE pre-live ancora pendente.
+
+### ✅ Fatto in questa sessione
+
+- **Migration DB applicata:** `scalping_trades.trailing_step int NOT NULL DEFAULT 0` (mancava mentre `TRAILING_ENABLED=true` era già attivo). File locale: `synthtrade/supabase/migrations/20260805000000_task1246_add_trailing_step.sql`.
+- **Fix flaky test** `test_polling_is_async_not_blocking` (`test_wait_for_fill.py`): `time.monotonic()` + soglia tollerante.
+- **Dedup `_update_trailing_in_db`** in `db_ops.py` (doppia definizione).
+- **38/38 test verdi** (`test_wait_for_fill.py` + `test_task_1243.py`). La suite unit completa `tests/unit` va in timeout — non è regressione di questa sessione.
+- Commit `68eddb5` (parallelo, già su main): `_wait_for_fill()` per sCode 51008 + filtro log WinError 10054 + cleanup banner position-ticker.
+
+### ⏳ GATE pre-live TASK-1246 ancora da eseguire
+
+1. `python -m scripts.test_okx_amend_rate [--symbol BTC-EUR] [--interval 15]` con `TRADING_MODE=test` → 6 amend consecutivi su OKX Demo, verificare zero 429/sCode rate-limit e `algoId` invariato.
+2. Query storica TP (`docs/plans/trailing-stop-progressive.md` §step size) per confermare `TRAILING_STEP_NET_PCT=0.15`.
+3. ≥20 trade con `trailing_enabled=true` prima di considerare stabile la feature.
+
+### ⚠️ Note operative
+
+- Config runtime in `scalping_runtime_config`: `BREAK_EVEN_ENABLED=true`, `TRAILING_ENABLED=true` (entrambi attivi).
+- Colonna `trailing_step` è solo telemetria/UI; la fonte di verità del prezzo SL resta `sl_price`.
+- Sessione LIVE attiva al momento (`d253c56e-…`) — non riavviare il backend se non necessario; niente `--reload`.
+
+---
+
+## Handoff Precedenti
+
 ### Da: Kiro → prossima sessione
 
 **Data:** 2026-08-04

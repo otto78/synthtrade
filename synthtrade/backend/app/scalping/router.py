@@ -28,6 +28,7 @@ from app.scalping.pricing import (
     _get_fee_rate,
     _net_to_gross_pct,
     _sl_gross_fraction,
+    _expected_net_pct_at_exit,
 )
 
 from app.scalping._state import (
@@ -184,6 +185,10 @@ async def scalping_websocket(ws: WebSocket):
                     "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
                     "stop_loss_pct_net": round(sl_pct_net, 2),
                     "take_profit_pct_net": round(tp_pct_net, 2),
+                    # TASK-1247: stato profit lock/trailing + SL net % effettivo al restore
+                    "profit_lock_active": pos.break_even_triggered,
+                    "trailing_step": pos.trailing_step,
+                    "sl_net_pct": round(_expected_net_pct_at_exit(entry_f, sl_price, pos.side, _ef, _xf), 2),
                 },
                 "timestamp": _now(),
             })

@@ -12,6 +12,7 @@ from app.scalping.pricing import (
     _get_fee_rate,
     _net_to_gross_pct,
     _sl_price_from_entry,
+    _expected_net_pct_at_exit,
 )
 
 logger = logging.getLogger(__name__)
@@ -106,6 +107,10 @@ async def get_position() -> Optional[Dict]:
         "stop_loss_price": round(stop_loss_price, 2),  # TASK-1129
         "take_profit_price": round(take_profit_price, 2),  # TASK-1129
         "breakeven_pct": round(fee_round_trip, 2),
+        # TASK-1247: stato profit lock/trailing + SL net % effettivo
+        "profit_lock_active": pos.break_even_triggered,
+        "trailing_step": pos.trailing_step,
+        "sl_net_pct": round(_expected_net_pct_at_exit(entry, stop_loss_price, pos.side, entry_fee_rate, exit_fee_rate), 2),
     }
 
 

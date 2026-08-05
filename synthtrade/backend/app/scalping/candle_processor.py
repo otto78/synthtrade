@@ -16,6 +16,7 @@ from app.scalping.pricing import (
     _net_to_gross_pct,
     _convert_bnb_commission_to_usdc,
     _sl_gross_fraction,
+    _expected_net_pct_at_exit,
 )
 from app.scalping.db_ops import _save_open_position_to_db
 from app.scalping.break_even import _check_and_apply_break_even, _check_and_apply_trailing
@@ -736,6 +737,9 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                     "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
                                     "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
                                     "breakeven_pct": round((entry_fee_pricing + exit_fee_pricing) * 100, 2),
+                                    # TASK-1247: trailing step (0 all'apertura) + SL net % effettivo
+                                    "trailing_step": pos_obj.trailing_step,
+                                    "sl_net_pct": round(_expected_net_pct_at_exit(float(pos_obj.entry_price), sl_price, pos_obj.side, entry_fee_pricing, exit_fee_pricing), 2),
                                 })
 
                                 # Signal to session stop that we need a close on Binance
@@ -986,6 +990,9 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                         # TASK-1243: profit lock state per frontend
                         "profit_lock_active": pos.break_even_triggered,
                         "profit_lock_sl_price": round(float(pos.break_even_sl_price), 4) if pos.break_even_sl_price else None,
+                        # TASK-1247: trailing step + SL net % effettivo (dopo eventuale amend)
+                        "trailing_step": pos.trailing_step,
+                        "sl_net_pct": round(_expected_net_pct_at_exit(entry_f, sl_price, pos.side, _ef3, _xf3), 2),
                     })
                     logger.debug(f"Position update broadcast @ {current_price_f}: PnL={pnl:.2f} ({pnl_pct:.2f}%) progress={progress_pct:.1f}%")
             except Exception as e:

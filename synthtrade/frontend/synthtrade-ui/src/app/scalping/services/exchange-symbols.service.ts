@@ -47,12 +47,14 @@ interface BinanceExchangeInfo {
   symbols: BinanceSymbol[];
 }
 
+import { environment } from '../../../environments/environment';
+
 @Injectable({
   providedIn: 'root',
 })
 export class ExchangeSymbolsService {
-  private readonly NEW_API = '/api/scalping/exchange/instruments';
-  private readonly LEGACY_API = '/api/scalping/binance/exchange-info';
+  private readonly NEW_API = `${environment.apiUrl}/scalping/exchange/instruments`;
+  private readonly LEGACY_API = `${environment.apiUrl}/scalping/binance/exchange-info`;
 
   private symbols$: Observable<string[]> | null = null;
   private instruments$: Observable<ExchangeInstrument[]> | null = null;

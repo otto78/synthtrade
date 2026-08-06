@@ -11,6 +11,7 @@ import { filter } from 'rxjs/operators';
 import { ScalpingWsService, PositionEvent } from '../services/scalping-ws.service';
 import { SessionApiService } from '../services/session-api.service';
 import { Position } from '../models/position.model';
+import { environment } from '../../../environments/environment.prod';
 
 @Component({
   selector: 'app-position-ticker',
@@ -359,7 +360,7 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
   quoteAsset: string = 'USDT';
   private posSub?: Subscription;
   private posUpdateSub?: Subscription;
-  private readonly POSITION_API = '/api/scalping/position';
+  private readonly POSITION_API = environment.apiUrl + '/scalping/position';
 
   private _updateQuoteAsset(symbol: string): void {
     if (symbol.endsWith('USDC')) this.quoteAsset = 'USDC';

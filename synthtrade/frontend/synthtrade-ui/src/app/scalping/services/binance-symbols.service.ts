@@ -19,12 +19,13 @@ interface BinanceExchangeInfo {
   symbols: BinanceSymbol[];
 }
 
+import { environment } from '../../../environments/environment';
+
 @Injectable({
   providedIn: 'root',
 })
 export class BinanceSymbolsService {
-  /** Use backend proxy endpoint to avoid CORS issues in the browser */
-  private readonly PROXY_API = '/api/scalping/binance/exchange-info';
+  private readonly PROXY_API = `${environment.apiUrl}/scalping/binance/exchange-info`;
   private symbols$: Observable<string[]> | null = null;
 
   constructor(private http: HttpClient) {}

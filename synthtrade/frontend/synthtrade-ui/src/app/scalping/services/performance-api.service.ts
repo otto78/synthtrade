@@ -6,6 +6,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { environment } from '../../../environments/environment';
 
 export interface PerformanceMetrics {
   totalPnl: number;
@@ -29,7 +30,7 @@ export interface PerformanceMetrics {
   providedIn: 'root',
 })
 export class PerformanceApiService {
-  private readonly API_URL = '/api/scalping/performance';
+  private readonly API_URL = `${environment.apiUrl}/scalping/performance`;
 
   constructor(private http: HttpClient) {}
 

@@ -14,6 +14,7 @@ import { DatePipe, DecimalPipe, NgClass, NgForOf, NgIf } from '@angular/common';
 import { Subscription } from 'rxjs';
 import { ScalpingWsService, TradeClosedEvent } from '../services/scalping-ws.service';
 import { SessionApiService } from '../services/session-api.service';
+import { environment } from '../../../environments/environment.prod';
 
 @Component({
   selector: 'app-trade-log',
@@ -78,7 +79,7 @@ import { SessionApiService } from '../services/session-api.service';
 export class TradeLogComponent implements OnInit, OnDestroy {
   trades: TradeClosedEvent[] = [];
   private sub?: Subscription;
-  private readonly API_URL = '/api/scalping/trade-history';
+  private readonly API_URL = environment.apiUrl + '/scalping/trade-history';
   /** Track seen trade keys (entry_price + exit_price + symbol) to avoid duplicates. */
   private seenKeys = new Set<string>();
 

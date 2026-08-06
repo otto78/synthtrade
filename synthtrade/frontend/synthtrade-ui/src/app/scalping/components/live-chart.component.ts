@@ -46,6 +46,7 @@ import {
   filter,
   tap,
 } from 'rxjs/operators';
+import { environment } from '../../../environments/environment.prod';
 
 interface CandleResponse {
   symbol: string;
@@ -105,7 +106,7 @@ export class LiveChartComponent implements OnInit, AfterViewInit, OnDestroy {
   /** Emette il simbolo corrente → triggera il reload delle candele */
   private symbolTrigger$ = new Subject<string>();
 
-  private readonly API_BASE = '/api/scalping';
+  private readonly API_BASE = environment.apiUrl + '/scalping';
 
   constructor(
     private ws: ScalpingWsService,

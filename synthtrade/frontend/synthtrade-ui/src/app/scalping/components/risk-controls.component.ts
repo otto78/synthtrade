@@ -8,6 +8,7 @@ import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { NgIf } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
+import { environment } from '../../../environments/environment';
 
 export interface RiskConfig {
   session_max_loss_pct: number;
@@ -78,7 +79,7 @@ export class RiskControlsComponent implements OnInit {
   constructor(private http: HttpClient) {}
 
   ngOnInit(): void {
-    this.http.get<RiskConfig>('/api/scalping/risk/config').subscribe({
+    this.http.get<RiskConfig>(`${environment.apiUrl}/scalping/risk/config`).subscribe({
       next: (cfg) => {
         if (cfg && Object.keys(cfg).length > 0) {
           // Exclude position_size if it came from the backend (legacy)
@@ -104,7 +105,7 @@ export class RiskControlsComponent implements OnInit {
 
   saveConfig(): void {
     if (!this.config) return;
-    this.http.post<RiskConfig>('/api/scalping/risk/config', this.config).subscribe({
+    this.http.post<RiskConfig>(`${environment.apiUrl}/scalping/risk/config`, this.config).subscribe({
       next: () => {},
       error: (err: Error) => console.error('Failed to save risk config', err)
     });

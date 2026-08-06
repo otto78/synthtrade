@@ -2,11 +2,12 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, of } from 'rxjs';
 import { ScalpingSessionLog, SessionTradeLog } from './logs.model';
+import { environment } from '../../../environments/environment.prod';
 
 @Injectable({ providedIn: 'root' })
 export class ScalpingSessionLogsService {
   private http = inject(HttpClient);
-  private base = '/api/scalping';
+  private base = environment.apiUrl + '/scalping';
 
   getSessions(limit = 50, offset = 0): Observable<ScalpingSessionLog[]> {
     return this.http.get<ScalpingSessionLog[]>(

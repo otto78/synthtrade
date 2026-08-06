@@ -6,6 +6,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { environment } from '../../../environments/environment';
 
 export interface BacktestConfig {
   symbol: string;
@@ -33,7 +34,7 @@ export interface BacktestResult {
   providedIn: 'root',
 })
 export class BacktestApiService {
-  private readonly API_URL = '/api/scalping/backtest';
+  private readonly API_URL = `${environment.apiUrl}/scalping/backtest`;
 
   constructor(private http: HttpClient) {}
 

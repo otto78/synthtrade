@@ -3,12 +3,13 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, BehaviorSubject } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { ScalpingSession, SessionControl } from '../models/session.model';
+import { environment } from '../../../environments/environment';
 
 @Injectable({
   providedIn: 'root',
 })
 export class SessionApiService {
-  private readonly API_URL = '/api/scalping/session';
+  private readonly API_URL = `${environment.apiUrl}/scalping/session`;
   private sessionSubject = new BehaviorSubject<ScalpingSession | null>(null);
   session$ = this.sessionSubject.asObservable();
 
@@ -83,7 +84,7 @@ export class SessionApiService {
 
   /** Download session log file as .txt */
   downloadSessionLogs(sessionId: string, symbol?: string): void {
-    const url = `/api/scalping/session/${sessionId}/logs`;
+    const url = environment.apiUrl +`/scalping/session/${sessionId}/logs`;
     this.http.get(url, { responseType: 'blob' }).subscribe({
       next: (blob: Blob) => {
         const link = document.createElement('a');

@@ -7,12 +7,13 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { Position } from '../models/position.model';
+import { environment } from '../../../environments/environment';
 
 @Injectable({
   providedIn: 'root',
 })
 export class PositionApiService {
-  private readonly API_URL = '/api/scalping/position';
+  private readonly API_URL = `${environment.apiUrl}/scalping/position`;
 
   constructor(private http: HttpClient) {}
 

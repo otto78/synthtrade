@@ -407,14 +407,16 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
       .logo { font-size: 12px; }
       .topbar-center { gap: 8px; flex: 1; }
       .status-badge {
-        min-width: 0;
+        min-width: 40px;
         height: 28px;
-        padding: 4px 8px;
+        padding: 4px 10px;
         font-size: 9px;
         gap: 4px;
         letter-spacing: 0.5px;
+        white-space: nowrap;
       }
       .mode-badge-arrow { display: none; }
+      .mode-badge-indicator { display: none; }
       .username { display: none; }
       .logout-text { display: none; }
       .logout-icon { display: flex; color: var(--accent-primary, #F0B90B); }

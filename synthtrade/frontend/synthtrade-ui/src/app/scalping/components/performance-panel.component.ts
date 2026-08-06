@@ -118,6 +118,12 @@ import { SessionApiService } from '../services/session-api.service';
     .value { font-weight: 600; color: var(--text-primary); }
     .value.profit { color: var(--accent-success, #26a69a); }
     .value.loss { color: var(--accent-danger, #ef5350); }
+
+    /* Mobile: tutte le metriche su una sola colonna */
+    @media (max-width: 768px) {
+      .metrics-grid { grid-template-columns: 1fr; }
+      .pnl-group, .hold-compare { grid-column: span 1; }
+    }
     .pnl-group { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: var(--bg-elevated); border-radius: 6px; grid-column: span 2; }
     .pnl-values { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
     .pnl-main { font-size: 20px; font-weight: 700; line-height: 1.1; }

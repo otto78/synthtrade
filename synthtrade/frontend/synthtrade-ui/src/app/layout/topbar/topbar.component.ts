@@ -124,7 +124,15 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
 
       <div class="topbar-right">
         <span class="username">{{ auth.currentUser$ | async }}</span>
-        <button class="btn-logout" (click)="auth.logout()">Logout</button>
+        <button class="btn-logout" (click)="auth.logout()" title="Logout">
+          <svg class="logout-icon" viewBox="0 0 24 24" width="18" height="18" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+          <span class="logout-text">Logout</span>
+        </button>
       </div>
     </header>
 
@@ -306,8 +314,11 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
       background: none; border: 1px solid var(--border-default, rgba(234,236,239,0.06));
       color: var(--text-secondary, #848E9C); padding: 4px 12px; border-radius: 4px;
       cursor: pointer; font-size: 12px; transition: color 0.2s;
+      display: inline-flex; align-items: center; gap: 6px;
     }
     .btn-logout:hover { color: var(--color-sell, #F6465D); border-color: var(--color-sell, #F6465D); }
+    .logout-icon { display: none; }
+    .logout-icon svg { display: block; }
 
     /* Dropdown */
     .mode-dropdown {
@@ -388,6 +399,30 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
     @keyframes fadeInUp {
       from { opacity: 0; transform: translateX(-50%) translateY(20px); }
       to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+
+    /* Mobile */
+    @media (max-width: 768px) {
+      .topbar { padding: 0 10px; }
+      .logo { font-size: 12px; }
+      .topbar-center { gap: 8px; flex: 1; }
+      .status-badge {
+        min-width: 0;
+        height: 28px;
+        padding: 4px 8px;
+        font-size: 9px;
+        gap: 4px;
+        letter-spacing: 0.5px;
+      }
+      .mode-badge-arrow { display: none; }
+      .username { display: none; }
+      .logout-text { display: none; }
+      .logout-icon { display: flex; color: var(--accent-primary, #F0B90B); }
+      .btn-logout {
+        width: 32px; height: 32px; padding: 0; justify-content: center;
+        font-size: 16px; border: none; background: transparent;
+      }
+      .btn-logout:hover { border: none; }
     }
   `]
 })

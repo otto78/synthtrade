@@ -97,6 +97,11 @@ import { SessionApiService } from '../services/session-api.service';
     .title-hr { height: 1px; background: rgba(234,236,239,0.08); margin: 10px 0 12px 0; }
     .intel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .intel-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: var(--bg-elevated); border-radius: 6px; }
+
+    /* Mobile: tutte le metriche su una sola colonna */
+    @media (max-width: 768px) {
+      .intel-grid { grid-template-columns: 1fr; }
+    }
     .label { font-size: 13px; color: var(--text-secondary); }
     .value { font-size: 14px; font-weight: 600; color: var(--text-primary); }
     .value.score { font-size: 20px; font-weight: 700; }

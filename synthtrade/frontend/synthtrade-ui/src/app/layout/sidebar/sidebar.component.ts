@@ -2,15 +2,7 @@ import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { NgClass } from '@angular/common';
 import { UiService } from '../../core/services/ui.service';
-
-const NAV_ITEMS = [
-  { label: 'Dashboard',    icon: '⬡', route: '/dashboard' },
-  { label: 'Scalping',     icon: '⚡', route: '/scalping' },
-  // { label: 'Strategies',   icon: '◈', route: '/strategies' },
-  // { label: 'Active Trade', icon: '◉', route: '/active-trade' },
-  { label: 'Logs',         icon: '≡', route: '/logs' },
-  { label: 'LLM Models',   icon: '⟡', route: '/llm-models' },
-];
+import { NAV_ITEMS } from '../nav-items';
 
 @Component({
   selector: 'app-sidebar',

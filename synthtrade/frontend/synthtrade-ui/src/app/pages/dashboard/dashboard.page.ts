@@ -127,6 +127,14 @@ import { StatCardComponent } from '../../shared/components/stat-card/stat-card.c
     .asset-row:last-child { border-bottom: none; }
     .col-asset { font-weight: 600; }
     .col-eur, .col-pct { text-align: right; }
+
+    /* Mobile: schede in verticale, tabella asset a 2 colonne */
+    @media (max-width: 768px) {
+      .dashboard { padding: 12px; }
+      .stats-grid { grid-template-columns: 1fr; gap: 12px; }
+      .asset-row { grid-template-columns: 1fr 1fr; gap: 8px 16px; padding: 10px 12px; }
+      .col-eur, .col-pct { text-align: left; }
+    }
   `]
 })
 export class DashboardPage implements OnInit, OnDestroy {

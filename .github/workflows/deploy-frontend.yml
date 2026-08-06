@@ -43,11 +43,11 @@ jobs:
       - name: Add .nojekyll
         run: touch synthtrade/frontend/synthtrade-ui/dist/synthtrade-ui/browser/.nojekyll
 
-      - uses: actions/configure-pages@v4
+      - uses: actions/configure-pages@v6
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: synthtrade/frontend/synthtrade-ui/dist/synthtrade-ui/browser
 
-      - uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@v5
         id: deployment

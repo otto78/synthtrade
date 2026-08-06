@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Redirecting...</title>
+  <script>
+    (function () {
+      var base = '/synthtrade/';
+      var path = window.location.pathname;
+      var rest = path.indexOf(base) === 0 ? path.slice(base.length) : path.replace(/^\//, '');
+      window.location.replace(base + '?route=/' + rest);
+    })();
+  </script>
+</head>
+<body>Redirecting...</body>
+</html>

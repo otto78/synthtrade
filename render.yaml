@@ -95,7 +95,7 @@ services:
 #
 # 3. UptimeRobot (o servizio equivalente):
 #    - Monitor type: HTTP(s)
-#    - URL: https://synthtrade-backend.onrender.com/health
+#    - URL: https://synthtrade-01f3.onrender.com/health   (verificato: {"status":"ok"})
 #    - Interval: 5 minuti (ben sotto la soglia di spin-down di 15 min)
 #    - Attivare le notifiche email/Telegram per sapere subito se il ping fallisce
 #      o se il servizio viene sospeso da Render per traffico anomalo.

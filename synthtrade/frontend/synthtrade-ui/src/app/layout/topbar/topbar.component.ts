@@ -416,7 +416,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
         white-space: nowrap;
       }
       .mode-badge-arrow { display: none; }
-      .mode-badge-indicator { display: none; }
+      .mode-badge-indicator, .engine-indicator, .llm-indicator { display: none; }
       .username { display: none; }
       .logout-text { display: none; }
       .logout-icon { display: flex; color: var(--accent-primary, #F0B90B); }

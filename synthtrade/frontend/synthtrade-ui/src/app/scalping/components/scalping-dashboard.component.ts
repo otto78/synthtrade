@@ -90,13 +90,14 @@ interface ErrorToast {
         <app-session-controls class="card"></app-session-controls>
         <app-position-ticker class="card"></app-position-ticker>
         <app-live-chart class="card chart-card"></app-live-chart>
-        <!-- Riga 2: Performance (doppia larghezza) + Strategy -->
+        <!-- Riga 2: Performance (doppia larghezza) -->
         <app-performance-panel class="card perf-card"></app-performance-panel>
-        <app-strategy-panel class="card"></app-strategy-panel>
-        <app-supervisor-log class="card"></app-supervisor-log>
-        <!-- Riga 3 -->
+        <!-- Riga 3: Supervisor log (doppia larghezza) + Trade log + Market intel (doppia larghezza) -->
+        <app-supervisor-log class="card supervisor-card"></app-supervisor-log>
         <app-trade-log class="card chart-card"></app-trade-log>
-        <app-market-intel-panel class="card"></app-market-intel-panel>
+        <app-market-intel-panel class="card intel-card"></app-market-intel-panel>
+        <!-- Riga 4: Strategy + Risk -->
+        <app-strategy-panel class="card"></app-strategy-panel>
         <app-risk-controls class="card"></app-risk-controls>
       </div>
     </div>
@@ -107,6 +108,8 @@ interface ErrorToast {
     .card { background: var(--bg-surface, #161B22); border: 1px solid var(--border-default, rgba(234,236,239,0.1)); border-radius: 8px; }
     .chart-card { grid-column: span 2; }
     .perf-card { grid-column: span 2; }
+    .supervisor-card { grid-column: span 2; }
+    .intel-card { grid-column: span 2; }
 
     /* Responsive: su schermi stretti tutte le schede una sotto l'altra */
     @media (max-width: 900px) {
@@ -114,6 +117,8 @@ interface ErrorToast {
       .dashboard-grid { grid-template-columns: 1fr; gap: 12px; }
       .chart-card { grid-column: span 1; }
       .perf-card { grid-column: span 1; }
+      .supervisor-card { grid-column: span 1; }
+      .intel-card { grid-column: span 1; }
     }
 
     /* WS Status Banners */

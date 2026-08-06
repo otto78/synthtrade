@@ -95,7 +95,7 @@ import { SessionApiService } from '../services/session-api.service';
     .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
     .panel-header { margin-bottom: 10px; }
     .title-hr { height: 1px; background: rgba(234,236,239,0.08); margin: 10px 0 12px 0; }
-    .intel-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .intel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .intel-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: var(--bg-elevated); border-radius: 6px; }
     .label { font-size: 13px; color: var(--text-secondary); }
     .value { font-size: 14px; font-weight: 600; color: var(--text-primary); }

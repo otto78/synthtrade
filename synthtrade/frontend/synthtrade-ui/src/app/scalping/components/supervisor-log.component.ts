@@ -59,7 +59,7 @@ import { Subscription } from 'rxjs';
     .action.no_action { background: rgba(132, 142, 156, 0.1); color: #848E9C; border: 1px solid rgba(132, 142, 156, 0.2); }
 
     .time { font-size: 10px; color: var(--text-secondary); font-family: monospace; }
-    .reason { font-size: 11px; color: var(--text-primary); margin-bottom: 6px; line-height: 1.4; }
+    .reason { font-size: 13px; color: var(--text-primary); margin-bottom: 6px; line-height: 1.5; }
     .details { font-size: 10px; color: var(--accent-primary); margin-bottom: 4px; font-weight: 600; }
     .confidence { font-size: 10px; color: var(--text-secondary); opacity: 0.8; }
     .blocked { font-size: 10px; color: #ef5350; margin-top: 4px; font-style: italic; }

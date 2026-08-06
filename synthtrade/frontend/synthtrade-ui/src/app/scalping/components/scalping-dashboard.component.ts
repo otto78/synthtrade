@@ -108,6 +108,14 @@ interface ErrorToast {
     .chart-card { grid-column: span 2; }
     .perf-card { grid-column: span 2; }
 
+    /* Responsive: su schermi stretti tutte le schede una sotto l'altra */
+    @media (max-width: 900px) {
+      .scalping-dashboard { padding: 12px; }
+      .dashboard-grid { grid-template-columns: 1fr; gap: 12px; }
+      .chart-card { grid-column: span 1; }
+      .perf-card { grid-column: span 1; }
+    }
+
     /* WS Status Banners */
     .ws-banner {
       display: flex;

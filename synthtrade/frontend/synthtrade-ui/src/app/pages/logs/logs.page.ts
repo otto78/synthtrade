@@ -184,8 +184,8 @@ const PAGE_SIZE = 50;
                               <td class="cell-date">{{ t.entry_time | date:'dd/MM/yy HH:mm' }}</td>
                               <td class="cell-pair">{{ t.symbol }}</td>
                               <td class="cell-side" [ngClass]="{ buy: t.side === 'BUY', sell: t.side === 'SELL' }">{{ t.side }}</td>
-                              <td class="cell-price">{{ t.entry_price | number:'1.2-6' }}</td>
-                              <td class="cell-exit">{{ t.exit_price != null ? (t.exit_price | number:'1.2-6') : '—' }}</td>
+                              <td class="cell-price">{{ t.entry_price | number:'1.2-2' }}</td>
+                              <td class="cell-exit">{{ t.exit_price != null ? (t.exit_price | number:'1.2-2') : '—' }}</td>
                               <td class="cell-qty">{{ t.quantity | number:'1.4-8' }}</td>
                               <td class="cell-duration">{{ tradeDuration(t.entry_time, t.exit_time) }}</td>
                               <td class="cell-pnl-eur" [ngClass]="{ positive: (t.pnl ?? 0) >= 0, negative: (t.pnl ?? 0) < 0 }">
@@ -361,7 +361,7 @@ const PAGE_SIZE = 50;
       .session-detail .trades-table thead tr,
       .session-detail .trades-table tbody tr {
         display: grid;
-        grid-template-columns: 98px 48px 64px 50px 56px 34px 52px 52px;
+        grid-template-columns: 98px 48px 64px 50px 56px 34px 78px 78px;
       }
       .session-detail .trades-table th,
       .session-detail .trades-table td {

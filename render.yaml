@@ -1,0 +1,109 @@
+# render.yaml — SynthTrade backend su Render, regione Frankfurt (EU)
+#
+# Perché Frankfurt: l'account OKX è registrato come entità EU/MiCA (eea.okx.com).
+# Un IP fuori EU rischia geo-block e/o mismatch di compliance (vedi doc TASK-DEPLOY-001
+# e il fix già applicato per l'errore 51155 su BTC-USD). Frankfurt è l'unica regione EU
+# disponibile su Render (oltre a Oregon/Ohio USA e Singapore).
+#
+# NOTA IMPORTANTE (verificata su render.com/docs/free, agosto 2026):
+# - Il free tier NON è raccomandato da Render per produzione ("Do not use them for
+#   production applications").
+# - Render può sospendere un servizio free con traffico "uncommonly high" verso API
+#   esterne — il polling REST verso OKX ogni ~2s (fallback WS privato EU, vedi
+#   TASK-1100.G) rientra proprio in questa categoria. Monitorare i log Render per
+#   eventuali sospensioni.
+# - Render può riavviare un servizio free "in qualsiasi momento", indipendentemente
+#   dallo spin-down per inattività.
+# Questo file è pensato per un TEST TEMPORANEO multi-giorno, non come deploy finale.
+# Il piano di lungo periodo resta una VPS EU dedicata (Hetzner/DigitalOcean EU region).
+
+services:
+  - type: web
+    name: synthtrade
+    runtime: python
+    region: frankfurt          # <-- unica riga che risolve il problema di geo-locazione
+    plan: free                 # cambiare in "starter" quando si passa a always-on stabile
+    branch: main
+    rootDir: synthtrade/backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health   # endpoint già esistente, usalo anche come target UptimeRobot
+    autoDeploy: true
+
+    envVars:
+      # --- Modalità e sicurezza ---
+      - key: TRADING_MODE
+        value: test             # "test" = OKX Demo Trading. Passare a "live" solo dopo verifica manuale esplicita.
+      - key: ALLOW_LIVE_MODE
+        value: "false"          # tenere false finché non si decide consapevolmente di andare live
+      - key: EXCHANGE_PROVIDER
+        value: okx
+      - key: SCALPING_FORCE_PAPER
+        value: "true"           # ulteriore rete di sicurezza, coerente con okx-live-runbook.md
+
+      # --- Credenziali OKX (da impostare come secret nel Render Dashboard, NON qui) ---
+      - key: OKX_API_KEY
+        sync: false
+      - key: OKX_SECRET_KEY
+        sync: false
+      - key: OKX_PASSPHRASE
+        sync: false
+      - key: OKX_API_KEY_LIVE
+        sync: false
+      - key: OKX_SECRET_KEY_LIVE
+        sync: false
+      - key: OKX_PASSPHRASE_LIVE
+        sync: false
+
+      # --- Supabase (da impostare come secret nel Render Dashboard) ---
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+
+      # --- AI Supervisor (OpenRouter / Anthropic, da impostare come secret) ---
+      - key: AI_API_KEY
+        sync: false
+
+      # --- CORS: deve includere l'origine GitHub Pages del frontend ---
+      - key: OKX_BASE_URL
+        value: https://eea.okx.com
+
+      # --- App security (da impostare come secret nel Render Dashboard) ---
+      - key: APP_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+
+      # --- CORS: deve includere l'origine GitHub Pages del frontend ---
+      - key: CORS_ORIGINS
+        value: https://otto78.github.io
+
+      - key: PYTHON_VERSION
+        value: "3.12.0"
+
+# ─────────────────────────────────────────────────────────────────
+# CHECKLIST OPERATIVA (da fare manualmente, non automatizzabile da qui):
+#
+# 1. Su render.com: New > Blueprint > collega il repo > Render legge questo file.
+#    In alternativa, New > Web Service manuale e impostare region=Frankfurt a mano
+#    nel dropdown (il file blueprint è comunque il modo più affidabile e ripetibile).
+#
+# 2. Nel Render Dashboard, sezione Environment del servizio, valorizzare tutti gli
+#    envVars con "sync: false" sopra (Render li mostra come campi da compilare,
+#    NON li legge da questo file per sicurezza).
+#
+# 3. UptimeRobot (o servizio equivalente):
+#    - Monitor type: HTTP(s)
+#    - URL: https://synthtrade-backend.onrender.com/health
+#    - Interval: 5 minuti (ben sotto la soglia di spin-down di 15 min)
+#    - Attivare le notifiche email/Telegram per sapere subito se il ping fallisce
+#      o se il servizio viene sospeso da Render per traffico anomalo.
+#
+# 4. Verificare CORS_ORIGINS con l'URL reale GitHub Pages una volta pubblicato
+#    (vedi deploy-frontend.yml).
+#
+# 5. Aggiornare environment.prod.ts del frontend con l'URL reale assegnato da Render
+#    (visibile nel dashboard dopo il primo deploy, tipo
+#    https://synthtrade-backend-XXXX.onrender.com).
+# ─────────────────────────────────────────────────────────────────

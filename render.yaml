@@ -77,7 +77,7 @@ services:
 
       # --- CORS: deve includere l'origine GitHub Pages del frontend ---
       - key: CORS_ORIGINS
-        value: https://otto78.github.io,https://synthtrade-01f3.onrender.com
+        value: http://localhost:4208,https://otto78.github.io,https://synthtrade-01f3.onrender.com
 
       - key: PYTHON_VERSION
         value: "3.12.0"

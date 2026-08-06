@@ -14,7 +14,7 @@ import { DatePipe, DecimalPipe, NgClass, NgForOf, NgIf } from '@angular/common';
 import { Subscription } from 'rxjs';
 import { ScalpingWsService, TradeClosedEvent } from '../services/scalping-ws.service';
 import { SessionApiService } from '../services/session-api.service';
-import { environment } from '../../../environments/environment.prod';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-trade-log',

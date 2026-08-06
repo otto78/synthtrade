@@ -11,7 +11,7 @@ import { filter } from 'rxjs/operators';
 import { ScalpingWsService, PositionEvent } from '../services/scalping-ws.service';
 import { SessionApiService } from '../services/session-api.service';
 import { Position } from '../models/position.model';
-import { environment } from '../../../environments/environment.prod';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-position-ticker',

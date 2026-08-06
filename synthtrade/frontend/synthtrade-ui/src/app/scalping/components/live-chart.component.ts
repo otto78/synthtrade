@@ -46,7 +46,7 @@ import {
   filter,
   tap,
 } from 'rxjs/operators';
-import { environment } from '../../../environments/environment.prod';
+import { environment } from '../../../environments/environment';
 
 interface CandleResponse {
   symbol: string;

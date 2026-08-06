@@ -8,6 +8,7 @@ import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 import { Subject, BehaviorSubject, timer, defer } from 'rxjs';
 import { retryWhen, delayWhen, tap } from 'rxjs/operators';
 import { ScalpingSession } from '../models/session.model';
+import { environment } from '../../../environments/environment';
 
 export type WsConnectionStatus = 'connected' | 'connecting' | 'disconnected';
 
@@ -180,16 +181,11 @@ export class ScalpingWsService implements OnDestroy {
   private _reconnectAttempt = 0;
   /**
    * WS endpoint mounted at /ws/scalping in backend main.py.
-   * This matches the /ws proxy rule in proxy.conf.json which handles WS upgrade
-   * reliably. Use relative URL so it works through proxy AND direct connection.
+   * Use environment.wsUrl (absolute backend URL) so it works when the frontend
+   * is hosted on a different origin (e.g. GitHub Pages) than the backend.
    */
-  private readonly WS_PATH = '/ws/scalping';
   private get _wsUrl(): string {
-    const loc = window.location;
-    const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
-    // When running standalone (no proxy), connect to backend directly.
-    // When running via ng serve proxy, the proxy handles WS upgrade on /api/*.
-    return `${proto}//${loc.host}${this.WS_PATH}`;
+    return `${environment.wsUrl}/scalping`;
   }
 
   // BehaviorSubjects for automatic replay when reconnecting

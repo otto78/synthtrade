@@ -245,12 +245,12 @@ const PAGE_SIZE = 50;
     .cell-price, .cell-exit, .cell-qty { font-family: monospace; color: var(--text-primary); }
     .cell-pnl, .cell-pnl-eur { font-family: monospace; font-weight: 700; }
     .cell-duration { font-family: monospace; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-    .cell-reason { font-size: 11px; color: var(--text-secondary); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cell-reason { font-size: 11px; color: var(--text-secondary); max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .reason-sl     { color: var(--accent-danger, #ef5350); font-weight: 600; }
     .reason-tp     { color: var(--accent-success, #26a69a); font-weight: 600; }
     .reason-secure { color: #F0B90B; font-weight: 700; }
-    /* TASK-1248: lo stop in trailing chiude in profitto → verde come il TP */
-    .reason-trailing { color: var(--accent-success, #26a69a); font-weight: 700; }
+    /* TASK-1248: lo stop in trailing chiude in profitto → verde puro (non teal/blu) */
+    .reason-trailing { color: #0ECB81; font-weight: 700; }
     .positive { color: var(--color-buy); }
     .negative { color: var(--color-sell); }
     .pagination { display: flex; align-items: center; gap: 12px; margin-top: 16px; justify-content: flex-end; }
@@ -355,14 +355,21 @@ const PAGE_SIZE = 50;
       .session-symbol { grid-column: span 2; font-size: 16px; }
       .session-actions { grid-column: span 2; justify-content: space-between; }
 
-      /* Trade di sessione: riordino colonne mobile (Data, Motivo, P&L, P&L%, poi il resto) */
+      /* Trade di sessione: su mobile griglia a larghezze fisse (header e righe allineati),
+         riordino colonne (Data, Motivo, P&L, P&L%, poi il resto) e nascondo Q.tà + Durata. */
+      .session-detail .trades-table { display: block; }
       .session-detail .trades-table thead tr,
       .session-detail .trades-table tbody tr {
-        display: flex;
+        display: grid;
+        grid-template-columns: 98px 48px 64px 50px 56px 34px 52px 52px;
       }
       .session-detail .trades-table th,
       .session-detail .trades-table td {
-        flex: 0 0 auto;
+        padding: 6px 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-size: 10px;
       }
       .session-detail .trades-table th:nth-child(1),  .session-detail .trades-table td:nth-child(1)  { order: 1; }
       .session-detail .trades-table th:nth-child(10), .session-detail .trades-table td:nth-child(10) { order: 2; }
@@ -372,8 +379,8 @@ const PAGE_SIZE = 50;
       .session-detail .trades-table th:nth-child(3),  .session-detail .trades-table td:nth-child(3)  { order: 6; }
       .session-detail .trades-table th:nth-child(4),  .session-detail .trades-table td:nth-child(4)  { order: 7; }
       .session-detail .trades-table th:nth-child(5),  .session-detail .trades-table td:nth-child(5)  { order: 8; }
-      .session-detail .trades-table th:nth-child(6),  .session-detail .trades-table td:nth-child(6)  { order: 9; }
-      .session-detail .trades-table th:nth-child(7),  .session-detail .trades-table td:nth-child(7)  { order: 10; }
+      .session-detail .trades-table th:nth-child(6),  .session-detail .trades-table td:nth-child(6)  { display: none; }
+      .session-detail .trades-table th:nth-child(7),  .session-detail .trades-table td:nth-child(7)  { display: none; }
     }
   `]
 })
@@ -574,19 +581,21 @@ export class LogsPage implements OnInit, OnDestroy {
     return trade.entry_time + trade.symbol + trade.side;
   }
 
-  /** Converte signal_reason raw in etichetta leggibile. */
+  /** Converte signal_reason raw in etichetta corta per allineare la colonna Motivo. */
   formatReason(reason: string | undefined | null, trailingStep?: number): string {
     if (!reason) return '—';
     switch (reason) {
-      case 'take_profit':         return 'Take Profit';
-      case 'stop_loss':           return 'Stop Loss';
-      case 'stop_loss_breakeven': return 'Stop Loss Breakeven';
-      case 'stop_loss_trailing':  return trailingStep ? `Stop Loss Trailing (step ${trailingStep})` : 'Stop Loss Trailing';
-      case 'bracket_filled':      return 'Bracket (unknown)';
-      case 'bracket_unknown':     return 'Bracket (unknown)';
-      case 'manual':              return 'Manual Close';
-      case 'stop':                return 'Stop Loss';
-      case 'tp':                  return 'Take Profit';
+      case 'take_profit':         return 'TP';
+      case 'stop_loss':           return 'SL';
+      case 'stop_loss_breakeven': return 'SL B';
+      case 'stop_loss_trailing':  return trailingStep ? `SL T (${trailingStep})` : 'SL T';
+      case 'bracket_filled':      return 'BRK';
+      case 'bracket_unknown':     return 'BRK';
+      case 'manual':              return 'MAN';
+      case 'stop':                return 'SL';
+      case 'tp':                  return 'TP';
+      case 'external_close':      return 'EXT';
+      case 'session_stop':        return 'SESS';
       default:
         return reason.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }

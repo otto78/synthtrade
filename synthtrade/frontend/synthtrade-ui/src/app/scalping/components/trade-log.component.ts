@@ -72,8 +72,8 @@ import { environment } from '../../../environments/environment';
     .reason-stop-loss { color: var(--accent-danger, #ef5350); font-weight: 600; }
     .reason-take-profit { color: var(--accent-success, #26a69a); font-weight: 600; }
     .reason-stop-loss-secure { color: #F0B90B; font-weight: 700; }
-    /* TASK-1248: lo stop in trailing chiude in profitto → verde come il TP */
-    .reason-trailing { color: var(--accent-success, #26a69a); font-weight: 700; }
+    /* TASK-1248: lo stop in trailing chiude in profitto → verde puro (non teal/blu) */
+    .reason-trailing { color: #0ECB81; font-weight: 700; }
   `],
 })
 export class TradeLogComponent implements OnInit, OnDestroy {
@@ -145,19 +145,21 @@ export class TradeLogComponent implements OnInit, OnDestroy {
     return '';
   }
 
-  /** Converte signal_reason raw (snake_case) in etichetta leggibile. */
+  /** Converte signal_reason raw (snake_case) in etichetta corta. */
   formatReason(reason: string | undefined, trailingStep?: number): string {
     if (!reason) return '—';
     switch (reason) {
-      case 'take_profit':          return 'Take Profit';
-      case 'stop_loss':            return 'Stop Loss';
-      case 'stop_loss_breakeven':  return 'Stop Loss Breakeven';
-      case 'stop_loss_trailing':   return trailingStep ? `Stop Loss Trailing (step ${trailingStep})` : 'Stop Loss Trailing';
-      case 'bracket_filled':       return 'Bracket (unknown)';
-      case 'bracket_unknown':      return 'Bracket (unknown)';
-      case 'manual':               return 'Manual Close';
-      case 'stop':                 return 'Stop Loss';
-      case 'tp':                   return 'Take Profit';
+      case 'take_profit':          return 'TP';
+      case 'stop_loss':            return 'SL';
+      case 'stop_loss_breakeven':  return 'SL B';
+      case 'stop_loss_trailing':   return trailingStep ? `SL T (${trailingStep})` : 'SL T';
+      case 'bracket_filled':       return 'BRK';
+      case 'bracket_unknown':      return 'BRK';
+      case 'manual':               return 'MAN';
+      case 'stop':                 return 'SL';
+      case 'tp':                   return 'TP';
+      case 'external_close':       return 'EXT';
+      case 'session_stop':         return 'SESS';
       default:
         // fallback: sostituisce underscore con spazio e capitalizza ogni parola
         return reason.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());

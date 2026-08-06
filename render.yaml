@@ -33,13 +33,13 @@ services:
     envVars:
       # --- Modalità e sicurezza ---
       - key: TRADING_MODE
-        value: test             # "test" = OKX Demo Trading. Passare a "live" solo dopo verifica manuale esplicita.
+        value: live
       - key: ALLOW_LIVE_MODE
-        value: "false"          # tenere false finché non si decide consapevolmente di andare live
+        value: "true"
       - key: EXCHANGE_PROVIDER
         value: okx
       - key: SCALPING_FORCE_PAPER
-        value: "true"           # ulteriore rete di sicurezza, coerente con okx-live-runbook.md
+        value: "false"
 
       # --- Credenziali OKX (da impostare come secret nel Render Dashboard, NON qui) ---
       - key: OKX_API_KEY

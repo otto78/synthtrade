@@ -1,7 +1,7 @@
 export const environment = {
   production: true,
-  apiUrl: 'https://synthtrade.onrender.com/api',
-  wsUrl: 'wss://synthtrade.onrender.com/ws',
+  apiUrl: 'https://synthtrade-01f3.onrender.com/api',
+  wsUrl: 'wss://synthtrade-01f3.onrender.com/ws',
   supabaseUrl: '',
   supabaseAnonKey: '',
 };

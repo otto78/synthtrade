@@ -84,10 +84,11 @@ async def _restore_scalping_session(db) -> None:
             session_mode, global_mode,
         )
         try:
+            _stopped_at = datetime.now(timezone.utc).isoformat()
             def _db_op2():
                 db.table("scalping_sessions").update({
                     "status": "stopped",
-                    "stopped_at": datetime.now(timezone.utc).isoformat()
+                    "stopped_at": _stopped_at,
                 }).eq("id", session_id).execute()
             await asyncio.to_thread(_db_op2)
             logger.info("Stale session %s marked as stopped", session_id)

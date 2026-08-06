@@ -134,27 +134,27 @@ const PAGE_SIZE = 50;
             @for (s of pagedSessions(); track s.id) {
               <div class="session-row" [class.expanded]="expandedSessionId() === s.id" (click)="toggleSession(s.id)">
                 <span class="status-dot" [class.running]="s.status === 'running'" [class.stopped]="s.status !== 'running'"></span>
-                <span class="session-symbol">{{ s.symbol }}</span>
-                <span class="mode-badge" [class.live]="s.mode === 'LIVE'" [class.paper]="s.mode !== 'LIVE'">{{ s.mode }}</span>
-                <span class="session-start">{{ s.started_at | date:'dd/MM/yy HH:mm' }}</span>
+                <span class="session-symbol" data-label="Simbolo">{{ s.symbol }}</span>
+                <span class="mode-badge" [class.live]="s.mode === 'LIVE'" [class.paper]="s.mode !== 'LIVE'" data-label="Modo">{{ s.mode }}</span>
+                <span class="session-start" data-label="Inizio">{{ s.started_at | date:'dd/MM/yy HH:mm' }}</span>
                 @if (s.status === 'running') {
-                  <span class="session-end">In corso</span>
+                  <span class="session-end" data-label="Fine">In corso</span>
                 } @else {
-                  <span class="session-end">{{ s.stopped_at | date:'dd/MM/yy HH:mm' }}</span>
+                  <span class="session-end" data-label="Fine">{{ s.stopped_at | date:'dd/MM/yy HH:mm' }}</span>
                 }
-                <span class="session-duration">{{ calcDuration(s.started_at, s.stopped_at) }}</span>
-                <span class="session-trades">{{ s.trade_count }}</span>
-                <span class="session-wins">{{ s.win_count }}/{{ s.trade_count }}</span>
-                <span class="session-pnl" [ngClass]="{ positive: s.total_pnl >= 0, negative: s.total_pnl < 0 }">
+                <span class="session-duration" data-label="Durata">{{ calcDuration(s.started_at, s.stopped_at) }}</span>
+                <span class="session-trades" data-label="Trade">{{ s.trade_count }}</span>
+                <span class="session-wins" data-label="Wins">{{ s.win_count }}/{{ s.trade_count }}</span>
+                <span class="session-pnl" [ngClass]="{ positive: s.total_pnl >= 0, negative: s.total_pnl < 0 }" data-label="P&amp;L">
                   {{ s.total_pnl >= 0 ? '+' : '' }}{{ s.total_pnl | number:'1.2-2' }} {{ quoteAssetFromSymbol(s.symbol) }}
                 </span>
-                <span class="session-pnl-pct" [ngClass]="{ positive: (s.total_pnl_pct ?? 0) >= 0, negative: (s.total_pnl_pct ?? 0) < 0 }">
+                <span class="session-pnl-pct" [ngClass]="{ positive: (s.total_pnl_pct ?? 0) >= 0, negative: (s.total_pnl_pct ?? 0) < 0 }" data-label="P&amp;L %">
                   {{ s.total_pnl_pct != null ? ((s.total_pnl_pct >= 0 ? '+' : '') + (s.total_pnl_pct | number:'1.2-2') + '%') : '—' }}
                 </span>
-                <span class="session-winrate" [ngClass]="{ positive: winRate(s) >= 50, negative: winRate(s) < 50 }">
+                <span class="session-winrate" [ngClass]="{ positive: winRate(s) >= 50, negative: winRate(s) < 50 }" data-label="Win %">
                   {{ s.trade_count > 0 ? (winRate(s) | number:'1.1-1') + '%' : '—' }}
                 </span>
-                <span class="session-hold" [ngClass]="{ positive: (s.hold_pnl_pct ?? 0) >= 0, negative: (s.hold_pnl_pct ?? 0) < 0 }">
+                <span class="session-hold" [ngClass]="{ positive: (s.hold_pnl_pct ?? 0) >= 0, negative: (s.hold_pnl_pct ?? 0) < 0 }" data-label="vs Hold">
                   {{ s.hold_pnl_pct != null ? ((s.hold_pnl_pct >= 0 ? '+' : '') + (s.hold_pnl_pct | number:'1.2-2') + '%') : '—' }}
                 </span>
                 <span class="session-actions">
@@ -332,6 +332,49 @@ const PAGE_SIZE = 50;
       background: rgba(240,185,11,0.1);
     }
     .session-detail { background: var(--bg-elevated); border: 1px solid var(--accent-primary); border-top: none; border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; padding: 12px; margin-bottom: 6px; }
+
+    /* Mobile: le sessioni diventano card con campi etichettati */
+    @media (max-width: 768px) {
+      .session-header { display: none; }
+      .session-row {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px 16px;
+        padding: 12px;
+      }
+      .session-row > span { text-align: left; }
+      .session-row > span:not(.session-actions):not(.status-dot)::before {
+        content: attr(data-label);
+        display: block;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        color: var(--text-muted);
+        margin-bottom: 3px;
+      }
+      .status-dot { display: none; }
+      .session-symbol { grid-column: span 2; font-size: 16px; }
+      .session-actions { grid-column: span 2; justify-content: space-between; }
+
+      /* Trade di sessione: riordino colonne mobile (Data, Motivo, P&L, P&L%, poi il resto) */
+      .session-detail .trades-table thead tr,
+      .session-detail .trades-table tbody tr {
+        display: flex;
+      }
+      .session-detail .trades-table th,
+      .session-detail .trades-table td {
+        flex: 0 0 auto;
+      }
+      .session-detail .trades-table th:nth-child(1),  .session-detail .trades-table td:nth-child(1)  { order: 1; }
+      .session-detail .trades-table th:nth-child(10), .session-detail .trades-table td:nth-child(10) { order: 2; }
+      .session-detail .trades-table th:nth-child(8),  .session-detail .trades-table td:nth-child(8)  { order: 3; }
+      .session-detail .trades-table th:nth-child(9),  .session-detail .trades-table td:nth-child(9)  { order: 4; }
+      .session-detail .trades-table th:nth-child(2),  .session-detail .trades-table td:nth-child(2)  { order: 5; }
+      .session-detail .trades-table th:nth-child(3),  .session-detail .trades-table td:nth-child(3)  { order: 6; }
+      .session-detail .trades-table th:nth-child(4),  .session-detail .trades-table td:nth-child(4)  { order: 7; }
+      .session-detail .trades-table th:nth-child(5),  .session-detail .trades-table td:nth-child(5)  { order: 8; }
+      .session-detail .trades-table th:nth-child(6),  .session-detail .trades-table td:nth-child(6)  { order: 9; }
+      .session-detail .trades-table th:nth-child(7),  .session-detail .trades-table td:nth-child(7)  { order: 10; }
+    }
   `]
 })
 export class LogsPage implements OnInit, OnDestroy {

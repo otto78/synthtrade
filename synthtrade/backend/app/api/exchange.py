@@ -1,3 +1,4 @@
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from app.dependencies import get_current_user, get_exchange
 from app.config import settings
@@ -5,6 +6,14 @@ from app.execution.exchange_factory import build_exchange_adapter
 from app.execution.exchange import ExchangeAuthError, ExchangeNetworkError
 
 router = APIRouter(prefix="/exchange", tags=["exchange"])
+
+
+@router.get("/outbound-ip")
+async def get_outbound_ip():
+    """Restituisce l'IP pubblico uscente del server (utile per whitelist OKX)."""
+    async with httpx.AsyncClient() as client:
+        r = await client.get("https://api.ipify.org?format=json", timeout=5)
+        return r.json()
 
 
 @router.get("/status")

@@ -148,6 +148,11 @@ Strategie **non più in uso** (presenti nel registry ma irraggiungibili da quals
 
 ## Storico versioni
 
+### v2.1 (2026-08-07) — TASK-1249
+- Aggiunta sezione "PARAMETRI MODIFICABILI PER STRATEGIA": elenco dei parametri modificabili via `update_params` per `ema_cross`, `rsi_bollinger`, `vwap_reversion` (con file sorgente).
+- Chiarito che `update_params` riceve un dizionario parziale (merge, non sostituzione) e che i nuovi parametri sono visibili al tick successivo nella sezione "STRATEGIA ATTIVA" del contesto.
+- Aggiunti esempi concreti di `new_params` (es. `{"vwap_distance_buy": 0.001}`, `{"min_slope": 0.0005}`).
+
 ### v2 (2026-08-07)
 - Strategie ridotte a 3 reali (`ema_cross`, `rsi_bollinger`, `vwap_reversion`); rimosse `momentum_base` e `stoch_rsi_bb_squeeze`.
 - Whitelist regime/strategia allineata all'enforcement runtime.

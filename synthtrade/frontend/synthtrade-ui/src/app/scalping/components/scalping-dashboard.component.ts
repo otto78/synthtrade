@@ -111,7 +111,9 @@ interface ErrorToast {
     .supervisor-card { grid-column: span 2; }
     .intel-card { grid-column: span 2; }
 
-    /* Responsive: su schermi stretti tutte le schede una sotto l'altra */
+    /* Responsive: su schermi stretti tutte le schede una sotto l'altra.
+       Ordine mobile: Session → Performance → Position → Trade Log → Live Chart →
+       AI Supervisor Log → Market Intelligence → Strategy → Risk Controls */
     @media (max-width: 900px) {
       .scalping-dashboard { padding: 12px; }
       .dashboard-grid { grid-template-columns: 1fr; gap: 12px; }
@@ -119,6 +121,15 @@ interface ErrorToast {
       .perf-card { grid-column: span 1; }
       .supervisor-card { grid-column: span 1; }
       .intel-card { grid-column: span 1; }
+      app-session-controls { order: 1; }
+      app-performance-panel { order: 2; }
+      app-position-ticker { order: 3; }
+      app-trade-log { order: 4; }
+      app-live-chart { order: 5; }
+      app-supervisor-log { order: 6; }
+      app-market-intel-panel { order: 7; }
+      app-strategy-panel { order: 8; }
+      app-risk-controls { order: 9; }
     }
 
     /* WS Status Banners */

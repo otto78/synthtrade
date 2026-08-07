@@ -25,40 +25,43 @@ import { environment } from '../../../environments/environment';
       <span class="panel-title">Trade Log</span>
       <div class="title-hr"></div>
 
-      <div *ngIf="trades.length === 0" class="no-trades">No trades yet</div>
+      <div class="trades-scroll">
+        <div *ngIf="trades.length === 0" class="no-trades">No trades yet</div>
 
-      <div class="trades-list">
-        <table *ngIf="trades.length > 0">
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Side</th>
-              <th>Entry</th>
-              <th>Exit</th>
-              <th>PnL</th>
-              <th>Reason</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let trade of trades">
-              <td>{{ trade.timestamp | date:'MM/dd HH:mm:ss' }}</td>
-              <td [ngClass]="trade.side.toLowerCase()">{{ trade.side }}</td>
-              <td>{{ trade.entry_price | number:'1.2-2' }}</td>
-              <td>{{ trade.exit_price | number:'1.2-2' }}</td>
-              <td [ngClass]="trade.pnl >= 0 ? 'profit' : 'loss'">
-                {{ trade.pnl | number:'1.2-2' }}
-              </td>
-              <td class="reason-cell" [ngClass]="getReasonClass(trade.signal_reason)">{{ formatReason(trade.signal_reason, trade.trailing_step) }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="trades-list">
+          <table *ngIf="trades.length > 0">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Side</th>
+                <th>Entry</th>
+                <th>Exit</th>
+                <th>PnL</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let trade of trades">
+                <td>{{ trade.timestamp | date:'MM/dd HH:mm:ss' }}</td>
+                <td [ngClass]="trade.side.toLowerCase()">{{ trade.side }}</td>
+                <td>{{ trade.entry_price | number:'1.2-2' }}</td>
+                <td>{{ trade.exit_price | number:'1.2-2' }}</td>
+                <td [ngClass]="trade.pnl >= 0 ? 'profit' : 'loss'">
+                  {{ trade.pnl | number:'1.2-2' }}
+                </td>
+                <td class="reason-cell" [ngClass]="getReasonClass(trade.signal_reason)">{{ formatReason(trade.signal_reason, trade.trailing_step) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   `,
   styles: [`
-    .trade-log { padding: 12px; max-height: 300px; overflow-y: auto; }
+    .trade-log { padding: 12px; }
     .panel-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
     .title-hr { height: 1px; background: rgba(234,236,239,0.08); margin: 10px 0 12px 0; }
+    .trades-scroll { max-height: 300px; overflow-y: auto; }
     .no-trades { color: var(--text-secondary); font-size: 12px; padding: 8px; }
     table { width: 100%; font-size: 11px; border-collapse: collapse; }
     th, td { text-align: left; padding: 4px 6px; }

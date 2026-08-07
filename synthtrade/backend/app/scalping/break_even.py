@@ -39,6 +39,54 @@ def _get_lock_for_algo(algo_id: str) -> asyncio.Lock:
     return _break_even_locks[algo_id]
 
 
+def _compute_trailing_step_levels(pos, risk_cfg=None, fee_tier=None) -> list[dict]:
+    """Calcola i trigger degli step di trailing ancora da raggiungere (per la UI).
+
+    Ritorna una lista di dict per ogni step futuro non ancora scattato:
+        [{"step": k, "trigger_net_pct": ..., "trigger_price": ...}]
+
+    Pura matematica su config + fee tier, nessuna I/O: replica il guard dinamico
+    di _check_and_apply_trailing (cap = tp_net_pct - safety_margin), quindi la UI
+    mostra esattamente le barrette rimaste. Usata dai broadcast position/
+    position_update e da GET /position.
+    """
+    cfg = get_scalping_config()
+    be_trigger = float(cfg.get("BREAK_EVEN_TRIGGER_NET_PCT", 0.15))
+    step_net = float(cfg.get("TRAILING_STEP_NET_PCT", 0.15))
+    safety_margin = float(cfg.get("TRAILING_SAFETY_MARGIN_NET_PCT", 0.10))
+
+    risk_cfg = risk_cfg if risk_cfg is not None else _execution_state.get("risk_config", {})
+    tp_net_pct = float(risk_cfg.get("take_profit_pct", 0.80))
+    cap_net = tp_net_pct - safety_margin
+
+    fee_tier = fee_tier if fee_tier is not None else _execution_state.get(
+        "fee_tier", {"maker": 0.001, "taker": 0.001}
+    )
+    ef = _get_fee_rate(fee_tier, "taker", 0.001)
+    xf = _get_fee_rate(fee_tier, "taker", 0.001)
+
+    entry_f = float(pos.entry_price) if pos.entry_price else 0.0
+    if entry_f <= 0:
+        return []
+
+    current_step = int(getattr(pos, "trailing_step", 0) or 0)
+    levels: list[dict] = []
+    k = current_step + 1
+    while True:
+        trigger_net = be_trigger + k * step_net
+        if trigger_net >= cap_net:
+            break
+        ratio = _exit_price_ratio(trigger_net, ef, xf)
+        trigger_price = entry_f * ratio if pos.side.upper() == "BUY" else entry_f / ratio
+        levels.append({
+            "step": k,
+            "trigger_net_pct": round(trigger_net, 4),
+            "trigger_price": round(trigger_price, 2),
+        })
+        k += 1
+    return levels
+
+
 def _quantize_price(price: float, tick_sz: float, side: str) -> float:
     """Quantizza il prezzo al tick_sz usando Decimal per evitare errori floating-point.
 

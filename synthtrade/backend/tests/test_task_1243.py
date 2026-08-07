@@ -727,3 +727,72 @@ class TestTrailingStop:
         pos.oco_order_list_id = "algo_test"
         assert float(pos.sl_price) == 50250.0
         assert pos.trailing_step == 2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. Test _compute_trailing_step_levels (TASK-1249)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestTrailingStepLevels:
+    """Helper per le barrette UI: calcola i trigger degli step di trailing rimanenti."""
+
+    CONFIG = {
+        "BREAK_EVEN_TRIGGER_NET_PCT": 0.15,
+        "TRAILING_STEP_NET_PCT": 0.15,
+        "TRAILING_SAFETY_MARGIN_NET_PCT": 0.10,
+    }
+    RISK = {"take_profit_pct": 0.80}
+    FEES = {"maker": 0.001, "taker": 0.001}
+
+    def _levels(self, pos, trailing_step=0, risk=None, fees=None):
+        from app.scalping.break_even import _compute_trailing_step_levels
+        pos.trailing_step = trailing_step
+        cfg_mock = MagicMock()
+        cfg_mock.get.side_effect = lambda k, d=None: self.CONFIG.get(k, d)
+        with patch("app.scalping.break_even.get_scalping_config", return_value=cfg_mock):
+            return _compute_trailing_step_levels(
+                pos, risk if risk is not None else self.RISK,
+                fees if fees is not None else self.FEES,
+            )
+
+    def test_be_triggered_step0_three_levels(self):
+        """Con BE attivo e step=0: 3 barrette (step 1,2,3 → trigger 0.30/0.45/0.60)."""
+        pos = _make_position(entry=50000.0, be_triggered=True)
+        levels = self._levels(pos, trailing_step=0)
+        assert [l["step"] for l in levels] == [1, 2, 3]
+        assert [l["trigger_net_pct"] for l in levels] == [0.30, 0.45, 0.60]
+
+    def test_step1_reduces_one_bar(self):
+        """Dopo il primo step: 2 barrette (step 2,3), una in meno."""
+        pos = _make_position(entry=50000.0, be_triggered=True)
+        levels = self._levels(pos, trailing_step=1)
+        assert [l["step"] for l in levels] == [2, 3]
+
+    def test_step3_all_done(self):
+        """Con step=3 il prossimo trigger (0.75) supera il cap (0.70) → nessuna barretta."""
+        pos = _make_position(entry=50000.0, be_triggered=True)
+        levels = self._levels(pos, trailing_step=3)
+        assert levels == []
+
+    def test_buy_trigger_prices_above_entry(self):
+        """Per long i prezzi trigger sono sopra entry e crescenti."""
+        pos = _make_position(entry=50000.0, be_triggered=True)
+        levels = self._levels(pos, trailing_step=0)
+        prices = [l["trigger_price"] for l in levels]
+        assert all(p > 50000.0 for p in prices)
+        assert prices == sorted(prices)
+
+    def test_sell_trigger_prices_below_entry(self):
+        """Per short i prezzi trigger sono sotto entry e decrescenti."""
+        pos = _make_position(entry=50000.0, side="SELL", be_triggered=True)
+        levels = self._levels(pos, trailing_step=0)
+        prices = [l["trigger_price"] for l in levels]
+        assert all(p < 50000.0 for p in prices)
+        assert prices == sorted(prices, reverse=True)
+
+    def test_tp_change_updates_cap(self):
+        """TP alzato a runtime → più step disponibili (cap dinamico)."""
+        pos = _make_position(entry=50000.0, be_triggered=True)
+        levels = self._levels(pos, trailing_step=0, risk={"take_profit_pct": 1.20})
+        # cap = 1.20 - 0.10 = 1.10 → ultimo trigger 0.15 + 6*0.15 = 1.05 < 1.10
+        assert [l["step"] for l in levels] == [1, 2, 3, 4, 5, 6]

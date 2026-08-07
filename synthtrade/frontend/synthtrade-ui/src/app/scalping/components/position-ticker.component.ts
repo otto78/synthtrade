@@ -4,19 +4,19 @@
  */
 
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
-import { NgIf, NgClass, DecimalPipe } from '@angular/common';
+import { NgIf, NgFor, NgClass, DecimalPipe } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Subscription } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { ScalpingWsService, PositionEvent } from '../services/scalping-ws.service';
 import { SessionApiService } from '../services/session-api.service';
-import { Position } from '../models/position.model';
+import { Position, TrailingStep } from '../models/position.model';
 import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-position-ticker',
   standalone: true,
-  imports: [NgIf, NgClass, DecimalPipe],
+  imports: [NgIf, NgFor, NgClass, DecimalPipe],
   template: `
     <div class="position-ticker">
       <span class="panel-title">Position</span>
@@ -72,11 +72,19 @@ import { environment } from '../../../environments/environment';
             <span class="label-current">{{ getProgressText() }}</span>
             <span class="label-tp">TP</span>
           </div>
-          <div class="progress-bar">
+            <div class="progress-bar">
             <div class="progress-fill" [style.width.%]="getProgressPct()" [ngClass]="getProgressClass()"></div>
-            <div class="entry-marker" [style.left.%]="getEntryPct()"></div>
+            <!-- TASK-1249: entry nascosta quando profit lock attivo (SL già sopra entry, non serve più) -->
+            <div *ngIf="!position.profit_lock_active" class="entry-marker" [style.left.%]="getEntryPct()"></div>
             <!-- Marker breakeven: nascosto quando profit lock attivo (è già stato superato, non serve più) -->
             <div *ngIf="!position.profit_lock_active" class="breakeven-marker" [style.left.%]="getBreakevenPct()"></div>
+            <!-- TASK-1249: barrette dei prossimi step di trailing rimanenti (visibili solo con profit lock attivo) -->
+            <div *ngIf="position.profit_lock_active" class="trailing-steps">
+              <div *ngFor="let step of position.trailing_steps"
+                   class="trailing-step-marker"
+                   [style.left.%]="getTrailingStepPct(step.trigger_price)"
+                   [attr.title]="'Step ' + step.step + ' · trigger ' + step.trigger_net_pct + '%'"></div>
+            </div>
           </div>
           <!-- Riga breakeven: sostituita da messaggio di allerta se profit lock attivo -->
           <div class="breakeven-row" *ngIf="!position.profit_lock_active">
@@ -91,7 +99,7 @@ import { environment } from '../../../environments/environment';
           </div>
           <div class="trailing-status" *ngIf="isTrailing()">
             <span class="lock-status-icon">🔒</span>
-            <span class="lock-status-text">Trailing Stop attivo — Step {{ position.trailing_step }} · profitto protetto a {{ formatSlPct() }}</span>
+            <span class="lock-status-text">Trailing Stop attivo — Step {{ position.trailing_step }} · profitto protetto a {{ formatSlPct() }}<ng-container *ngIf="(position.trailing_steps?.length ?? 0) > 0"> · {{ position.trailing_steps?.length }} step rimasti</ng-container></span>
           </div>
         </div>
       </div>
@@ -221,6 +229,28 @@ import { environment } from '../../../environments/environment';
       border-radius: 1px;
       transform: translateX(-1.5px);
       z-index: 3;
+    }
+    /* TASK-1249: barrette dei prossimi step di trailing (rimanenti) */
+    .trailing-steps {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      pointer-events: none;
+    }
+    .trailing-step-marker {
+      position: absolute;
+      top: -2px;
+      width: 3px;
+      height: 16px;
+      background: #26a69a;
+      border-radius: 1px;
+      transform: translateX(-1.5px);
+      z-index: 4;
+      pointer-events: auto;
+      cursor: help;
+      box-shadow: 0 0 4px rgba(38,166,154,0.6);
     }
     .breakeven-row {
       display: flex;
@@ -413,6 +443,8 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
         trailing_step: event.trailing_step ?? this.position?.trailing_step ?? 0,
         // TASK-1247: SL net % effettivo (post amend break-even/trailing)
         sl_net_pct: event.sl_net_pct ?? this.position?.sl_net_pct,
+        // TASK-1249: step di trailing rimanenti (per le barrette)
+        trailing_steps: event.trailing_steps ?? this.position?.trailing_steps ?? [],
       };
       this.cdr.markForCheck();
       this.cdr.detectChanges();
@@ -447,6 +479,7 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
       profit_lock_active?: boolean;
       trailing_step?: number;
       sl_net_pct?: number;
+      trailing_steps?: TrailingStep[];
     }
     this.http.get<PositionApiResponse | null>(this.POSITION_API).subscribe({
       next: (pos) => {
@@ -473,6 +506,7 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
             profit_lock_active: pos.profit_lock_active ?? false,
             trailing_step: pos.trailing_step ?? 0,
             sl_net_pct: pos.sl_net_pct,
+            trailing_steps: pos.trailing_steps ?? [],
           };
           this.cdr.markForCheck();
           this.cdr.detectChanges();
@@ -561,36 +595,35 @@ export class PositionTickerComponent implements OnInit, OnDestroy {
    */
   getBreakevenPct(): number {
     if (!this.position) return 50;
-    const { side, entry_price, stop_loss_price, take_profit_price, breakeven_pct } = this.position;
-    if (!stop_loss_price || !take_profit_price) return 50;
-
-    const bePct = breakeven_pct ?? 0.2;
-    if (side === 'BUY') {
-      const bePrice = entry_price * (1 + bePct / 100);
-      const range = take_profit_price - stop_loss_price;
-      if (range <= 0) return 50;
-      return Math.max(0, Math.min(100, ((bePrice - stop_loss_price) / range) * 100));
-    }
-    const bePrice = entry_price * (1 - bePct / 100);
-    const range = stop_loss_price - take_profit_price;
-    if (range <= 0) return 50;
-    return Math.max(0, Math.min(100, ((stop_loss_price - bePrice) / range) * 100));
+    return this.priceToRangePct(this.getBreakevenPrice());
   }
 
   /** Entry position on the progress bar (0-100%) */
   getEntryPct(): number {
     if (!this.position) return 50;
-    const { side, entry_price, stop_loss_price, take_profit_price } = this.position;
+    return this.priceToRangePct(this.position.entry_price);
+  }
+
+  /** Position of a generic price on the SL→TP range (0-100%). */
+  private priceToRangePct(price: number): number {
+    const p = this.position;
+    if (!p) return 50;
+    const { side, stop_loss_price, take_profit_price } = p;
     if (!stop_loss_price || !take_profit_price) return 50;
 
     if (side === 'BUY') {
       const range = take_profit_price - stop_loss_price;
       if (range <= 0) return 50;
-      return Math.max(0, Math.min(100, ((entry_price - stop_loss_price) / range) * 100));
+      return Math.max(0, Math.min(100, ((price - stop_loss_price) / range) * 100));
     }
     const range = stop_loss_price - take_profit_price;
     if (range <= 0) return 50;
-    return Math.max(0, Math.min(100, ((stop_loss_price - entry_price) / range) * 100));
+    return Math.max(0, Math.min(100, ((stop_loss_price - price) / range) * 100));
+  }
+
+  /** Position of a trailing step trigger price on the progress bar (0-100%). */
+  getTrailingStepPct(triggerPrice: number): number {
+    return this.priceToRangePct(triggerPrice);
   }
 
   /** Breakeven price (entry + round-trip fees) */

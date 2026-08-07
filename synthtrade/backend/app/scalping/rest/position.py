@@ -14,6 +14,7 @@ from app.scalping.pricing import (
     _sl_price_from_entry,
     _expected_net_pct_at_exit,
 )
+from app.scalping.break_even import _compute_trailing_step_levels
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,8 @@ async def get_position() -> Optional[Dict]:
         "profit_lock_active": pos.break_even_triggered,
         "trailing_step": pos.trailing_step,
         "sl_net_pct": round(_expected_net_pct_at_exit(entry, stop_loss_price, pos.side, entry_fee_rate, exit_fee_rate), 2),
+        # TASK-1249: step di trailing rimanenti per le barrette UI
+        "trailing_steps": _compute_trailing_step_levels(pos, risk_cfg, fee_tier),
     }
 
 

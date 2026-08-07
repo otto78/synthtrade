@@ -19,7 +19,11 @@ from app.scalping.pricing import (
     _expected_net_pct_at_exit,
 )
 from app.scalping.db_ops import _save_open_position_to_db
-from app.scalping.break_even import _check_and_apply_break_even, _check_and_apply_trailing
+from app.scalping.break_even import (
+    _check_and_apply_break_even,
+    _check_and_apply_trailing,
+    _compute_trailing_step_levels,
+)
 from app.scalping.trade_executor import (
     _start_uds_if_needed,
     _handle_bracket_failed,
@@ -740,6 +744,8 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                     # TASK-1247: trailing step (0 all'apertura) + SL net % effettivo
                                     "trailing_step": pos_obj.trailing_step,
                                     "sl_net_pct": round(_expected_net_pct_at_exit(float(pos_obj.entry_price), sl_price, pos_obj.side, entry_fee_pricing, exit_fee_pricing), 2),
+                                    # TASK-1249: step di trailing rimanenti per le barrette UI
+                                    "trailing_steps": _compute_trailing_step_levels(pos_obj, risk_cfg, fee_tier_pricing),
                                 })
 
                                 # Signal to session stop that we need a close on Binance
@@ -993,6 +999,8 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                         # TASK-1247: trailing step + SL net % effettivo (dopo eventuale amend)
                         "trailing_step": pos.trailing_step,
                         "sl_net_pct": round(_expected_net_pct_at_exit(entry_f, sl_price, pos.side, _ef3, _xf3), 2),
+                        # TASK-1249: step di trailing rimanenti per le barrette UI
+                        "trailing_steps": _compute_trailing_step_levels(pos, risk_cfg, fee_tier),
                     })
                     logger.debug(f"Position update broadcast @ {current_price_f}: PnL={pnl:.2f} ({pnl_pct:.2f}%) progress={progress_pct:.1f}%")
             except Exception as e:

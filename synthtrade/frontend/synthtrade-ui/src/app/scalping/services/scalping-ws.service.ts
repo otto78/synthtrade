@@ -8,6 +8,7 @@ import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 import { Subject, BehaviorSubject, timer, defer } from 'rxjs';
 import { retryWhen, delayWhen, tap } from 'rxjs/operators';
 import { ScalpingSession } from '../models/session.model';
+import { TrailingStep } from '../models/position.model';
 import { environment } from '../../../environments/environment';
 
 export type WsConnectionStatus = 'connected' | 'connecting' | 'disconnected';
@@ -121,6 +122,8 @@ export interface PositionEvent {
   trailing_step?: number;
   // TASK-1247: rendimento netto % effettivo al prezzo SL corrente (post amend)
   sl_net_pct?: number;
+  // TASK-1249: step di trailing rimanenti (per le barrette UI)
+  trailing_steps?: TrailingStep[];
 }
 
 /** Strategy parameter values — extensible for different strategy types */

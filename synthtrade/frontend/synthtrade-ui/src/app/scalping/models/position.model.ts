@@ -2,6 +2,13 @@
  * Position Models for Scalping Dashboard
  */
 
+// TASK-1249: step di trailing ancora da raggiungere (per barrette sulla progress bar)
+export interface TrailingStep {
+  step: number;
+  trigger_net_pct: number;
+  trigger_price: number;
+}
+
 export interface Position {
   symbol: string;
   side: 'BUY' | 'SELL';
@@ -34,4 +41,6 @@ export interface Position {
   trailing_step?: number;
   // TASK-1247: rendimento netto % effettivo al prezzo SL corrente (post amend)
   sl_net_pct?: number;
+  // TASK-1249: step di trailing rimanenti (per le barrette UI)
+  trailing_steps?: TrailingStep[];
 }

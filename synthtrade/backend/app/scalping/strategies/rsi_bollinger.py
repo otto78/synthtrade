@@ -57,6 +57,17 @@ class RSIBollingerStrategy(AbstractScalpingStrategy):
     volatilità di mercato, dai range stretti (0.3%) a quelli ampi (>1%).
     """
 
+    # TASK-1249: parametri modificabili dal supervisor via update_params.
+    # I default coincidono con i valori hardcoded storici → nessun cambio
+    # di comportamento a parità di config.
+    DEFAULT_PARAMS: dict = {
+        "atr_thresholds": [0.4, 0.6, 1.0],      # soglie ATR% per fascia
+        "rsi_oversold": [48, 43, 38, 33],       # soglia oversold per fascia
+        "rsi_overbought": [52, 57, 62, 67],     # soglia overbought per fascia
+        "bb_tolerance": [1.008, 1.012, 1.015, 1.020],  # tolleranza BB per fascia
+        "confidence": [0.35, 0.5, 0.6, 0.7],    # confidence per fascia
+    }
+
     @property
     def name(self) -> str:
         return "rsi_bollinger"
@@ -79,28 +90,27 @@ class RSIBollingerStrategy(AbstractScalpingStrategy):
 
         # Calcola soglie dinamiche basate su ATR%
         atr_pct = _calculate_atr_percent(candles)
-        
-        # Mappa ATR% → soglie RSI
-        if atr_pct < 0.4:
-            rsi_oversold = 48
-            rsi_overbought = 52
-            bb_tolerance = 1.008  # 0.8%
-            confidence = 0.35
-        elif atr_pct < 0.6:
-            rsi_oversold = 43
-            rsi_overbought = 57
-            bb_tolerance = 1.012  # 1.2%
-            confidence = 0.5
-        elif atr_pct < 1.0:
-            rsi_oversold = 38
-            rsi_overbought = 62
-            bb_tolerance = 1.015  # 1.5%
-            confidence = 0.6
-        else:
-            rsi_oversold = 33
-            rsi_overbought = 67
-            bb_tolerance = 1.020  # 2.0%
-            confidence = 0.7
+
+        # TASK-1249: parametri letti da self._params (modificabili dal supervisor).
+        # Fallback ai default hardcoded se il dict è incompleto (retrocompatibilità).
+        p = self._params
+        atr_thresholds = p.get("atr_thresholds", [0.4, 0.6, 1.0])
+        rsi_oversold_list = p.get("rsi_oversold", [48, 43, 38, 33])
+        rsi_overbought_list = p.get("rsi_overbought", [52, 57, 62, 67])
+        bb_tolerance_list = p.get("bb_tolerance", [1.008, 1.012, 1.015, 1.020])
+        confidence_list = p.get("confidence", [0.35, 0.5, 0.6, 0.7])
+
+        # Mappa ATR% → soglie RSI (indice fascia = numero di soglie superate)
+        idx = 0
+        for i, thr in enumerate(atr_thresholds):
+            if atr_pct >= thr:
+                idx = i + 1
+        idx = min(idx, len(rsi_oversold_list) - 1)
+
+        rsi_oversold = rsi_oversold_list[idx]
+        rsi_overbought = rsi_overbought_list[idx]
+        bb_tolerance = bb_tolerance_list[idx]
+        confidence = confidence_list[idx]
 
         # Segnale BUY: RSI oversold + prezzo vicino BB inferiore
         if rsi < rsi_oversold and close <= bb_lower * bb_tolerance:

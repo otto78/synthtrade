@@ -13,7 +13,20 @@ class AbstractScalpingStrategy(ABC):
 
     Le strategie implementano i segnali tecnici che fungono da filtri
     di timing (v2.0 architecture).
+
+    TASK-1249: ogni strategia concreta definisce DEFAULT_PARAMS (i parametri
+    di default hardcoded). update_params() fa merge sui default così il
+    supervisor può modificare singoli parametri senza perdere gli altri.
+    get_params() espone i parametri correnti al contesto AI.
     """
+
+    # TASK-1249: parametri di default della strategia (override nelle sottoclassi).
+    # I valori devono coincidere con quelli hardcoded in evaluate() per non
+    # cambiare il comportamento a parità di config.
+    DEFAULT_PARAMS: dict = {}
+
+    def __init__(self) -> None:
+        self._params: dict = dict(self.DEFAULT_PARAMS)
 
     @property
     @abstractmethod
@@ -21,13 +34,27 @@ class AbstractScalpingStrategy(ABC):
         """Nome della strategia."""
         pass
 
+    def get_params(self) -> dict:
+        """Restituisce una copia dei parametri correnti della strategia.
+
+        TASK-1249: usato dal supervisor per esporre i parametri modificabili
+        nel contesto AI (strategy_params).
+        """
+        return dict(self._params)
+
     def update_params(self, params: dict) -> None:
         """Aggiorna parametri della strategia (usato dal supervisor).
 
-        Le sottoclassi possono fare override per personalizzare l'aggiornamento.
-        Default: memorizza come dizionario self._params.
+        TASK-1249: merge sui DEFAULT_PARAMS — i parametri non specificati
+        mantengono il valore di default. Prima sostituiva l'intero dict,
+        rendendo update_params distruttivo se il supervisor inviava solo
+        un sottoinsieme di parametri.
         """
-        self._params = params
+        if not params:
+            return
+        merged = dict(self.DEFAULT_PARAMS)
+        merged.update(params)
+        self._params = merged
 
     @abstractmethod
     def evaluate(

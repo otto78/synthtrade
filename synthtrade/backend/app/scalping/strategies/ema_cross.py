@@ -24,6 +24,15 @@ class EMACrossStrategy(AbstractScalpingStrategy):
     si intrecciano continuamente senza un trend definito.
     """
 
+    # TASK-1249: parametri modificabili dal supervisor via update_params.
+    # I default coincidono con i valori hardcoded storici → nessun cambio
+    # di comportamento a parità di config.
+    DEFAULT_PARAMS: dict = {
+        "fast_period": 9,        # periodo EMA veloce
+        "slow_period": 21,       # periodo EMA lenta
+        "min_slope": MIN_SLOPE,  # pendenza minima EMA21 (0.03%)
+    }
+
     @property
     def name(self) -> str:
         return "ema_cross"
@@ -43,6 +52,10 @@ class EMACrossStrategy(AbstractScalpingStrategy):
 
         ind = indicators or self.calculate_indicators(candles)
 
+        # TASK-1249: parametri letti da self._params (modificabili dal supervisor).
+        p = self._params
+        min_slope = p.get("min_slope", MIN_SLOPE)
+
         ema_fast = ind.get("ema_fast", 0)
         ema_slow = ind.get("ema_slow", 0)
         ema_slow_prev = ind.get("ema_slow_prev", 0)
@@ -55,7 +68,7 @@ class EMACrossStrategy(AbstractScalpingStrategy):
         logger.debug(f"EMA cross: fast={ema_fast:.2f} slow={ema_slow:.2f} slope={slope:.6f}")
 
         # Stato Trend Rialzista (solo se pendenza positiva sufficiente)
-        if ema_fast > ema_slow and slope >= MIN_SLOPE:
+        if ema_fast > ema_slow and slope >= min_slope:
             return TechnicalSignal(
                 type="BUY",
                 confidence=0.75,
@@ -63,7 +76,7 @@ class EMACrossStrategy(AbstractScalpingStrategy):
             )
 
         # Stato Trend Ribassista (solo se pendenza negativa sufficiente)
-        if ema_fast < ema_slow and slope <= -MIN_SLOPE:
+        if ema_fast < ema_slow and slope <= -min_slope:
             return TechnicalSignal(
                 type="SELL",
                 confidence=0.75,

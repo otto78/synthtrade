@@ -36,15 +36,19 @@ def _ranging_candles(n: int = 25, base: float = 50000.0) -> list[Candle]:
 
 
 def _trending_up_candles(n: int = 25, start: float = 50000.0) -> list[Candle]:
-    """Candele in uptrend → regime 'trending_up' (price_change > 0.3%)."""
-    step = start * 0.0005  # 0.05% per candela → ~1.25% su 25 candele
+    """Candele in uptrend → regime 'trending_up' (slope regressione > 0.05%)."""
+    # TASK-1249: il nuovo detector usa detect_trend() (regressione lineare) con
+    # soglia slope_pct > 0.05%. Step 0.1%/candela → ~2.5% su 25 candele, molto
+    # sopra la soglia (0.05%).
+    step = start * 0.001  # 0.1% per candela → ~2.5% su 25 candele
     closes = [start + i * step for i in range(n)]
     return _make_candles(closes, spread=5.0)
 
 
 def _trending_down_candles(n: int = 25, start: float = 50000.0) -> list[Candle]:
     """Candele in downtrend → regime 'trending_down'."""
-    step = start * 0.0005
+    # TASK-1249: vedi _trending_up_candles per la soglia del nuovo detector.
+    step = start * 0.001  # 0.1% per candela
     closes = [start - i * step for i in range(n)]
     return _make_candles(closes, spread=5.0)
 
@@ -55,7 +59,9 @@ def _volatile_candles(n: int = 25, base: float = 50000.0) -> list[Candle]:
     candles = []
     for i in range(n):
         c = base + (i % 3 - 1) * 100
-        spread = base * 0.015  # 1.5% spread → volatility_ratio > 0.01
+        # TASK-1249: il nuovo detector usa detect_volatility() (ATR%) con soglia > 2.0%.
+        # Spread 3.0% → ATR% ≈ 6% molto sopra la soglia.
+        spread = base * 0.03  # 3.0% spread → ATR% > 2.0%
         candles.append(Candle(
             symbol="BTC-EUR",
             open=Decimal(str(c)),

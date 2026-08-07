@@ -71,8 +71,18 @@ Se una regola precedente si applica, fermati lì e non considerare le successive
 ⚠️ AZIONE update_params — quando usarla:
 - update_params modifica i parametri interni della strategia attiva.
 - Usala SOLO se hai un parametro strategico specifico da cambiare (es. sensibilità del filtro di timing).
+- Nel contesto vedi la sezione "STRATEGIA ATTIVA" con i parametri correnti (modificabili via update_params) — usa QUEI valori come riferimento.
 - Per la soglia dello score usa SEMPRE update_threshold, MAI update_params.
 - Se non hai una modifica parametrica chiara e verificabile → non usarla, preferisci no_action.
+
+⚠️ PARAMETRI MODIFICABILI PER STRATEGIA (valori correnti visibili nel contesto):
+- ema_cross:      { "min_slope": 0.0003 }                     → pendenza minima EMA21 per segnale BUY/SELL. File: ema_cross.py
+- rsi_bollinger:  { "atr_thresholds": [...], "rsi_oversold": [...], "rsi_overbought": [...], "bb_tolerance": [...], "confidence": [...] }  → soglie RSI/BB per fascia ATR%. File: rsi_bollinger.py
+- vwap_reversion: { "vwap_distance_buy": 0.002, "vwap_lookback": 20 }  → distanza % sotto VWAP per BUY e lookback. File: vwap_reversion.py
+- update_params riceve UN dizionario parziale: i parametri non specificati mantengono il valore corrente (merge, non sostituzione).
+- Esempio: per rendere vwap_reversion più reattiva: new_params = {"vwap_distance_buy": 0.001}
+- Esempio: per rendere ema_cross più selettiva: new_params = {"min_slope": 0.0005}
+- Dopo update_params, i nuovi parametri sono visibili al tick successivo nella sezione "STRATEGIA ATTIVA".
 
 Gerarchia dei Segnali (ordine di priorità):
 1. Funding Rate: > 0.1% = leva eccessiva long (bias short), < -0.1% = leva eccessiva short (bias long)
@@ -126,10 +136,14 @@ class SupervisorClient:
         trade_history: Optional[list] = None,  # TASK-860
         ta_patterns: Optional[dict] = None,
         vol_anomaly: bool = False,
+        strategy_name: Optional[str] = None,  # TASK-1249: strategia attiva
+        strategy_params: Optional[dict] = None,  # TASK-1249: parametri strategia attiva
     ) -> SupervisorDecision:
         """Ottieni decisione dal supervisor AI.
 
         TASK-909: Run AI call in separate thread pool to avoid blocking APScheduler event loop.
+        TASK-1249: strategy_name/strategy_params esposti nel context per permettere
+        all'AI di usare update_params in modo mirato.
         """
         context = await build_scalping_context(
             symbol, snapshot, regime, score,
@@ -137,6 +151,8 @@ class SupervisorClient:
             trade_history=trade_history,
             ta_patterns=ta_patterns,
             vol_anomaly=vol_anomaly,
+            strategy_name=strategy_name,
+            strategy_params=strategy_params,
         )
 
         user_prompt = f"""Current market intelligence for {symbol}:
@@ -176,6 +192,20 @@ Provide your decision:"""
         if "regime" in context:
             lines.append(f"Regime: {context['regime']} (confidence: {context.get('regime_confidence', 0):.2f})")
         
+        # === STRATEGIA ATTIVA & PARAMETRI (TASK-1249) ===
+        strategy_name = context.get("strategy_name")
+        if strategy_name:
+            lines.append("")
+            lines.append("=== STRATEGIA ATTIVA ===")
+            lines.append(f"Strategia corrente: {strategy_name}")
+            params = context.get("strategy_params")
+            if params:
+                lines.append("Parametri correnti (modificabili via update_params):")
+                for k, v in params.items():
+                    lines.append(f"  - {k}: {v}")
+            else:
+                lines.append("Parametri: nessuno esposto")
+
         # === CONFIGURAZIONE INTELLIGENCE ===
         threshold = context.get("current_threshold", 15.0)
         lines.append("")

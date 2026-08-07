@@ -15,6 +15,8 @@ async def build_scalping_context(
     trade_history: Optional[list] = None,  # TASK-860: performance sessione in-memory
     ta_patterns: Optional[dict] = None,
     vol_anomaly: bool = False,
+    strategy_name: Optional[str] = None,  # TASK-1249: strategia attiva
+    strategy_params: Optional[dict] = None,  # TASK-1249: parametri strategia attiva
 ) -> dict:
     """Costruisce il context per il supervisor AI.
 
@@ -39,6 +41,12 @@ async def build_scalping_context(
         "regime_confidence": regime.confidence if regime else 0.0,
         "vol_anomaly": vol_anomaly,
     }
+    # TASK-1249: strategia attiva e parametri correnti — l'AI deve vedere
+    # i parametri modificabili per poter usare update_params in modo mirato.
+    if strategy_name:
+        context["strategy_name"] = strategy_name
+    if strategy_params:
+        context["strategy_params"] = strategy_params
     if ta_patterns:
         context["ta_patterns"] = ta_patterns
 

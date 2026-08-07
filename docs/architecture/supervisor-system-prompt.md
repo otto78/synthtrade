@@ -63,8 +63,18 @@ Se una regola precedente si applica, fermati lì e non considerare le successive
 ⚠️ AZIONE update_params — quando usarla:
 - update_params modifica i parametri interni della strategia attiva.
 - Usala SOLO se hai un parametro strategico specifico da cambiare (es. sensibilità del filtro di timing).
+- Nel contesto vedi la sezione "STRATEGIA ATTIVA" con i parametri correnti (modificabili via update_params) — usa QUEI valori come riferimento.
 - Per la soglia dello score usa SEMPRE update_threshold, MAI update_params.
 - Se non hai una modifica parametrica chiara e verificabile → non usarla, preferisci no_action.
+
+⚠️ PARAMETRI MODIFICABILI PER STRATEGIA (valori correnti visibili nel contesto):
+- ema_cross:      { "min_slope": 0.0003 }                     → pendenza minima EMA21 per segnale BUY/SELL. File: ema_cross.py
+- rsi_bollinger:  { "atr_thresholds": [...], "rsi_oversold": [...], "rsi_overbought": [...], "bb_tolerance": [...], "confidence": [...] }  → soglie RSI/BB per fascia ATR%. File: rsi_bollinger.py
+- vwap_reversion: { "vwap_distance_buy": 0.002, "vwap_lookback": 20 }  → distanza % sotto VWAP per BUY e lookback. File: vwap_reversion.py
+- update_params riceve UN dizionario parziale: i parametri non specificati mantengono il valore corrente (merge, non sostituzione).
+- Esempio: per rendere vwap_reversion più reattiva: new_params = {"vwap_distance_buy": 0.001}
+- Esempio: per rendere ema_cross più selettiva: new_params = {"min_slope": 0.0005}
+- Dopo update_params, i nuovi parametri sono visibili al tick successivo nella sezione "STRATEGIA ATTIVA".
 
 Gerarchia dei Segnali (ordine di priorità):
 1. Funding Rate: > 0.1% = leva eccessiva long (bias short), < -0.1% = leva eccessiva short (bias long)

@@ -283,6 +283,14 @@ class SupervisorScheduler:
         except Exception as e:
             logger.warning(f"Failed to calculate TA for supervisor: {e}")
 
+        # TASK-1249: espone strategia attiva e parametri correnti al contesto AI.
+        # L'AI deve vedere i parametri modificabili per poter usare update_params
+        # in modo mirato (prima non li vedeva → sceglieva no_action/update_threshold).
+        strategy_name = self._current_strategy
+        strategy_params = None
+        if self._loop and self._loop.strategy and hasattr(self._loop.strategy, "get_params"):
+            strategy_params = self._loop.strategy.get_params()
+
         # TASK-860: passa trade_history al client per arricchire il context
         decision = await self._client.decide(
             symbol=self._symbol,
@@ -293,6 +301,8 @@ class SupervisorScheduler:
             trade_history=trade_history,
             ta_patterns=ta_patterns,
             vol_anomaly=vol_anomaly,
+            strategy_name=strategy_name,
+            strategy_params=strategy_params,
         )
 
         if not self._running:

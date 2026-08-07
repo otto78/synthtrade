@@ -60,37 +60,49 @@ class RegimeDetector:
         candles: List[Candle],
         indicators: Optional[dict] = None,
     ) -> MarketRegime:
-        """Rileva il regime candidato (raw, senza isteresi)."""
+        """Rileva il regime candidato (raw, senza isteresi) usando il core.
+
+        TASK-1249: riutilizza detect_trend() (regressione lineare) e
+        detect_volatility() (ATR%) di app/core/indicators.py al posto delle
+        soglie naive su price_change/volatility_ratio. Stessa logica di
+        detect_with_core(), così detect() beneficia dell'analisi sofisticata
+        mantenendo l'isteresi.
+        """
         if len(candles) < 20:
             if len(candles) >= 5:
                 return MarketRegime(regime="ranging", confidence=0.3)
             return MarketRegime(regime="unknown", confidence=0.0)
 
-        ind = indicators or {}
+        import pandas as pd
+        from app.core.indicators import detect_trend, detect_volatility
 
-        highs = [float(c.high) for c in candles[-20:]]
-        lows = [float(c.low) for c in candles[-20:]]
-        closes = [float(c.close) for c in candles[-20:]]
+        df = pd.DataFrame([
+            {
+                "open": float(c.open),
+                "high": float(c.high),
+                "low": float(c.low),
+                "close": float(c.close),
+                "volume": float(getattr(c, "volume", 0) or 0),
+            }
+            for c in candles[-20:]
+        ])
 
-        price_change = (closes[-1] - closes[0]) / closes[0] if closes[0] > 0 else 0
+        vol_pct = detect_volatility(df, period=20)
+        trend = detect_trend(df, period=20)
 
-        atr = sum(highs[i] - lows[i] for i in range(-14, 0)) / 14
-        volatility_ratio = atr / closes[-1] if closes[-1] > 0 else 0
+        if vol_pct > 2.0:
+            return MarketRegime(regime="volatile", confidence=0.7)
 
-        if volatility_ratio > 0.01:
-            regime = "volatile"
-            confidence = 0.7
-        elif price_change > 0.003:
-            regime = "trending_up"
-            confidence = 0.85
-        elif price_change < -0.003:
-            regime = "trending_down"
-            confidence = 0.85
-        else:
-            regime = "ranging"
-            confidence = 0.6
+        regime_map = {
+            "uptrend": "trending_up",
+            "downtrend": "trending_down",
+            "ranging": "ranging",
+            "insufficient_data": "unknown",
+        }
+        mapped_regime = regime_map.get(trend, "ranging")
+        confidence = 0.85 if mapped_regime in ("trending_up", "trending_down") else 0.6
 
-        return MarketRegime(regime=regime, confidence=confidence)
+        return MarketRegime(regime=mapped_regime, confidence=confidence)
 
     def detect(
         self,

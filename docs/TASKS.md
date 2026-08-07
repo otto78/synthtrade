@@ -1,6 +1,38 @@
 # TASKS.md — SynthTrade Task Tracking
 
-> **Aggiornato:** 2026-08-05. Task completati in `docs/ARCHIVE_TASKS.md`.
+> **Aggiornato:** 2026-08-07. Task completati in `docs/ARCHIVE_TASKS.md`.
+
+---
+
+### TASK-1249 — Supervisor blind: parametri strategia assenti dal contesto AI + regime detector sofisticato scollegato ✅ Completato
+
+> **Priorità:** ALTA — l'AI non poteva usare `update_params` (mai invocato in ~895 decisioni) né scegliere strategie migliori perché non vedeva i parametri correnti; il regime detector usava logica naive che ignorava gli indicatori.
+> **File:**
+>   - `scalping/engine/regime_detector.py` (Punto 1)
+>   - `scalping/strategies/base.py`, `rsi_bollinger.py`, `ema_cross.py`, `vwap_reversion.py` (Punto 2a)
+>   - `ai/supervisor_context.py`, `scalping/supervisor/supervisor_client.py`, `scalping/supervisor/supervisor_scheduler.py` (Punto 2b)
+>   - `docs/architecture/supervisor-system-prompt.md`, test: `tests/unit/test_task_903.py`, nuovo `tests/unit/test_task_1249.py`
+> **Completato:** 2026-08-07
+>
+> **Implementato:**
+> - **Punto 1 — regime detector sofisticato**: `_detect_candidate` ora usa `detect_trend()` (regressione lineare) e `detect_volatility()` (ATR%) di `app/core/indicators.py` al posto delle soglie naive su prezzo/volatilità. `detect()` mantiene l'isteresi di K candele (TASK-903); `detect_with_core()` resta come delegato retrocompatibile.
+> - **Punto 2a — update_params usabile davvero**: `base.py` ora definisce `DEFAULT_PARAMS` + `get_params()` (copia), e `update_params()` fa MERGE sui default (prima sostituiva l'intero dict). Le 3 strategie (`ema_cross`, `rsi_bollinger`, `vwap_reversion`) definiscono `DEFAULT_PARAMS` identici ai valori hardcoded storici e leggono `self._params` in `evaluate()` → nessun cambio di comportamento a parità di config, ma ora il supervisor può modificare: `min_slope` (EMA), soglie RSI/BB per fascia ATR%, `vwap_distance_buy`/`vwap_lookback` (VWAP).
+> - **Punto 2b — contesto AI arricchito**: lo scheduler legge `strategy_name` + `strategy_params` (`get_params()` della strategia attiva) e li passa al client → `build_scalping_context()` → sezione "STRATEGIA ATTIVA" nel prompt. Il system prompt (doc in `docs/architecture/supervisor-system-prompt.md` + `supervisor_client.py`) ora elenca i parametri modificabili per strategia con esempi di `update_params` parziale.
+> - **Test**: `test_task_903.py` aggiornato per il nuovo detector (slope 0.1%/candela, spread 3%) — 15/15 verdi; nuovo `test_task_1249.py` — 8/8 verdi (merge non distruttivo, `get_params()` copia, prove che `evaluate()` legge `self._params` per le 3 strategie).
+> - **Verifica**: 40/40 test verdi sui file toccati (903+1249+908+904 area), `py_compile` ok (ruff non installato nel venv). Fallimenti pre-esistenti NON correlati: `test_historical_context.py` (mock `get_supabase` non nel namespace modulo) e `test_task_906.py::test_falling_knife_does_not_block_mean_reversion_sell` (SELL permanentemente disabilitati da TASK-1240).
+
+**Contesto (diagnosi):**
+1. **Deadlock strutturale**: in regime `ranging` l'unica strategia consentita è `rsi_bollinger` (whitelist `REGIME_ALLOWED_ranging`, DB e fallback). Dato che il mapping regime→strategia è un vincolo di design **non modificabile** (l'utente ha escluso l'aggiunta di strategie ai regimi), l'unico modo per uscire dal loop `pause_trading` è rendere **usabile** `update_params` e migliorare il regime detection.
+2. **`update_params` mai usato e inerte**: 0 occorrenze su ~895 decisioni. Doppia causa:
+   - Il contesto AI non espone i parametri della strategia attiva → l'AI non ha una "modifica parametrica chiara e verificabile" (regola del prompt v2) e sceglie `no_action`/`update_threshold`.
+   - Anche se lo proponesse, `update_params` non avrebbe effetto: le 3 strategie concrete ereditano solo il default di `base.py` (`self._params = params`) ma **nessuna legge `self._params` in `evaluate()`** — tutti i parametri sono hardcoded.
+3. **Regime detector naive**: `_detect_candidate` usa soglie hardcoded (`price_change > 0.003`, `volatility_ratio > 0.01`) e **ignora il parametro `indicators`** (riga 69). `detect_with_core()` esiste ma è codice morto — `execution_loop.py:163` chiama solo `detect()`. Le soglie configurate `SCALPING_REGIME_TREND_THRESHOLD_PCT`/`SCALPING_REGIME_VOLATILE_THRESHOLD` sono inutilizzate.
+
+**Piano di implementazione:**
+- **Punto 1**: riscrivere `_detect_candidate` usando `detect_trend()` (regressione lineare) e `detect_volatility()` (ATR%) di `app/core/indicators.py`, mantenendo l'isteresi in `detect()`. `detect_with_core()` diventa un delegato (retrocompatibilità).
+- **Punto 2a**: aggiungere `DEFAULT_PARAMS` + `get_params()` in `base.py`; `update_params` diventa merge su default; far leggere i parametri alle 3 strategie in `evaluate()` (default identici → nessun cambio di comportamento a parità di config).
+- **Punto 2b**: esporre `strategy_name` + `strategy_params` nel contesto AI (scheduler → client → context → prompt) e aggiornare il system prompt con i parametri modificabili per strategia.
+- **Acceptance**: test esistenti verdi (con dati aggiornati per il nuovo detector), nuovi test su `update_params` effettivo + `get_params()`, ruff pulito.
 
 ---
 

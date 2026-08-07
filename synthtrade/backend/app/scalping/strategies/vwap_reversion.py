@@ -23,6 +23,14 @@ class VWAPReversionStrategy(AbstractScalpingStrategy):
     Come filtro timing, non segnale primario.
     """
 
+    # TASK-1249: parametri modificabili dal supervisor via update_params.
+    # I default coincidono con i valori hardcoded storici → nessun cambio
+    # di comportamento a parità di config.
+    DEFAULT_PARAMS: dict = {
+        "vwap_distance_buy": 0.002,  # distanza minima sotto VWAP per BUY (0.2%)
+        "vwap_lookback": 20,         # numero candele per il calcolo VWAP
+    }
+
     @property
     def name(self) -> str:
         return "vwap_reversion"
@@ -36,7 +44,12 @@ class VWAPReversionStrategy(AbstractScalpingStrategy):
         if len(candles) < 5:
             return TechnicalSignal(type="NONE", confidence=0.0)
 
-        vwap = self._calculate_vwap(candles)
+        # TASK-1249: parametri letti da self._params (modificabili dal supervisor).
+        p = self._params
+        vwap_distance_buy = p.get("vwap_distance_buy", 0.002)
+        vwap_lookback = p.get("vwap_lookback", 20)
+
+        vwap = self._calculate_vwap(candles, lookback=vwap_lookback)
         close = float(candles[-1].close)
 
         # Calcola distanza percentuale dal VWAP
@@ -45,7 +58,7 @@ class VWAPReversionStrategy(AbstractScalpingStrategy):
         # TASK-1238 + TASK-1240: logica corretta per mean-reversion long-only.
         # BUY quando il prezzo è SOTTO il VWAP (dip: il mercato si è allontanato
         # dalla media verso il basso, ci aspettiamo un ritorno alla media = rialzo).
-        if distance < -0.002:  # 0.2% sotto VWAP
+        if distance < -vwap_distance_buy:  # 0.2% sotto VWAP (default)
             return TechnicalSignal(
                 type="BUY",
                 confidence=0.7,
@@ -57,7 +70,7 @@ class VWAPReversionStrategy(AbstractScalpingStrategy):
         # → NONE: aspettare un pullback al VWAP prima di comprare.
         return TechnicalSignal(type="NONE", confidence=0.0)
 
-    def _calculate_vwap(self, candles: List[Candle]) -> float:
+    def _calculate_vwap(self, candles: List[Candle], lookback: int = 20) -> float:
         """Calcola VWAP delle ultime candele."""
         if not candles:
             return 0.0
@@ -65,7 +78,7 @@ class VWAPReversionStrategy(AbstractScalpingStrategy):
         total_volume = 0.0
         total_price_volume = 0.0
 
-        for c in candles[-20:]:  # VWAP delle ultime 20 candele
+        for c in candles[-lookback:]:  # VWAP delle ultime N candele
             typical_price = float((c.high + c.low + c.close) / 3)
             volume = float(c.volume)
             total_price_volume += typical_price * volume

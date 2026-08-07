@@ -2,6 +2,38 @@
 
 ## Ultimo Handoff
 
+### Da: sessione TASK-1249 (supervisor blind → usabile) → prossima sessione
+
+**Data:** 2026-08-07
+
+**Contesto:** TASK-1249 completato — `update_params` ora usabile e letto dalle strategie, parametri strategia nel contesto AI, regime detector sofisticato collegato a `detect()`.
+
+### ✅ Fatto in questa sessione
+
+- **Punto 1 — Regime detector sofisticato** (`regime_detector.py`): `_detect_candidate` usa `detect_trend()` + `detect_volatility()` dal core. `detect()` mantiene l'isteresi TASK-903. `test_task_903.py` aggiornato (slope 0.1%/candela, spread 3%) — 15/15 verdi.
+- **Punto 2a — `update_params` usabile**: `base.py` con `DEFAULT_PARAMS`, `get_params()` (copia) e `update_params()` merge sui default. Le 3 strategie leggono `self._params` in `evaluate()`: `min_slope` (EMA), soglie RSI/BB per fascia ATR%, `vwap_distance_buy`/`vwap_lookback` (VWAP). Default identici agli hardcoded → nessun cambio comportamento.
+- **Punto 2b — Contesto AI**: `supervisor_scheduler.py` estrae `strategy_name` + `strategy_params` (`get_params()`); `supervisor_client.py` li passa a `build_scalping_context()`; il prompt ora ha la sezione "STRATEGIA ATTIVA" e l'elenco dei parametri modificabili. Doc: `docs/architecture/supervisor-system-prompt.md` (+ ricopiato in `_SUPERVISOR_SYSTEM_PROMPT`).
+- **Test**: nuovo `tests/unit/test_task_1249.py` — 8/8 verdi (merge non distruttivo, get_params copia, prove che evaluate() segue self._params). Verifica: 40/40 test verdi sui file toccati + `py_compile` ok (ruff non installato nel venv).
+- Commit: TASK-1249 su main.
+
+### ⚠️ Note operative
+
+- **Fallimenti test pre-esistenti NON correlati** (non toccati in questa sessione):
+  - `test_historical_context.py` — i mock usano `patch('app.scalping.supervisor.historical_context.get_supabase')` ma `get_supabase` è importato dentro la funzione, non nel namespace del modulo.
+  - `test_task_906.py::test_falling_knife_does_not_block_mean_reversion_sell` — testa un SELL mean-reversion, ma i SELL sono permanentemente disabilitati da TASK-1240 → assertion `execute is True` sempre falsa.
+- Il file `docs/supervisor-system-prompt.md` è stato **spostato** dall'utente in `docs/architecture/supervisor-system-prompt.md` (delete + create in git).
+- `supervisor_scheduler.py` in `_tick()`: `strategy_name = self._current_strategy` (già popolato da `self._loop.strategy.name`) e `strategy_params = self._loop.strategy.get_params()`.
+
+### ⏳ GATE pre-live TASK-1246 ancora da eseguire (invariato)
+
+1. `python -m scripts.test_okx_amend_rate [--symbol BTC-EUR] [--interval 15]` con `TRADING_MODE=test` → 6 amend consecutivi su OKX Demo, verificare zero 429/sCode rate-limit.
+2. Query storica TP (`docs/plans/trailing-stop-progressive.md` §step size) per confermare `TRAILING_STEP_NET_PCT=0.15`.
+3. ≥20 trade con `trailing_enabled=true` prima di considerare stabile la feature.
+
+---
+
+### Handoff Precedente
+
 ### Da: sessione TASK-1246 (trailing stop) → prossima sessione
 
 **Data:** 2026-08-05

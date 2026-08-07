@@ -99,6 +99,16 @@ import { ConfigService } from '../../core/services/config.service';
       <ng-container *ngIf="session && session.status !== 'idle'">
         <div class="session-header">
           <span class="panel-title">Session</span>
+          <span
+            class="status-badge"
+            [class.paused]="session.status === 'paused'"
+            [class.running]="session.status === 'running'"
+            [class.stopped]="session.status === 'stopped'"
+            *ngIf="session.status"
+          >
+            <span class="status-dot"></span>
+            {{ session.status === 'running' ? 'RUNNING' : (session.status === 'paused' ? 'PAUSED' : 'STOPPED') }}
+          </span>
         </div>
         <div class="title-hr"></div>
 
@@ -202,8 +212,54 @@ import { ConfigService } from '../../core/services/config.service';
 
     .session-header {
       display: flex;
-      align-items: baseline;
+      align-items: center;
       gap: 10px;
+    }
+
+    /* Status badge — indica visivamente lo stato della sessione (TASK-RENDER) */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      text-transform: uppercase;
+      margin-left: auto;
+    }
+    .status-badge.paused {
+      background: rgba(255, 183, 77, 0.15);
+      color: #ffb74d;
+      border: 1px solid rgba(255, 183, 77, 0.35);
+    }
+    .status-badge.running {
+      background: rgba(38, 166, 154, 0.15);
+      color: #26a69a;
+      border: 1px solid rgba(38, 166, 154, 0.35);
+    }
+    .status-badge.stopped {
+      background: rgba(239, 83, 80, 0.12);
+      color: #ef5350;
+      border: 1px solid rgba(239, 83, 80, 0.25);
+    }
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+    .status-badge.paused .status-dot {
+      animation: dotBlink 1.2s ease-in-out infinite;
+    }
+    .status-badge.stopped .status-dot {
+      animation: dotBlink 1.2s ease-in-out infinite;
+    }
+    @keyframes dotBlink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.25; }
     }
     .session-id {
       font-size: 11px;

@@ -63,6 +63,14 @@ class SupervisorScheduler:
         self._loop = loop
         self._updater.set_execution_loop(loop)
 
+    def _get_regime_allowed(self, regime: str) -> list:
+        """Strategie consentite per regime (DB-driven con fallback hardcoded)."""
+        try:
+            from app.scalping.config_loader import get_scalping_config
+            return get_scalping_config().regime_allowed_strategies.get(regime, ["vwap_reversion"])
+        except Exception:
+            return _FALLBACK_REGIME_ALLOWED_STRATEGIES.get(regime, ["vwap_reversion"])
+
     def start(self) -> None:
         if self._running:
             return
@@ -328,11 +336,7 @@ class SupervisorScheduler:
         if decision.action == "change_strategy" and decision.new_strategy:
             current_regime = self._loop.regime.regime if self._loop and self._loop.regime else "unknown"
             # TASK-904: legge da config_loader (DB-driven) con fallback hardcoded
-            try:
-                from app.scalping.config_loader import get_scalping_config
-                allowed = get_scalping_config().regime_allowed_strategies.get(current_regime, ["vwap_reversion"])
-            except Exception:
-                allowed = _FALLBACK_REGIME_ALLOWED_STRATEGIES.get(current_regime, ["vwap_reversion"])
+            allowed = self._get_regime_allowed(current_regime)
             if decision.new_strategy not in allowed:
                 logger.warning(
                     f"⛔ Supervisor ha proposto '{decision.new_strategy}' "
@@ -369,6 +373,38 @@ class SupervisorScheduler:
 
         if was_applied:
             await self._updater.apply(decision)
+
+            # resume_trading con new_strategy → applica anche il cambio strategia.
+            # Prima veniva ignorato silenziosamente, lasciando attivo il loop pause/resume.
+            if decision.action == "resume_trading" and decision.new_strategy:
+                current_regime = self._loop.regime.regime if self._loop and self._loop.regime else "unknown"
+                allowed = self._get_regime_allowed(current_regime)
+                if decision.new_strategy in allowed:
+                    if now - self._last_strategy_change >= STRATEGY_CHANGE_COOLDOWN:
+                        await self._updater.apply(SupervisorDecision(
+                            action="change_strategy",
+                            reason=decision.reason,
+                            confidence=decision.confidence,
+                            market_bias=decision.market_bias,
+                            primary_signal=decision.primary_signal,
+                            new_strategy=decision.new_strategy,
+                        ))
+                        self._last_strategy_change = now
+                        self._current_strategy = decision.new_strategy
+                        logger.info(
+                            f"Strategia cambiata a {decision.new_strategy} insieme al resume "
+                            f"(regime={current_regime})"
+                        )
+                    else:
+                        remaining_min = int((STRATEGY_CHANGE_COOLDOWN - (now - self._last_strategy_change)) / 60)
+                        logger.warning(
+                            f"Strategy change su resume saltata — cooldown {remaining_min} min rimanenti"
+                        )
+                else:
+                    logger.warning(
+                        f"resume: '{decision.new_strategy}' non consentita in regime={current_regime} "
+                        f"(allowed={allowed}) — strategia invariata"
+                    )
         else:
             await self._save_decision_to_memory(
                 decision, was_applied=False, blocked_reason=blocked_reason,

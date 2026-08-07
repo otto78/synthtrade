@@ -168,3 +168,96 @@ class TestSupervisorScheduler:
 
         mock_client.decide.assert_called_once()
         mock_updater.apply.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_tick_resume_with_new_strategy_applies_change(self, mock_supabase):
+        """resume_trading con new_strategy valida per il regime → applica anche il cambio strategia."""
+        from app.scalping.models.intelligence import MarketIntelSnapshot, SignalScore
+
+        mock_client = MagicMock()
+        mock_client.decide = AsyncMock(return_value=SupervisorDecision(
+            action="resume_trading",
+            reason="regime ok, riprendere con strategia diversa",
+            confidence=0.75,
+            new_strategy="rsi_bollinger",
+        ))
+
+        mock_updater = MagicMock()
+        mock_updater.apply = AsyncMock()
+
+        mock_engine = MagicMock()
+        mock_engine.get_snapshot = AsyncMock(return_value=MarketIntelSnapshot(
+            symbol="BTCUSDT",
+            signal_score=SignalScore(total=0, bias="neutral", tradeable=False),
+        ))
+        mock_engine.compute = AsyncMock(return_value=SignalScore(total=0, bias="neutral", tradeable=False))
+
+        mock_loop = MagicMock()
+        mock_loop.regime.regime = "ranging"
+        mock_loop.regime.confidence = 0.8
+        mock_loop.strategy.name = "rsi_bollinger"
+        mock_loop.session_id = "s1"
+
+        scheduler = SupervisorScheduler(
+            symbol="BTCUSDT",
+            client=mock_client,
+            updater=mock_updater,
+            score_engine=mock_engine,
+        )
+        scheduler._running = True
+        scheduler.set_execution_loop(mock_loop)
+
+        await scheduler._tick()
+
+        # apply chiamato 2 volte: prima il resume, poi il change_strategy
+        assert mock_updater.apply.call_count == 2
+        calls = mock_updater.apply.call_args_list
+        assert calls[0].args[0].action == "resume_trading"
+        assert calls[1].args[0].action == "change_strategy"
+        assert calls[1].args[0].new_strategy == "rsi_bollinger"
+        assert scheduler._current_strategy == "rsi_bollinger"
+
+    @pytest.mark.asyncio
+    async def test_tick_resume_with_strategy_not_allowed_keeps_strategy(self, mock_supabase):
+        """resume_trading con strategia NON consentita nel regime → resume sì, cambio strategia no."""
+        from app.scalping.models.intelligence import MarketIntelSnapshot, SignalScore
+
+        mock_client = MagicMock()
+        mock_client.decide = AsyncMock(return_value=SupervisorDecision(
+            action="resume_trading",
+            reason="resume senza cambio valido",
+            confidence=0.75,
+            new_strategy="momentum_base",
+        ))
+
+        mock_updater = MagicMock()
+        mock_updater.apply = AsyncMock()
+
+        mock_engine = MagicMock()
+        mock_engine.get_snapshot = AsyncMock(return_value=MarketIntelSnapshot(
+            symbol="BTCUSDT",
+            signal_score=SignalScore(total=0, bias="neutral", tradeable=False),
+        ))
+        mock_engine.compute = AsyncMock(return_value=SignalScore(total=0, bias="neutral", tradeable=False))
+
+        mock_loop = MagicMock()
+        mock_loop.regime.regime = "ranging"
+        mock_loop.regime.confidence = 0.8
+        mock_loop.strategy.name = "rsi_bollinger"
+        mock_loop.session_id = "s1"
+
+        scheduler = SupervisorScheduler(
+            symbol="BTCUSDT",
+            client=mock_client,
+            updater=mock_updater,
+            score_engine=mock_engine,
+        )
+        scheduler._running = True
+        scheduler.set_execution_loop(mock_loop)
+
+        await scheduler._tick()
+
+        # apply chiamato 1 volta: solo resume, strategia invariata
+        assert mock_updater.apply.call_count == 1
+        assert mock_updater.apply.call_args.args[0].action == "resume_trading"
+        assert scheduler._current_strategy == "rsi_bollinger"

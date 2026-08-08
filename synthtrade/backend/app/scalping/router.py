@@ -162,10 +162,11 @@ async def scalping_websocket(ws: WebSocket):
         fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
         entry_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)
         exit_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)
-        fee_round_trip = (entry_fee_rate + exit_fee_rate) * 100
 
-        sl_pct_net = sl_pct_cfg - fee_round_trip
-        tp_pct_net = tp_pct_cfg - fee_round_trip
+        # TASK-885: target netti = netto effettivo ai prezzi reali piazzati
+        # (config già netto: NON sottrarre di nuovo le fee → doppio conto).
+        sl_pct_net = round(_expected_net_pct_at_exit(entry_f, sl_price, pos.side, entry_fee_rate, exit_fee_rate), 2)
+        tp_pct_net = round(_expected_net_pct_at_exit(entry_f, tp_price, pos.side, entry_fee_rate, exit_fee_rate), 2)
 
         try:
             await ws.send_json({

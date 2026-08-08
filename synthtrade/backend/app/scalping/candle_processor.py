@@ -148,7 +148,7 @@ async def _broadcast_position_update(session: dict, event) -> None:
             _sl_cfg = float(risk_cfg.get("stop_loss_pct", 0.3))
             _tp_cfg = float(risk_cfg.get("take_profit_pct", 0.5))
             _ft3 = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-            _ef3, _xf3 = _get_fee_rate(_ft3, "taker", 0.001), _get_fee_rate(_ft3, "maker", 0.001)
+            _ef3, _xf3 = _get_fee_rate(_ft3, "taker", 0.001), _get_fee_rate(_ft3, "taker", 0.001)
             # TASK-1127: Fees are now positive for base level accounts
             sl_price = _sl_price_from_entry(entry_f, pos.side, _sl_cfg, _ef3, _xf3)[0]
             tp_price = entry_f * (1 + _net_to_gross_pct(_tp_cfg, _ef3, _xf3) / 100) if pos.side == "BUY" else entry_f * (1 - _net_to_gross_pct(_tp_cfg, _ef3, _xf3) / 100)
@@ -159,15 +159,16 @@ async def _broadcast_position_update(session: dict, event) -> None:
             if pos.tp_price is not None and float(pos.tp_price) > 0:
                 tp_price = float(pos.tp_price)
 
-            # TASK-885: Calcola target netti TP/SL (fee tier round-trip)
+            # TASK-885: Target netti TP/SL = netto effettivo ai prezzi reali piazzati.
+            # take_profit_pct/stop_loss_pct nel config sono GIÀ target netti (il prezzo
+            # deriva da _net_to_gross_pct/_sl_price_from_entry), quindi NON si sottraggono
+            # di nuovo le fee (doppio conto). Si ricalcola dal prezzo reale TP/SL.
             fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
             entry_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # market order = taker
             exit_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # OKX OCO = market order (taker)
-            fee_round_trip = (entry_fee_rate + exit_fee_rate) * 100  # converti in percentuale
 
-            # Calcola percentuali nette (sottrai fee round-trip dai target lordi)
-            sl_pct_net = (_sl_cfg) - fee_round_trip  # perdita netta è peggiore
-            tp_pct_net = (_tp_cfg) - fee_round_trip  # guadagno netto è minore
+            sl_pct_net = round(_expected_net_pct_at_exit(entry_f, sl_price, pos.side, entry_fee_rate, exit_fee_rate), 2)
+            tp_pct_net = round(_expected_net_pct_at_exit(entry_f, tp_price, pos.side, entry_fee_rate, exit_fee_rate), 2)
 
             # Calculate progress percentage:
             # -100% = at SL, 0% = at entry, +100% = at TP

@@ -68,18 +68,19 @@ async def get_position() -> Optional[Dict]:
         pnl = 0.0
         pnl_pct = 0.0
     
-    # TASK-885: Calcola target netti TP/SL per endpoint REST
+    # Config risk: stop_loss_pct / take_profit_pct sono GIÀ target netti.
     risk_cfg = _execution_state.get("risk_config", {})
     sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3))
     tp_pct = float(risk_cfg.get("take_profit_pct", 0.5))
+
+    # TASK-885: target netti TP/SL = netto effettivo ai prezzi reali piazzati.
+    # take_profit_pct/stop_loss_pct nel config sono GIÀ target netti (il prezzo
+    # deriva da _net_to_gross_pct/_sl_price_from_entry), quindi NON si sottraggono
+    # di nuovo le fee (doppio conto). Si ricalcola dai prezzi reali qui sotto.
     fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
     entry_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # market order = taker
     exit_fee_rate = _get_fee_rate(fee_tier, "taker", 0.001)  # OKX OCO = market order (taker)
     fee_round_trip = (entry_fee_rate + exit_fee_rate) * 100  # converti in percentuale
-    
-    # Calcola percentuali nette (sottrai fee round-trip dai target lordi)
-    sl_pct_net = sl_pct - fee_round_trip  # perdita netta è peggiore
-    tp_pct_net = tp_pct - fee_round_trip  # guadagno netto è minore
 
     # TASK-1129: veri prezzi TP/SL piazzati su OKX (fallback a ricalcolo da pct
     # per posizioni pre-fix / restore senza questi campi).
@@ -90,6 +91,10 @@ async def get_position() -> Optional[Dict]:
     tp_price_calc = entry * (1 + _net_to_gross_pct(tp_pct, _ef_p, _xf_p) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(tp_pct, _ef_p, _xf_p) / 100)
     stop_loss_price = float(pos.sl_price) if pos.sl_price is not None and float(pos.sl_price) > 0 else sl_price_calc
     take_profit_price = float(pos.tp_price) if pos.tp_price is not None and float(pos.tp_price) > 0 else tp_price_calc
+
+    # Target netti effettivi ai prezzi reali risolti qui sopra.
+    sl_pct_net = round(_expected_net_pct_at_exit(entry, stop_loss_price, pos.side, entry_fee_rate, exit_fee_rate), 2)
+    tp_pct_net = round(_expected_net_pct_at_exit(entry, take_profit_price, pos.side, entry_fee_rate, exit_fee_rate), 2)
 
     return {
         "symbol": pos.symbol,

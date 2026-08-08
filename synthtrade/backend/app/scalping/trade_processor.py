@@ -12,6 +12,7 @@ from app.scalping.pricing import (
     _sl_price_from_entry,
     _net_to_gross_pct,
     _convert_bnb_commission_to_usdc,
+    _expected_net_pct_at_exit,
 )
 from app.scalping.trade_executor import _close_position_and_record
 from app.scalping.session_lifecycle import _sync_session_load_guard
@@ -72,7 +73,7 @@ async def _trade_processor(symbol: str, restore_mode: bool = False):
                 _sl_cfg4 = float(risk_cfg.get("stop_loss_pct", 0.3))
                 _tp_cfg4 = float(risk_cfg.get("take_profit_pct", 0.5))
                 _ft4 = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
-                _ef4, _xf4 = _get_fee_rate(_ft4, "taker", 0.001), _get_fee_rate(_ft4, "maker", 0.001)
+                _ef4, _xf4 = _get_fee_rate(_ft4, "taker", 0.001), _get_fee_rate(_ft4, "taker", 0.001)
                 # TASK-1127: Fees are now positive for base level accounts
                 sl = _sl_price_from_entry(entry, pos.side, _sl_cfg4, _ef4, _xf4)[0]
                 tp = entry * (1 + _net_to_gross_pct(_tp_cfg4, _ef4, _xf4) / 100) if pos.side == "BUY" else entry * (1 - _net_to_gross_pct(_tp_cfg4, _ef4, _xf4) / 100)
@@ -121,6 +122,11 @@ async def _trade_processor(symbol: str, restore_mode: bool = False):
                     "take_profit_price": round(tp, 2),
                     "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
                     "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
+                    # TASK-885: target netti = netto effettivo ai prezzi reali piazzati
+                    # (config già netto: NON sottrarre di nuovo le fee → doppio conto).
+                    "stop_loss_pct_net": round(_expected_net_pct_at_exit(entry, sl, pos.side, _ef4, _xf4), 2),
+                    "take_profit_pct_net": round(_expected_net_pct_at_exit(entry, tp, pos.side, _ef4, _xf4), 2),
+                    "sl_net_pct": round(_expected_net_pct_at_exit(entry, sl, pos.side, _ef4, _xf4), 2),
                     "breakeven_pct": round((_get_fee_rate(fee_tier, "taker", 0.001) + _get_fee_rate(fee_tier, "taker", 0.001)) * 100, 2),
                 })
                 

@@ -86,7 +86,7 @@ interface CandleResponse {
     .timeframe { font-size: 10px; color: var(--text-secondary); background: rgba(240,185,11,0.1); padding: 2px 6px; border-radius: 3px; }
     .price-tag { font-size: 13px; color: #26a69a; font-weight: 600; font-variant-numeric: tabular-nums; }
     .loading-dot { font-size: 14px; color: #F0B90B; display: inline-block; animation: spin 1s linear infinite; }
-    .chart-container { flex: 1; min-height: 280px; width: 100%; }
+    .chart-container { flex: 1; min-height: 280px; width: 100%; max-width: 100%; overflow: hidden; }
     @keyframes spin { to { transform: rotate(360deg); } }
   `],
 })

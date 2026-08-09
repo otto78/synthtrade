@@ -105,7 +105,7 @@ interface ErrorToast {
   styles: [`
     .scalping-dashboard { padding: 20px; }
     .dashboard-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; }
-    .card { background: var(--bg-surface, #161B22); border: 1px solid var(--border-default, rgba(234,236,239,0.1)); border-radius: 8px; }
+    .card { background: var(--bg-surface, #161B22); border: 1px solid var(--border-default, rgba(234,236,239,0.1)); border-radius: 8px; min-width: 0; }
     .chart-card { grid-column: span 2; }
     .perf-card { grid-column: span 2; }
     .supervisor-card { grid-column: span 2; }

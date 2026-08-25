@@ -486,7 +486,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                 timestamp=datetime.fromtimestamp(event.open_time / 1000, tz=timezone.utc),
                 closed=True,
             )
-            logger.debug(f"[Candle] CYCLE START: {event.symbol} @ {candle.close}")
+            logger.info(f"{BOLD}{CYAN}[Candle] CYCLE START: {event.symbol} @ {candle.close}{RESET}")
             try:
                 decision = await _execution_state.get('loop').process_candle(candle)
                 
@@ -606,7 +606,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
 
                     # Simulate trade execution
                     if session["status"] != "running":
-                        logger.debug(f"[Candle] PAUSED: skipping trade execution (status={session['status']})")
+                        logger.warning(f"{YELLOW}[Candle] PAUSED: skipping trade execution (status={session['status']}){RESET}")
                         # TASK-1250: anche in pausa aggiorna la position card (PnL, SL/TP
                         # reali, BE/trailing) — il vecchio `continue` saltava tutto.
                         await _broadcast_position_update(session, event)
@@ -1027,7 +1027,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                             logger.info(f"{YELLOW}[Candle] CLOSING: {pos.side} position opposite to {side} signal{RESET}")
                             await _close_position_and_record(pm, float(candle.close), pos, reason=decision.reason or "signal")
                         else:
-                            logger.debug(f"[Candle] HOLD: existing {pos.side} position matches {side} signal")
+                            logger.info(f"{DIM}[Candle] HOLD: existing {pos.side} position matches {side} signal{RESET}")
                             # TASK-894: log hold su session_signal_log (non-blocking)
                             _ms = _execution_state.get('loop')._last_market_score
                             asyncio.create_task(asyncio.to_thread(
@@ -1055,7 +1055,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                         and f"{decision.signal_type}:{decision.reason}" == _coalescing["last_key"]
                     )
                     if not _is_repeat:
-                        logger.debug(f"[Candle] REJECTED: {reason_str}")
+                        logger.info(f"{RED}[Candle] DECISION REJECTED: {reason_str}{RESET}")
                         # TASK-894: log rejected su session_signal_log (non-blocking)
                         if decision and session.get("db_session_id") and not _coalescing.get("db_logged"):
                             _ms = _execution_state.get('loop')._last_market_score
@@ -1089,6 +1089,6 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
             finally:
                 # TASK-1250: log sempre il CYCLE END, anche sui `continue`
                 # (pausa, guard non pronto, session loss, drawdown, errore live).
-                logger.debug(f"[Candle] CYCLE END: {event.symbol}")
+                logger.info(f"{BOLD}{CYAN}[Candle] CYCLE END: {event.symbol}{RESET}")
             
             await _broadcast_position_update(session, event)

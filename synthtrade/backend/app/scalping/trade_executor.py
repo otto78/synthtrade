@@ -595,21 +595,23 @@ def _check_session_loss() -> bool:
     """TASK-1230: Return True if total session PnL exceeds max session loss %.
 
     Session loss = total PnL of all trades in the session.
-    Max allowed loss = starting_balance * session_max_loss_pct / 100.
+    Max allowed loss = trade_value * session_max_loss_pct / 100.
+    Uses trade_value (same denominator as frontend total_pnl_pct display).
     """
     risk_cfg = _execution_state.get("risk_config", {})
     max_loss_pct = float(risk_cfg.get("session_max_loss_pct", 10.0))
     trades = _execution_state["trade_history"]
     if not trades:
         return False
-    starting = float(
-        _execution_state["session"].get("starting_balance")
+    base = float(
+        _execution_state["session"].get("trade_value")
+        or _execution_state["session"].get("starting_balance")
         or _execution_state["session"].get("live_balance")
         or _execution_state["session"].get("paper_balance")
         or 10000.0
     )
     total_pnl = sum(t.get("pnl") or 0.0 for t in trades)
-    max_loss_eur = starting * max_loss_pct / 100.0
+    max_loss_eur = base * max_loss_pct / 100.0
     return total_pnl <= -max_loss_eur
 
 

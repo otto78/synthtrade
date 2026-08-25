@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from app.config import settings
+from app.db.supabase_client import get_supabase
 from app.scalping._state import _execution_state
 from app.scalping.pricing import (
     _get_fee_rate,
@@ -242,6 +243,46 @@ async def _broadcast_position_update(session: dict, event) -> None:
         logger.error(f"Error in position broadcast: {e}")
     else:
         logger.debug(f"[Candle] LIVE update (not closed): {event.symbol} close={event.close}")
+
+
+async def _stop_session_on_risk_limit(code: str, total_pnl: float, limit_pct: float):
+    """Stop the session immediately when a risk limit is breached."""
+    session = _execution_state["session"]
+    session["status"] = "idle"
+    session["stopped_at"] = datetime.now(timezone.utc).isoformat()
+
+    # Close exchange connection
+    exchange = _execution_state.get("exchange")
+    if exchange:
+        try:
+            asyncio.create_task(exchange.close(), name="close_exchange_risk")
+        except Exception as e:
+            logger.warning(f"Failed to close exchange on risk stop: {e}")
+        _execution_state["exchange"] = None
+
+    # Update DB
+    try:
+        db_sid = session.get("db_session_id")
+        if db_sid:
+            closed = [t for t in _execution_state.get("trade_history", []) if t.get("exit_price") is not None]
+            total_pnl_val = round(sum((t.get("pnl") or 0) for t in closed), 4)
+            win_count_val = len([t for t in closed if (t.get("pnl") or 0) > 0])
+            get_supabase().table("scalping_sessions").update({
+                "status": "stopped",
+                "stopped_at": session["stopped_at"],
+                "trade_count": len(closed),
+                "win_count": win_count_val,
+                "total_pnl": total_pnl_val,
+            }).eq("id", db_sid).execute()
+    except Exception as e:
+        logger.warning(f"Failed to update DB on risk stop: {e}")
+
+    await broadcast_scalping_event("session_restored", {
+        **session.copy(),
+        "status": "idle",
+        "pause_reason": code,
+        "pause_message": f"Sessione fermata: {code}. PnL: {total_pnl:.2f}€. Limite: {limit_pct}%.",
+    })
 
 
 async def _candle_processor(symbol: str, restore_mode: bool = False):
@@ -555,21 +596,16 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                             logger.warning(
                                 f"SESSION LOSS LIMIT: {total_pnl:.2f}€ "
                                 f"(max {max_pct}% of {starting:.2f}€ = {starting * max_pct / 100:.2f}€). "
-                                f"Pausing session."
+                                f"Stopping session."
                             )
-                            _execution_state["session"]["status"] = "paused"
-                            await broadcast_scalping_event("session_restored", {
-                                **_execution_state["session"].copy(),
-                                "status": "paused",
-                                "pause_reason": "SESSION_MAX_LOSS",
-                                "pause_message": f"Session loss {total_pnl:.2f}€ supera il limite {max_pct}%. Sessione in pausa.",
-                            })
+                            await _stop_session_on_risk_limit("SESSION_MAX_LOSS", total_pnl, max_pct)
                             continue
 
                         if _check_drawdown():
                             risk_cfg = _execution_state.get("risk_config", {})
-                            logger.warning(f"Max drawdown {risk_cfg.get('max_drawdown', 10)}% exceeded. Blocking new real trade.")
-                            await broadcast_scalping_event("error", {"code": "MAX_DRAWDOWN", "message": f"Max drawdown exceeded. Trading bloccato."})
+                            dd_pct = risk_cfg.get("max_drawdown", 10)
+                            logger.warning(f"Max drawdown {dd_pct}% exceeded. Stopping session.")
+                            await _stop_session_on_risk_limit("MAX_DRAWDOWN", 0, dd_pct)
                             continue
 
                         macro = {}

@@ -128,8 +128,11 @@ import { ConfigService } from '../../core/services/config.service';
           </div>
           <div class="meta-item">
             <span class="meta-label">Stato</span>
-            <span class="meta-value" [ngClass]="session.status">
+            <span class="meta-value" [ngClass]="session.status" *ngIf="!session.auto_restart_weekly">
               {{ session.status === 'running' ? (session.mode === 'test' ? 'DEMO' : 'LIVE') : (session.status === 'stopped' ? 'STOPPED' : 'PAUSED') }}
+            </span>
+            <span class="meta-value stop-and-go" *ngIf="session.auto_restart_weekly">
+              STOP &amp; GO
             </span>
           </div>
           <div class="meta-item">
@@ -602,6 +605,11 @@ import { ConfigService } from '../../core/services/config.service';
     .meta-value.restart-pending {
       color: #ffb74d;
       font-weight: 700;
+    }
+    .meta-value.stop-and-go {
+      color: #26a69a;
+      font-weight: 700;
+      letter-spacing: 0.5px;
     }
   `],
 })

@@ -92,7 +92,7 @@ import { ConfigService } from '../../core/services/config.service';
         <!-- TASK-1255: Stop & Go — auto-restart settimanale -->
         <div class="stop-and-go-option">
           <label class="checkbox-label">
-            <input type="checkbox" [(ngModel)]="autoRestartWeekly" class="checkbox-input" />
+            <input type="checkbox" [(ngModel)]="autoRestartWeekly" (ngModelChange)="saveAutoRestart()" class="checkbox-input" />
             <span class="checkbox-text">Stop & Go</span>
           </label>
           <span class="checkbox-hint">Riavvio automatico ogni 7 giorni</span>
@@ -117,6 +117,9 @@ import { ConfigService } from '../../core/services/config.service';
           >
             <span class="status-dot"></span>
             {{ session.status === 'running' ? 'RUNNING' : (session.status === 'paused' ? 'PAUSED' : 'STOPPED') }}
+          </span>
+          <span class="status-badge stop-and-go" *ngIf="session.auto_restart_weekly">
+            STOP &amp; GO
           </span>
         </div>
         <div class="title-hr"></div>
@@ -597,6 +600,12 @@ import { ConfigService } from '../../core/services/config.service';
       color: #ffb74d;
       font-weight: 700;
     }
+    .status-badge.stop-and-go {
+      background: rgba(38,166,154,0.15);
+      color: #26a69a;
+      border: 1px solid rgba(38,166,154,0.35);
+      letter-spacing: 0.5px;
+    }
   `],
 })
 export class SessionControlsComponent implements OnInit {
@@ -702,6 +711,10 @@ export class SessionControlsComponent implements OnInit {
     try {
       localStorage.setItem('scalping_trade_value', String(this.tradeValue));
     } catch {}
+  }
+
+  saveAutoRestart(): void {
+    try { localStorage.setItem('scalping_auto_restart_weekly', String(this.autoRestartWeekly)); } catch {}
   }
 
   startSession(): void {

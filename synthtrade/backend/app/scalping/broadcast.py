@@ -23,6 +23,13 @@ def _now() -> str:
 
 async def broadcast_scalping_event(event_type: str, payload: Any):
     """Broadcast an event to all connected scalping WebSocket clients."""
+    # TASK-1255: Stop & Go — inject restart_countdown into session_restored payloads
+    if event_type == "session_restored" and isinstance(payload, dict) and payload.get("auto_restart_weekly") and payload.get("status") == "running":
+        try:
+            from app.scalping.session_auto_restart import get_restart_countdown
+            payload["restart_countdown"] = get_restart_countdown(payload)
+        except Exception:
+            pass
     message = {
         "type": event_type,
         "payload": payload,

@@ -486,9 +486,33 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                 timestamp=datetime.fromtimestamp(event.open_time / 1000, tz=timezone.utc),
                 closed=True,
             )
-            logger.info(f"{BOLD}{CYAN}[Candle] CYCLE START: {event.symbol} @ {candle.close}{RESET}")
+            logger.debug(f"[Candle] CYCLE START: {event.symbol} @ {candle.close}")
             try:
                 decision = await _execution_state.get('loop').process_candle(candle)
+                
+                # ── COALESCING: track repeated identical decisions ──
+                _coalescing = _execution_state.setdefault("_coalescing", {
+                    "last_key": None, "count": 0, "db_logged": False
+                })
+                _dec_key = None
+                if decision and not decision.execute:
+                    _dec_key = f"{decision.signal_type}:{decision.reason}"
+                if _dec_key and _dec_key == _coalescing["last_key"]:
+                    _coalescing["count"] += 1
+                    # Skip log for repeated decisions (log summary every 10)
+                    if _coalescing["count"] % 10 != 0:
+                        logger.debug(f"[Candle] REJECTED (x{_coalescing['count']}): {decision.reason}")
+                    else:
+                        logger.info(f"[Candle] BLOCK x{_coalescing['count']}: {decision.reason}")
+                else:
+                    # New decision — log summary if there were repetitions
+                    if _coalescing["count"] > 1:
+                        logger.info(f"[Candle] BLOCK x{_coalescing['count']}: {_coalescing['last_key']}")
+                    _coalescing["last_key"] = _dec_key
+                    _coalescing["count"] = 1 if _dec_key else 0
+                    _coalescing["db_logged"] = False
+                    if decision and not decision.execute:
+                        logger.debug(f"[Candle] REJECTED: {decision.reason}")
                 # Sync actual running strategy to session for frontend display
                 if _execution_state.get('loop')._strategy and _execution_state.get('loop')._strategy.name:
                     actual_strategy = _execution_state.get('loop')._strategy.name
@@ -1003,7 +1027,7 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                             logger.info(f"{YELLOW}[Candle] CLOSING: {pos.side} position opposite to {side} signal{RESET}")
                             await _close_position_and_record(pm, float(candle.close), pos, reason=decision.reason or "signal")
                         else:
-                            logger.info(f"{DIM}[Candle] HOLD: existing {pos.side} position matches {side} signal{RESET}")
+                            logger.debug(f"[Candle] HOLD: existing {pos.side} position matches {side} signal")
                             # TASK-894: log hold su session_signal_log (non-blocking)
                             _ms = _execution_state.get('loop')._last_market_score
                             asyncio.create_task(asyncio.to_thread(
@@ -1022,32 +1046,42 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
 
                 else:
                     reason_str = decision.reason if decision else "decision=None"
-                    logger.info(f"{RED}[Candle] DECISION REJECTED: {reason_str}{RESET}")
-                    # TASK-894: log rejected su session_signal_log (non-blocking)
-                    if decision and session.get("db_session_id"):
-                        _ms = _execution_state.get('loop')._last_market_score
-                        # Determina decision_type più specifico dal reason
-                        _dtype = "rejected_other"
-                        if decision.signal_type == "HOLD":
-                            _dtype = "hold_existing_position"
-                        elif decision.reason and "conflitto intelligence-tecnico" in decision.reason:
-                            _dtype = "block_conflict"
-                        elif decision.reason and "MEAN-REVERSION" in decision.reason:
-                            _dtype = "mean_reversion_override"
-                        asyncio.create_task(asyncio.to_thread(
-                            log_signal_decision,
-                            session_id=session.get("db_session_id") or "",
-                            symbol=event.symbol.upper(),
-                            decision_type=_dtype,
-                            decision_reason=decision.reason,
-                            regime=_execution_state.get('loop')._current_regime.regime if _execution_state.get('loop')._current_regime else "unknown",
-                            strategy_type=_execution_state.get('loop')._strategy.name if _execution_state.get('loop')._strategy else "unknown",
-                            tech_signal=decision.signal_type or None,
-                            intel_score=float(_ms.total) if _ms else None,
-                            intel_bias=_ms.bias if _ms else None,
-                            trend_direction=_ms.trend_direction if _ms else None,
-                            trend_value=float(_ms.trend_5m) if _ms and _ms.trend_5m is not None else None,
-                        ))
+                    # ── COALESCING: skip DB log for repeated identical decisions ──
+                    _is_repeat = (
+                        _coalescing.get("last_key")
+                        and _coalescing["count"] > 1
+                        and decision
+                        and not decision.execute
+                        and f"{decision.signal_type}:{decision.reason}" == _coalescing["last_key"]
+                    )
+                    if not _is_repeat:
+                        logger.debug(f"[Candle] REJECTED: {reason_str}")
+                        # TASK-894: log rejected su session_signal_log (non-blocking)
+                        if decision and session.get("db_session_id") and not _coalescing.get("db_logged"):
+                            _ms = _execution_state.get('loop')._last_market_score
+                            # Determina decision_type più specifico dal reason
+                            _dtype = "rejected_other"
+                            if decision.signal_type == "HOLD":
+                                _dtype = "hold_existing_position"
+                            elif decision.reason and "conflitto intelligence-tecnico" in decision.reason:
+                                _dtype = "block_conflict"
+                            elif decision.reason and "MEAN-REVERSION" in decision.reason:
+                                _dtype = "mean_reversion_override"
+                            asyncio.create_task(asyncio.to_thread(
+                                log_signal_decision,
+                                session_id=session.get("db_session_id") or "",
+                                symbol=event.symbol.upper(),
+                                decision_type=_dtype,
+                                decision_reason=decision.reason,
+                                regime=_execution_state.get('loop')._current_regime.regime if _execution_state.get('loop')._current_regime else "unknown",
+                                strategy_type=_execution_state.get('loop')._strategy.name if _execution_state.get('loop')._strategy else "unknown",
+                                tech_signal=decision.signal_type or None,
+                                intel_score=float(_ms.total) if _ms else None,
+                                intel_bias=_ms.bias if _ms else None,
+                                trend_direction=_ms.trend_direction if _ms else None,
+                                trend_value=float(_ms.trend_5m) if _ms and _ms.trend_5m is not None else None,
+                            ))
+                            _coalescing["db_logged"] = True
             except Exception as e:
                 logger.warning(f"Execution loop processing error: {e}")
                 import traceback
@@ -1055,6 +1089,6 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
             finally:
                 # TASK-1250: log sempre il CYCLE END, anche sui `continue`
                 # (pausa, guard non pronto, session loss, drawdown, errore live).
-                logger.info(f"{BOLD}{CYAN}[Candle] CYCLE END: {event.symbol}{RESET}")
+                logger.debug(f"[Candle] CYCLE END: {event.symbol}")
             
             await _broadcast_position_update(session, event)

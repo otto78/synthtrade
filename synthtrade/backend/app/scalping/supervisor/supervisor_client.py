@@ -138,6 +138,7 @@ class SupervisorClient:
         vol_anomaly: bool = False,
         strategy_name: Optional[str] = None,  # TASK-1249: strategia attiva
         strategy_params: Optional[dict] = None,  # TASK-1249: parametri strategia attiva
+        hold_return_pct: Optional[float] = None,  # Confronto vs buy-and-hold
     ) -> SupervisorDecision:
         """Ottieni decisione dal supervisor AI.
 
@@ -153,6 +154,7 @@ class SupervisorClient:
             vol_anomaly=vol_anomaly,
             strategy_name=strategy_name,
             strategy_params=strategy_params,
+            hold_return_pct=hold_return_pct,
         )
 
         user_prompt = f"""Current market intelligence for {symbol}:

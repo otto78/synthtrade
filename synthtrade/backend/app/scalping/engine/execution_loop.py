@@ -191,8 +191,18 @@ class ExecutionLoop:
         # 4. Generate technical signal
         technical_signal = self._strategy.evaluate(candles, self._indicators)
 
-        # 5. Get market intelligence score
-        market_score = await self._signal_engine.compute()
+        # 4b. SHORT-CIRCUIT: SELL signals permanently disabled (long-only engine)
+        # Skip expensive intelligence computation when SELL is blocked at source
+        if technical_signal.type == "SELL":
+            return ExecutionDecision(
+                execute=False,
+                reason="SELL signals disabled (long-only engine)",
+                signal_type="SELL",
+                is_mean_reversion_override=False
+            )
+
+        # 5. Get market intelligence score (quiet=True: COLLECTORS/COVERAGE logged only on trade entry)
+        market_score = await self._signal_engine.compute(quiet=True)
         self._last_market_score = market_score  # esposto al router per logging decisioni
 
         # 6. Log pipeline state
@@ -211,7 +221,7 @@ class ExecutionLoop:
         # 7. Aggregate signals
         if self._position_manager.has_open() and technical_signal.type not in ("NONE", "CLOSE"):
             pos = self._position_manager.get_open()
-            logger.info(f"{DIM}[ExecLoop] HOLD: existing {pos.side if pos else 'position'} position matches {technical_signal.type} signal{RESET}")
+            logger.debug(f"[ExecLoop] HOLD: existing {pos.side if pos else 'position'} position matches {technical_signal.type} signal")
             return ExecutionDecision(
                 execute=False,
                 reason="posizione aperta: nessun nuovo ingresso",
@@ -247,7 +257,14 @@ class ExecutionLoop:
             except Exception as exc:
                 logger.warning(f"[ExecLoop] Risk check fallito (non bloccante): {exc}")
 
-        # 8. Notify
+        # 8. Log COLLECTORS/COVERAGE only on trade entry (not on every rejected cycle)
+        if decision and decision.execute:
+            if self._signal_engine.last_collectors_log:
+                logger.info(self._signal_engine.last_collectors_log)
+            if self._signal_engine.last_coverage_log:
+                logger.info(self._signal_engine.last_coverage_log)
+
+        # 9. Notify
         if self._on_signal and decision and decision.execute:
             await self._on_signal(decision, market_score, technical_signal)
 

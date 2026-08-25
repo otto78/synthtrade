@@ -137,6 +137,16 @@ class SignalScoreEngine:
         self._last_collectors_log: Optional[str] = None
         self._last_coverage_log: Optional[str] = None
 
+    @property
+    def last_collectors_log(self) -> Optional[str]:
+        """Ultimo log COLLECTORS (per logging condizionale su trade entry)."""
+        return self._last_collectors_log
+
+    @property
+    def last_coverage_log(self) -> Optional[str]:
+        """Ultimo log COVERAGE (per logging condizionale su trade entry)."""
+        return self._last_coverage_log
+
     def _compute_individual_score(self, name: str, result) -> Optional[float]:
         """Calcola lo score individuale di un collector per il log diagnostico.
         
@@ -245,17 +255,22 @@ class SignalScoreEngine:
 
         return sum(weights.values()), excluded
 
-    async def compute(self) -> SignalScore:
+    async def compute(self, quiet: bool = False) -> SignalScore:
         """Calcola lo score intelligence aggregato per il simbolo.
+
+        Args:
+            quiet: Se True, sopprime il logging verbose di COLLECTORS/COVERAGE.
+                   Usato quando il risultato e' gia' noto (es. SELL short-circuit).
 
         Returns:
             SignalScore con total, bias, tradeable, breakdown.
         """
         snapshot = await self.get_snapshot()
-        if self._last_collectors_log:
-            logger.info(self._last_collectors_log)
-        if self._last_coverage_log:
-            logger.info(self._last_coverage_log)
+        if not quiet:
+            if self._last_collectors_log:
+                logger.info(self._last_collectors_log)
+            if self._last_coverage_log:
+                logger.info(self._last_coverage_log)
         if snapshot.signal_score is None:
             # Fallback in caso di errore critico, non dovrebbe accadere
             from datetime import datetime, timezone

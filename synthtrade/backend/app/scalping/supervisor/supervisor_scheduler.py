@@ -292,6 +292,24 @@ class SupervisorScheduler:
             strategy_params = self._loop.strategy.get_params()
 
         # TASK-860: passa trade_history al client per arricchire il context
+        # Compute hold return: (current_price - starting_price) / starting_price * 100
+        hold_return_pct = None
+        try:
+            from app.scalping.router import _execution_state as _router_state
+            session = _router_state.get("session", {})
+            starting_balance = session.get("starting_balance")
+            trade_value = session.get("trade_value", 20)
+            if self._loop and self._loop._candle_buffer:
+                candles = self._loop._candle_buffer.get()
+                if candles and starting_balance:
+                    current_price = float(candles[-1].close)
+                    # Starting price from first candle in buffer (approximate)
+                    starting_price = float(candles[0].close)
+                    if starting_price > 0:
+                        hold_return_pct = ((current_price - starting_price) / starting_price) * 100
+        except Exception as e:
+            logger.debug(f"Failed to compute hold return: {e}")
+
         decision = await self._client.decide(
             symbol=self._symbol,
             snapshot=snapshot,
@@ -303,6 +321,7 @@ class SupervisorScheduler:
             vol_anomaly=vol_anomaly,
             strategy_name=strategy_name,
             strategy_params=strategy_params,
+            hold_return_pct=hold_return_pct,
         )
 
         if not self._running:

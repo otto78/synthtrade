@@ -1,9 +1,12 @@
 """Supervisor Context Builder - estende context per scalping intelligence."""
 
 import asyncio
+import logging
 from typing import Optional
 from app.scalping.models.intelligence import MarketIntelSnapshot, SignalScore
 from app.scalping.models.market import MarketRegime
+
+logger = logging.getLogger(__name__)
 
 
 async def build_scalping_context(
@@ -17,6 +20,7 @@ async def build_scalping_context(
     vol_anomaly: bool = False,
     strategy_name: Optional[str] = None,  # TASK-1249: strategia attiva
     strategy_params: Optional[dict] = None,  # TASK-1249: parametri strategia attiva
+    hold_return_pct: Optional[float] = None,  # Confronto vs buy-and-hold
 ) -> dict:
     """Costruisce il context per il supervisor AI.
 
@@ -130,6 +134,11 @@ async def build_scalping_context(
                 "last_5_pnl": [t.get("pnl") or 0 for t in last_5],
                 "last_5_reasons": [t.get("signal_reason") or "unknown" for t in last_5],
             }
+            if hold_return_pct is not None:
+                context["session_performance"]["hold_return_pct"] = round(hold_return_pct, 1)
+                context["session_performance"]["vs_hold_gap"] = round(
+                    (total_pnl / trade_history[0].get("trade_value", 20) * 100 if trade_history else 0) - hold_return_pct, 1
+                )
 
     # ── Performance sessione (TASK-844) ─────────────────────────────────
     if session_id:
@@ -173,6 +182,11 @@ async def build_scalping_context(
                 "last_5_pnl": last_5_pnl,
                 "last_5_reasons": last_5_reasons,
             }
+            if hold_return_pct is not None:
+                context["session_performance"]["hold_return_pct"] = round(hold_return_pct, 1)
+                context["session_performance"]["vs_hold_gap"] = round(
+                    (total_pnl / 20 * 100) - hold_return_pct, 1  # fallback trade_value=20
+                )
 
     # ── Supervisor history (TASK-847) ────────────────────────────────────
     if session_id:

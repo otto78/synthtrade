@@ -656,6 +656,10 @@ async def control_session(control: Dict) -> Dict:
         result["signal_strength_threshold"] = get_scalping_config().signal_strength_threshold
     except Exception:
         result["signal_strength_threshold"] = None
+    # TASK-1255: Stop & Go — countdown in every response (GET + POST)
+    if result.get("auto_restart_weekly") and result.get("status") == "running":
+        from app.scalping.session_auto_restart import get_restart_countdown
+        result["restart_countdown"] = get_restart_countdown(session)
     return result
 
 

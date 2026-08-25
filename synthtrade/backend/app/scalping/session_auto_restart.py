@@ -144,7 +144,7 @@ def get_restart_countdown(session: dict) -> str:
         if isinstance(started_at, str):
             started_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
         elif isinstance(started_at, datetime):
-            started_dt = started_at if started_at.tzinfo else started_dt.replace(tzinfo=timezone.utc)
+            started_dt = started_at if started_at.tzinfo else started_at.replace(tzinfo=timezone.utc)
         else:
             return ""
     except Exception:

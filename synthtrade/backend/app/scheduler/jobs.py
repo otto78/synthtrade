@@ -258,5 +258,10 @@ def setup_scheduler(engine=None) -> AsyncIOScheduler:
         scheduler.add_job(verify_supervisor_outcomes_job, "interval",
                           minutes=5,
                           id="scalping_supervisor_outcome_verify")
+        # TASK-1255: Stop & Go — auto-restart settimanale (ogni 15 min)
+        from app.scalping.session_auto_restart import check_and_auto_restart
+        scheduler.add_job(check_and_auto_restart, "interval",
+                          minutes=15,
+                          id="scalping_auto_restart")
 
     return scheduler

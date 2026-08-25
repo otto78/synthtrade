@@ -89,6 +89,15 @@ import { ConfigService } from '../../core/services/config.service';
           </div>
         </div>
 
+        <!-- TASK-1255: Stop & Go — auto-restart settimanale -->
+        <div class="stop-and-go-option">
+          <label class="checkbox-label">
+            <input type="checkbox" [(ngModel)]="autoRestartWeekly" class="checkbox-input" />
+            <span class="checkbox-text">Stop & Go</span>
+          </label>
+          <span class="checkbox-hint">Riavvio automatico ogni 7 giorni</span>
+        </div>
+
         <button class="btn-start" (click)="startSession()" [disabled]="loading">
           <span class="start-icon">▶</span>
           {{ loading ? 'Avvio...' : 'Avvia Sessione' }}
@@ -132,7 +141,7 @@ import { ConfigService } from '../../core/services/config.service';
           </div>
           <div class="meta-item">
             <span class="meta-label">Avviata</span>
-            <span class="meta-value">{{ session.started_at | date:'HH:mm:ss' }}</span>
+            <span class="meta-value">{{ session.started_at | date:'dd/MM/yy HH:mm:ss' }}</span>
           </div>
           <div class="meta-item" *ngIf="session.first_trade_entry">
             <span class="meta-label">Entry Ref</span>
@@ -143,6 +152,17 @@ import { ConfigService } from '../../core/services/config.service';
             <span class="meta-value" [ngClass]="session.hold_pnl_pct >= 0 ? 'hold-pos' : 'hold-neg'">
               {{ session.hold_pnl_pct >= 0 ? '+' : '' }}{{ session.hold_pnl_pct | number:'1.2-2' }}%
             </span>
+          </div>
+          <!-- TASK-1255: Stop & Go — countdown al prossimo restart -->
+          <div class="meta-item" *ngIf="session.auto_restart_weekly && session.restart_countdown">
+            <span class="meta-label">Prossimo restart</span>
+            <span class="meta-value restart-countdown">
+              {{ session.restart_countdown }}
+            </span>
+          </div>
+          <div class="meta-item" *ngIf="session.restart_pending">
+            <span class="meta-label">Restart</span>
+            <span class="meta-value restart-pending">In attesa...</span>
           </div>
         </div>
 
@@ -545,6 +565,44 @@ import { ConfigService } from '../../core/services/config.service';
     .btn-action.pause { background: rgba(255,183,77,0.15); color: #ffb74d; border: 1px solid rgba(255,183,77,0.3); }
     .btn-action.resume { background: rgba(38,166,154,0.15); color: #26a69a; border: 1px solid rgba(38,166,154,0.3); }
     .btn-action.stop { background: rgba(239,83,80,0.12); color: #ef5350; border: 1px solid rgba(239,83,80,0.25); }
+
+    /* TASK-1255: Stop & Go */
+    .stop-and-go-option {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 4px;
+    }
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+    .checkbox-input {
+      width: 16px;
+      height: 16px;
+      accent-color: #26a69a;
+      cursor: pointer;
+    }
+    .checkbox-text {
+      font-weight: 500;
+    }
+    .checkbox-hint {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-left: 24px;
+    }
+    .meta-value.restart-countdown {
+      color: #26a69a;
+      font-weight: 700;
+    }
+    .meta-value.restart-pending {
+      color: #ffb74d;
+      font-weight: 700;
+    }
   `],
 })
 export class SessionControlsComponent implements OnInit {
@@ -569,6 +627,14 @@ export class SessionControlsComponent implements OnInit {
   tradeValueApplied = false;
   isStopping = false;
   loading = false;
+  
+  /** TASK-1255: Stop & Go — auto-restart settimanale */
+  autoRestartWeekly: boolean = (() => {
+    try {
+      return localStorage.getItem('scalping_auto_restart_weekly') === 'true';
+    } catch {}
+    return false;
+  })();
   
   // Symbol search
   allSymbols: string[] = [];
@@ -647,9 +713,10 @@ export class SessionControlsComponent implements OnInit {
   startSession(): void {
     this.loading = true;
     this.saveTradeValue();
+    try { localStorage.setItem('scalping_auto_restart_weekly', String(this.autoRestartWeekly)); } catch {}
     // Map globalMode: 'live' -> 'live', 'test' -> 'test', default -> 'paper'
     const executionMode = this.globalMode === 'live' ? 'live' : (this.globalMode === 'test' ? 'test' : 'paper');
-    this.sessionApi.start(executionMode, this.selectedStrategy, this.selectedSymbol, this.tradeValue).subscribe({
+    this.sessionApi.start(executionMode, this.selectedStrategy, this.selectedSymbol, this.tradeValue, this.autoRestartWeekly).subscribe({
       next: (data: ScalpingSession) => {
         this.session = data;
         this.sessionId = data.session_id || null;

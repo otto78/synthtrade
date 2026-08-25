@@ -77,6 +77,30 @@ Ovvero con 50 trade/settimana si perdono circa 0.7% del capitale per settimana s
 
 ---
 
+### TASK-1255 — Stop & Go: Auto-Restart Settimanale ✅
+
+**Stato:** Completato il 2026-08-25
+
+**Problema:** La sessione live accumula degradazione nel tempo (regime change, drift parametri, posizioni stale). Senza restart periodico, il bot continua con parametri obsoleti.
+
+**Soluzione implementata:**
+- **Backend:** `session_auto_restart.py` — job APScheduler ogni 15 min, verifica età sessione, stop+restart automatico dopo 7 giorni (aspetta chiusura posizioni aperte)
+- **Frontend:** Checkbox "Stop & Go" nel pannello sessioni, countdown al prossimo restart, evento WS `session_auto_restarted` / `session_restart_pending`
+- **DB:** Colonna `auto_restart_weekly` su `scalping_sessions`
+
+**File coinvolti:**
+- `synthtrade/backend/app/scalping/session_auto_restart.py` (nuovo)
+- `synthtrade/backend/app/scalping/rest/session.py`
+- `synthtrade/backend/app/scalping/_state.py`
+- `synthtrade/backend/app/scheduler/jobs.py`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/models/session.model.ts`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/session-controls.component.ts`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/session-api.service.ts`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/services/scalping-ws.service.ts`
+- `synthtrade/frontend/synthtrade-ui/src/app/scalping/components/scalping-dashboard.component.ts`
+
+---
+
 ## Fase 1 — Log & Performance (Completata — vedi ARCHIVE_TASKS.md)
 
-> TASK-1245 (Short-circuit SELL), TASK-1246 (Compact logging), TASK-1247 (Coalescing cicli), TASK-1250 (Macro trend filter), TASK-1251 (Override mean-reversion guard), TASK-1254 (Hold comparison supervisor) — tutti completati.
+> TASK-1245 (Short-circuit SELL), TASK-1246 (Compact logging), TASK-1247 (Coalescing cicli), TASK-1250 (Macro trend filter), TASK-1251 (Override mean-reversion guard), TASK-1254 (Hold comparison supervisor), TASK-1255 (Stop & Go auto-restart) — tutti completati.

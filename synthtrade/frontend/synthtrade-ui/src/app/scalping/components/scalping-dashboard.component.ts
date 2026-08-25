@@ -226,6 +226,9 @@ private _toastCounter = 0;
        this.cdr.markForCheck();
      }
    };
+   private _sessionRefreshCallback = () => {
+     this.sessionApi.getStatus().subscribe();
+   };
 
    constructor(
     private wsService: ScalpingWsService,
@@ -273,6 +276,8 @@ private _toastCounter = 0;
 
 // Listen for HTTP errors via custom event (fallback when WS error races with HTTP response)
      window.addEventListener('scalping-error', this._httpErrorCallback as EventListener);
+     // TASK-1255: re-fetch session on auto-restart or pending events
+     window.addEventListener('scalping-session-refresh', this._sessionRefreshCallback);
    }
 
 ngOnDestroy(): void {
@@ -280,6 +285,7 @@ ngOnDestroy(): void {
     this._sub.unsubscribe();
     if (this._reconnectedTimer) clearTimeout(this._reconnectedTimer);
     window.removeEventListener('scalping-error', this._httpErrorCallback as EventListener);
+    window.removeEventListener('scalping-session-refresh', this._sessionRefreshCallback);
   }
 
   dismissToast(id: number): void {

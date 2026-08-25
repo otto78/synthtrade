@@ -27,6 +27,9 @@ _execution_state: Dict[str, Any] = {
         "stopped_at": None,
         "paper_balance": 10000.0,
         "trade_value": 100.0,   # USD value per trade — set by user in UI
+        # TASK-1255: Stop & Go — auto-restart settimanale
+        "auto_restart_weekly": False,
+        "restart_pending": False,
     },
     "trade_history": [],        # List[dict] — trade history for performance calc
     "risk_config": {

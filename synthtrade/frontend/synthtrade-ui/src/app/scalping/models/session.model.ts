@@ -19,6 +19,10 @@ export interface ScalpingSession {
   hold_pnl_pct?: number;
   error_code?: string;
   error_message?: string;
+  /** TASK-1255: Stop & Go — auto-restart settimanale */
+  auto_restart_weekly?: boolean;
+  restart_pending?: boolean;
+  restart_countdown?: string;
 }
 
 export interface SessionControl {
@@ -27,4 +31,6 @@ export interface SessionControl {
   strategy?: string;
   symbol?: string;
   trade_value?: number;
+  /** TASK-1255: Stop & Go — auto-restart settimanale */
+  auto_restart_weekly?: boolean;
 }

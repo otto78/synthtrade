@@ -112,6 +112,11 @@ async def get_session() -> Dict:
     except Exception:
         result["signal_strength_threshold"] = None
     
+    # TASK-1255: Stop & Go — include auto-restart info
+    if result.get("auto_restart_weekly") and result.get("status") == "running":
+        from app.scalping.session_auto_restart import get_restart_countdown
+        result["restart_countdown"] = get_restart_countdown(session)
+    
     return result
 
 
@@ -248,6 +253,9 @@ async def control_session(control: Dict) -> Dict:
         session["trade_value"] = float(control.get("trade_value", session.get("trade_value", 10.0)))
         session["started_at"] = _now()
         session["stopped_at"] = None
+        # TASK-1255: Stop & Go — auto-restart settimanale
+        session["auto_restart_weekly"] = bool(control.get("auto_restart_weekly", False))
+        session["restart_pending"] = False
         # Clear any previous error state from failed start attempts
         session["error_code"] = None
         session["error_message"] = None
@@ -328,6 +336,8 @@ async def control_session(control: Dict) -> Dict:
                         "fee_tier_taker": _get_fee_rate(_execution_state.get("fee_tier") or {}, "taker", None),
                         # TASK-1230: starting balance for session loss/drawdown calculation
                         "starting_balance": session.get("starting_balance"),
+                        # TASK-1255: Stop & Go — auto-restart settimanale
+                        "auto_restart_weekly": session.get("auto_restart_weekly", False),
                     }).execute()
                     if db_resp.data:
                         session["db_session_id"] = db_resp.data[0]["id"]

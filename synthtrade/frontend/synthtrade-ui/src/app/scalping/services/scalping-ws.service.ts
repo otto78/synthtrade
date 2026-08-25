@@ -25,6 +25,8 @@ export type ScalpingEventType =
   | 'position_update'
   | 'intelligence'
   | 'session_restored'
+  | 'session_auto_restarted'
+  | 'session_restart_pending'
   | 'error';
 
 export interface TradeClosedEvent {
@@ -304,6 +306,11 @@ export class ScalpingWsService implements OnDestroy {
         break;
       case 'session_restored':
         this.sessionRestored$.next(event.payload as ScalpingSession);
+        break;
+      case 'session_auto_restarted':
+      case 'session_restart_pending':
+        // Notify dashboard to re-fetch session state
+        window.dispatchEvent(new CustomEvent('scalping-session-refresh'));
         break;
       case 'error':
         this.error$.next(event.payload as ErrorEventPayload);

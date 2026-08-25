@@ -182,3 +182,168 @@ class TestSignalAggregator:
         # upstream weighting: 70% tecnico / 30% intelligence
         # signal_strength/100 = 0.8, technical = 0.9 -> 0.8*0.3 + 0.9*0.7 = 0.87
         assert result.confidence == pytest.approx(0.87, rel=0.01)
+
+
+class TestTask1251StrongBearishGuard:
+    """TASK-1251: verifica blocco override mean-reversion con bias bearish forte.
+
+    Il blocco si attiva quando market_score.total < -15.0 (default soglia).
+    Il test usa min_confidence=0.4 per non intralciare con la soglia di confidenza.
+    """
+
+    def setup_method(self):
+        self.aggregator = SignalAggregator(min_confidence=0.4)
+
+    def test_blocks_mean_reversion_buy_when_strong_bearish(self):
+        """TASK-1251: rsi_bollinger BUY bloccato quando bias bearish forte (score < -15)."""
+        # Score bearish forte: -20 < -15 → deve bloccare
+        score = _make_score(total=-20.0, bias="bearish", tradeable=True, strength=20.0)
+        technical = TechnicalSignal(type="BUY", confidence=0.85, source="rsi_bollinger")
+
+        result = self.aggregator.should_execute(technical, score, symbol="BTCEUR")
+
+        assert result.execute is False
+        assert result.is_mean_reversion_override is False
+        assert result.reason is not None
+        assert "1251" in result.reason or "strong" in result.reason.lower() or "soglia" in result.reason.lower()
+
+    def test_allows_mean_reversion_buy_when_weakly_bearish(self):
+        """TASK-1251: rsi_bollinger BUY permesso quando bias bearish debole (-5 > score > -15)."""
+        # Score bearish debole: -10 > -15 → override ancora consentito
+        score = _make_score(total=-10.0, bias="bearish", tradeable=True, strength=10.0)
+        technical = TechnicalSignal(type="BUY", confidence=0.85, source="rsi_bollinger")
+
+        result = self.aggregator.should_execute(technical, score, symbol="BTCEUR")
+
+        assert result.execute is True
+        assert result.is_mean_reversion_override is True
+
+    def test_blocks_at_threshold_boundary(self):
+        """TASK-1251: score esattamente al limite (-15.0) non supera il blocco (< è strict)."""
+        # score == -15.0 → NON è < -15.0, quindi l'override è permesso
+        score_at_limit = _make_score(total=-15.0, bias="bearish", tradeable=True, strength=15.0)
+        technical = TechnicalSignal(type="BUY", confidence=0.85, source="rsi_bollinger")
+        result_at = self.aggregator.should_execute(technical, score_at_limit, symbol="BTCEUR")
+        assert result_at.execute is True  # -15.0 == -15.0 non è < -15.0
+
+        # score == -15.1 → è < -15.0, bloccato
+        score_over = _make_score(total=-15.1, bias="bearish", tradeable=True, strength=15.1)
+        result_over = self.aggregator.should_execute(technical, score_over, symbol="BTCEUR")
+        assert result_over.execute is False
+
+    def test_non_mean_reversion_buy_still_blocked_by_bias(self):
+        """TASK-1251: BUY da ema_cross con bias bearish viene bloccato dal filtro normale."""
+        score = _make_score(total=-20.0, bias="bearish", tradeable=True, strength=20.0)
+        technical = TechnicalSignal(type="BUY", confidence=0.85, source="ema_cross")
+
+        result = self.aggregator.should_execute(technical, score, symbol="BTCEUR")
+
+        assert result.execute is False
+        assert result.is_mean_reversion_override is False
+        assert "conflitto" in result.reason.lower()
+
+
+class TestTask1250MacroTrendGuard:
+    """TASK-1250: verifica blocco override mean-reversion con macro context BTC > EMA20 4h.
+
+    Quando BTC > EMA20 4h, anche un override con bias debole (score > -15) deve essere bloccato.
+    Il test usa score=-10 (bias debole, non bloccato da TASK-1251) e aggiunge il macro context.
+    """
+
+    def setup_method(self):
+        self.aggregator = SignalAggregator(min_confidence=0.4)
+        # score debole bearish: supera TASK-1251 (score > -15), ma deve essere bloccato da TASK-1250
+        self.score = _make_score(total=-10.0, bias="bearish", tradeable=True, strength=10.0)
+        self.technical = TechnicalSignal(type="BUY", confidence=0.85, source="rsi_bollinger")
+
+    def test_blocks_mean_reversion_when_btc_above_ema20(self):
+        """TASK-1250: macro guard blocca override quando BTC > EMA20 4h."""
+        macro = {"btc_price_at_entry": 60000.0, "btc_ema20_4h": 58000.0}
+
+        result = self.aggregator.should_execute(
+            self.technical, self.score, symbol="BTCEUR", macro_context=macro
+        )
+
+        assert result.execute is False
+        assert result.is_mean_reversion_override is False
+        assert "1250" in result.reason or "macro" in result.reason.lower()
+
+    def test_allows_mean_reversion_when_btc_below_ema20(self):
+        """TASK-1250: macro guard NON blocca quando BTC < EMA20 4h (downtrend macro)."""
+        macro = {"btc_price_at_entry": 55000.0, "btc_ema20_4h": 58000.0}
+
+        result = self.aggregator.should_execute(
+            self.technical, self.score, symbol="BTCEUR", macro_context=macro
+        )
+
+        assert result.execute is True
+        assert result.is_mean_reversion_override is True
+
+    def test_allows_when_no_macro_context(self):
+        """TASK-1250: senza macro context, il comportamento è invariato (backward compat)."""
+        result = self.aggregator.should_execute(
+            self.technical, self.score, symbol="BTCEUR", macro_context=None
+        )
+        # Score -10 debole + no macro → override permesso (TASK-1251 non blocca)
+        assert result.execute is True
+        assert result.is_mean_reversion_override is True
+
+    def test_allows_when_ema20_is_zero(self):
+        """TASK-1250: ema20_4h=0 (dato non disponibile) → guard disattivato."""
+        macro = {"btc_price_at_entry": 60000.0, "btc_ema20_4h": 0.0}
+
+        result = self.aggregator.should_execute(
+            self.technical, self.score, symbol="BTCEUR", macro_context=macro
+        )
+        assert result.execute is True
+
+
+class TestTask1250StrategySelector:
+    """TASK-1250: verifica override ranging -> ema_cross in StrategySelector."""
+
+    def setup_method(self):
+        from app.scalping.engine.strategy_selector import StrategySelector
+        from app.scalping.models.market import MarketRegime
+        self.selector = StrategySelector(regime_strategy_map={
+            "ranging": "rsi_bollinger",
+            "trending_up": "ema_cross",
+            "trending_down": "rsi_bollinger",
+            "volatile": "vwap_reversion",
+            "unknown": "vwap_reversion",
+        })
+        self.MarketRegime = MarketRegime
+
+    def test_overrides_ranging_to_ema_cross_when_btc_above_ema20(self):
+        """TASK-1250: ranging regime con BTC sopra EMA20 4h → ema_cross."""
+        regime = self.MarketRegime(regime="ranging", confidence=0.6)
+        macro = {"btc_price_at_entry": 60000.0, "btc_ema20_4h": 58000.0}
+
+        name = self.selector.get_name_for_regime(regime, macro_context=macro)
+
+        assert name == "ema_cross"
+
+    def test_no_override_when_btc_below_ema20(self):
+        """TASK-1250: ranging regime con BTC sotto EMA20 4h → rsi_bollinger (invariato)."""
+        regime = self.MarketRegime(regime="ranging", confidence=0.6)
+        macro = {"btc_price_at_entry": 55000.0, "btc_ema20_4h": 58000.0}
+
+        name = self.selector.get_name_for_regime(regime, macro_context=macro)
+
+        assert name == "rsi_bollinger"
+
+    def test_no_override_for_trending_up(self):
+        """TASK-1250: trending_up NON viene toccato (già correttamente -> ema_cross)."""
+        regime = self.MarketRegime(regime="trending_up", confidence=0.85)
+        macro = {"btc_price_at_entry": 60000.0, "btc_ema20_4h": 58000.0}
+
+        name = self.selector.get_name_for_regime(regime, macro_context=macro)
+
+        assert name == "ema_cross"
+
+    def test_no_override_when_no_macro(self):
+        """TASK-1250: senza macro context → comportamento invariato."""
+        regime = self.MarketRegime(regime="ranging", confidence=0.6)
+
+        name = self.selector.get_name_for_regime(regime, macro_context=None)
+
+        assert name == "rsi_bollinger"

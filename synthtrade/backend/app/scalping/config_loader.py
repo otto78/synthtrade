@@ -62,6 +62,11 @@ class ScalpingConfigLoader:
             "SCALPING_REGIME_TREND_THRESHOLD_PCT":   settings.scalping.SCALPING_REGIME_TREND_THRESHOLD_PCT,
             "SCALPING_REGIME_VOLATILE_THRESHOLD":    settings.scalping.SCALPING_REGIME_VOLATILE_THRESHOLD,
             "SCALPING_TA_VOLUME_ANOMALY_MULTIPLIER": settings.scalping.SCALPING_TA_VOLUME_ANOMALY_MULTIPLIER,
+            # TASK-1251: Soglia bias bearish forte oltre cui bloccare l'override mean-reversion.
+            # Se market_score.total < questa soglia, il BUY mean-reversion NON passa mai.
+            # Default -15: bias forti (-15..-100) bloccati, deboli (-5..-14) ancora consentiti.
+            # Override DB: chiave MEAN_REVERSION_STRONG_BEARISH_THRESHOLD, tipo float.
+            "MEAN_REVERSION_STRONG_BEARISH_THRESHOLD": -15.0,
             # TASK-1243: Break-even profit lock — feature flag OFF by default.
             # Attivare solo dopo validazione spike OKX Demo e almeno 20 trade paper.
             "BREAK_EVEN_ENABLED": False,
@@ -164,6 +169,17 @@ class ScalpingConfigLoader:
     @property
     def ta_volume_anomaly_multiplier(self) -> float:
         return self._config["SCALPING_TA_VOLUME_ANOMALY_MULTIPLIER"]
+
+    @property
+    def mean_reversion_strong_bearish_threshold(self) -> float:
+        """TASK-1251: soglia score sotto cui bloccare override mean-reversion BUY.
+
+        Valore negativo (default -15.0). Se market_score.total è più negativo di questa
+        soglia (es. -20 < -15), il BUY da rsi_bollinger/stoch_rsi_bb_squeeze è bloccato
+        anche se avrebbe passato il falling-knife check.
+        Override runtime: DB key 'MEAN_REVERSION_STRONG_BEARISH_THRESHOLD', type float.
+        """
+        return float(self._config.get("MEAN_REVERSION_STRONG_BEARISH_THRESHOLD", -15.0))
 
     # --- TASK-904: regime -> strategy mappings (DB-driven) ---
 

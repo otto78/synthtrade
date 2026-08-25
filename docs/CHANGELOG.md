@@ -7,6 +7,34 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.5.0] — 2026-08-25
+
+### Fixed
+- **TASK-1251 — Override mean-reversion: Strong Bearish Guard** (`signal_aggregator.py`, `config_loader.py`): Il BUY da `rsi_bollinger`/`stoch_rsi_bb_squeeze` con bias bearish forte (score < -15.0) viene ora bloccato prima di passare all'esecuzione. Win rate misurato dell'override era 25% su due campioni indipendenti — con SL 0.50%/TP 0.80% l'expectancy era −0.17%/trade. I bias deboli (score ≥ -15) mantengono il comportamento originale. Soglia configurabile runtime via DB `MEAN_REVERSION_STRONG_BEARISH_THRESHOLD` (float, default -15.0).
+- **TASK-1250 — Filtro macro trend** (`strategy_selector.py`, `signal_aggregator.py`, `execution_loop.py`, `candle_processor.py`): Il regime detector classificava il 97% delle candele come "ranging" anche durante un rally BTC +27%. Ora, quando BTC > EMA20 4h: (1) il strategy selector forza `ema_cross` invece di `rsi_bollinger` su regime ranging/volatile/unknown; (2) il signal aggregator blocca qualsiasi override mean-reversion residuo. Il contesto macro (prezzo BTC vs EMA20 4h) viene fetchato una sola volta per candela all'inizio del ciclo (eliminata chiamata duplicata all'exchange OKX).
+
+### Added
+- `config_loader.py` → property `mean_reversion_strong_bearish_threshold` con DB override support.
+- `strategy_selector.py` → metodo `_apply_macro_override()` + parametro `macro_context` su `select()` e `get_name_for_regime()`.
+- `execution_loop.py` → parametro `macro_context: dict | None` su `process_candle()`.
+- 12 nuovi test: `TestTask1251StrongBearishGuard` (4) + `TestTask1250MacroTrendGuard` (4) + `TestTask1250StrategySelector` (4) — tutti verdi.
+
+---
+
+## [1.5.0] — 2026-08-25
+
+### Fixed
+- **TASK-1251 — Override mean-reversion: Strong Bearish Guard** (`signal_aggregator.py`, `config_loader.py`): Il BUY da `rsi_bollinger`/`stoch_rsi_bb_squeeze` con bias bearish forte (score < -15.0) viene ora bloccato prima di passare all'esecuzione. Win rate misurato dell'override era 25% su due campioni indipendenti — con SL 0.50%/TP 0.80% l'expectancy era −0.17%/trade. I bias deboli (score ≥ -15) mantengono il comportamento originale. Soglia configurabile runtime via DB `MEAN_REVERSION_STRONG_BEARISH_THRESHOLD` (float, default -15.0).
+- **TASK-1250 — Filtro macro trend** (`strategy_selector.py`, `signal_aggregator.py`, `execution_loop.py`, `candle_processor.py`): Il regime detector classificava il 97% delle candele come "ranging" anche durante un rally BTC +27%. Ora, quando BTC > EMA20 4h: (1) il strategy selector forza `ema_cross` invece di `rsi_bollinger` su regime ranging/volatile/unknown; (2) il signal aggregator blocca qualsiasi override mean-reversion residuo. Il contesto macro viene fetchato una sola volta per candela all'inizio del ciclo (eliminata chiamata duplicata all'exchange OKX).
+
+### Added
+- `config_loader.py` → property `mean_reversion_strong_bearish_threshold` con DB override support.
+- `strategy_selector.py` → metodo `_apply_macro_override()` + parametro `macro_context` su `select()` e `get_name_for_regime()`.
+- `execution_loop.py` → parametro `macro_context: dict | None` su `process_candle()`.
+- 12 nuovi test: `TestTask1251StrongBearishGuard` (4) + `TestTask1250MacroTrendGuard` (4) + `TestTask1250StrategySelector` (4) — tutti verdi.
+
+---
+
 ## [1.4.26] — 2026-08-04
 
 ### Added

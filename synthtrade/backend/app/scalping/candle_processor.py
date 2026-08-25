@@ -488,7 +488,20 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
             )
             logger.info(f"{BOLD}{CYAN}[Candle] CYCLE START: {event.symbol} @ {candle.close}{RESET}")
             try:
-                decision = await _execution_state.get('loop').process_candle(candle)
+                # TASK-1250: fetch macro context BEFORE process_candle so it can influence
+                # strategy selection (ranging -> ema_cross) and mean-reversion override blocking.
+                # Non-blocking: if the exchange call fails, macro={} and guards are skipped.
+                _macro_ctx: dict = {}
+                try:
+                    _exchange_ref = _execution_state.get("exchange")
+                    if _exchange_ref:
+                        _macro_ctx = await _exchange_ref.get_btc_macro_context()
+                except Exception as _e_macro_pre:
+                    logger.warning(f"[Candle] TASK-1250: macro pre-fetch failed (non-blocking): {_e_macro_pre}")
+
+                decision = await _execution_state.get('loop').process_candle(
+                    candle, macro_context=_macro_ctx
+                )
                 
                 # ── COALESCING: track repeated identical decisions ──
                 _coalescing = _execution_state.setdefault("_coalescing", {
@@ -636,7 +649,9 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                         try:
                             exchange = _execution_state.get("exchange")
                             if exchange:
-                                macro = await exchange.get_btc_macro_context()
+                                # TASK-1250: macro already fetched above as _macro_ctx.
+                                # Reuse it to avoid a duplicate API call per candle.
+                                macro = _macro_ctx
                         except Exception as e_mac:
                             logger.warning(f"Failed to fetch macro context for filter: {e_mac}")
 

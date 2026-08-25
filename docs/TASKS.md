@@ -4,122 +4,79 @@
 
 ---
 
-## Fase 2 — Trading Logic Fix (Priorità: trasformare il bot da perdente a profittevole)
+## Fase 2 — Trading Logic Fix (In corso — obiettivo: bot profittevole)
 
-### TASK-1250 — Filtro Macro Trend con Priorità sull'Override Mean-Reversion
-
-**Problema:** Il regime detector classifica il 97% delle candele come "ranging" anche durante un rally sostenuto (+27% BTC). Questo attiva `rsi_bollinger` (mean-reversion) invece di `ema_cross` (trend-following). L'override mean-reversion bypassa il filtro bearish dell'intelligence e compra CONTRO il trend, con win rate misurato del 25%.
-
-**Soluzione:** Aggiungere un filtro macro trend reale (EMA20/50 su timeframe 4h) che ha PRIORITÀ sull'override mean-reversion:
-- Se BTC > EMA20/50 su 4h → non permettere override BUY-contro-bias bearish
-- Se BTC > EMA20 su 4h → favorire ema_cross invece di rsi_bollinger nella strategy selector
-- Il TASK-1242 "trend filter" blocca solo il caso "sotto EMA20" — serve anche il caso "sopra EMA20 → privilegia trend"
-
-**File coinvolti:**
-- `synthtrade/backend/app/scalping/engine/signal_aggregator.py:296-333` (override logic)
-- `synthtrade/backend/app/scalping/engine/strategy_selector.py` (selezione strategia)
-- `synthtrade/backend/app/scalping/candle_processor.py:621-634` (macro filter attuale)
-
-**Criteri di accettazione:**
-- [ ] Override mean-reversion bypassa il filtro bearish SOLO se BTC > EMA20 su 4h
-- [ ] Strategy selector preferisce ema_cross quando BTC > EMA20 su 4h
-- [ ] Log chiaro quando il filtro macro blocca un override
-- [ ] Test: simulation con dati storici Aug 11-25 dimostra riduzione trade negativi
-
----
-
-### TASK-1251 — Disabilitare o Vincolare Override Mean-Reversion su rsi_bollinger
-
-**Problema:** L'override mean-reversion su rsi_bollinger ha win rate misurato del 25% su due campioni indipendenti (12 trade分析 + 48 trade sessione). Con SL 0.50%/TP 0.80%, l'expectancy è matematicamente negativa: `0.25×0.80 − 0.75×0.50 ≈ -0.17% per trade`.
-
-**Soluzione:** Due opzioni (da valutare quale implementare):
-1. **Disabilitare completamente** l'override su rsi_bollinger — il regime detector, se davvero rileva ranging genuino, userà rsi_bollinger senza la scappatoia dell'override
-2. **Vincolare l'override** a condizioni specifiche che lo rendono selettivo:
-   - Solo se bias è debolmente negativo (score tra -5 e -10), non forte (score < -15)
-   - Solo se trend_5m è positivo o neutro (non diverging negativo)
-   - Solo se regime confidence è bassa (< 0.6) — regime incerto = possibile ranging
-
-**File coinvolti:**
-- `synthtrade/backend/app/scalping/engine/signal_aggregator.py:296-333`
-- `synthtrade/backend/app/scalping/engine/signal_aggregator.py:276-294` (bias conflict)
-
-**Criteri di accettazione:**
-- [ ] Override mean-reversion non viene più eseguito quando bias è forte bearish (score < -15)
-- [ ] Log chiaro quando l'override viene bloccato vs consentito
-- [ ] Test: su dati storici, override attivato solo in condizioni selezionate
-- [ ] Win rate dell'override migliora rispetto al 25% misurato
+> **Contesto generale Fase 2:** L'analisi statistica della sessione 11-25 agosto 2026 (48 trade, 14 giorni) ha rivelato che il bot aveva un win rate globale del ~25-30%, con expectancy negativa. Le cause principali:
+> 1. Il regime detector classificava il 97% delle candele come "ranging" → attivava `rsi_bollinger` (mean-reversion) anche durante un rally BTC +27%.
+> 2. L'override mean-reversion bypassava il filtro bearish dell'intelligence e apriva BUY contro-trend.
+> 3. Il signal score aveva correlazione ≈0 con il PnL ma veniva usato come gate d'ingresso.
+> 4. SL/TP asimmetrici richiedono win rate >38% per pareggio, ma il bot reale era al 25-30%.
+>
+> **TASK-1250 e TASK-1251 sono stati completati il 2026-08-25** e indirizzano le cause 1 e 2.
+> I TASK sotto (1252, 1253) restano da fare e richiedono dati post-fix per essere calibrati correttamente.
 
 ---
 
 ### TASK-1252 — Ricalibrare Peso Signal Score nella Decisione
 
-**Problema:** Il signal score ha correlazione storica con PnL ≈ 0.004 (nessuna). Tenerelo come gate di ingresso (soglia 6.0) sta bloccando/sbloccando trade sulla base di un numero che non predice nulla. Il TASK-1159 era bloccato per campione insufficiente — ora il campione c'è (48 trade, 14 giorni).
+**Priorità:** 🟡 Media — aspettare 1 settimana di dati live post-TASK-1250/1251 prima di cambiare
 
-**Soluzione:** Tre opzioni (da valutare):
-1. **Ricalibrare la soglia** basandosi sui dati reali: se lo score non predice, abbassare la soglia o renderla dinamica in base al win rate storico per combinazione regime/strategia
-2. **Ridurre il peso dello score** nella combinazione finale: `score_norm * 0.3 + tech_confidence * 0.7` → ridurre a `score_norm * 0.1 + tech_confidence * 0.9` o simile
-3. **Sostituire lo score** con un indicatore che abbia correlazione misurata con il PnL (es. trend macro, regime confidence)
+**Problema:** Il signal score (prodotto dall'intelligenza collettiva dei collector) ha correlazione storica con il PnL ≈ 0.004 — praticamente zero. Nonostante questo, viene usato come gate di ingresso con soglia 6.0: qualsiasi score sotto soglia blocca il trade, qualsiasi score sopra lo sblocca. In pratica si blocca o sblocca il trading sulla base di un numero che non predice nulla.
+
+Il TASK-1159 era bloccato per campione insufficiente — ora il campione c'è (48 trade, 14 giorni, due set indipendenti). Il problema è confermato statisticamente.
+
+**Perché aspettare:** Con TASK-1250/1251 appena attivati, il mix di trade cambierà (meno mean-reversion contro-trend, più ema_cross con trend). La correlazione score→PnL potrebbe cambiare. Calibrare sui dati vecchi (regime sbagliato) produrrebbe una soglia errata.
+
+**Soluzione da implementare (tre opzioni, scegliere dopo revisione dati):**
+1. **Ricalibrare la soglia** sui dati reali: se score non predice, abbassare la soglia o renderla dinamica per combinazione regime/strategia
+2. **Ridurre peso score** nella combined confidence: da `score_norm * 0.3 + tech * 0.7` a `score_norm * 0.1 + tech * 0.9` — già il 70% è tecnico, riducendo ulteriormente si dà più peso al segnale direzionale
+3. **Sostituire lo score** con indicatori che abbiano correlazione misurata (es. trend macro, regime confidence)
 
 **File coinvolti:**
-- `synthtrade/backend/app/scalping/engine/signal_aggregator.py:384-401` (combined confidence)
-- `synthtrade/backend/app/scalping/config_loader.py` (soglia configurabile)
-- `synthtrade/backend/app/scalping/supervisor/historical_context.py` (dati storici)
+- `synthtrade/backend/app/scalping/engine/signal_aggregator.py:384-401` — combined confidence formula
+- `synthtrade/backend/app/scalping/config_loader.py` — soglia `SCALPING_SIGNAL_STRENGTH_THRESHOLD` (modificabile via DB)
+- `synthtrade/backend/app/scalping/supervisor/historical_context.py` — dati storici per ricalibrazione
 
 **Criteri di accettazione:**
-- [ ] La soglia o il peso dello score è calibrato sui dati reali della sessione
+- [ ] Analisi correlazione score→PnL su dati post-TASK-1250/1251 (almeno 30 trade)
+- [ ] Soglia o peso dello score calibrato sui dati reali
 - [ ] Il sistema non blocca/sblocca trade basandosi su numeri non predittivi
-- [ ] Test: confronto win rate PRIMA vs DOPO la ricalibrazione
-- [ ] Log della soglia corrente nel context del supervisor
+- [ ] Confronto win rate PRIMA vs DOPO la ricalibrazione
+- [ ] Log della soglia corrente nel context supervisor
 
 ---
 
 ### TASK-1253 — Rivedere Asimmetria SL/TP in Funzione del Win Rate Reale
 
-**Problema:** SL 0.50% / TP 0.80% richiede win rate > 38% per pareggio (ignorando fee). Il win rate reale della combinazione regime/strategia attuale è ~25-30%. L'asimmetria è sfavorevole.
+**Priorità:** 🟡 Media — aspettare 1 settimana di dati live post-TASK-1250/1251 prima di cambiare
 
-**Soluzione:** Tre opzioni (da valutare):
-1. **Allargare il TP** (es. da 0.80% a 1.20%) per aumentare il reward per trade vincente
-2. **Stringere meno lo SL** (es. da 0.50% a 0.35%) per ridurre la perdita per trade perdente
-3. **Smettere di fare trade** in combinazioni regime/strategia con win rate < 38% — il regime detector dovrebbe bloccare le combinazioni non profittevoli
+**Problema:** SL 0.50% / TP 0.80% richiede win rate > 38% per pareggio (ignorando fee). Con fee taker 0.10%+0.10%, il break-even reale sale a ~42%. Il win rate reale della combinazione regime/strategia osservata era ~25-30%.
+
+Formula expectancy attuale:
+`E = 0.28 × 0.80% − 0.72 × 0.50% = 0.224% − 0.360% = −0.136% per trade`
+
+Ovvero con 50 trade/settimana si perdono circa 0.7% del capitale per settimana solo per l'asimmetria, anche se il sistema funzionasse perfettamente.
+
+**Perché aspettare:** Il win rate del 25-30% includeva tutti i trade sbagliati dell'override mean-reversion (risolto da TASK-1250/1251). Il win rate post-fix potrebbe essere significativamente più alto, rendendo SL/TP attuali adeguati. Aggiustare ora significherebbe ottimizzare su dati corrotti.
+
+**Soluzione da implementare (scegliere dopo revisione dati):**
+1. **Allargare TP** (es. 0.80% → 1.20%): più reward per trade vincente, ma hold più lungo → più rischio inversione
+2. **Stringere SL** (es. 0.50% → 0.35%): meno perdita per trade perdente, ma più facile da colpire su volatilità normale
+3. **Bloccare combinazioni sotto soglia win rate**: se regime=ranging + strategia=rsi_bollinger + macro=bearish ha win rate storico < 38%, non aprire trade in quella combinazione — il regime selector decide
 
 **File coinvolti:**
-- `synthtrade/backend/app/scalping/config_loader.py` (SL/TP configurabili via DB)
-- `synthtrade/backend/app/scalping/engine/strategy_selector.py` (blocco combinazioni)
-- `synthtrade/backend/app/scalping/supervisor/historical_context.py` (dati per decisione)
+- `synthtrade/backend/app/scalping/config_loader.py` — `SCALPING_STOP_LOSS_PCT`, `SCALPING_TAKE_PROFIT_PCT` (modificabili via DB)
+- `synthtrade/backend/app/scalping/engine/strategy_selector.py` — blocco combinazioni per win rate
+- `synthtrade/backend/app/scalping/supervisor/historical_context.py` — win rate per combinazione regime/strategia
 
 **Criteri di accettazione:**
-- [ ] SL/TP aggiustati in base al win rate reale misurato
-- [ ] Oppure: regime selector blocca combinazioni con win rate < 38%
-- [ ] Test: simulazione con nuovi parametri dimostra expectancy positiva
-- [ ] Log del win rate per combinazione regime/strategia nel context supervisor
+- [ ] Analisi win rate per combinazione regime/strategia su dati post-TASK-1250/1251 (almeno 30 trade)
+- [ ] SL/TP aggiustati in base al win rate reale misurato, oppure combinazioni bloccate
+- [ ] Simulazione con nuovi parametri dimostra expectancy positiva
+- [ ] Log del win rate per combinazione nel context supervisor
 
 ---
 
-### TASK-1254 — Aggiungere Confronto vs Hold al Context Supervisor (Completato)
+## Fase 1 — Log & Performance (Completata — vedi ARCHIVE_TASKS.md)
 
-**Problema:** Il supervisor AI non vede il confronto tra la performance del bot e un semplice buy-and-hold. Questo gli impedisce di prendere decisioni informate su quando mettere in pausa o cambiare strategia.
-
-**Soluzione:** Aggiungere `hold_return_pct` e `vs_hold_gap` al context del supervisor AI, calcolati dal rapporto prezzo corrente BTC / prezzo iniziale sessione.
-
-**Stato:** ✅ Completato in commit `b9a512b` (Fase 1)
-
-**File coinvolti:**
-- `synthtrade/backend/app/ai/supervisor_context.py`
-- `synthtrade/backend/app/scalping/supervisor/supervisor_client.py`
-- `synthtrade/backend/app/scalping/supervisor/supervisor_scheduler.py`
-
----
-
-## Fase 1 — Log & Performance (Completata)
-
-### TASK-1245 — Short-Circuit SELL Signals ✅
-### TASK-1246 — Compact Logging ✅
-### TASK-1247 — Coalescing Cicli Identici ✅
-
----
-
-## Precedenti (da verificare stato)
-
-### Punto 4 (pesi signal score) — 🟡 Fermo
-
-> **Stato:** Confermato nessuna azione da intraprendere ora — coerente con TASK-1159 bloccato. Resta in attesa di revisione pesi futura. **ORA SBLOCCATO** dai dati della sessione 11-25 agosto (48 trade, 14 giorni).
+> TASK-1245 (Short-circuit SELL), TASK-1246 (Compact logging), TASK-1247 (Coalescing cicli), TASK-1250 (Macro trend filter), TASK-1251 (Override mean-reversion guard), TASK-1254 (Hold comparison supervisor) — tutti completati.

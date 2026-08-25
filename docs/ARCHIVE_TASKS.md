@@ -4,6 +4,50 @@ Questo file contiene lo storico di tutti i task completati, spostati qui da `TAS
 
 ---
 
+## ✅ Fase 2 — Trading Logic Fix (v1.5.0 — 2026-08-25)
+
+### TASK-1250 — Filtro Macro Trend con Priorità sull'Override Mean-Reversion
+**Status:** Done ✅
+**Completato:** 2026-08-25
+
+**Problema risolto:** Il regime detector classificava il 97% delle candele come "ranging" anche durante un rally +27% BTC. Questo attivava `rsi_bollinger` (mean-reversion) invece di `ema_cross` (trend-following). L'override mean-reversion consentiva BUY contro trend con win rate misurato del 25%.
+
+**Implementazione:**
+- `strategy_selector.py` → `_apply_macro_override()`: se BTC > EMA20 4h e regime è ranging/volatile/unknown, forza `ema_cross` invece di `rsi_bollinger`
+- `signal_aggregator.py` → TASK-1250 macro guard: se BTC > EMA20 4h, blocca qualsiasi mean-reversion BUY override (safety fallback)
+- `execution_loop.py` → `process_candle(macro_context=...)`: propaga il contesto macro a selector e aggregator
+- `candle_processor.py` → fetch macro PRIMA di `process_candle()` (non dopo); riutilizza il dict per il filtro TASK-1242 (elimina chiamata duplicata all'exchange)
+
+**Test:** 8 nuovi test — `TestTask1250MacroTrendGuard` + `TestTask1250StrategySelector` — tutti verdi.
+
+---
+
+### TASK-1251 — Disabilitare o Vincolare Override Mean-Reversion su rsi_bollinger
+**Status:** Done ✅
+**Completato:** 2026-08-25
+
+**Problema risolto:** L'override mean-reversion su rsi_bollinger aveva win rate misurato del 25% su due campioni indipendenti. Con SL 0.50%/TP 0.80%, l'expectancy era matematicamente negativa: `0.25×0.80 − 0.75×0.50 ≈ -0.17% per trade`.
+
+**Implementazione:** Opzione 2 (vincolare). Aggiunto blocco `TASK-1251 STRONG BIAS GUARD` in `signal_aggregator.py` prima del `return execute=True` dell'override. Se `market_score.total < MEAN_REVERSION_STRONG_BEARISH_THRESHOLD` (default -15.0), il BUY mean-reversion è bloccato anche se supera il falling-knife check. La soglia è configurabile runtime via DB (`MEAN_REVERSION_STRONG_BEARISH_THRESHOLD`, tipo float).
+
+**File:** `signal_aggregator.py` (blocco L326-355), `config_loader.py` (property + default)
+
+**Test:** 4 nuovi test — `TestTask1251StrongBearishGuard` — tutti verdi (blocco forte, permesso debole, boundary, non-mean-reversion).
+
+---
+
+### TASK-1254 — Aggiungere Confronto vs Hold al Context Supervisor
+**Status:** Done ✅
+**Completato:** 2026-08-07 (commit b9a512b, Fase 1)
+
+**Problema risolto:** Il supervisor AI non vedeva il confronto tra la performance del bot e un semplice buy-and-hold.
+
+**Implementazione:** Aggiunto `hold_return_pct` e `vs_hold_gap` al context del supervisor AI, calcolati dal rapporto prezzo corrente BTC / prezzo iniziale sessione.
+
+**File:** `supervisor_context.py`, `supervisor_client.py`, `supervisor_scheduler.py`
+
+---
+
 ## ✅ Fase 1 — Core & Backend Base (v1.0.0)
 
 ### TASK-001 — Setup ambiente virtuale e dipendenze

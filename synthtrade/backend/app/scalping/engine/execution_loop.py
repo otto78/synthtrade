@@ -117,8 +117,19 @@ class ExecutionLoop:
         """Set callback per trade eseguiti."""
         self._on_trade = callback
 
-    async def process_candle(self, candle: Candle) -> Optional[ExecutionDecision]:
-        """Processa una candela e genera un eventuale ordine."""
+    async def process_candle(
+        self,
+        candle: Candle,
+        macro_context: Optional[dict] = None,
+    ) -> Optional[ExecutionDecision]:
+        """Processa una candela e genera un eventuale ordine.
+
+        Args:
+            candle: Candela OHLCV chiusa.
+            macro_context: Dati macro BTC opzionali (btc_price_at_entry, btc_ema20_4h).
+                Se forniti, abilitano TASK-1250: strategy_selector forza ema_cross
+                se BTC > EMA20 4h, e signal_aggregator blocca override mean-reversion.
+        """
         buf_before = len(self._candle_buffer)
         self._candle_buffer.add(candle)
 
@@ -178,7 +189,10 @@ class ExecutionLoop:
         # 3. Select strategy — ONLY if not overridden by supervisor
         if not self._strategy_overridden:
             if self._strategy_selector and self._current_regime:
-                self._strategy = self._strategy_selector.select(self._current_regime)
+                # TASK-1250: pass macro_context so selector can override ranging -> ema_cross
+                self._strategy = self._strategy_selector.select(
+                    self._current_regime, macro_context=macro_context
+                )
             else:
                 self._strategy = None
         else:
@@ -233,7 +247,8 @@ class ExecutionLoop:
             technical_signal, market_score, symbol=self._symbol,
             paper_mode=self.paper_mode,
             ta_patterns=ta_patterns,
-            vol_anomaly=vol_anomaly
+            vol_anomaly=vol_anomaly,
+            macro_context=macro_context,  # TASK-1250
         )
 
         # Attach them to the decision so the router can save them without recalculating

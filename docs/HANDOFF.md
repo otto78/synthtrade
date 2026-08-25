@@ -2,32 +2,42 @@
 
 ## Ultimo Handoff
 
-### Da: sessione TASK-1249 (supervisor blind → usabile) → prossima sessione
+### Da: sessione TASK-1250 + TASK-1251 (filtro macro trend + override guard) → prossima sessione
 
-**Data:** 2026-08-07
+**Data:** 2026-08-25
 
-**Contesto:** TASK-1249 completato — `update_params` ora usabile e letto dalle strategie, parametri strategia nel contesto AI, regime detector sofisticato collegato a `detect()`.
+**Contesto:** Analisi sessione 11-25 agosto (48 trade, 14 giorni) ha confermato che il bot perdeva per cause strutturali: override mean-reversion con win rate 25%, regime detector che vedeva "ranging" durante un rally +27% BTC. Implementati due fix chirurgici che indirizzano entrambe le cause.
 
 ### ✅ Fatto in questa sessione
 
-- **Punto 1 — Regime detector sofisticato** (`regime_detector.py`): `_detect_candidate` usa `detect_trend()` + `detect_volatility()` dal core. `detect()` mantiene l'isteresi TASK-903. `test_task_903.py` aggiornato (slope 0.1%/candela, spread 3%) — 15/15 verdi.
-- **Punto 2a — `update_params` usabile**: `base.py` con `DEFAULT_PARAMS`, `get_params()` (copia) e `update_params()` merge sui default. Le 3 strategie leggono `self._params` in `evaluate()`: `min_slope` (EMA), soglie RSI/BB per fascia ATR%, `vwap_distance_buy`/`vwap_lookback` (VWAP). Default identici agli hardcoded → nessun cambio comportamento.
-- **Punto 2b — Contesto AI**: `supervisor_scheduler.py` estrae `strategy_name` + `strategy_params` (`get_params()`); `supervisor_client.py` li passa a `build_scalping_context()`; il prompt ora ha la sezione "STRATEGIA ATTIVA" e l'elenco dei parametri modificabili. Doc: `docs/architecture/supervisor-system-prompt.md` (+ ricopiato in `_SUPERVISOR_SYSTEM_PROMPT`).
-- **Test**: nuovo `tests/unit/test_task_1249.py` — 8/8 verdi (merge non distruttivo, get_params copia, prove che evaluate() segue self._params). Verifica: 40/40 test verdi sui file toccati + `py_compile` ok (ruff non installato nel venv).
-- Commit: TASK-1249 su main.
+- **TASK-1251 — Strong Bearish Guard** (`signal_aggregator.py` + `config_loader.py`): Blocco override mean-reversion quando bias bearish forte (score < -15.0). Soglia configurabile via DB (`MEAN_REVERSION_STRONG_BEARISH_THRESHOLD`). 4 nuovi test — tutti verdi.
+- **TASK-1250 — Macro Trend Filter** (4 file): Se BTC > EMA20 4h, strategy selector forza `ema_cross` invece di `rsi_bollinger` su regime ranging; signal aggregator blocca qualsiasi override mean-reversion residuo. Macro context fetchato una sola volta per candela (eliminata chiamata duplicata all'exchange). 8 nuovi test — tutti verdi.
+- **Archivio e doc**: ARCHIVE_TASKS.md, TASKS.md, STORY.md, HANDOFF.md, CHANGELOG.md aggiornati.
 
-### ⚠️ Note operative
+### ⚠️ Cosa NON fare la prossima settimana
 
-- **Fallimenti test pre-esistenti NON correlati** (non toccati in questa sessione):
-  - `test_historical_context.py` — i mock usano `patch('app.scalping.supervisor.historical_context.get_supabase')` ma `get_supabase` è importato dentro la funzione, non nel namespace del modulo.
-  - `test_task_906.py::test_falling_knife_does_not_block_mean_reversion_sell` — testa un SELL mean-reversion, ma i SELL sono permanentemente disabilitati da TASK-1240 → assertion `execute is True` sempre falsa.
-- Il file `docs/supervisor-system-prompt.md` è stato **spostato** dall'utente in `docs/architecture/supervisor-system-prompt.md` (delete + create in git).
-- `supervisor_scheduler.py` in `_tick()`: `strategy_name = self._current_strategy` (già popolato da `self._loop.strategy.name`) e `strategy_params = self._loop.strategy.get_params()`.
+- **NON cambiare SL/TP** (TASK-1253) finché non ci sono almeno 30 trade post-fix. I parametri attuali potrebbero essere già adeguati se il win rate sale con il nuovo filtro macro.
+- **NON ricalibrar lo score** (TASK-1252) prima di avere dati puliti: la correlazione score→PnL era misurata su sessioni con l'override difettoso, non è detto che resti zero.
+- **NON attivare trailing** su sessioni nuove prima di aver verificato che il win rate sia salito a >38%.
 
-### ⏳ GATE pre-live TASK-1246 ancora da eseguire (invariato)
+### ⏳ Da fare la settimana del 2026-09-01
 
-1. `python -m scripts.test_okx_amend_rate [--symbol BTC-EUR] [--interval 15]` con `TRADING_MODE=test` → 6 amend consecutivi su OKX Demo, verificare zero 429/sCode rate-limit.
-2. Query storica TP (`docs/plans/trailing-stop-progressive.md` §step size) per confermare `TRAILING_STEP_NET_PCT=0.15`.
+1. **Raccogliere dati:** avviare sessione live con TASK-1250/1251 attivi, raccogliere almeno 30 trade.
+2. **Analizzare:** win rate per combinazione regime/strategia (regime=ranging+ema_cross vs rsi_bollinger), correlazione score→PnL sui nuovi dati.
+3. **TASK-1252:** se score resta con correlazione ~0, implementare ricalibrazione soglia.
+4. **TASK-1253:** se win rate resta <38%, adeguare SL/TP o bloccare combinazioni low-win-rate.
+
+### ⚠️ Test stale pre-esistenti (non regressioni)
+
+- `test_blocks_sell_when_bullish` — si aspetta "conflitto" nel reason, ma i SELL sono disabilitati permanentemente (long-only engine, TASK-1240) e restituiscono "SELL signals disabled".
+- `test_allows_sell_when_bearish` — stessa causa: SELL disabilitati.
+- `test_historical_context.py` — mock `get_supabase` non nel namespace modulo.
+- `test_task_906.py::test_falling_knife_does_not_block_mean_reversion_sell` — testa SELL mean-reversion, permanentemente disabilitati.
+
+### ⏳ GATE pre-live TASK-1246 (trailing stop) ancora pendente
+
+1. `python -m scripts.test_okx_amend_rate [--symbol BTC-EUR] [--interval 15]` con `TRADING_MODE=test` → 6 amend consecutivi su OKX Demo, zero 429/sCode rate-limit.
+2. Query storica TP per confermare `TRAILING_STEP_NET_PCT=0.15`.
 3. ≥20 trade con `trailing_enabled=true` prima di considerare stabile la feature.
 
 ---

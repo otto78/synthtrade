@@ -4,6 +4,19 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 
 ## 📖 Versioni
 
+
+### v1.5.0 — 2026-08-25 — TASK-1250 + TASK-1251: filtro macro trend + guard override mean-reversion (Fase 2 — bot profittevole)
+
+- ✅ **TASK-1251 — Strong Bearish Guard** (`signal_aggregator.py` + `config_loader.py`): Aggiunto blocco `TASK-1251 STRONG BIAS GUARD` nel ramo override mean-reversion. Se `market_score.total < MEAN_REVERSION_STRONG_BEARISH_THRESHOLD` (default -15.0, configurabile via DB), il BUY da `rsi_bollinger`/`stoch_rsi_bb_squeeze` con bias bearish viene bloccato prima del `return execute=True`. Motivazione: win rate misurato 25% su 2 campioni indipendenti (12 + 48 trade). Con SL 0.50%/TP 0.80% serve wr >38% per pareggio → expectancy −0.17%/trade con wr=25%. I bias deboli (score ≥ -15) mantengono il comportamento originale. Nuova property `mean_reversion_strong_bearish_threshold` in `config_loader.py`. 4 nuovi test `TestTask1251StrongBearishGuard` — tutti verdi.
+- ✅ **TASK-1250 — Filtro Macro Trend** (4 file): Il regime detector classificava 97% delle candele come "ranging" anche durante un rally BTC +27%. Implementazione end-to-end:
+  - `strategy_selector.py` → `_apply_macro_override()`: se BTC > EMA20 4h e regime è ranging/volatile/unknown, forza `ema_cross` invece di `rsi_bollinger`. Parametro `macro_context` su `select()` e `get_name_for_regime()`.
+  - `signal_aggregator.py` → TASK-1250 macro guard (dopo TASK-1251): se BTC > EMA20 4h, blocca qualsiasi mean-reversion BUY override residuo. Parametro `macro_context` su `should_execute()`.
+  - `execution_loop.py` → `process_candle(macro_context: dict | None = None)`: propaga il contesto macro a selector e aggregator.
+  - `candle_processor.py` → fetch macro PRIMA di `process_candle()` — anticipato dall'ex-posizione post-decisione; riutilizza il dict per TASK-1242 (elimina chiamata duplicata API exchange OKX).
+  - 8 nuovi test `TestTask1250MacroTrendGuard` + `TestTask1250StrategySelector` — tutti verdi.
+- 🔴 **Pre-esistente non correlato:** 2 test stale (`test_blocks_sell_when_bullish`, `test_allows_sell_when_bearish`) che testano i SELL, permanentemente disabilitati da TASK-1240 (long-only engine). Non toccati in questa sessione.
+- **Prossimi step (settimana 01-09-2026):** attendere almeno 30 trade live post-fix prima di calibrare TASK-1252 (signal score) e TASK-1253 (SL/TP). I parametri devono essere calibrati su dati puliti, senza il bias delle sessioni con override difettoso.
+
 ### v1.4.29 — 2026-08-07 — TASK-1249 supervisor: parametri strategia nel contesto AI + update_params usabile + regime detector sofisticato
 
 - ✅ **Regime detector sofisticato (Punto 1)** (`regime_detector.py`): `_detect_candidate` ora usa `detect_trend()` (regressione lineare) e `detect_volatility()` (ATR%) di `app/core/indicators.py` al posto delle soglie naive su `price_change`/`volatility_ratio`. `detect()` mantiene l'isteresi di K candele (TASK-903); `detect_with_core()` resta come delegato retrocompatibile. I test `test_task_903.py` sono stati aggiornati per il nuovo detector (slope 0.1%/candela, spread 3%) — 15/15 verdi.

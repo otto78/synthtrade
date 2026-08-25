@@ -115,6 +115,7 @@ class SignalAggregator:
         paper_mode: bool = False,
         ta_patterns: Optional[dict] = None,
         vol_anomaly: bool = False,
+        macro_context: Optional[dict] = None,
     ) -> ExecutionDecision:
         """Decide se eseguire un ordine basandosi su intelligence + tecnico e volumi.
 
@@ -123,6 +124,8 @@ class SignalAggregator:
             market_score: Score intelligence dal SignalScoreEngine.
             symbol: Simbolo (per log).
             paper_mode: Se True, usa solo segnale tecnico (per debug/test).
+            macro_context: Dati macro BTC (btc_price_at_entry, btc_ema20_4h).
+                Se BTC > EMA20 4h, blocca l'override mean-reversion (TASK-1250).
 
         Returns:
             ExecutionDecision con execute=True/False e motivazione.
@@ -318,8 +321,58 @@ class SignalAggregator:
                         is_mean_reversion_override=False
                     )
 
+                # TASK-1251: Strong bearish bias guard — blocca override se bias è troppo forte.
+                # Win rate misurato del 25% su due campioni indipendenti quando bias bearish forte.
+                # Con SL 0.50%/TP 0.80%, serve wr >38% per pareggio: con wr=25% expectancy=-0.17%/trade.
+                # Soglia configurabile via DB (MEAN_REVERSION_STRONG_BEARISH_THRESHOLD, default -15.0).
+                try:
+                    from app.scalping.config_loader import get_scalping_config
+                    strong_bearish_threshold = get_scalping_config().mean_reversion_strong_bearish_threshold
+                except Exception:
+                    strong_bearish_threshold = -15.0
+
+                if market_score.total < strong_bearish_threshold:
+                    reason = (
+                        f"TASK-1251 STRONG BIAS GUARD: mean-reversion BUY bloccato "
+                        f"(score={market_score.total:.1f} < soglia={strong_bearish_threshold:.1f}, "
+                        f"bias={bias}, source={technical.source})"
+                    )
+                    logger.info(f"{RED}[Aggregator] BLOCK: {symbol} {reason}{RESET}")
+                    return ExecutionDecision(
+                        execute=False,
+                        reason=reason,
+                        signal_type=technical.type,
+                        ta_patterns=ta_patterns,
+                        vol_anomaly=vol_anomaly,
+                        is_mean_reversion_override=False
+                    )
+
+                # TASK-1250: Macro trend guard — se BTC > EMA20 4h, override mean-reversion BUY bloccato.
+                # Logica: sopra EMA20 4h il mercato è in uptrend macro — comprare mean-reversion
+                # contro bias bearish è contro-trend anche se il bias è debole (complementare a TASK-1251).
+                # Nota: il strategy_selector ha già scelto ema_cross in questo caso, ma se
+                # per qualche motivo arriva un segnale da rsi_bollinger, lo blocchiamo qui.
+                if macro_context:
+                    _btc_price = macro_context.get("btc_price_at_entry", 0.0) or 0.0
+                    _ema20_4h = macro_context.get("btc_ema20_4h", 0.0) or 0.0
+                    if _ema20_4h > 0 and _btc_price > _ema20_4h:
+                        reason = (
+                            f"TASK-1250 MACRO TREND GUARD: mean-reversion BUY bloccato "
+                            f"(BTC {_btc_price:.0f} > EMA20 4h {_ema20_4h:.0f}, "
+                            f"bias={bias}, source={technical.source}, score={market_score.total:.1f})"
+                        )
+                        logger.info(f"{RED}[Aggregator] BLOCK: {symbol} {reason}{RESET}")
+                        return ExecutionDecision(
+                            execute=False,
+                            reason=reason,
+                            signal_type=technical.type,
+                            ta_patterns=ta_patterns,
+                            vol_anomaly=vol_anomaly,
+                            is_mean_reversion_override=False
+                        )
+
                 # TASK-912: Log mean-reversion override correttamente su session_signal_log
-                override_reason = f"MEAN-REVERSION BUY permesso (source={technical.source}) nonostante bias={bias}{trend_str} — chiusura range, non long direzionale"
+                override_reason = f"MEAN-REVERSION BUY permesso (source={technical.source}) nonostante bias={bias}{trend_str} — chiusura range, non long direzionale (score={market_score.total:.1f} >= soglia={strong_bearish_threshold:.1f})"
                 logger.info(f"[Aggregator] OVERRIDE: {override_reason}")
                 # Passiamo l'override_reason nel decision object per il logging successivo
                 return ExecutionDecision(

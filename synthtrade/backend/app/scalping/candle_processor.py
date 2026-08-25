@@ -560,6 +560,26 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                             "reason": decision.reason,
                         })
 
+                    # ── Risk limit check on every candle (not just on trade entry) ──
+                    if _execution_state["trade_history"] and (
+                        _check_session_loss() or _check_drawdown()
+                    ):
+                        risk_cfg = _execution_state.get("risk_config", {})
+                        if _check_session_loss():
+                            max_pct = risk_cfg.get("session_max_loss_pct", 10)
+                            base = float(session.get("trade_value") or session.get("starting_balance") or 0)
+                            total_pnl = sum(t.get("pnl") or 0.0 for t in _execution_state["trade_history"])
+                            logger.warning(
+                                f"SESSION LOSS LIMIT: {total_pnl:.2f}€ "
+                                f"(max {max_pct}% of {base:.2f}€). Stopping session."
+                            )
+                            await _stop_session_on_risk_limit("SESSION_MAX_LOSS", total_pnl, max_pct)
+                        else:
+                            dd_pct = risk_cfg.get("max_drawdown", 10)
+                            logger.warning(f"Max drawdown {dd_pct}% exceeded. Stopping session.")
+                            await _stop_session_on_risk_limit("MAX_DRAWDOWN", 0, dd_pct)
+                        continue
+
                     # Simulate trade execution
                     if session["status"] != "running":
                         logger.debug(f"[Candle] PAUSED: skipping trade execution (status={session['status']})")
@@ -586,27 +606,6 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                         # Only BUY signals reach this point (CLOSE/NONE already filtered)
                         if side != "BUY":
                             logger.debug(f"Skipping non-BUY signal: {side}")
-                            continue
-
-                        if _check_session_loss():
-                            risk_cfg = _execution_state.get("risk_config", {})
-                            max_pct = risk_cfg.get("session_max_loss_pct", 10)
-                            base = float(_execution_state.get("session", {}).get("trade_value")
-                                          or _execution_state.get("session", {}).get("starting_balance") or 0)
-                            total_pnl = sum(t.get("pnl") or 0.0 for t in _execution_state["trade_history"])
-                            logger.warning(
-                                f"SESSION LOSS LIMIT: {total_pnl:.2f}€ "
-                                f"(max {max_pct}% of {base:.2f}€ = {base * max_pct / 100:.2f}€). "
-                                f"Stopping session."
-                            )
-                            await _stop_session_on_risk_limit("SESSION_MAX_LOSS", total_pnl, max_pct)
-                            continue
-
-                        if _check_drawdown():
-                            risk_cfg = _execution_state.get("risk_config", {})
-                            dd_pct = risk_cfg.get("max_drawdown", 10)
-                            logger.warning(f"Max drawdown {dd_pct}% exceeded. Stopping session.")
-                            await _stop_session_on_risk_limit("MAX_DRAWDOWN", 0, dd_pct)
                             continue
 
                         macro = {}

@@ -123,6 +123,10 @@ async def _restore_scalping_session(db) -> None:
         if db_starting_bal is not None:
             _execution_state["session"]["starting_balance"] = float(db_starting_bal)
 
+        # TASK-1255: Ripristina auto_restart_weekly dal DB
+        _execution_state["session"]["auto_restart_weekly"] = bool(sess.get("auto_restart_weekly", False))
+        _execution_state["session"]["restart_pending"] = False
+
         if db_trade_value is not None:
             _execution_state["session"]["trade_value"] = float(db_trade_value)
 

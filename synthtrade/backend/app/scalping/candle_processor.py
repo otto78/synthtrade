@@ -656,19 +656,26 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                             logger.warning(f"Failed to fetch macro context for filter: {e_mac}")
 
                         # TASK-1242: Macro Trend Filter (Fase 2)
-                        # Blocca BUY se BTC < EMA20 4h o in forte dump orario
+                        # Blocca BUY se BTC < EMA20 4h o in forte dump orario.
+                        # TASK-1252 FIX: il filtro btc < ema20_4h è esente per mean_reversion_override:
+                        # la mean-reversion opera per definizione durante downtrend (btc sotto la media);
+                        # bloccarla in quel contesto svuota la pipeline. Il filtro change_1h < -0.5%
+                        # rimane attivo anche per mean-reversion come protezione da caduta libera.
                         if side == "BUY":
                             btc_price = macro.get("btc_price_at_entry", 0.0)
                             ema20_4h = macro.get("btc_ema20_4h", 0.0)
                             change_1h = macro.get("btc_change_1h_pct", 0.0)
-                            
-                            if ema20_4h > 0 and btc_price < ema20_4h:
-                                logger.warning(f"MACRO TREND FILTER: BTC price {btc_price} < EMA20 4h {ema20_4h}. Blocking BUY.")
+                            _is_mr_override = getattr(decision, "is_mean_reversion_override", False)
+
+                            if ema20_4h > 0 and btc_price < ema20_4h and not _is_mr_override:
+                                logger.warning(f"MACRO TREND FILTER: BTC price {btc_price} < EMA20 4h {ema20_4h}. Blocking BUY (direzionale).")
                                 await broadcast_scalping_event("warn", {"code": "MACRO_TREND", "reason": f"BTC ({btc_price}) sotto EMA20 4h ({ema20_4h})"})
                                 continue
-                                
+                            elif ema20_4h > 0 and btc_price < ema20_4h and _is_mr_override:
+                                logger.info(f"MACRO TREND FILTER: BTC {btc_price} < EMA20 4h {ema20_4h} ma mean_reversion_override → non bloccato (TASK-1252).")
+
                             if change_1h < -0.5:
-                                logger.warning(f"MACRO TREND FILTER: BTC 1h change {change_1h}% < -0.5%. Blocking BUY.")
+                                logger.warning(f"MACRO TREND FILTER: BTC 1h change {change_1h}% < -0.5%. Blocking BUY (crash protection, anche MR).")
                                 await broadcast_scalping_event("warn", {"code": "MACRO_TREND", "reason": f"Forte discesa oraria BTC ({change_1h}%)"})
                                 continue
 

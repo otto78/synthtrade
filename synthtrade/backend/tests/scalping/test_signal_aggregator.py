@@ -346,4 +346,82 @@ class TestTask1250StrategySelector:
 
         name = self.selector.get_name_for_regime(regime, macro_context=None)
 
-        assert name == "rsi_bollinger"
+
+        assert name == "rsi_bollinger"
+
+
+class TestTask1252MeanReversionNotBlockedByEMA20:
+    """TASK-1252: verifica che mean_reversion_override non sia bloccato dal check btc < ema20_4h.
+
+    Contesto: nella sessione B (25ago-1set) il signal_aggregator restituiva
+    execute=True + is_mean_reversion_override=True per score ≈ -7.8 (bias bearish debole).
+    Ma il candle_processor bloccava poi il trade perché BTC < EMA20 4h.
+    Il fix di TASK-1252 esonera is_mean_reversion_override dal filtro btc < ema20_4h.
+
+    Questo test verifica che il segnale prodotto dall'aggregator abbia il flag corretto
+    nelle condizioni della sessione B, così il candle_processor può applicare la logica giusta.
+    """
+
+    def setup_method(self):
+        self.aggregator = SignalAggregator(min_confidence=0.4)
+
+    def test_produces_mr_override_when_btc_below_ema20(self):
+        """Sessione B scenario: BTC sotto EMA20 4h, score bearish debole → is_mean_reversion_override=True.
+
+        signal_aggregator deve produrre execute=True+is_mean_reversion_override=True.
+        Il candle_processor (TASK-1252 fix) deve poi permettere l'esecuzione perché è MR.
+        """
+        # Condizioni esatte della sessione B: score ≈ -7.8, bias bearish, BTC sotto EMA20
+        score = _make_score(total=-7.8, bias="bearish", tradeable=True, strength=7.8)
+        technical = TechnicalSignal(type="BUY", confidence=0.85, source="rsi_bollinger")
+        # macro: BTC sotto EMA20 → condizione che bloccava nella sessione B
+        macro = {"btc_price_at_entry": 67000.0, "btc_ema20_4h": 69000.0}
+
+        result = self.aggregator.should_execute(
+            technical, score, symbol="BTC-EUR", macro_context=macro
+        )
+
+        assert result.execute is True, f"Expected execute=True, got reason: {result.reason}"
+        assert result.is_mean_reversion_override is True
+        # Il blocco TASK-1250 è in signal_aggregator solo per BTC > EMA20 (not <), quindi non deve intervenire
+        assert "1250" not in (result.reason or "").upper() or "non bloccato" in (result.reason or "").lower()
+
+    def test_mr_override_still_blocked_by_strong_bearish_guard(self):
+        """TASK-1252 non tocca TASK-1251: score forte bearish (< -15) deve ancora bloccare."""
+        score = _make_score(total=-20.0, bias="bearish", tradeable=True, strength=20.0)
+        technical = TechnicalSignal(type="BUY", confidence=0.85, source="rsi_bollinger")
+        macro = {"btc_price_at_entry": 67000.0, "btc_ema20_4h": 69000.0}
+
+        result = self.aggregator.should_execute(
+            technical, score, symbol="BTC-EUR", macro_context=macro
+        )
+
+        assert result.execute is False
+        assert result.is_mean_reversion_override is False
+
+    def test_mr_override_not_blocked_when_btc_slightly_below_ema20(self):
+        """Scenario tipico sessione B: btc_price leggermente sotto ema20 → override deve passare."""
+        score = _make_score(total=-6.9, bias="bearish", tradeable=True, strength=6.9)
+        technical = TechnicalSignal(type="BUY", confidence=0.80, source="rsi_bollinger")
+        macro = {"btc_price_at_entry": 68000.0, "btc_ema20_4h": 68500.0}
+
+        result = self.aggregator.should_execute(
+            technical, score, symbol="BTC-EUR", macro_context=macro
+        )
+
+        assert result.execute is True
+        assert result.is_mean_reversion_override is True
+
+    def test_directional_buy_still_blocked_btc_below_ema20_in_aggregator(self):
+        """ema_cross BUY con BTC sopra EMA20 4h non è toccato da TASK-1252 (rimane in candle_processor)."""
+        # In signal_aggregator, ema_cross con bias bearish viene bloccato per "conflitto"
+        # (non per il macro filter, quello è nel candle_processor).
+        score = _make_score(total=-10.0, bias="bearish", tradeable=True, strength=10.0)
+        technical = TechnicalSignal(type="BUY", confidence=0.85, source="ema_cross")
+
+        result = self.aggregator.should_execute(technical, score, symbol="BTC-EUR")
+
+        assert result.execute is False
+        assert result.is_mean_reversion_override is False
+        assert "conflitto" in result.reason.lower()
+

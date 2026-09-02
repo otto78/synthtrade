@@ -17,15 +17,20 @@
 
 ---
 
-### TASK-1252 — Ricalibrare Peso Signal Score nella Decisione
+### TASK-1252 — Ricalibrare Peso Signal Score nella Decisione ✅ (Fase 1 completata)
 
-**Priorità:** 🟡 Media — aspettare 1 settimana di dati live post-TASK-1250/1251 prima di cambiare
+**Stato:** Fix pipeline completato il 2026-09-02. Fase 2 (ricalibrazione soglia score) da fare dopo 30 trade.
+
+**Fix applicato (Fase 1 — TASK-1252 fix):**
+Diagnosi sessione B (25ago-1set, 7gg, 1 solo trade): il filtro TASK-1242 in `candle_processor.py` bloccava tutti i `mean_reversion_override` quando `btc_price < ema20_4h`. I 228 override approvati dall'aggregator non raggiungevano l'esecuzione. Fix: il filtro `btc < ema20_4h` è ora esente per `is_mean_reversion_override=True`. Il filtro `change_1h < -0.5%` rimane attivo per tutti. Commit `5228ac0`.
+
+**Fase 2 — ancora da fare (dopo 30 trade live):**
 
 **Problema:** Il signal score (prodotto dall'intelligenza collettiva dei collector) ha correlazione storica con il PnL ≈ 0.004 — praticamente zero. Nonostante questo, viene usato come gate di ingresso con soglia 6.0: qualsiasi score sotto soglia blocca il trade, qualsiasi score sopra lo sblocca. In pratica si blocca o sblocca il trading sulla base di un numero che non predice nulla.
 
 Il TASK-1159 era bloccato per campione insufficiente — ora il campione c'è (48 trade, 14 giorni, due set indipendenti). Il problema è confermato statisticamente.
 
-**Perché aspettare:** Con TASK-1250/1251 appena attivati, il mix di trade cambierà (meno mean-reversion contro-trend, più ema_cross con trend). La correlazione score→PnL potrebbe cambiare. Calibrare sui dati vecchi (regime sbagliato) produrrebbe una soglia errata.
+**Perché aspettare:** Con il fix TASK-1252 appena attivato, il mix di trade cambierà. La correlazione score→PnL potrebbe cambiare. Calibrare sui dati vecchi produrrebbe una soglia errata.
 
 **Soluzione da implementare (tre opzioni, scegliere dopo revisione dati):**
 1. **Ricalibrare la soglia** sui dati reali: se score non predice, abbassare la soglia o renderla dinamica per combinazione regime/strategia
@@ -38,7 +43,7 @@ Il TASK-1159 era bloccato per campione insufficiente — ora il campione c'è (4
 - `synthtrade/backend/app/scalping/supervisor/historical_context.py` — dati storici per ricalibrazione
 
 **Criteri di accettazione:**
-- [ ] Analisi correlazione score→PnL su dati post-TASK-1250/1251 (almeno 30 trade)
+- [ ] Analisi correlazione score→PnL su dati post-TASK-1252 fix (almeno 30 trade)
 - [ ] Soglia o peso dello score calibrato sui dati reali
 - [ ] Il sistema non blocca/sblocca trade basandosi su numeri non predittivi
 - [ ] Confronto win rate PRIMA vs DOPO la ricalibrazione

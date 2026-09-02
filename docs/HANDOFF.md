@@ -2,9 +2,43 @@
 
 ## Ultimo Handoff
 
-### Da: sessione TASK-1250 + TASK-1251 (filtro macro trend + override guard) → prossima sessione
+### Da: sessione TASK-1252 (analisi + fix pipeline bloccata) → prossima sessione
 
-**Data:** 2026-08-25
+**Data:** 2026-09-02
+
+**Contesto:** Analisi comparativa DB delle due sessioni post-fix (sessione A: 14 gg/48 trade `eaabe577`; sessione B: 7 gg/1 trade `f9414de8`). Trovata e fixata la causa del crollo della frequenza dei trade nella sessione B.
+
+### ✅ Fatto in questa sessione
+
+- **Analisi DB completa**: estratte e confrontate le due sessioni dal DB Supabase. Sessione A (pre-fix TASK-1250/1251): 48 trade, win rate 35.4%, PnL -2.16 EUR. Sessione B (post-fix): 1 solo trade, PnL -0.10 EUR.
+- **Root cause trovata** — doppio gate contraddittorio:
+  - `signal_aggregator.py` approvava correttamente 228 `mean_reversion_override` (execute=True, is_mean_reversion_override=True)
+  - `candle_processor.py` (TASK-1242) poi bloccava via `continue` tutti i BUY quando `btc_price < ema20_4h`
+  - Nella settimana 25ago-1set, BTC era strutturalmente sotto EMA20 4h → blocco totale della pipeline
+  - La mean-reversion per definizione opera in downtrend (btc sotto la media) → contraddizione logica
+- **Fix TASK-1252** (`candle_processor.py`): il filtro `btc < ema20_4h` è ora esente per `is_mean_reversion_override=True`. Il filtro `change_1h < -0.5%` rimane attivo per tutti (crash protection). Commit `5228ac0`.
+- **4 nuovi test** `TestTask1252MeanReversionNotBlockedByEMA20` — tutti verdi (26/28 totali, 2 pre-existing stale).
+- **Documentazione**: TASKS.md, STORY.md, HANDOFF.md aggiornati.
+
+### ⏳ Da fare la settimana del 2026-09-08
+
+1. **Monitorare la sessione corrente** (`ce2dcee2`, avviata il 1 set): verificare che con il fix i trade riprendano (al momento 0 execute su 401+94 segnali — la sessione NON è stata riavviata col fix ancora).
+2. **⚠️ IMPORTANTE: riavviare il backend** per applicare il fix `candle_processor.py` alla sessione corrente (il codice non viene ricaricato a caldo senza `--reload`).
+3. **Raccogliere almeno 30 trade** post-fix per poter procedere con TASK-1252 Fase 2 (ricalibrazione soglia score) e TASK-1253 (SL/TP).
+4. **Analisi 30 trade**: win rate per combinazione regime/strategia, correlazione score→PnL sui nuovi dati.
+
+### ⚠️ Cosa NON fare finché non ci sono 30 trade post-fix
+
+- **NON toccare SL/TP** (TASK-1253): win rate da misurare su dati puliti post-fix.
+- **NON ricalibrar la soglia score** (TASK-1252 Fase 2): la correlazione score→PnL va remisurata dopo che il fix ha cambiato il mix dei trade.
+- **NON disabilitare il filtro change_1h < -0.5%**: è l'unico guard crash rimasto per MR.
+
+### ⚠️ Test stale pre-esistenti (non regressioni)
+
+- `test_blocks_sell_when_bullish` — SELL permanentemente disabilitati (long-only engine)
+- `test_allows_sell_when_bearish` — stessa causa
+
+
 
 **Contesto:** Analisi sessione 11-25 agosto (48 trade, 14 giorni) ha confermato che il bot perdeva per cause strutturali: override mean-reversion con win rate 25%, regime detector che vedeva "ranging" durante un rally +27% BTC. Implementati due fix chirurgici che indirizzano entrambe le cause.
 

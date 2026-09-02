@@ -5,6 +5,15 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 ## 📖 Versioni
 
 
+### v1.5.1 — 2026-09-02 — TASK-1252: fix filtro macro EMA20 per mean_reversion_override
+
+- ✅ **TASK-1252 — Fix pipeline bloccata** (`candle_processor.py` + 4 nuovi test):
+  - **Diagnosi:** Analisi DB sessione 25ago-1set (7 gg, Stop & Go attivo) ha rivelato che il bot aveva 228 `mean_reversion_override` approvati da `signal_aggregator` (execute=True, is_mean_reversion_override=True) ma produceva solo 1 trade. La causa: il filtro TASK-1242 in `candle_processor.py` bloccava via `continue` tutti i BUY quando `btc_price < ema20_4h`, **dopo** che il signal_aggregator aveva già approvato l'override. Nella settimana 25ago-1set BTC era strutturalmente sotto EMA20 4h → blocco totale.
+  - **Root cause logica:** La mean-reversion (rsi_bollinger) per definizione opera durante downtrend, quando i prezzi si trovano sotto la media mobile. Bloccarla quando BTC < ema20_4h è una contraddizione: è esattamente il contesto in cui dovrebbe operare.
+  - **Fix chirurgico:** Aggiunto `_is_mr_override = getattr(decision, "is_mean_reversion_override", False)`. Il filtro `btc < ema20_4h` si applica solo se `not _is_mr_override` (segnali direzionali ema_cross ecc.). Il filtro `change_1h < -0.5%` rimane attivo **anche** per MR come protezione da crash rapido.
+  - 4 nuovi test `TestTask1252MeanReversionNotBlockedByEMA20` — tutti verdi. 26/28 totali verdi (2 pre-existing stale SELL-disabled).
+  - Commit: `5228ac0`
+
 ### v1.5.0 — 2026-08-25 — TASK-1250 + TASK-1251: filtro macro trend + guard override mean-reversion (Fase 2 — bot profittevole)
 
 - ✅ **TASK-1251 — Strong Bearish Guard** (`signal_aggregator.py` + `config_loader.py`): Aggiunto blocco `TASK-1251 STRONG BIAS GUARD` nel ramo override mean-reversion. Se `market_score.total < MEAN_REVERSION_STRONG_BEARISH_THRESHOLD` (default -15.0, configurabile via DB), il BUY da `rsi_bollinger`/`stoch_rsi_bb_squeeze` con bias bearish viene bloccato prima del `return execute=True`. Motivazione: win rate misurato 25% su 2 campioni indipendenti (12 + 48 trade). Con SL 0.50%/TP 0.80% serve wr >38% per pareggio → expectancy −0.17%/trade con wr=25%. I bias deboli (score ≥ -15) mantengono il comportamento originale. Nuova property `mean_reversion_strong_bearish_threshold` in `config_loader.py`. 4 nuovi test `TestTask1251StrongBearishGuard` — tutti verdi.

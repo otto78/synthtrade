@@ -131,9 +131,14 @@ async def scalping_websocket(ws: WebSocket):
     session_data = _execution_state.get("session", {})
     if session_data.get("status") in ("running", "paused"):
         try:
+            # TASK-1255: inject restart_countdown into initial session payload
+            payload = session_data.copy()
+            if payload.get("auto_restart_weekly") and payload.get("status") == "running":
+                from app.scalping.session_auto_restart import get_restart_countdown
+                payload["restart_countdown"] = get_restart_countdown(payload)
             await ws.send_json({
                 "type": "session_restored",
-                "payload": session_data.copy(),
+                "payload": payload,
                 "timestamp": _now(),
             })
         except Exception:

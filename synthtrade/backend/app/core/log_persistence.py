@@ -12,6 +12,8 @@ from pathlib import Path
 import re
 import logging
 
+from postgrest.types import ReturnMethod
+
 logger = logging.getLogger(__name__)
 
 
@@ -54,7 +56,7 @@ class LogStorage:
         try:
             self.supabase.table("scalping_sessions").update({
                 "log_content": content
-            }).eq("id", session_id).execute()
+            }, returning=ReturnMethod.minimal).eq("id", session_id).execute()
             logger.info(f"Log salvato su DB per sessione {session_id}")
             return True
         except Exception as e:

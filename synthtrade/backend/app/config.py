@@ -258,6 +258,13 @@ class Settings(BaseSettings):
     SCHEDULER_HEARTBEAT_INTERVAL_SECONDS: int = 10
     SCHEDULER_MONITOR_PNL_INTERVAL_SECONDS: int = 30
 
+    # TASK-1260: swing module jobs (legacy pipeline/strategy scheduler).
+    # Disabilitati di default: i job swing facevano polling periodico di
+    # strategie/trades/log senza consumatore reale (il modulo attivo è lo
+    # Scalping) e generavano egress Supabase inutile. Le funzioni restano
+    # disponibili; l'esecuzione ciclica è off.
+    SWING_JOBS_ENABLED: bool = False
+
     # Pluggability (TASK-214)
     STRATEGY_PLUGINS: str = ""  # Comma-separated module paths
 

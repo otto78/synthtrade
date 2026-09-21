@@ -10,6 +10,7 @@ import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from postgrest.types import ReturnMethod
 from app.config import settings
 from app.dependencies import get_current_user
 from app.core.exchange_factory import get_adapter
@@ -180,7 +181,7 @@ def set_mode(
                         supabase.table("scalping_sessions").update({
                             "status": "stopped",
                             "stopped_at": datetime.utcnow().isoformat()
-                        }).eq("id", db_sid).execute()
+                        }, returning=ReturnMethod.minimal).eq("id", db_sid).execute()
                     except Exception as db_e:
                         logger.warning(f"Failed to update scalping session in DB: {db_e}")
                 

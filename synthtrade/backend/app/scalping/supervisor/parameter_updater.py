@@ -5,6 +5,7 @@ from typing import Optional, Callable
 
 from app.scalping.models.supervisor import SupervisorDecision
 from app.scalping.engine.execution_loop import ExecutionLoop
+from postgrest.types import ReturnMethod
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ class ParameterUpdater:
                 def _db_op():
                     supabase = get_supabase()
                     supabase.table("scalping_sessions") \
-                        .update({"strategy_params": new_params}) \
+                        .update({"strategy_params": new_params}, returning=ReturnMethod.minimal) \
                         .eq("id", db_sid) \
                         .execute()
                 import asyncio
@@ -89,7 +90,7 @@ class ParameterUpdater:
                             .update({
                                 "strategy": new_strategy,
                                 "active_strategy": new_strategy,
-                            }) \
+                            }, returning=ReturnMethod.minimal) \
                             .eq("id", db_sid) \
                             .execute()
                     import asyncio
@@ -139,7 +140,7 @@ class ParameterUpdater:
                 
                 if existing.data:
                     supabase.table("scalping_runtime_config") \
-                        .update({"value": str(new_threshold), "value_type": "float"}) \
+                        .update({"value": str(new_threshold), "value_type": "float"}, returning=ReturnMethod.minimal) \
                         .eq("key", "SCALPING_SIGNAL_STRENGTH_THRESHOLD") \
                         .execute()
                 else:

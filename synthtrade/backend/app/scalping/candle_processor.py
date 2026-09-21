@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from app.config import settings
 from app.db.supabase_client import get_supabase
+from postgrest.types import ReturnMethod
 from app.scalping._state import _execution_state
 from app.scalping.pricing import (
     _get_fee_rate,
@@ -273,7 +274,7 @@ async def _stop_session_on_risk_limit(code: str, total_pnl: float, limit_pct: fl
                 "trade_count": len(closed),
                 "win_count": win_count_val,
                 "total_pnl": total_pnl_val,
-            }).eq("id", db_sid).execute()
+            }, returning=ReturnMethod.minimal).eq("id", db_sid).execute()
     except Exception as e:
         logger.warning(f"Failed to update DB on risk stop: {e}")
 

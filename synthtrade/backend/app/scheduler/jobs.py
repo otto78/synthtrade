@@ -204,18 +204,21 @@ async def run_active_strategies_job(engine=None) -> None:
 
 
 def setup_scheduler(engine=None) -> AsyncIOScheduler:
-    scheduler.add_job(run_pipeline_job, "interval",
-                      minutes=settings.SCHEDULER_PIPELINE_INTERVAL_MIN,
-                      id="pipeline")
-    scheduler.add_job(monitor_wrapper, "interval", args=[engine],
-                      seconds=settings.SCHEDULER_MONITOR_POSITIONS_INTERVAL_SECONDS, id="monitor")
-    scheduler.add_job(heartbeat_job, "interval", 
-                      seconds=settings.SCHEDULER_HEARTBEAT_INTERVAL_SECONDS, id="heartbeat")
-    scheduler.add_job(run_active_strategies_job, "interval", args=[engine],
-                      minutes=settings.SCHEDULER_SIGNAL_INTERVAL_MIN,
-                      id="active_strategies")
-    scheduler.add_job(monitor_pnl_job, "interval", args=[engine],
-                      seconds=settings.SCHEDULER_MONITOR_PNL_INTERVAL_SECONDS, id="monitor_pnl")
+    # TASK-1260: job swing (legacy pipeline/strategy scheduler) gated dietro
+    # SWING_JOBS_ENABLED. Off di default: polling non consumato = egress inutile.
+    if settings.SWING_JOBS_ENABLED:
+        scheduler.add_job(run_pipeline_job, "interval",
+                          minutes=settings.SCHEDULER_PIPELINE_INTERVAL_MIN,
+                          id="pipeline")
+        scheduler.add_job(monitor_wrapper, "interval", args=[engine],
+                          seconds=settings.SCHEDULER_MONITOR_POSITIONS_INTERVAL_SECONDS, id="monitor")
+        scheduler.add_job(heartbeat_job, "interval", 
+                          seconds=settings.SCHEDULER_HEARTBEAT_INTERVAL_SECONDS, id="heartbeat")
+        scheduler.add_job(run_active_strategies_job, "interval", args=[engine],
+                          minutes=settings.SCHEDULER_SIGNAL_INTERVAL_MIN,
+                          id="active_strategies")
+        scheduler.add_job(monitor_pnl_job, "interval", args=[engine],
+                          seconds=settings.SCHEDULER_MONITOR_PNL_INTERVAL_SECONDS, id="monitor_pnl")
 
     # Scalping jobs (TASK-807) — registrati solo se il modulo scalping è attivo
     if settings.scalping.SCALPING_DEFAULT_MODE:

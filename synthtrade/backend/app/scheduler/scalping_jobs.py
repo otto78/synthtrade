@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from app.config import settings
+from postgrest.types import ReturnMethod
 
 logger = logging.getLogger(__name__)
 
@@ -414,7 +415,7 @@ async def verify_supervisor_outcomes_job() -> None:
                 "outcome_verified_at": now_iso,
                 "outcome_pnl_delta": round(current_pnl, 2),
                 "outcome_label": label,
-            }).eq("id", record_id).execute()
+            }, returning=ReturnMethod.minimal).eq("id", record_id).execute()
 
         for rec in records:
             await asyncio.to_thread(_update, rec["id"])

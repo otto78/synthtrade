@@ -34,6 +34,7 @@ from app.scalping.intelligence.signal_score_engine import SignalScoreEngine
 from app.core.logging import SessionContextFilter
 from app.core.session_log_handler import SessionLogHandler
 from app.scalping.rest.performance import _calc_session_entry_and_hold
+from postgrest.types import ReturnMethod
 
 logger = logging.getLogger(__name__)
 
@@ -375,7 +376,7 @@ async def control_session(control: Dict) -> Dict:
                                     supabase = get_supabase()
                                     supabase.table("scalping_sessions").update({
                                         "log_content": content,
-                                    }).eq("id", _db_sid).execute()
+                                    }, returning=ReturnMethod.minimal).eq("id", _db_sid).execute()
                                 except Exception as e:
                                     _handler_logger.warning(f"[LIVE_LOG] Failed to persist logs to DB: {e}")
                             return _save_to_db
@@ -385,7 +386,9 @@ async def control_session(control: Dict) -> Dict:
                         _execution_state["session_log_handler"] = session_log_handler
                         logger.info(f"Session log capture finalized for {session['session_id']} (early session was {mem_session_id})")
 
-                        _LOG_PERSIST_INTERVAL_SEC = 300
+                        # TASK-1260: log flush periodico ridotto da 300s a 1800s (30 min).
+                        # Il contenuto viene comunque salvato su stop di sessione.
+                        _LOG_PERSIST_INTERVAL_SEC = 1800
                         async def _periodic_log_persist():
                             while session.get("status") == "running":
                                 await asyncio.sleep(_LOG_PERSIST_INTERVAL_SEC)
@@ -548,7 +551,7 @@ async def control_session(control: Dict) -> Dict:
                     supabase_log = get_supabase()
                     supabase_log.table("scalping_sessions").update({
                         "log_content": log_content,
-                    }).eq("id", db_sid_for_log).execute()
+                    }, returning=ReturnMethod.minimal).eq("id", db_sid_for_log).execute()
                     logger.info(f"Session log content saved to DB for session {db_sid_for_log}")
             except Exception as log_e:
                 logger.warning(f"Failed to save log content to DB: {log_e}")
@@ -600,7 +603,7 @@ async def control_session(control: Dict) -> Dict:
                     "trade_count": len(closed),
                     "win_count": win_count_val,
                     "total_pnl": total_pnl_val,
-                }).eq("id", db_sid).execute()
+                }, returning=ReturnMethod.minimal).eq("id", db_sid).execute()
                 logger.info(f"Session {db_sid} stopped — trades={len(closed)} wins={win_count_val} pnl={total_pnl_val}")
         except Exception as e:
             logger.warning(f"Failed to update session in DB: {e}")
@@ -616,7 +619,7 @@ async def control_session(control: Dict) -> Dict:
                     supabase = get_supabase()
                     supabase.table("scalping_sessions").update({
                         "status": "paused"
-                    }).eq("id", db_sid).execute()
+                    }, returning=ReturnMethod.minimal).eq("id", db_sid).execute()
             except Exception as e:
                 logger.warning(f"Failed to update session in DB: {e}")
 
@@ -647,7 +650,7 @@ async def control_session(control: Dict) -> Dict:
                     supabase = get_supabase()
                     supabase.table("scalping_sessions").update({
                         "status": "running"
-                    }).eq("id", db_sid).execute()
+                    }, returning=ReturnMethod.minimal).eq("id", db_sid).execute()
             except Exception as e:
                 logger.warning(f"Failed to update session in DB: {e}")
 

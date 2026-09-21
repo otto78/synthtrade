@@ -7,6 +7,7 @@ from typing import Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from postgrest.types import ReturnMethod
 from app.config import settings
 from app.api import auth, strategies, dashboard, logs, ws, trades, eval as eval_api, pipeline, exchange, monitor, config_api
 # WatchFiles reload uccide la connessione WS Binance in corso, causando
@@ -54,7 +55,9 @@ async def _restore_scalping_session(db) -> None:
     # Step 1 — query DB
     try:
         def _db_op1():
-            return db.table("scalping_sessions").select("*").eq("status", "running").limit(1).execute()
+            return db.table("scalping_sessions") \
+                .select("id, mode, symbol, strategy, trade_value, started_at, starting_balance, auto_restart_weekly") \
+                .eq("status", "running").limit(1).execute()
         result = await asyncio.to_thread(_db_op1)
     except Exception as e:
         logger.error("Failed to query scalping_sessions from DB: %s", e, exc_info=True)
@@ -89,7 +92,7 @@ async def _restore_scalping_session(db) -> None:
                 db.table("scalping_sessions").update({
                     "status": "stopped",
                     "stopped_at": _stopped_at,
-                }).eq("id", session_id).execute()
+                }, returning=ReturnMethod.minimal).eq("id", session_id).execute()
             await asyncio.to_thread(_db_op2)
             logger.info("Stale session %s marked as stopped", session_id)
             guard.fail("restore_skipped: session mode does not match global mode")
@@ -192,7 +195,7 @@ async def _restore_scalping_session(db) -> None:
                     supabase = get_supabase()
                     supabase.table("scalping_sessions").update({
                         "log_content": content,
-                    }).eq("id", _db_sid).execute()
+                    }, returning=ReturnMethod.minimal).eq("id", _db_sid).execute()
                 except Exception as e:
                     logger.warning("[LIVE_LOG] Failed to persist logs to DB during restore: %s", e)
             return _save_to_db
@@ -201,7 +204,10 @@ async def _restore_scalping_session(db) -> None:
         _execution_state["session_log_handler"] = session_log_handler
         logger.info("[LIVE_LOG] Session log capture started for restore %s (db=%s)", short_session_id, session_id)
 
-        _LOG_PERSIST_INTERVAL_SEC = 300
+        # TASK-1260: log flush periodico ridotto da 300s a 1800s (30 min).
+        # Il contenuto viene comunque salvato su stop di sessione; un flush ogni
+        # 30 min è solo rete di sicurezza per crash. Riduce egress Supabase.
+        _LOG_PERSIST_INTERVAL_SEC = 1800
         async def _periodic_log_persist_restore():
             while _execution_state["session"].get("status") == "running":
                 await asyncio.sleep(_LOG_PERSIST_INTERVAL_SEC)
@@ -299,8 +305,8 @@ async def _restore_scalping_session(db) -> None:
                         stale_pnl = stale_gross - stale_entry_fee - stale_exit_fee
 
                         def _close_stale_trade(row_id=stale_ot.get("id"), fill=stale_fill, pnl=stale_pnl,
-                                               reason=stale_reconcile["reason"], fill_time=stale_reconcile.get("fill_time"),
-                                               entry_fee=stale_entry_fee, exit_fee=stale_exit_fee):
+                                reason=stale_reconcile["reason"], fill_time=stale_reconcile.get("fill_time"),
+                                entry_fee=stale_entry_fee, exit_fee=stale_exit_fee):
                             db.table("scalping_trades").update({
                                 "status": "closed", "exit_price": fill,
                                 "pnl": round(pnl, 2),
@@ -308,7 +314,7 @@ async def _restore_scalping_session(db) -> None:
                                 "exit_time": fill_time or datetime.now(timezone.utc).isoformat(),
                                 "signal_reason": reason,
                                 "entry_commission": entry_fee, "exit_commission": exit_fee,
-                            }).eq("id", row_id).execute()
+                            }, returning=ReturnMethod.minimal).eq("id", row_id).execute()
 
                         await asyncio.to_thread(_close_stale_trade)
                         logger.info("[POSITION_RECONCILE] Startup: closed stale OCO trade %s via algoId=%s",
@@ -380,7 +386,7 @@ async def _restore_scalping_session(db) -> None:
                                     "signal_reason": reason,
                                     "entry_commission": _ec,
                                     "exit_commission": _xc,
-                                }).eq("id", trade_id).execute()
+                                }, returning=ReturnMethod.minimal).eq("id", trade_id).execute()
                             await asyncio.to_thread(_db_close_reconciled)
 
                             await broadcast_scalping_event("position_reconciled_externally", {
@@ -525,7 +531,7 @@ async def _restore_scalping_session(db) -> None:
                             db.table("scalping_sessions").update({
                                 "status": "stopped",
                                 "stopped_at": datetime.now(timezone.utc).isoformat()
-                            }).eq("id", session_id).execute()
+                            }, returning=ReturnMethod.minimal).eq("id", session_id).execute()
                         await asyncio.to_thread(_db_stop)
                         logger.info("Session %s marked as stopped in DB", session_id)
                     except Exception:

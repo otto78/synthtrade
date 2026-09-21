@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional
 from app.db.supabase_client import get_supabase
 from app.scalping._state import _execution_state
 from app.config import settings
+from postgrest.types import ReturnMethod
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +192,7 @@ async def _update_closed_position_in_db(pos, close_price: float, pnl: float, pnl
                     update_data["entry_commission"] = entry_commission
                 if exit_commission is not None:
                     update_data["exit_commission"] = exit_commission
-                supabase.table("scalping_trades").update(update_data).eq("id", trade_id).execute()
+                supabase.table("scalping_trades").update(update_data, returning=ReturnMethod.minimal).eq("id", trade_id).execute()
                 logger.debug(f"DB position closed (match via {'oco_order_list_id' if pos.oco_order_list_id else 'fallback'}): trade_id={trade_id}")
             else:
                 # Fallback extrema ratio: insert new row if no open row found

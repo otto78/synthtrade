@@ -8,6 +8,7 @@ from typing import Dict
 
 from fastapi import APIRouter
 
+from postgrest.types import ReturnMethod
 from app.scalping._state import _execution_state
 from app.scalping.config_loader import get_scalping_config
 from app.db.supabase_client import get_supabase
@@ -33,7 +34,7 @@ async def update_scalping_config(key: str, value: str):
     db.table("scalping_runtime_config").update({
         "value": value,
         "updated_at": datetime.now(timezone.utc).isoformat()
-    }).eq("key", key).execute()
+    }, returning=ReturnMethod.minimal).eq("key", key).execute()
     get_scalping_config().reload()
     return {"key": key, "value": value, "status": "updated"}
 

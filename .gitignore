@@ -39,6 +39,9 @@ supabase/.temp/
 .DS_Store
 Thumbs.db
 
+# Logs
+*.log
+
 sinthtrade-credentials.json
 
 # MCP / AI tool configs (contengono access tokens)

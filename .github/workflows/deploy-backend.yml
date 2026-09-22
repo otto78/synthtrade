@@ -23,7 +23,6 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          fingerprint: SHA256:Yhgf14SdOU/EcwegcyIcTgSYSma/P8a3LQLqqGHwfTA
           script: |
             set -e
             cd /opt/vps/synthtrade

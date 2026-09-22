@@ -62,11 +62,14 @@ class ScalpingConfigLoader:
             "SCALPING_REGIME_TREND_THRESHOLD_PCT":   settings.scalping.SCALPING_REGIME_TREND_THRESHOLD_PCT,
             "SCALPING_REGIME_VOLATILE_THRESHOLD":    settings.scalping.SCALPING_REGIME_VOLATILE_THRESHOLD,
             "SCALPING_TA_VOLUME_ANOMALY_MULTIPLIER": settings.scalping.SCALPING_TA_VOLUME_ANOMALY_MULTIPLIER,
-            # TASK-1251: Soglia bias bearish forte oltre cui bloccare l'override mean-reversion.
+            # TASK-1251+1255: Soglia bias bearish oltre cui bloccare l'override mean-reversion.
             # Se market_score.total < questa soglia, il BUY mean-reversion NON passa mai.
-            # Default -15: bias forti (-15..-100) bloccati, deboli (-5..-14) ancora consentiti.
+            # Default -8.0 (bias-aware, TASK-1255): il win rate misurato è 30% (25% su 2 campioni indipendenti)
+            # con expectancy -0.17/-0.31 %/trade sugli score reali -6.0..-14.3. La vecchia soglia -15.0
+            # non scattava MAI (score mai sotto -15.0) → tutti gli override passavano. Soglia più alta
+            # (-8.0) = più sensibile: blocca gli score più negativi del range osservato.
             # Override DB: chiave MEAN_REVERSION_STRONG_BEARISH_THRESHOLD, tipo float.
-            "MEAN_REVERSION_STRONG_BEARISH_THRESHOLD": -15.0,
+            "MEAN_REVERSION_STRONG_BEARISH_THRESHOLD": -8.0,
             # TASK-1243: Break-even profit lock — feature flag OFF by default.
             # Attivare solo dopo validazione spike OKX Demo e almeno 20 trade paper.
             "BREAK_EVEN_ENABLED": False,

@@ -14,24 +14,26 @@ from app.scalping.intelligence.collectors.cvd_calculator import CVDCalculator
 
 class TestDefaultWeights:
     def test_weights_non_negative_and_complete(self):
-        """Tutti i pesi attesi presenti e >= 0.
-
-        NOTA: i pesi sono RELATIVI e normalizzati dall'engine (divide per il
-        total_weight dei collector che hanno effettivamente risposto), quindi
-        la somma NON deve essere 1.0. order_book_imbalance (TASK-1151) aggiunge
-        0.15 come peso provvisorio, da ricalibrare in Fase 6.
-        """
-        expected_keys = {
-            "funding_rate", "cvd", "open_interest", "long_short_ratio",
-            "fear_greed", "onchain", "sentiment", "whale", "order_book_imbalance",
+        """I pesi runtime sono relativi e corrispondono a TASK-1159."""
+        expected_weights = {
+            "order_book_imbalance": 0.30,
+            "funding_rate": 0.15,
+            "cvd": 0.15,
+            "long_short_ratio": 0.10,
+            "fear_greed": 0.10,
+            "whale": 0.05,
+            "open_interest": 0.05,
+            "onchain": 0.05,
+            "sentiment": 0.00,
+            "spread": 0.00,
         }
-        assert DEFAULT_WEIGHTS.keys() == expected_keys
-        for name, w in DEFAULT_WEIGHTS.items():
-            assert w >= 0.0, f"weight {name} must be >= 0"
+        assert DEFAULT_WEIGHTS == expected_weights
+        for name, weight in DEFAULT_WEIGHTS.items():
+            assert weight >= 0.0, f"weight {name} must be >= 0"
 
     def test_order_book_imbalance_provisional_weight(self):
-        """TASK-1151: order_book_imbalance ha peso provvisorio 0.15 (da ricalibrare Fase 6)."""
-        assert DEFAULT_WEIGHTS["order_book_imbalance"] == 0.15
+        """TASK-1159: order_book_imbalance ha peso 0.30."""
+        assert DEFAULT_WEIGHTS["order_book_imbalance"] == 0.30
 
 
 class TestSignalScoreEngine:
@@ -61,7 +63,13 @@ class TestSignalScoreEngine:
     async def test_compute_bullish_scenario(self):
         """Scenario rialzista: funding rate negativo + CVD positivo."""
         from datetime import datetime, timezone
-        from app.scalping.models.intelligence import FundingRate, OpenInterest, LongShortRatio, FearGreedData
+        from app.scalping.models.intelligence import (
+            FearGreedData,
+            FundingRate,
+            LongShortRatio,
+            OpenInterest,
+            OrderBookImbalance,
+        )
 
         engine = SignalScoreEngine(symbol="BTCUSDT", threshold=30.0)
 
@@ -85,12 +93,16 @@ class TestSignalScoreEngine:
         engine._fear_greed.collect = AsyncMock(return_value=FearGreedData(
             value=20, label="Extreme Fear", timestamp=datetime.now(timezone.utc)
         ))
+        engine._order_book_imbalance.collect = AsyncMock(return_value=OrderBookImbalance(
+            symbol="BTCUSDT", bid_depth=Decimal("75"), ask_depth=Decimal("25"),
+            imbalance=0.5, timestamp=datetime.now(timezone.utc)
+        ))
 
         # Mock remaining collectors to None
         engine._sentiment.collect = AsyncMock(return_value=None)
         engine._whale.collect = AsyncMock(return_value=None)
         engine._onchain.collect = AsyncMock(return_value=None)
-        engine._order_book_imbalance.collect = AsyncMock(return_value=None)
+        engine._spread.collect = AsyncMock(return_value=None)
 
         score = await engine.compute()
 
@@ -102,7 +114,13 @@ class TestSignalScoreEngine:
     async def test_compute_bearish_scenario(self):
         """Scenario ribassista: funding rate alto positivo + L/S long-heavy."""
         from datetime import datetime, timezone
-        from app.scalping.models.intelligence import FundingRate, OpenInterest, LongShortRatio, FearGreedData
+        from app.scalping.models.intelligence import (
+            FearGreedData,
+            FundingRate,
+            LongShortRatio,
+            OpenInterest,
+            OrderBookImbalance,
+        )
 
         engine = SignalScoreEngine(symbol="BTCUSDT", threshold=30.0)
 
@@ -126,12 +144,16 @@ class TestSignalScoreEngine:
         engine._fear_greed.collect = AsyncMock(return_value=FearGreedData(
             value=85, label="Extreme Greed", timestamp=datetime.now(timezone.utc)
         ))
+        engine._order_book_imbalance.collect = AsyncMock(return_value=OrderBookImbalance(
+            symbol="BTCUSDT", bid_depth=Decimal("25"), ask_depth=Decimal("75"),
+            imbalance=-0.5, timestamp=datetime.now(timezone.utc)
+        ))
 
         # Mock remaining collectors to None
         engine._sentiment.collect = AsyncMock(return_value=None)
         engine._whale.collect = AsyncMock(return_value=None)
         engine._onchain.collect = AsyncMock(return_value=None)
-        engine._order_book_imbalance.collect = AsyncMock(return_value=None)
+        engine._spread.collect = AsyncMock(return_value=None)
 
         score = await engine.compute()
 

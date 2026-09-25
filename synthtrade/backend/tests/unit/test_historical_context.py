@@ -11,10 +11,17 @@ from app.scalping.supervisor.historical_context import (
 )
 
 
+@pytest.fixture(autouse=True)
+def clear_cache():
+    clear_historical_cache()
+    yield
+    clear_historical_cache()
+
+
 @pytest.mark.asyncio
 async def test_build_historical_context_empty_data():
     """Test with empty data from database."""
-    with patch('app.scalping.supervisor.historical_context.get_supabase') as mock_supabase:
+    with patch('app.db.supabase_client.get_supabase') as mock_supabase:
         mock_client = MagicMock()
         mock_client.table.return_value.select.return_value.execute.return_value.data = []
         mock_supabase.return_value = mock_client
@@ -54,7 +61,7 @@ async def test_build_historical_context_with_data():
         }
     ]
     
-    with patch('app.scalping.supervisor.historical_context.get_supabase') as mock_supabase:
+    with patch('app.db.supabase_client.get_supabase') as mock_supabase:
         mock_client = MagicMock()
         mock_client.table.return_value.select.return_value.execute.return_value.data = mock_data
         mock_supabase.return_value = mock_client
@@ -87,7 +94,7 @@ async def test_build_historical_context_cache():
         }
     ]
     
-    with patch('app.scalping.supervisor.historical_context.get_supabase') as mock_supabase:
+    with patch('app.db.supabase_client.get_supabase') as mock_supabase:
         mock_client = MagicMock()
         mock_client.table.return_value.select.return_value.execute.return_value.data = mock_data
         mock_supabase.return_value = mock_client
@@ -118,7 +125,7 @@ async def test_clear_historical_cache():
         }
     ]
     
-    with patch('app.scalping.supervisor.historical_context.get_supabase') as mock_supabase:
+    with patch('app.db.supabase_client.get_supabase') as mock_supabase:
         mock_client = MagicMock()
         mock_client.table.return_value.select.return_value.execute.return_value.data = mock_data
         mock_supabase.return_value = mock_client

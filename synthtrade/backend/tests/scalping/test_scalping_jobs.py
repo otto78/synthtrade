@@ -166,6 +166,9 @@ class TestScalpingJobs:
             "app.scalping.supervisor.supervisor_scheduler.SupervisorScheduler",
             return_value=mock_scheduler,
             create=True,
+        ), patch(
+            "app.scalping.router._execution_state",
+            self._RUNNING_SESSION_STATE,
         ):
             with patch("app.scheduler.scalping_jobs.logger") as mock_logger:
                 await supervisor_check_job()
@@ -182,6 +185,9 @@ class TestScalpingJobs:
             "app.scalping.supervisor.supervisor_scheduler.SupervisorScheduler",
             return_value=mock_scheduler,
             create=True,
+        ), patch(
+            "app.scalping.router._execution_state",
+            self._RUNNING_SESSION_STATE,
         ):
             with patch("app.scheduler.scalping_jobs.logger") as mock_logger:
                 await supervisor_check_job()
@@ -209,27 +215,30 @@ class TestScalpingJobs:
 
     @pytest.mark.asyncio
     async def test_health_job_with_engine(self):
-        """Health job verifica cheengine e stato siano configurati."""
-        set_engine(MagicMock())
+        """Health job verifica che engine e stato siano configurati."""
         from app.scalping import router as scalping_router
-        original_state = scalping_router._execution_state
-        scalping_router._execution_state = {
+        ws_client = MagicMock()
+        ws_client._stop_event = asyncio.Event()
+        state = {
             "session": {
                 "status": "running",
                 "symbol": "BNBUSDC",
                 "mode": "live",
             },
-            "ws_client": MagicMock(_running=True),
+            "ws_client": ws_client,
             "loop": MagicMock(_candle_buffer=MagicMock(__len__=lambda self: 100)),
             "ws_tasks": [],
         }
-        with patch("app.scheduler.scalping_jobs.logger") as mock_logger:
+        with patch("app.scheduler.scalping_jobs._engine", MagicMock()), patch.dict(
+            scalping_router._execution_state,
+            state,
+            clear=True,
+        ), patch("app.scheduler.scalping_jobs.logger") as mock_logger:
             await session_health_job()
             assert mock_logger.debug.call_args_list[-1] == call(
                 "Session health check OK: status=running, symbol=BNBUSDC, "
                 "mode=live, tasks=0, buffer_ready=True"
             )
-        scalping_router._execution_state = original_state
 
 
 class TestScalpingJobsRegistration:
@@ -252,23 +261,20 @@ class TestScalpingJobsRegistration:
             pass
 
     def test_jobs_not_registered_when_scalping_disabled(self):
-        """Verifica che i job NON vengano registrati se scalping è disabilitato."""
-        import importlib
+        """Verifica che i job non vengano registrati se scalping è disabilitato."""
         import app.scheduler.jobs as jobs_mod
 
-        # Ricarica il modulo per avere un scheduler pulito
-        importlib.reload(jobs_mod)
+        fresh_scheduler = AsyncIOScheduler()
+        mock_settings = MagicMock()
+        mock_settings.SWING_JOBS_ENABLED = False
+        mock_settings.scalping.SCALPING_DEFAULT_MODE = ""
 
-        scalping_obj = jobs_mod.settings.scalping
-        orig_mode = scalping_obj.SCALPING_DEFAULT_MODE
-
-        try:
-            scalping_obj.SCALPING_DEFAULT_MODE = ""
+        with patch.object(jobs_mod, "scheduler", fresh_scheduler), patch.object(
+            jobs_mod,
+            "settings",
+            mock_settings,
+        ):
             result = jobs_mod.setup_scheduler(engine=None)
-            job_ids = [job.id for job in result.get_jobs()]
-            assert "scalping_intel_snapshot" not in job_ids
-            assert "scalping_funding_rate" not in job_ids
-            assert "scalping_supervisor_check" not in job_ids
-            assert "scalping_session_health" not in job_ids
-        finally:
-            scalping_obj.SCALPING_DEFAULT_MODE = orig_mode
+
+        job_ids = [job.id for job in result.get_jobs()]
+        assert not [job_id for job_id in job_ids if job_id.startswith("scalping_")]

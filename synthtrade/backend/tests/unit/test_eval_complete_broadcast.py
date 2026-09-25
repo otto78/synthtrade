@@ -13,7 +13,7 @@ class FakeEvalResult:
         self.score = score
 
 @pytest.mark.asyncio
-async def test_eval_complete_broadcast():
+async def test_eval_complete_broadcast(mock_supabase):
     # Mock MarketDataService with a valid close price series
     md_service = MagicMock()
     prices = [100.0 + i * 0.5 for i in range(80)]
@@ -32,7 +32,8 @@ async def test_eval_complete_broadcast():
     )
 
     # Patch strategy generation and registry lookup to keep the test focused
-    with patch('app.core.run_pipeline.generate_all_variants', return_value=[strategy]):
+    with patch('app.core.run_pipeline.get_supabase', return_value=mock_supabase), \
+         patch('app.core.run_pipeline.generate_all_variants', return_value=[strategy]):
         with patch('app.core.run_pipeline.registry.get', return_value=lambda df, p: pd.Series([1, -1] * 40, index=df.index)):
             with patch('app.core.run_pipeline.build_evaluator', return_value=fake_evaluator):
                 with patch('app.api.ws.manager.broadcast', new=AsyncMock()) as mock_broadcast:

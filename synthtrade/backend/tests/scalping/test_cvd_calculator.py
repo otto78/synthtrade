@@ -76,14 +76,12 @@ class TestCVDCalculator:
     def test_cvd_to_score_positive(self):
         """CVD positivo -> score positivo."""
         score = CVDCalculator.cvd_to_score(Decimal("500"), Decimal("1000"))
-        assert score > 0
-        assert score <= 25.0
+        assert score == 50.0
 
     def test_cvd_to_score_negative(self):
         """CVD negativo -> score negativo."""
         score = CVDCalculator.cvd_to_score(Decimal("-500"), Decimal("1000"))
-        assert score < 0
-        assert score >= -25.0
+        assert score == -50.0
 
     def test_cvd_to_score_zero_baseline(self):
         """Baseline zero -> score zero."""
@@ -91,6 +89,6 @@ class TestCVDCalculator:
         assert score == 0.0
 
     def test_cvd_to_score_clamped(self):
-        """Score non supera +/- 25."""
+        """Score non supera +/- 100."""
         score = CVDCalculator.cvd_to_score(Decimal("10000"), Decimal("1"))
-        assert -25.0 <= score <= 25.0
+        assert score == 100.0

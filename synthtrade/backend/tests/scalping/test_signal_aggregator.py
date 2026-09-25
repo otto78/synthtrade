@@ -98,7 +98,7 @@ class TestSignalAggregator:
         assert result.confidence > 0.5
 
     def test_blocks_sell_when_bullish(self):
-        """Segnale SELL bloccato se intelligence bullish."""
+        """Il sistema long-only blocca ogni SELL."""
         score = _make_score(total=65.0, bias="bullish", tradeable=True, strength=65.0)
         technical = TechnicalSignal(type="SELL", confidence=0.8)
 
@@ -106,17 +106,18 @@ class TestSignalAggregator:
 
         assert result.execute is False
         assert result.reason is not None
-        assert "conflitto" in result.reason.lower()
+        assert "sell signals disabled" in result.reason.lower()
 
-    def test_allows_sell_when_bearish(self):
-        """Segnale SELL eseguito se intelligence bearish."""
+    def test_blocks_sell_when_bearish(self):
+        """Il sistema long-only blocca SELL anche con bias bearish."""
         score = _make_score(total=-65.0, bias="bearish", tradeable=True, strength=65.0)
         technical = TechnicalSignal(type="SELL", confidence=0.8)
 
         result = self.aggregator.should_execute(technical, score)
 
-        assert result.execute is True
-        assert result.confidence > 0.5
+        assert result.execute is False
+        assert result.reason is not None
+        assert "sell signals disabled" in result.reason.lower()
 
     def test_blocks_when_not_tradeable(self):
         """Score non tradeable blocca qualsiasi segnale."""
@@ -185,19 +186,14 @@ class TestSignalAggregator:
 
 
 class TestTask1251StrongBearishGuard:
-    """TASK-1251: verifica blocco override mean-reversion con bias bearish forte.
-
-    Il blocco si attiva quando market_score.total < -15.0 (default soglia).
-    Il test usa min_confidence=0.4 per non intralciare con la soglia di confidenza.
-    """
+    """TASK-1251: verifica il blocco dell'override mean-reversion oltre -8.0."""
 
     def setup_method(self):
         self.aggregator = SignalAggregator(min_confidence=0.4)
 
     def test_blocks_mean_reversion_buy_when_strong_bearish(self):
-        """TASK-1251: rsi_bollinger BUY bloccato quando bias bearish forte (score < -15)."""
-        # Score bearish forte: -20 < -15 → deve bloccare
-        score = _make_score(total=-20.0, bias="bearish", tradeable=True, strength=20.0)
+        """TASK-1251: il BUY mean-reversion è bloccato sotto la soglia runtime -8.0."""
+        score = _make_score(total=-8.1, bias="bearish", tradeable=True, strength=8.1)
         technical = TechnicalSignal(type="BUY", confidence=0.85, source="rsi_bollinger")
 
         result = self.aggregator.should_execute(technical, score, symbol="BTCEUR")
@@ -208,9 +204,8 @@ class TestTask1251StrongBearishGuard:
         assert "1251" in result.reason or "strong" in result.reason.lower() or "soglia" in result.reason.lower()
 
     def test_allows_mean_reversion_buy_when_weakly_bearish(self):
-        """TASK-1251: rsi_bollinger BUY permesso quando bias bearish debole (-5 > score > -15)."""
-        # Score bearish debole: -10 > -15 → override ancora consentito
-        score = _make_score(total=-10.0, bias="bearish", tradeable=True, strength=10.0)
+        """TASK-1251: il BUY mean-reversion è permesso sopra la soglia runtime -8.0."""
+        score = _make_score(total=-7.0, bias="bearish", tradeable=True, strength=7.0)
         technical = TechnicalSignal(type="BUY", confidence=0.85, source="rsi_bollinger")
 
         result = self.aggregator.should_execute(technical, score, symbol="BTCEUR")
@@ -219,17 +214,19 @@ class TestTask1251StrongBearishGuard:
         assert result.is_mean_reversion_override is True
 
     def test_blocks_at_threshold_boundary(self):
-        """TASK-1251: score esattamente al limite (-15.0) non supera il blocco (< è strict)."""
-        # score == -15.0 → NON è < -15.0, quindi l'override è permesso
-        score_at_limit = _make_score(total=-15.0, bias="bearish", tradeable=True, strength=15.0)
+        """TASK-1251: il confronto è strettamente minore rispetto a -8.0."""
         technical = TechnicalSignal(type="BUY", confidence=0.85, source="rsi_bollinger")
-        result_at = self.aggregator.should_execute(technical, score_at_limit, symbol="BTCEUR")
-        assert result_at.execute is True  # -15.0 == -15.0 non è < -15.0
 
-        # score == -15.1 → è < -15.0, bloccato
-        score_over = _make_score(total=-15.1, bias="bearish", tradeable=True, strength=15.1)
-        result_over = self.aggregator.should_execute(technical, score_over, symbol="BTCEUR")
-        assert result_over.execute is False
+        score_at_limit = _make_score(total=-8.0, bias="bearish", tradeable=True, strength=8.0)
+        result_at = self.aggregator.should_execute(technical, score_at_limit, symbol="BTCEUR")
+        assert result_at.execute is True
+        assert result_at.is_mean_reversion_override is True
+
+        score_below_limit = _make_score(total=-8.1, bias="bearish", tradeable=True, strength=8.1)
+        result_below = self.aggregator.should_execute(technical, score_below_limit, symbol="BTCEUR")
+        assert result_below.execute is False
+        assert result_below.reason is not None
+        assert "1251" in result_below.reason
 
     def test_non_mean_reversion_buy_still_blocked_by_bias(self):
         """TASK-1251: BUY da ema_cross con bias bearish viene bloccato dal filtro normale."""
@@ -244,16 +241,11 @@ class TestTask1251StrongBearishGuard:
 
 
 class TestTask1250MacroTrendGuard:
-    """TASK-1250: verifica blocco override mean-reversion con macro context BTC > EMA20 4h.
-
-    Quando BTC > EMA20 4h, anche un override con bias debole (score > -15) deve essere bloccato.
-    Il test usa score=-10 (bias debole, non bloccato da TASK-1251) e aggiunge il macro context.
-    """
+    """TASK-1250: verifica il blocco dell'override quando BTC è sopra EMA20 4h."""
 
     def setup_method(self):
         self.aggregator = SignalAggregator(min_confidence=0.4)
-        # score debole bearish: supera TASK-1251 (score > -15), ma deve essere bloccato da TASK-1250
-        self.score = _make_score(total=-10.0, bias="bearish", tradeable=True, strength=10.0)
+        self.score = _make_score(total=-7.0, bias="bearish", tradeable=True, strength=7.0)
         self.technical = TechnicalSignal(type="BUY", confidence=0.85, source="rsi_bollinger")
 
     def test_blocks_mean_reversion_when_btc_above_ema20(self):
@@ -284,7 +276,7 @@ class TestTask1250MacroTrendGuard:
         result = self.aggregator.should_execute(
             self.technical, self.score, symbol="BTCEUR", macro_context=None
         )
-        # Score -10 debole + no macro → override permesso (TASK-1251 non blocca)
+        # Score -7 debole + no macro → override permesso (TASK-1251 non blocca)
         assert result.execute is True
         assert result.is_mean_reversion_override is True
 
@@ -387,8 +379,8 @@ class TestTask1252MeanReversionNotBlockedByEMA20:
         assert "1250" not in (result.reason or "").upper() or "non bloccato" in (result.reason or "").lower()
 
     def test_mr_override_still_blocked_by_strong_bearish_guard(self):
-        """TASK-1252 non tocca TASK-1251: score forte bearish (< -15) deve ancora bloccare."""
-        score = _make_score(total=-20.0, bias="bearish", tradeable=True, strength=20.0)
+        """TASK-1252 non tocca TASK-1251: score sotto -8.0 deve ancora bloccare."""
+        score = _make_score(total=-8.1, bias="bearish", tradeable=True, strength=8.1)
         technical = TechnicalSignal(type="BUY", confidence=0.85, source="rsi_bollinger")
         macro = {"btc_price_at_entry": 67000.0, "btc_ema20_4h": 69000.0}
 

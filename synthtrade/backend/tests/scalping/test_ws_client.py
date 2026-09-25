@@ -184,7 +184,7 @@ class TestDispatch:
     async def test_dispatch_kline(self, sample_kline_msg):
         """Il dispatch di un kline produce un CandleEvent sulla coda."""
         client = BinanceWSClient(symbols=["btcusdt"])
-        await client._dispatch(sample_kline_msg, "btcusdt")
+        await client._dispatch_candle(sample_kline_msg, "btcusdt")
         assert client.candle_queue.qsize() == 1
         event = client.candle_queue.get_nowait()
         assert isinstance(event, CandleEvent)
@@ -195,7 +195,7 @@ class TestDispatch:
     async def test_dispatch_trade(self, sample_trade_msg):
         """Il dispatch di un trade produce un TradeEvent sulla coda."""
         client = BinanceWSClient(symbols=["btcusdt"])
-        await client._dispatch(sample_trade_msg, "btcusdt")
+        await client._dispatch_trade(sample_trade_msg, "btcusdt")
         assert client.trade_queue.qsize() == 1
         event = client.trade_queue.get_nowait()
         assert isinstance(event, TradeEvent)
@@ -205,7 +205,8 @@ class TestDispatch:
     async def test_dispatch_invalid_json(self):
         """JSON non valido non produce eventi, loggato come warning."""
         client = BinanceWSClient(symbols=["btcusdt"])
-        await client._dispatch("{invalid json}", "btcusdt")
+        await client._dispatch_candle("{invalid json}", "btcusdt")
+        await client._dispatch_trade("{invalid json}", "btcusdt")
         assert client.candle_queue.qsize() == 0
         assert client.trade_queue.qsize() == 0
 
@@ -214,7 +215,8 @@ class TestDispatch:
         """Tipo evento sconosciuto non produce eventi."""
         msg = json.dumps({"e": "unknown_event", "data": "test"})
         client = BinanceWSClient(symbols=["btcusdt"])
-        await client._dispatch(msg, "btcusdt")
+        await client._dispatch_candle(msg, "btcusdt")
+        await client._dispatch_trade(msg, "btcusdt")
         assert client.candle_queue.qsize() == 0
         assert client.trade_queue.qsize() == 0
 
@@ -224,7 +226,7 @@ class TestDispatch:
         callback = MagicMock()
         client = BinanceWSClient(symbols=["btcusdt"])
         client.on_candle = callback
-        await client._dispatch(sample_kline_msg, "btcusdt")
+        await client._dispatch_candle(sample_kline_msg, "btcusdt")
         callback.assert_called_once()
         args = callback.call_args[0]
         assert isinstance(args[0], CandleEvent)
@@ -236,7 +238,7 @@ class TestDispatch:
         callback = MagicMock()
         client = BinanceWSClient(symbols=["btcusdt"])
         client.on_trade = callback
-        await client._dispatch(sample_trade_msg, "btcusdt")
+        await client._dispatch_trade(sample_trade_msg, "btcusdt")
         callback.assert_called_once()
         args = callback.call_args[0]
         assert isinstance(args[0], TradeEvent)
@@ -269,24 +271,25 @@ class TestSymbols:
 class TestLifecycle:
     @pytest.mark.asyncio
     async def test_start_creates_tasks(self):
-        """start() crea un asyncio.Task per ogni simbolo."""
+        """start() crea un asyncio.Task per ogni stream di ogni simbolo."""
         client = BinanceWSClient(symbols=["btcusdt"])
         assert len(client._tasks) == 0
-        # Mockiamo _run_symbol_stream per evitare connessioni reali
         with patch.object(client, "_run_symbol_stream", AsyncMock()):
             await client.start()
-            assert len(client._tasks) == 1
-            assert client._tasks[0].get_name() == "ws-btcusdt"
-            # Pulizia
+            assert len(client._tasks) == 2
+            assert {task.get_name() for task in client._tasks} == {
+                "ws-btcusdt-kline_1m",
+                "ws-btcusdt-trade",
+            }
             await client.stop()
 
     @pytest.mark.asyncio
     async def test_start_multiple_symbols(self):
-        """start() crea un task per ogni simbolo."""
+        """start() crea due task per ogni simbolo."""
         client = BinanceWSClient(symbols=["btcusdt", "ethusdt"])
         with patch.object(client, "_run_symbol_stream", AsyncMock()):
             await client.start()
-            assert len(client._tasks) == 2
+            assert len(client._tasks) == 4
             await client.stop()
 
     @pytest.mark.asyncio
@@ -295,7 +298,7 @@ class TestLifecycle:
         client = BinanceWSClient(symbols=["btcusdt"])
         with patch.object(client, "_run_symbol_stream", AsyncMock()):
             await client.start()
-            assert len(client._tasks) == 1
+            assert len(client._tasks) == 2
             await client.stop()
             assert len(client._tasks) == 0
 
@@ -327,7 +330,7 @@ class TestReconnection:
         ):
             mock_settings.binance_ws_base_url = "wss://test.stream"
             # Eseguiamo _run_symbol_stream in un task e lo fermiamo dopo 0.1s
-            task = asyncio.create_task(client._run_symbol_stream("btcusdt"))
+            task = asyncio.create_task(client._run_symbol_stream("btcusdt", "trade"))
             await asyncio.sleep(0.15)
             assert task.done() is False  # deve stare riprovando
             task.cancel()
@@ -350,7 +353,7 @@ class TestReconnection:
             patch("websockets.connect", return_value=mock_ws),
         ):
             mock_settings.binance_ws_base_url = "wss://test.stream"
-            task = asyncio.create_task(client._run_symbol_stream("btcusdt"))
+            task = asyncio.create_task(client._run_symbol_stream("btcusdt", "trade"))
             await asyncio.sleep(0.15)
             # Dovrebbe esserci uno status event di disconnessione
             assert client.status_queue.qsize() > 0
@@ -376,8 +379,8 @@ class TestQueueSeparation:
     async def test_candle_and_trade_separate(self, sample_kline_msg, sample_trade_msg):
         """Candele e trades vanno su code separate."""
         client = BinanceWSClient(symbols=["btcusdt"])
-        await client._dispatch(sample_kline_msg, "btcusdt")
-        await client._dispatch(sample_trade_msg, "btcusdt")
+        await client._dispatch_candle(sample_kline_msg, "btcusdt")
+        await client._dispatch_trade(sample_trade_msg, "btcusdt")
         assert client.candle_queue.qsize() == 1
         assert client.trade_queue.qsize() == 1
         assert isinstance(client.candle_queue.get_nowait(), CandleEvent)

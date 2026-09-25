@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from app.scalping.data.candle_buffer import CandleBuffer
 from app.scalping.models.market import Candle, MarketRegime
-from app.scalping.engine.regime_detector import RegimeDetector
+from app.scalping.engine.regime_detector import REGIME_HYSTERESIS_K, RegimeDetector
 from app.scalping.engine.strategy_selector import StrategySelector
 from app.scalping.engine.position_manager import PositionManager, Position
 from app.scalping.engine.execution_loop import ExecutionLoop
@@ -83,13 +83,19 @@ class TestRegimeDetector:
         regime = detector.detect([])
         assert regime.regime == "unknown"
 
-    def test_detects_ranging_for_small_move(self):
+    def test_regime_change_requires_hysteresis_cycles(self):
         detector = RegimeDetector()
-        candles = [self._make_candle(i, close=Decimal("100") + Decimal(str(i * 0.1))) for i in range(50)]
-        regime = detector.detect(candles)
-        # low-high spread (2.0) / close (~105) = 0.019 > 0.01 → volatile
-        # I test originali usavano spread alto. Il regime è volatile con spread=2 su prezzo=100.
-        assert regime.regime in ("ranging", "volatile")
+        gradual_up = [
+            self._make_candle(i, close=Decimal("100") + Decimal(str(i * 0.1)))
+            for i in range(50)
+        ]
+        ranging = [self._make_candle(i, close=Decimal("100")) for i in range(50)]
+
+        assert detector.detect(gradual_up).regime == "trending_up"
+
+        regimes = [detector.detect(ranging).regime for _ in range(REGIME_HYSTERESIS_K)]
+        assert regimes[:-1] == ["trending_up"] * (REGIME_HYSTERESIS_K - 1)
+        assert regimes[-1] == "ranging"
 
     def test_detects_trending_up_for_large_move(self):
         detector = RegimeDetector()
@@ -201,7 +207,7 @@ class TestExecutionLoop:
     @pytest.mark.asyncio
     async def test_open_position_suppresses_new_entry_signals(self):
         class FakeSignalEngine:
-            async def compute(self):
+            async def compute(self, quiet=False):
                 return SignalScore(
                     total=65.0,
                     bias="bullish",
@@ -220,7 +226,7 @@ class TestExecutionLoop:
                 return TechnicalSignal(type="BUY", confidence=0.8, source="fake")
 
         class FakeSelector:
-            def select(self, regime):
+            def select(self, regime, macro_context=None):
                 return FakeStrategy()
 
         class FailingAggregator:

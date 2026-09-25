@@ -12,10 +12,10 @@ from app.config import ScalpingSettings, settings
 class TestScalpingSettingsDefaults:
     """Verifica che i valori di default siano caricati correttamente."""
 
-    def test_default_max_daily_loss_pct(self):
-        """SCALPING_MAX_DAILY_LOSS_PCT default deve essere 3.0%"""
+    def test_default_max_daily_loss(self):
+        """SCALPING_MAX_DAILY_LOSS default deve essere 50.0 EUR"""
         sut = ScalpingSettings()
-        assert sut.SCALPING_MAX_DAILY_LOSS_PCT == 3.0
+        assert sut.SCALPING_MAX_DAILY_LOSS == 50.0
 
     def test_default_max_consecutive_losses(self):
         """SCALPING_MAX_CONSECUTIVE_LOSSES default deve essere 5"""
@@ -33,14 +33,14 @@ class TestScalpingSettingsDefaults:
         assert sut.SCALPING_TIMEFRAME == '1m'
 
     def test_default_signal_strength_threshold(self):
-        """SCALPING_SIGNAL_STRENGTH_THRESHOLD default deve essere 30.0"""
+        """SCALPING_SIGNAL_STRENGTH_THRESHOLD default deve essere 15.0"""
         sut = ScalpingSettings()
-        assert sut.SCALPING_SIGNAL_STRENGTH_THRESHOLD == 30.0
+        assert sut.SCALPING_SIGNAL_STRENGTH_THRESHOLD == 15.0
 
     def test_default_min_confidence(self):
-        """SCALPING_MIN_CONFIDENCE default deve essere 0.6"""
+        """SCALPING_MIN_CONFIDENCE default deve essere 0.3"""
         sut = ScalpingSettings()
-        assert sut.SCALPING_MIN_CONFIDENCE == 0.6
+        assert sut.SCALPING_MIN_CONFIDENCE == 0.3
 
     def test_default_execution_interval_ms(self):
         """SCALPING_EXECUTION_INTERVAL_MS default deve essere 500"""
@@ -102,9 +102,9 @@ class TestScalpingSettingsOverride:
         os.environ[key] = value
 
     def test_override_max_daily_loss_pct(self):
-        self._set_env('SCALPING_MAX_DAILY_LOSS_PCT', '5.0')
+        self._set_env('SCALPING_MAX_DAILY_LOSS', '5.0')
         sut = ScalpingSettings()
-        assert sut.SCALPING_MAX_DAILY_LOSS_PCT == 5.0
+        assert sut.SCALPING_MAX_DAILY_LOSS == 5.0
 
     def test_override_max_consecutive_losses(self):
         self._set_env('SCALPING_MAX_CONSECUTIVE_LOSSES', '3')
@@ -133,7 +133,7 @@ class TestScalpingSettingsTypeCoercion:
 
     def test_max_daily_loss_pct_is_float(self):
         sut = ScalpingSettings()
-        assert isinstance(sut.SCALPING_MAX_DAILY_LOSS_PCT, float)
+        assert isinstance(sut.SCALPING_MAX_DAILY_LOSS, float)
 
     def test_max_consecutive_losses_is_int(self):
         sut = ScalpingSettings()
@@ -171,6 +171,6 @@ class TestScalpingSettingsAccessViaSettings:
         assert settings.scalping is settings.scalping
 
     def test_settings_scalping_has_defaults(self):
-        assert settings.scalping.SCALPING_MAX_DAILY_LOSS_PCT == 3.0
+        assert settings.scalping.SCALPING_MAX_DAILY_LOSS == 3.0
         assert settings.scalping.SCALPING_TIMEFRAME == '1m'
         assert settings.scalping.SCALPING_DEFAULT_MODE == 'PAPER'

@@ -13,7 +13,7 @@ from app.scalping.models.intelligence import SignalScore
 
 
 def _make_score(
-    total: float = -60.0,
+    total: float = -7.0,
     bias: str = "bearish",
     tradeable: bool = True,
     trend_5m: float | None = None,
@@ -115,14 +115,16 @@ def test_falling_knife_does_not_block_regular_buy(aggregator):
 
 # ── Test 6: Falling knife NON blocca mean-reversion SELL ──
 
-def test_falling_knife_does_not_block_mean_reversion_sell(aggregator):
-    """MEAN-REVERSION SELL con bias bullish non è un falling knife (è chiusura range)."""
+def test_sell_is_blocked_before_falling_knife(aggregator):
+    """La guardia long-only intercetta SELL prima del controllo falling knife."""
     score = _make_score(total=30.0, bias="bullish", trend_5m=-35.0, trend_direction="diverging")
     tech = _make_technical("SELL", source="rsi_bollinger")
 
     decision = aggregator.should_execute(tech, score, symbol="BTC-EUR")
 
-    assert decision.execute is True
+    assert decision.execute is False
+    assert decision.reason == "SELL signals disabled"
+    assert "FALLING KNIFE" not in (decision.reason or "")
 
 
 # ── Test 7: Falling knife NON blocca CLOSE (sempre permesso) ──

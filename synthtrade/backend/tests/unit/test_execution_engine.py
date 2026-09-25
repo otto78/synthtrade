@@ -36,7 +36,7 @@ def engine():
         order_id="o1", status="FILLED", symbol="BTC/USDT",
         direction="BUY", quantity=0.01, price=60000.0
     ))
-    exchange.close_order = AsyncMock(return_value=OrderResult(
+    exchange.close_position = AsyncMock(return_value=OrderResult(
         order_id="o2", status="FILLED", symbol="BTC/USDT",
         direction="SELL", quantity=0.01, price=62000.0
     ))
@@ -129,7 +129,11 @@ async def test_close_position_if_needed_closes_on_sl(engine):
     pos.take_profit = 62000.0
     engine.sl_service.is_hit.return_value = True
     await engine.close_position_if_needed(pos, current_price=57000.0)
-    engine.exchange.close_order.assert_called_once()
+    engine.exchange.close_position.assert_called_once_with(
+        symbol=pos.symbol,
+        side=pos.direction,
+        quantity=pos.quantity
+    )
     engine.order_tracker.close_position.assert_called_once()
 
 
@@ -139,7 +143,7 @@ async def test_close_position_if_needed_no_close(engine):
     pos.stop_loss = 58000.0
     pos.take_profit = 62000.0
     await engine.close_position_if_needed(pos, current_price=60000.0)
-    engine.exchange.close_order.assert_not_called()
+    engine.exchange.close_position.assert_not_called()
 
 
 @pytest.mark.asyncio

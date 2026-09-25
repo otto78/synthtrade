@@ -2,6 +2,26 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock
 from app.execution.exchange import BinanceExchangeAdapter
 
+
+def _binance_markets():
+    return {
+        "BTC/USDT": {
+            "id": "BTCUSDT",
+            "symbol": "BTC/USDT",
+            "base": "BTC",
+            "quote": "USDT",
+            "precision": {"amount": 3, "price": 2},
+            "limits": {"amount": {"min": 0.001}, "cost": {"min": 5.0}},
+            "info": {
+                "filters": [
+                    {"filterType": "LOT_SIZE", "stepSize": "0.001", "minQty": "0.001"},
+                    {"filterType": "MIN_NOTIONAL", "minNotional": "5.0"},
+                    {"filterType": "PRICE_FILTER", "tickSize": "0.01"},
+                ]
+            },
+        }
+    }
+
 @pytest.mark.asyncio
 async def test_binance_adapter_get_balance(monkeypatch):
     """
@@ -26,6 +46,7 @@ async def test_binance_adapter_get_ticker_price(monkeypatch):
     """
     mock_ccxt = AsyncMock()
     mock_ccxt.fetch_ticker.return_value = {"last": 65000.0}
+    mock_ccxt.load_markets.return_value = _binance_markets()
     
     adapter = BinanceExchangeAdapter(api_key="key", secret="secret", testnet=True, client=mock_ccxt)
     price = await adapter.get_ticker_price("BTC/USDT")
@@ -45,9 +66,10 @@ async def test_binance_adapter_place_market_order(monkeypatch):
         "price": 65000.0,
         "amount": 0.01
     }
+    mock_ccxt.load_markets.return_value = _binance_markets()
     
     adapter = BinanceExchangeAdapter(api_key="key", secret="secret", testnet=True, client=mock_ccxt)
-    result = await adapter.place_market_order("BTC/USDT", "BUY", 0.01)
+    result = await adapter.place_market_order("BTC/USDT", "buy", 0.01)
     
     assert result["order_id"] == "12345"
     mock_ccxt.create_order.assert_called_with(

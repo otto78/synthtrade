@@ -71,9 +71,10 @@ async def test_binance_adapter_place_market_order(monkeypatch):
     adapter = BinanceExchangeAdapter(api_key="key", secret="secret", testnet=True, client=mock_ccxt)
     result = await adapter.place_market_order("BTC/USDT", "buy", 0.01)
     
-    assert result["order_id"] == "12345"
+    # L'adapter restituisce il dict CCXT raw (chiave "id") + commission/commission_asset
+    assert result["id"] == "12345"
     mock_ccxt.create_order.assert_called_with(
-        symbol="BTC/USDT",
+        symbol="BTCUSDT",  # l'adapter risolve l'id compatto dal market CCXT
         type="market",
         side="buy",
         amount=0.01

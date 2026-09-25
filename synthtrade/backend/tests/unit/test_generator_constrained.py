@@ -17,7 +17,7 @@ def test_normalize_trading_pair_formats_ccxt():
 def mock_ohlcv():
     """OHLCV sintetica con 20 cicli bull/bear per generare 30+ EMA crossover."""
     rng = np.random.default_rng(123)
-    n = 8000
+    n = 3000
     cycles = 20
     t = np.linspace(0, cycles * 2 * np.pi, n)
     prices = 50000 + np.sin(t) * 3000 + rng.standard_normal(n) * 800
@@ -29,6 +29,14 @@ def mock_ohlcv():
         "close": prices,
         "volume": np.abs(np.ones(n) * 5.0 + rng.standard_normal(n) * 1),
     }, index=pd.date_range("2024-01-01", periods=n, freq="1h"))
+
+
+@pytest.fixture(autouse=True)
+def mock_ai_naming():
+    """generate_funny_name chiama l'AI reale (~4s a variante): mockato per i test unitari."""
+    with patch("app.core.strategy_generator.generate_funny_name",
+               new_callable=AsyncMock, return_value="Nome Test"):
+        yield
 
 
 @pytest.mark.asyncio
@@ -43,11 +51,14 @@ async def test_generate_for_request_duration_filter(mock_ohlcv):
     with patch("app.core.strategy_generator.enrich_request_with_ai",
                new_callable=AsyncMock, side_effect=lambda x: x):
         # trend_ema has 30 days. request 30 days should include it.
+        # max_strategies alto: il test verifica il FILTRO duration, non il ritaglio top-N.
         req = StrategyRequest(
             budget_eur=100.0,
             duration_days=30,
             asset_class="crypto",
-            risk_level="medium"
+            risk_level="medium",
+            symbols=["BTC/USDT"],
+            max_strategies=200
         )
         strategies, _ = await generate_for_request(req, mock_md_service)
         templates_found = {s.template for s in strategies}
@@ -58,7 +69,9 @@ async def test_generate_for_request_duration_filter(mock_ohlcv):
             budget_eur=100.0,
             duration_days=7,
             asset_class="crypto",
-            risk_level="medium"
+            risk_level="medium",
+            symbols=["BTC/USDT"],
+            max_strategies=200
         )
         strategies_short, _ = await generate_for_request(req_short, mock_md_service)
         templates_found_short = {s.template for s in strategies_short}
@@ -103,7 +116,8 @@ async def test_generate_for_request_risk_level_low(mock_ohlcv):
             budget_eur=100.0,
             duration_days=7,
             asset_class="crypto",
-            risk_level="low"
+            risk_level="low",
+            symbols=["BTC/USDT"]
         )
         strategies, _ = await generate_for_request(req, mock_md_service)
         templates_found = {s.template for s in strategies}
@@ -124,7 +138,9 @@ async def test_generate_for_request_risk_level_high(mock_ohlcv):
             budget_eur=100.0,
             duration_days=7,
             asset_class="crypto",
-            risk_level="high"
+            risk_level="high",
+            symbols=["BTC/USDT"],
+            max_strategies=200
         )
         strategies, _ = await generate_for_request(req, mock_md_service)
         templates_found = {s.template for s in strategies}
@@ -146,7 +162,8 @@ async def test_generate_for_request_budget_propagation(mock_ohlcv):
             budget_eur=budget,
             duration_days=30,
             asset_class="crypto",
-            risk_level="medium"
+            risk_level="medium",
+            symbols=["BTC/USDT"]
         )
         strategies, _ = await generate_for_request(req, mock_md_service)
         for s in strategies:
@@ -169,7 +186,8 @@ async def test_generate_for_request_max_strategies_limit(mock_ohlcv):
             duration_days=30,
             asset_class="crypto",
             risk_level="medium",
-            max_strategies=max_s
+            max_strategies=max_s,
+            symbols=["BTC/USDT"]
         )
         strategies, _ = await generate_for_request(req, mock_md_service)
         assert len(strategies) <= max_s

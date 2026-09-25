@@ -22,9 +22,9 @@ def mock_db():
     }
     db.table.return_value.insert.return_value.execute.return_value.data = [full_trade]
     db.table.return_value.update.return_value.eq.return_value.execute.return_value.data = [full_trade]
-    open_positions_query = db.table.return_value.select.return_value.eq.return_value
-    open_positions_query.execute.return_value.data = [full_trade]
-    open_positions_query.eq.return_value.execute.return_value.data = []
+    # Catena reale di get_open_positions: select → eq("status") → eq("trading_mode") → execute
+    select_q = db.table.return_value.select.return_value
+    select_q.eq.return_value.eq.return_value.execute.return_value.data = [full_trade]
     return db
 
 

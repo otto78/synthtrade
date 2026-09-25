@@ -31,7 +31,7 @@ def test_each_variant_has_required_fields():
 def mock_ohlcv():
     import numpy as np
     rng = np.random.default_rng(123)
-    n = 8000
+    n = 1600
     cycles = 20
     t = np.linspace(0, cycles * 2 * np.pi, n)
     prices = 50000 + np.sin(t) * 3000 + rng.standard_normal(n) * 800
@@ -53,14 +53,17 @@ async def test_generate_for_request_full_data(mock_ohlcv):
         duration_days=30,
         asset_class="crypto",
         risk_level="medium",
-        max_strategies=5
+        max_strategies=5,
+        symbols=["BTC/USDT"]
     )
 
     mock_md_service = MagicMock()
     mock_md_service.get_ohlcv.return_value = mock_ohlcv
 
     with patch("app.core.strategy_generator.enrich_request_with_ai",
-               new_callable=AsyncMock, return_value=req):
+               new_callable=AsyncMock, return_value=req), \
+         patch("app.core.strategy_generator.generate_funny_name",
+               new_callable=AsyncMock, return_value="Nome Test"):
         results, hint = await generate_for_request(req, mock_md_service)
     
     assert len(results) > 0

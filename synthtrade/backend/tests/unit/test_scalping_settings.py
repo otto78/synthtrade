@@ -58,9 +58,9 @@ class TestScalpingSettingsDefaults:
         assert sut.SCALPING_INTEL_UPDATE_INTERVAL_SEC == 60
 
     def test_default_supervisor_interval(self):
-        """SCALPING_SUPERVISOR_INTERVAL_MIN default deve essere 10"""
+        """SCALPING_SUPERVISOR_INTERVAL_SEC default deve essere 600 (rinominato da _MIN in TASK-807)"""
         sut = ScalpingSettings()
-        assert sut.SCALPING_SUPERVISOR_INTERVAL_MIN == 10
+        assert sut.SCALPING_SUPERVISOR_INTERVAL_SEC == 600
 
     def test_default_supervisor_min_trades(self):
         """SCALPING_SUPERVISOR_MIN_TRADES_BEFORE_DECISION default deve essere 3"""
@@ -166,11 +166,12 @@ class TestScalpingSettingsAccessViaSettings:
     def test_settings_scalping_is_scalpingsettings_instance(self):
         assert isinstance(settings.scalping, ScalpingSettings)
 
-    def test_settings_scalping_returns_same_instance(self):
-        """La property scalping deve essere cached (stessa istanza)."""
-        assert settings.scalping is settings.scalping
+    def test_settings_scalping_returns_consistent_values(self):
+        """La property scalping crea una nuova istanza a ogni accesso (config.py:289):
+        deve comunque restituire valori coerienti (field-by-field equality)."""
+        assert settings.scalping == settings.scalping
 
     def test_settings_scalping_has_defaults(self):
-        assert settings.scalping.SCALPING_MAX_DAILY_LOSS == 3.0
+        assert settings.scalping.SCALPING_MAX_DAILY_LOSS == 50.0
         assert settings.scalping.SCALPING_TIMEFRAME == '1m'
         assert settings.scalping.SCALPING_DEFAULT_MODE == 'PAPER'

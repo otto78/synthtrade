@@ -12,6 +12,7 @@ from app.config import settings
 from app.db.supabase_client import get_supabase
 from postgrest.types import ReturnMethod
 from app.scalping._state import _execution_state
+from app.scalping.config_loader import get_scalping_config
 from app.scalping.pricing import (
     _get_fee_rate,
     _sl_price_from_entry,
@@ -102,6 +103,38 @@ async def _wait_for_fill(
     return price, qty
 
 
+def _per_strategy_sl_tp_pct(state: dict, risk_cfg: dict) -> tuple[float, float]:
+    """TASK-1256/1257: SL/TP netti della strategia attiva, con fallback al globale.
+
+    Se la strategia corrente ha un override DB (STRATEGY_<NAME>_SL_PCT /
+    STRATEGY_<NAME>_TP_PCT in scalping_runtime_config) usa quello, altrimenti
+    i valori globali stop_loss_pct / take_profit_pct come prima. Se il DB non
+    è raggiungibile o la strategia non è nota, degrada al globale senza errori.
+    """
+    sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3))
+    tp_pct = float(risk_cfg.get("take_profit_pct", 0.5))
+    try:
+        loop = state.get("loop")
+        strategy_name = getattr(getattr(loop, "_strategy", None), "name", None)
+        if not strategy_name:
+            return sl_pct, tp_pct
+        cfg = get_scalping_config()
+        sl_override = cfg.strategy_sl_pct_override(strategy_name)
+        tp_override = cfg.strategy_tp_pct_override(strategy_name)
+        if sl_override is not None:
+            sl_pct = float(sl_override)
+        if tp_override is not None:
+            tp_pct = float(tp_override)
+        logger.info(
+            "[PER_STRATEGY_RISK] strategy=%s SL=%.3f%% TP=%.3f%% (override=%s)",
+            strategy_name, sl_pct, tp_pct,
+            (sl_override is not None or tp_override is not None),
+        )
+    except Exception as e:
+        logger.warning(f"[PER_STRATEGY_RISK] override non disponibile, uso globale: {e}")
+    return sl_pct, tp_pct
+
+
 async def _broadcast_position_update(session: dict, event) -> None:
     """Broadcast position_update su ogni candela chiusa (post ciclo decisione).
 
@@ -147,8 +180,8 @@ async def _broadcast_position_update(session: dict, event) -> None:
             pnl_pct = (pnl / entry_val) * 100
 
             risk_cfg = _execution_state.get("risk_config", {})
-            _sl_cfg = float(risk_cfg.get("stop_loss_pct", 0.3))
-            _tp_cfg = float(risk_cfg.get("take_profit_pct", 0.5))
+            # TASK-1256/1257: SL/TP netti per-strategia con fallback al globale.
+            _sl_cfg, _tp_cfg = _per_strategy_sl_tp_pct(_execution_state, risk_cfg)
             _ft3 = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
             _ef3, _xf3 = _get_fee_rate(_ft3, "taker", 0.001), _get_fee_rate(_ft3, "taker", 0.001)
             # TASK-1127: Fees are now positive for base level accounts
@@ -222,8 +255,8 @@ async def _broadcast_position_update(session: dict, event) -> None:
                 "pnl_pct": round(pnl_pct, 2),
                 "stop_loss_price": round(sl_price, 2),
                 "take_profit_price": round(tp_price, 2),
-                "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
-                "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
+                "stop_loss_pct": float(_sl_cfg),
+                "take_profit_pct": float(_tp_cfg),
                 "stop_loss_pct_net": round(sl_pct_net, 2),  # TASK-885
                 "take_profit_pct_net": round(tp_pct_net, 2),  # TASK-885
                 "progress_pct": round(progress_pct, 1),         # -100 to +100
@@ -824,8 +857,8 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                 # il risultato NETTO atteso dopo fee. Convertiamo nel movimento di
                                 # prezzo LORDO necessario tramite _net_to_gross_pct.
                                 risk_cfg = _execution_state.get("risk_config", {})
-                                sl_pct_net_cfg = float(risk_cfg.get("stop_loss_pct", 0.3))
-                                tp_pct_net_cfg = float(risk_cfg.get("take_profit_pct", 0.5))
+                                # TASK-1256/1257: SL/TP netti per-strategia con fallback al globale.
+                                sl_pct_net_cfg, tp_pct_net_cfg = _per_strategy_sl_tp_pct(_execution_state, risk_cfg)
                                 price_prec = int(filters.get("pricePrecision", 2))
 
                                 fee_tier_pricing = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
@@ -968,8 +1001,8 @@ async def _candle_processor(symbol: str, restore_mode: bool = False):
                                     "pnl_pct": 0.0,
                                     "stop_loss_price": round(sl_price, 2),
                                     "take_profit_price": round(tp_price, 2),
-                                    "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
-                                    "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
+                                    "stop_loss_pct": float(sl_pct_net_cfg),
+                                    "take_profit_pct": float(tp_pct_net_cfg),
                                     "breakeven_pct": round((entry_fee_pricing + exit_fee_pricing) * 100, 2),
                                     # TASK-1247: trailing step (0 all'apertura) + SL net % effettivo
                                     "trailing_step": pos_obj.trailing_step,

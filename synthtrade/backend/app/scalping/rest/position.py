@@ -68,7 +68,6 @@ async def get_position() -> Optional[Dict]:
         pnl = 0.0
         pnl_pct = 0.0
     
-    # Config risk: stop_loss_pct / take_profit_pct sono GIÀ target netti.
     risk_cfg = _execution_state.get("risk_config", {})
     sl_pct = float(risk_cfg.get("stop_loss_pct", 0.3))
     tp_pct = float(risk_cfg.get("take_profit_pct", 0.5))
@@ -95,6 +94,14 @@ async def get_position() -> Optional[Dict]:
     # Target netti effettivi ai prezzi reali risolti qui sopra.
     sl_pct_net = round(_expected_net_pct_at_exit(entry, stop_loss_price, pos.side, entry_fee_rate, exit_fee_rate), 2)
     tp_pct_net = round(_expected_net_pct_at_exit(entry, take_profit_price, pos.side, entry_fee_rate, exit_fee_rate), 2)
+
+    # Le percentuali mostrate in UI devono riflettere i prezzi reali piazzati
+    # sull'exchange, non i default globali: con override per-strategia il valore
+    # globale mostrerebbe uno SL/TP che non è quello effettivo.
+    if pos.sl_price is not None and float(pos.sl_price) > 0:
+        sl_pct = abs(sl_pct_net)
+    if pos.tp_price is not None and float(pos.tp_price) > 0:
+        tp_pct = tp_pct_net
 
     return {
         "symbol": pos.symbol,

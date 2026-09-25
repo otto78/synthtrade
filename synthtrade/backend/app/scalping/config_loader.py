@@ -81,6 +81,8 @@ class ScalpingConfigLoader:
             "TRAILING_STEP_NET_PCT": 0.15,         # ogni 0.15% netto guadagnato in più si avanza
             "TRAILING_BUFFER_NET_PCT": 0.10,        # distanza SL dal trigger corrente
             "TRAILING_SAFETY_MARGIN_NET_PCT": 0.10, # distanza minima tra next_trigger e TP netto
+            "STRATEGY_RSI_BOLLINGER_SL_PCT": 0.30,
+            "STRATEGY_RSI_BOLLINGER_TP_PCT": 0.55,
         }
         # TASK-904: regime -> strategia default (override via DB con chiavi REGIME_STRATEGY_*)
         for regime, strategy in _DEFAULT_REGIME_STRATEGY_MAP.items():
@@ -156,6 +158,32 @@ class ScalpingConfigLoader:
     @property
     def take_profit_pct(self) -> float:
         return self._config["SCALPING_TAKE_PROFIT_PCT"]
+
+    def strategy_sl_pct_override(self, strategy_name: str | None) -> float | None:
+        """TASK-1256/1257: SL netto per-strategia override dal DB runtime config.
+
+        Legge la chiave STRATEGY_<NAME>_SL_PCT da scalping_runtime_config (DB),
+        ritorna None se non presente → il chiamante usa il valore globale
+        (risk_cfg.stop_loss_pct) come oggi. Puramente di lettura, nessuna modifica.
+        """
+        if not strategy_name:
+            return None
+        key = f"STRATEGY_{strategy_name.upper()}_SL_PCT"
+        val = self._config.get(key)
+        return float(val) if val is not None else None
+
+    def strategy_tp_pct_override(self, strategy_name: str | None) -> float | None:
+        """TASK-1256/1257: TP netto per-strategia override dal DB runtime config.
+
+        Legge la chiave STRATEGY_<NAME>_TP_PCT da scalping_runtime_config (DB),
+        ritorna None se non presente → il chiamante usa il valore globale
+        (risk_cfg.take_profit_pct) come oggi. Puramente di lettura, nessuna modifica.
+        """
+        if not strategy_name:
+            return None
+        key = f"STRATEGY_{strategy_name.upper()}_TP_PCT"
+        val = self._config.get(key)
+        return float(val) if val is not None else None
 
     @property
     def max_daily_loss(self) -> float:

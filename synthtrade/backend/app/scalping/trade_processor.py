@@ -81,8 +81,10 @@ async def _trade_processor(symbol: str, restore_mode: bool = False):
                 # (fallback al ricalcolo da percentuali per posizioni pre-fix / restore).
                 if pos.sl_price is not None and float(pos.sl_price) > 0:
                     sl = float(pos.sl_price)
+                    _sl_cfg4 = abs(_expected_net_pct_at_exit(entry, sl, pos.side, _ef4, _xf4))
                 if pos.tp_price is not None and float(pos.tp_price) > 0:
                     tp = float(pos.tp_price)
+                    _tp_cfg4 = _expected_net_pct_at_exit(entry, tp, pos.side, _ef4, _xf4)
                 
                 gross_pnl = (current - entry) * qty if pos.side == "BUY" else (entry - current) * qty
                 
@@ -120,8 +122,8 @@ async def _trade_processor(symbol: str, restore_mode: bool = False):
                     "pnl_pct": round(pnl_pct, 2),
                     "stop_loss_price": round(sl, 2),
                     "take_profit_price": round(tp, 2),
-                    "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
-                    "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
+                    "stop_loss_pct": float(_sl_cfg4),
+                    "take_profit_pct": float(_tp_cfg4),
                     # TASK-885: target netti = netto effettivo ai prezzi reali piazzati
                     # (config già netto: NON sottrarre di nuovo le fee → doppio conto).
                     "stop_loss_pct_net": round(_expected_net_pct_at_exit(entry, sl, pos.side, _ef4, _xf4), 2),

@@ -173,6 +173,14 @@ async def scalping_websocket(ws: WebSocket):
         sl_pct_net = round(_expected_net_pct_at_exit(entry_f, sl_price, pos.side, entry_fee_rate, exit_fee_rate), 2)
         tp_pct_net = round(_expected_net_pct_at_exit(entry_f, tp_price, pos.side, entry_fee_rate, exit_fee_rate), 2)
 
+        # Le percentuali mostrate devono riflettere i prezzi reali piazzati
+        # sull'exchange, non i default globali (con override per-strategia
+        # il globale mostrerebbe uno SL/TP diverso da quello effettivo).
+        if pos.sl_price is not None and float(pos.sl_price) > 0:
+            sl_pct_cfg = abs(sl_pct_net)
+        if pos.tp_price is not None and float(pos.tp_price) > 0:
+            tp_pct_cfg = tp_pct_net
+
         try:
             await ws.send_json({
                 "type": "position",
@@ -187,8 +195,8 @@ async def scalping_websocket(ws: WebSocket):
                     "pnl_pct": 0.0,
                     "stop_loss_price": round(sl_price, 2),
                     "take_profit_price": round(tp_price, 2),
-                    "stop_loss_pct": float(risk_cfg.get("stop_loss_pct", 0.3)),
-                    "take_profit_pct": float(risk_cfg.get("take_profit_pct", 0.5)),
+                    "stop_loss_pct": float(sl_pct_cfg),
+                    "take_profit_pct": float(tp_pct_cfg),
                     "stop_loss_pct_net": round(sl_pct_net, 2),
                     "take_profit_pct_net": round(tp_pct_net, 2),
                     # TASK-1247: stato profit lock/trailing + SL net % effettivo al restore

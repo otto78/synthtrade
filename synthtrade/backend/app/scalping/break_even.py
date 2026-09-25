@@ -39,6 +39,26 @@ def _get_lock_for_algo(algo_id: str) -> asyncio.Lock:
     return _break_even_locks[algo_id]
 
 
+def _effective_tp_net_pct(risk_cfg: dict) -> float:
+    """TASK-1256/1257: TP netto effettivo (per-strategia se presente, altrimenti globale).
+
+    Il trailing non deve superare il TP reale della posizione: con un override
+    per-strategia il cap va calcolato su quello, altrimenti i trigger trailing
+    resterebbero oltre il TP effettivamente piazzato.
+    """
+    tp_pct = float(risk_cfg.get("take_profit_pct", 0.80))
+    try:
+        loop = _execution_state.get("loop")
+        strategy_name = getattr(getattr(loop, "_strategy", None), "name", None)
+        if not strategy_name:
+            return tp_pct
+        override = get_scalping_config().strategy_tp_pct_override(strategy_name)
+        return float(override) if override is not None else tp_pct
+    except Exception as e:
+        logger.warning(f"[TRAIL] TP per-strategia non disponibile, uso globale: {e}")
+        return tp_pct
+
+
 def _compute_trailing_step_levels(pos, risk_cfg=None, fee_tier=None) -> list[dict]:
     """Calcola i trigger degli step di trailing ancora da raggiungere (per la UI).
 
@@ -56,7 +76,7 @@ def _compute_trailing_step_levels(pos, risk_cfg=None, fee_tier=None) -> list[dic
     safety_margin = float(cfg.get("TRAILING_SAFETY_MARGIN_NET_PCT", 0.10))
 
     risk_cfg = risk_cfg if risk_cfg is not None else _execution_state.get("risk_config", {})
-    tp_net_pct = float(risk_cfg.get("take_profit_pct", 0.80))
+    tp_net_pct = _effective_tp_net_pct(risk_cfg)
     cap_net = tp_net_pct - safety_margin
 
     fee_tier = fee_tier if fee_tier is not None else _execution_state.get(
@@ -333,7 +353,7 @@ async def _check_and_apply_trailing(
 
     # ── Guard 4: distanza dinamica dal TP (immune a cambio runtime) ───────────
     risk_cfg = _execution_state.get("risk_config", {})
-    tp_net_pct = float(risk_cfg.get("take_profit_pct", 0.80))
+    tp_net_pct = _effective_tp_net_pct(risk_cfg)
     if next_trigger_net >= tp_net_pct - safety_margin:
         logger.debug(
             "[TRAIL] next_trigger=%.4f%% >= tp_net=%.4f%% - safety=%.4f%% — cap raggiunto per %s",

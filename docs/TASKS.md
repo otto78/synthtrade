@@ -126,12 +126,14 @@ Lo stesso pattern va esteso ai parametri trailing/break-even in `break_even.py`.
 - Test: verificare il fallback (no override → usa globale) e l'override (valore strategia usato se presente)
 
 **Criteri di accettazione:**
-- [ ] `candle_processor.py` legge SL/TP per-strategia con fallback al globale
-- [ ] `break_even.py` legge trigger/step/buffer trailing per-strategia con fallback
-- [ ] `config_loader.py` espone helper `sl_pct_for_strategy(name)` e `tp_pct_for_strategy(name)`
-- [ ] La position card mostra i valori effettivi usati (per-strategia se configurati)
-- [ ] Test fallback: globale usato se non c'è override per strategia
-- [ ] Test override: valore strategia usato se chiave DB presente
+- [x] `candle_processor.py` legge SL/TP per-strategia con fallback al globale (`_per_strategy_sl_tp_pct`)
+- [ ] `break_even.py` legge trigger/step/buffer trailing per-strategia con fallback — **partial**: il cap del trailing segue il TP per-strategia via `_effective_tp_net_pct`; chiavi dedicate `STRATEGY_*_BE_TRIGGER/STEP/BUFFER` non implementate (nessun consumatore finché `TRAILING_ENABLED=False` di default)
+- [x] `config_loader.py` espone helper per-strategia con fallback — implementedi: `strategy_sl_pct_override(name)` / `strategy_tp_pct_override(name)` (restituiscono `None` se assente; il fallback al globale è nel chiamante)
+- [x] La position card mostra i valori effettivi usati (per-strategia se configurati) — `rest/position.py`, `router.py`, `trade_processor.py` derivano le % dai prezzi OCO reali
+- [x] Test fallback: globale usato se non c'è override per strategia — `tests/unit/test_task_1256_per_strategy_sl_tp.py`
+- [x] Test override: valore strategia usato se chiave DB presente — idem (13 test, tutti verdi)
+
+**Stato: COMPLETATO** (commit `87a8f03`, test commit successivo — 2026-09-25). Prerequisito per TASK-1257/1258 ora sbloccato, ma la calibrazione resta gated su ≥30 trade post-TASK-1252.
 
 ---
 

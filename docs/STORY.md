@@ -5,6 +5,13 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 ## 📖 Versioni
 
 
+### 🚀 v1.7.0 — 2026-09-25 — TASK-1256: SL/TP per-strategia + suite test risanata
+
+- ✅ **TASK-1256 — SL/TP e trailing per-strategia** (commit `87a8f03`): chiavi runtime `STRATEGY_<NOME>_SL_PCT`/`_TP_PCT` in `scalping_runtime_config` con fallback ai globali `risk_config`. Default `rsi_bollinger`: SL 0.30% / TP 0.55% (endorsed da Andrea). Il cap del trailing segue il TP effettivo per-strategia; position card mostra le % reali dei prezzi OCO piazzati. 13 nuovi test dedicati, tutti verdi.
+- ✅ **Suite `tests/unit` sbloccata**: il test-suite completo si fermava su `test_generator*` perché `generate_funny_name` chiamava l'AI reale (~4s × centinaia di varianti) e il dataset OHLCV era sovradimensionato. Fix: naming mockato, 8000→1600/3000 candele, `symbols` espliciti, `max_strategies` alto dove serve testare i filtri e non il ritaglio top-N. Risultato: 444 passed, ~2:30, nessun hang.
+- 🔎 **Residui noti** (da decidere con Andrea): `test_exchange_oco.py` (7 test legacy Binance, comportamenti rimossi → da eliminare), `test_okx_adapter.py` e `test_task_1225.py` (test short/SELL con engine long-only → da classificare).
+- ⏭️ **Prossimo**: TASK-1257/1258 (calibrazione valori per-strategia) restano gated su ≥30 trade post-TASK-1252 post-deploy di questa versione.
+
 ### 🚀 v1.6.0 — 2026-09-24 — 🟢 ONLINE IN PRODUZIONE (Deployment completato — Fase 6 raggiunta)
 
 **Milestone di progetto:** il bot è **ORA ONLINE** — obiettivo finale ("il progetto online") **raggiunto**.

@@ -7,6 +7,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.7.0] — 2026-09-25
+
+### Added
+- **TASK-1256 — SL/TP e trailing per-strategia** (`config_loader.py`, `candle_processor.py`, `break_even.py`, `rest/position.py`, `router.py`, `trade_processor.py`): nuovi parametri runtime `STRATEGY_<NOME>_SL_PCT` / `STRATEGY_<NOME>_TP_PCT` in `scalping_runtime_config` con fallback ai valori globali `risk_config`. Default espliciti per `rsi_bollinger`: SL 0.30% / TP 0.55%. Il cap del trailing segue ora il TP effettivo per-strategia (`_effective_tp_net_pct`). La position card mostra le % effettive ricavate dai prezzi OCO realmente piazzati. Log `[PER_STRATEGY_RISK]` per candela.
+- 13 nuovi test: `tests/unit/test_task_1256_per_strategy_sl_tp.py` (fallback, override, degradazione, cap trailing) — tutti verdi.
+
+### Fixed
+- Suite unit test modernizzata: rimossi/aggiornati mock obsoleti (exchange adapter, order tracker catena `trading_mode`, settings supervisore) e test generator non più deterministic: `generate_funny_name` (chiamata AI reale ~4s/variante) ora mockato, dataset OHLCV ridotto, scope `symbols` esplicito → il blocco dell'intera suite `tests/unit` è risolto (444 passed in ~2:30, nessun hang).
+
+---
+
+## [1.6.0] — 2026-09-24
+
+### Changed
+- **Fase 6 — Deployment su VPS in produzione** (Debian 11, Docker Compose: `synthtrade_backend` uvicorn, `synthtrade_gateway` nginx, `synthtrade_postgrest`, `vps_postgres` Postgres). Abbandonati Render e Supabase Cloud; frontend su GitHub Pages. Log/DB via `ssh netcup`. Credenziali DB solo nel `.env` del VPS (mai in Git).
+
+---
+
 ## [1.5.0] — 2026-08-25
 
 ### Fixed

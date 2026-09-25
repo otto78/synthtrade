@@ -311,8 +311,10 @@ synthtrade/                               ← root monorepo
 L'architettura di produzione è progettata per la massima resilienza e semplicità operativa, utilizzando un approccio **All-in-One Docker** su VPS.
 
 ### 🌐 Cloud Providers
-- **Database & Auth**: [Supabase Cloud](https://supabase.com/) (Gestito).
+- **Database & Auth**: **Postgres + PostgREST self-hosted sul VPS** (sostituisce Supabase Cloud; `vps_postgres` container + gateway PostgREST, nessuna dipendenza dal cloud).
 - **Compute (Stack Completo)**: [Hetzner](https://www.hetzner.com/) / [DigitalOcean](https://www.digitalocean.com/) VPS (Linux Ubuntu).
+
+> ✅ **STATO: ONLINE** — Backend in produzione su VPS (Ubuntu 24.04, Docker Compose) · Frontend su GitHub Pages · Accesso log/DB via `ssh netcup` (vedi sotto).
 
 ### 🛠️ Stack di Deployment (Unified)
 - **Frontend & Backend**: Entrambi containerizzati e orchestrati via `docker-compose.prod.yml`.
@@ -1736,16 +1738,18 @@ def build_market_context(ohlcv_df) -> dict:
 
 ### ⚫ Fase 6 — Produzione & Deployment (2–3 giorni)
 
-- [ ] 🔴 **Test `test_rate_limiting.py`:** 1200+ chiamate Binance → exchange rispetta `enableRateLimit`
-- [ ] Error handling globale su tutti i moduli core: nessuna eccezione non gestita
-- [ ] Logging strutturato JSON (`python-json-logger`) con rotation giornaliera
-- [ ] 🔴 **Test smoke deploy:** pipeline su testnet, verifica log in Supabase dashboard
-- [ ] `Dockerfile` backend multi-stage ottimizzato (< 200MB)
-- [ ] Nginx reverse proxy con HTTPS (Let's Encrypt) su VPS
-- [ ] Variabili `.env` in prod via file segreto (no commit, scp o Supabase Vault)
-- [ ] Configurare Supabase Row Level Security (RLS) su tutte le tabelle
-- [ ] Abilitare Supabase Realtime su `operation_logs` per feed live frontend
-- [ ] Smoke test post-deploy: login → approve strategia → verifica engine tick → log creato
+> 🚀 **STATO: IN PRODUZIONE** — backend online su VPS europea (Docker Compose), frontend su GitHub Pages. Vedere [Deployment & Infrastruttura](#-deployment--infrastruttura-produzione).
+
+- [x] 🔴 **Test `test_rate_limiting.py`:** 1200+ chiamate Binance → exchange rispetta `enableRateLimit`
+- [x] Error handling globale su tutti i moduli core: nessuna eccezione non gestita
+- [x] Logging strutturato JSON (`python-json-logger`) con rotation giornaliera
+- [x] 🔴 **Test smoke deploy:** pipeline su testnet, verifica log in Supabase dashboard
+- [x] `Dockerfile` backend multi-stage ottimizzato (< 200MB)
+- [x] Nginx reverse proxy con HTTPS (Let's Encrypt) su VPS
+- [x] Variabili `.env` in prod via file segreto (no commit, scp o Supabase Vault)
+- [x] Configurare Supabase Row Level Security (RLS) su tutte le tabelle → **N/A in self-hosted** (RLS sostituito da PostgREST locale con regole dedicate)
+- [x] Abilitare Supabase Realtime su `operation_logs` per feed live frontend → **Superata**: WS custom già attivo
+- [x] Smoke test post-deploy: login → approve strategia → verifica engine tick → log creato
 
 ---
 

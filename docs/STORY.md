@@ -5,6 +5,20 @@ Storia operativa del progetto con versioni, milestone e decisioni chiave.
 ## 📖 Versioni
 
 
+### 🚀 v1.6.0 — 2026-09-24 — 🟢 ONLINE IN PRODUZIONE (Deployment completato — Fase 6 raggiunta)
+
+**Milestone di progetto:** il bot è **ORA ONLINE** — obiettivo finale ("il progetto online") **raggiunto**.
+
+- 🖥️ **Backend:** in produzione su **VPS europea** (Debian 11, Docker Compose — container `synthtrade_backend` uvicorn su rete interna, `synthtrade_gateway` nginx, `synthtrade_postgrest` PostgREST, `vps_postgres` Postgres). Niente più Render né Supabase Cloud.
+- 🌐 **Frontend:** su **GitHub Pages** → `https://otto78.github.io/synthtrade/` (Angular, baseHref `/synthtrade/`); **in futuro migrerà anch'esso sul VPS**.
+- 🔄 **Accesso log & DB cambiato** (ora via VPS, non più via MCP Render/Supabase):
+  - **Log:** `ssh netcup "cd /opt/vps/synthtrade && docker compose logs --tail=100 backend"`
+  - **DB (read-only OK):** `docker exec vps_postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -tAc "SELECT ..."` — credenziali **solo dal `.env` del VPS** (mai in Git, mai via MCP).
+- 🧹 **MCP rimossi:** `render` e `supabase` **eliminati da `opencode.json`** (non servono più: log/DB si accedono direttamente sul VPS).
+- ✅ **Smoke deploy confermato:** log live verificati dall'agente (inclusa sessione `e7b5fd1b` attiva).
+
+---
+
 ### v1.5.1 — 2026-09-02 — TASK-1252: fix filtro macro EMA20 per mean_reversion_override
 
 - ✅ **TASK-1252 — Fix pipeline bloccata** (`candle_processor.py` + 4 nuovi test):

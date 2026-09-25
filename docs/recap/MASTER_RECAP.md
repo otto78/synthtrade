@@ -1,6 +1,8 @@
 # SynthTrade — MASTER RECAP DI PROGETTO
 
 **Generato il:** 26 giugno 2026
+**Ultimo aggiornamento stato:** 24 settembre 2026 — 🟢 **PROGETTO ONLINE**
+**Stato produzione:** backend su VPS europea (Docker Compose) + frontend su GitHub Pages (`/synthtrade/`) · futuro frontend su VPS · log/DB accessibili via SSH + `.env` del VPS (MCP Render/Supabase rimossi).
 **Fonte:** consolidamento di 8 documenti di recap sessione (20-28 giugno 2026)
 **Scopo:** punto di riferimento unico per capire cosa è stato fatto, cosa è ancora aperto, e dove riprendere
 

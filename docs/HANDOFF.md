@@ -2,6 +2,29 @@
 
 ## Ultimo Handoff
 
+### Da: sessione manutenzione suite test (TASK-1256 + de-hang + pausa non-scalping) → prossima sessione
+
+**Data:** 2026-09-28
+
+**Contesto:** Run completo `tests/unit` si bloccava (~∞) e 33 test fallivano. Obiettivo di Andrea: suite scalping 100% pass; tutto ciò che non riguarda lo scalping va in pausa.
+
+### ✅ Fatto in questa sessione
+
+- **Root cause hang**: `test_generator*` chiamavano `generate_funny_name` → cascade AI reale (~4s × centinaia di varianti) + dataset OHLCV 8000 candele. Fix: naming mockato (fixture autouse), dataset ridotto (1600/3000), `symbols` espliciti, `max_strategies` alto dove si testa il filtro duration/risk e non il ritaglio top-N.
+- **Eliminati test obsoleti** (API non più esistenti nel codice):
+  - `tests/unit/test_exchange_oco.py` — file rimosso (7: `place_stop_loss_order`/`place_limit_order` e fallback OCO sintetico non esistono più).
+  - `tests/unit/test_okx_adapter.py` — rimossi 21 test (margin/short/leverage/borrow + mock vecchio `client=` del costruttore) e la fixture `_make_adapter`; tenuti i 34 verdi (SymbolRef, WS client, normalize order, factory).
+  - `tests/unit/test_task_1225.py` — rimossa classe `TestTimestopJobIntegration` (5 test; `short_timestop_job` non esiste più in `app/scheduler`). Tenute le altre classi (44 verdi).
+- **Pausa non-scalping** in `synthtrade/backend/pytest.ini` (`addopts --ignore`): `tests/audit`, `tests/e2e`, `tests/integration`, `tests/test_connectivity.py`, `tests/test_main.py`. File conservati, esclusi dalla run di default. Per riattivarli: commentare la riga `addopts`.
+- **Stato suite: 780 passed, 0 failed, exit 0, ~4 min** (run da `synthtrade/backend/`). `tests/scalping`+`tests/unit` da root: 731 passed in ~3 min.
+- **Deploy VPS post-TASK-1256**: ok (bot live, rsi_bollinger SL 0.30/TP 0.55 effective).
+
+### ⏳ Pendenti / note
+
+- I ~40 test legacy rimossi erano stati già classificati "superseded" — nessuna copertura persa su API vive; le API exchange scalping (OKX) sono coperte da `tests/scalping` + `test_okx_oco_reconciliation` + `test_task_1243`.
+- `test_okx_adapter.py` eventuali test futuri sull'adapter devono mockare il REST diretto (`_direct_*` / httpx), non più un ccxt `client=`.
+- Calibrazione TASK-1257/1258: gated su ≥30 trade post-deploy 1.7.0 (deploy 2026-09-25 16:12 UTC → conteggio ripartito da lì).
+
 ### Da: sessione TASK-1252 (analisi + fix pipeline bloccata) → prossima sessione
 
 **Data:** 2026-09-02

@@ -1,455 +1,286 @@
-# Handoff Protocol — SynthTrade
+# HANDOFF.md — SynthTrade
 
-## Ultimo Handoff
+> **Generato:** 2026-09-29 ~14:30 UTC  
+> **Scopo:** Documento di passaggio per qualsiasi agente/sessione futura. Contiene tutto il contesto necessario senza bisogno di leggere la history della conversazione.  
+> **Stato produzione:** Bot in LIVE su VPS, sessione `a12483b5` attiva, 0 trade da inizio sessione.
 
-### Da: sessione SL/TP per-strategia in LIVE + bonifica suite → prossima sessione (ripresa da VPS)
+---
 
-**Data:** 2026-09-29
-**Recap completo:** `docs/recap/2026-09-29_sl-tp-per-strategia-suite-test.md`
+## 1. Stato attuale (cosa sta succedendo oggi)
 
-**Stato:** `main` allineato con `origin/main` (0/0), working tree pulito. Sessione live
-`09219901-1cd0-4475-a836-0ca3820f6bec` attiva in `live` su BTC-EUR, `fee_tier_certified: true`.
-Suite **792 passed / 0 failed**. Nessun test che tocchi la rete.
+### Sessione live
+- **Sessione corrente:** `a12483b5`, start 2026-09-29 ~14:17 UTC
+- **Simbolo:** BTC-EUR, exchange OKX, modalità LIVE
+- **0 trade in questa sessione** — il bot non sta aprendo posizioni
+- **Motivo:** vedere §3 (analisi segnali)
 
-#### Fatto
+### Ultimi commit rilevanti
+| Commit | Data | Cosa fa |
+|--------|------|---------|
+| `87a8f03` | 2026-09-25 | TASK-1256: SL/TP per-strategia; `rsi_bollinger` → SL 0.30%, TP 0.55% netti |
+| `77339b0` | 2026-09-29 | TASK-1261: fee awareness supervisor, memoria cross-sessione, anti-loop pause |
+| `df9b67c` | 2026-09-29 | Fix prompt supervisor: rimosso BTC-EUR/OKX hardcoded, formula breakeven dinamica |
+| (oggi) | 2026-09-29 | TASK-1262: fix bias strutturali scoring — vedere §5 |
 
-- **TASK-1256/1257 deployati e verificati in LIVE.** `rsi_bollinger` ora usa SL 0.30 / TP 0.55 netti
-  (prima usava i globali 0.50/0.80). Override in DB `scalping_runtime_config`
-  (`STRATEGY_<NOME>_SL_PCT` / `_TP_PCT`) con fallback ai globali.
-- **Fix UI SL/TP**: la scheda posizione, il ripristino sessione e l'update realtime mostravano le
-  percentuali **globali** invece di quelle effettive. Ora derivano dai prezzi OCO realmente piazzati.
-- **Audit suite**: 110 fallimenti → 85 obsoleti, 11 test mal scritti, **0 bug reali**. Cause: rimozione
-  short selling (`cd4ec96`), passaggio long-only, soglie cambiate (TASK-1255 −15 → −8.0, TASK-1159).
-- **`test_fear_greed.py` faceva rete vera** (patchava `httpx` ma il collector usa `aiohttp`). Ora una
-  fixture autouse fa fallire il test se viene toccata la rete.
-- **Copertura del percorso ordine reale riattivata**: i 12 test entry → bracket → fill → close
-  (`FakeOkxAdapter`) spostati da `tests/integration/` (in pausa) a `tests/scalping/` (attiva).
-  Suite 780 → 792.
-- **Ruff senza regressioni**: stessi 53 errori pre-esistenti del commit precedente, verificato con
-  worktree su `dc29674`. Nessuno nuovo.
+---
 
-#### ⚠️ Da sapere prima di toccare i test
+## 2. Root cause delle perdite (analisi su 188 trade LIVE luglio–settembre 2026)
 
-**Lanciare pytest SEMPRE da `synthtrade/backend/`, mai dalla root del progetto.**
-`pytest.ini` (con `asyncio_mode = auto`) sta in `synthtrade/backend/` e non viene applicato se si
-lancia da fuori: i test asincroni si degradano e il risultato è un numero di fallimenti completamente
-diverso e fuorviante.
+### A. Numeri globali
+- **188 trade totali LIVE**, tutti BUY (no short)
+- **WR globale:** ~33% (62 wins / 126 losses)
+- **PnL totale:** −€8.59
+- **Di cui fee:** −€6.96 (81% delle perdite)
+- **PnL senza fee:** −€0.79 (quasi breakeven — il problema principale sono le fee)
 
-```bash
-cd synthtrade/backend && python -m pytest -q
+### B. Breakeven WR reale
+- Fee OKX taker: 0.10% per lato → 0.20% round-trip
+- Con avg_win ≈ 0.28% netto, avg_loss ≈ 0.51% netto:
+  - **Breakeven WR = 0.51 / (0.28 + 0.51) = 64.9%**
+  - Il bot opera al 33% → strutturalmente in perdita
+- Nota: il 64.9% è calcolato sui dati storici reali; cambia se SL/TP cambiano
+
+### C. Per-strategia
+| Combo regime/strategia | Trade | WR | Note |
+|------------------------|-------|----|------|
+| `ranging/rsi_bollinger` | 176 | 35.8% | Dominante, sotto breakeven 65% |
+| `ranging/ema_cross` | 2 | 100% | Troppo pochi, non statisticamente valido |
+| `trending_up/ema_cross` | 9 | 22% | Pochi, aneddotico |
+| altro | 1 | n/a | - |
+
+### D. Trailing stop controproducente
+- Il trailing chiude i trade vincenti a avg +0.27% invece del TP +0.55–0.80%
+- Abbassa l'avg_win, aumentando il WR necessario per il breakeven
+- Config attuale: BE_TRIGGER=0.15%, STEP=0.15%, BUFFER=0.10% — non proporzionali al TP
+
+---
+
+## 3. Analisi del sistema di scoring (TASK-1262, analisi 2026-09-29)
+
+### Il problema centrale: un solo segnale dinamico su nove
+
+Su 9 collector con peso > 0, **solo `order_book_imbalance` è davvero dinamico** per BTC-EUR:
+
+| Collector | Peso norm. | Score medio (12h) | Varianza | Natura |
+|-----------|-----------|-------------------|----------|--------|
+| `order_book_imbalance` | 31.6% | −2.4 | **100.6** | ✓ DINAMICO (per-candela, OKX spot) |
+| `funding_rate` | 15.8% | −0.2 | 0.00 | ✗ fisso (cambia ogni 8h, magnitudine ~0) |
+| `cvd` | 15.8% | +0.1 | 0.03 | ✗ quasi sempre 0 (grace period + baseline errata) |
+| `long_short_ratio` | 10.5% | −21.0 | 0.84 | ✗ strutturalmente bearish (BTC ha 60-65% long) |
+| `fear_greed` | 10.5% | −19.5 | 0.00 | ✗ fisso (aggiornato 1×/giorno, F&G=73 oggi) |
+| `open_interest` | 5.3% | ~0 | 0.00 | ✗ baseline rolling → sempre ~0 |
+| `whale` | 5.3% | 0.0 | 0.00 | ✗ mai attivo su BTC-EUR |
+| `onchain` | 5.3% | +1.1 | 0.10 | ✗ proxy BTC price_change_24h, lento |
+| `sentiment` | 0% | 0.0 | 0.00 | disabilitato (peso 0) |
+
+### Tre bias permanenti che falsano lo score verso il basso
+
+**Bias 1 — Long/Short Ratio (−21 quasi costante, peso 10.5%, contributo −2.2 punti):**
+- Funzione: `score = (50 - long_pct) * (100/30)` → con long_pct=63% → score=−43
+- BTC ha strutturalmente 60-65% long retail: il sistema vede sempre "bearish"
+- BTC-EUR spot non ha perpetual Binance/OKX → usa proxy BTCUSDT futures → dato non pertinente
+- Il problema non è il valore assoluto ma che **non cambia**: non distingue "oggi BTC è più long di ieri"
+
+**Bias 2 — Fear & Greed (−19.5 costante oggi, peso 10.5%, contributo −2.1 punti):**
+- Cache 4h, aggiornato 1×/giorno. Con F&G=73 (Greed), produce sempre −19.5
+- Funzione: zona 61-80 → `-(value-60)*1.5` → non è contrarian estremo, è drag costante
+- Non è un segnale per-minuto: non dovrebbe pesare quanto l'OBI che cambia ogni candela
+
+**Bias 3 — CVD (peso 15.8%, quasi sempre score=0):**
+- Grace period: escluso finché `_trades_since_reset < 100` (reset ogni 1000 trades)
+- Baseline hardcoded a `Decimal("1000")` in due punti del codice (`signal_score_engine.py:416,469`)
+- BTC-EUR su OKX spot ha volumi piccoli (candele 0.05-0.2 BTC) → CVD in valore assoluto << 1000 → score ~0
+- Risultato: 15.8% del peso non contribuisce mai allo score
+
+### Conseguenza sulla distribuzione dello score (194 candele, ultime 12h)
+| Zona | Candele | % |
+|------|---------|---|
+| score < −6 (bearish gate) | 82 | **42.3%** |
+| score −6..+6 (neutro) | 110 | **56.7%** |
+| score > +6 (bullish gate) | 2 | **1.0%** |
+
+- Il sistema è **bullish 1% del tempo** su BTC-EUR in ranging
+- `tradeable=True bullish`: 2 su 194 candele → il bot non apre mai un BUY per intelligence
+- Abbassare la soglia non risolve: con drag −4.3 fissi, soglia 0 significherebbe entrare long con score negativo
+- **Il problema non è la soglia — è che i segnali bullish non esistono**
+
+### Soglia attuale
+- `SCALPING_SIGNAL_STRENGTH_THRESHOLD = 6.0` (in DB da 2026-06-15)
+- Le decisioni `update_threshold` del supervisor (401 in 7gg, 140 applicate) cambiano questo valore ma non risolvono il bias strutturale
+
+---
+
+## 4. Supervisor: stato dopo TASK-1261 (deployato 2026-09-29 ~14:00)
+
+### Cosa è stato fixato
+1. **Fee awareness**: il supervisor ora riceve il blocco `=== FEE REALI ===` con taker% e round-trip drag% calcolati a runtime (non hardcoded)
+2. **Memoria cross-sessione**: dopo stop&go, se storico ≥ 20 trade il gate "< 5 trade → no_action" viene bypassato; il supervisor usa la performance storica
+3. **Anti-loop pause**: cooldown 30 min su `pause_trading` in `supervisor_scheduler.py` (campo `_last_pause_time`)
+4. **History estesa**: da 10 a 20 decisioni precedenti, con `blocked_reason` visibile
+5. **Prompt generico**: rimosso qualsiasi riferimento a BTC-EUR, OKX, o valori numerici storici hardcoded
+
+### Prima decisione post-deploy (verifica DB)
+Il supervisor ha correttamente:
+- Applicato l'eccezione stop&go (186 trade cross-sessione ≥ 20 → no gate)
+- Calcolato il breakeven WR al 65% dai dati runtime
+- Concluso che `rsi_bollinger/ranging` con WR 35.8% è strutturalmente perdente
+- Emesso `no_action` perché non esiste alternativa migliore nella whitelist (rsi_bollinger è l'unica strategia consentita per ranging)
+
+### Cosa ancora non funziona nel supervisor
+- Il supervisor propone correttamente `no_action`, ma questo significa che **il bot non trader mai** finché il regime è ranging e rsi_bollinger è l'unica opzione consentita per ranging
+- La soluzione reale è il fix al sistema di scoring (§3/§5) — se lo score diventasse bullish qualche volta su rsi_bollinger, il bot potrebbe aprire trade
+
+### File supervisor
+```
+synthtrade/backend/app/ai/supervisor_context.py       ← build_scalping_context(), fee_info injection
+synthtrade/backend/app/scalping/supervisor/
+  supervisor_client.py                                 ← _SUPERVISOR_SYSTEM_PROMPT (v3), _format_context()
+  supervisor_scheduler.py                              ← _last_pause_time, apply_decision(), cooldown
+  historical_context.py                                ← signal_outcome_by_strategy_regime (view DB, cache 5min)
+  parameter_updater.py                                 ← applica update_params e update_threshold al DB
 ```
 
-#### Da fare / aperto
+---
 
-| Task | Blocco |
-|---|---|
-| **TASK-1258** | gli step trailing sono **fissi** (0.15/0.10/0.10/0.15), non proporzionali al TP. Con TP 0.55 la scala si tronca a 1 solo step: alzare il TP non aggiunge livelli. |
-| **TASK-1257** | calibrazione valori: servono ≥30 trade post-deploy 1.7.0 (dal 2026-09-25). |
-| **TASK-1252** fase 2 | correlazione score→PnL su dati nuovi. |
-| **TASK-1253** | win rate per combinazione regime/strategia. |
-| `tests/integration`, `audit`, `e2e` | 22 fallimenti (dashboard, strategies API, Binance legacy), in pausa via `pytest.ini`. Rientrare per directory, commentando la riga `addopts`. |
+## 5. Fix segnali scoring (TASK-1262, eseguito 2026-09-29)
 
-#### Decisioni da non ribaltare
+### Fix 1 — Long/Short Ratio: variazione relativa invece di valore assoluto
 
-- **Break-even: non toccarlo.** Trigger +0.15% netto, stop sicurezza +0.05% netto, entrambi fee-aware.
-  Obiettivo "non perdere", non guadagnare. Su trade da 20 € lo stop a +0,05% vale 1 cent.
-- **Bollinger: 1 solo step trailing** finché TASK-1258 non rende gli step proporzionali.
-- SL 0.30% netto ≈ **−0.10% di movimento prezzo** (le fee 0.20% mangiano due terzi dello stop).
-- In LIVE la strategia selezionata cambia: il filtro macro TASK-1250 può passare da `rsi_bollinger` a
-  `ema_cross`. **Controllare sempre la strategia attiva prima di giudicare SL/TP per-strategia.**
+**Problema:** `ratio_to_score(long_pct)` produce sempre −16 a −43 per BTC perché BTC ha strutturalmente 60-65% long. Il valore assoluto non segnala nulla di nuovo.
 
-#### Ripresa dalla VPS
+**Fix:** Il collector accumula le ultime N letture e calcola la **variazione** rispetto alla media mobile recente. Il segnale è "oggi è più/meno long del solito", non "è a 63%".
 
-Il repo del VPS (`/opt/vps/synthtrade/app`) **è divergente** da locale: non fare `git pull`, copia
-file singoli. Procedura collaudata in `docs/recap/2026-09-29_sl-tp-per-strategia-suite-test.md` §1.5:
-backup → `git hash-object` di verifica → `scp` → **normalizzazione CRLF→LF** → rebuild → verifica.
-Attenzione: `scp` rispetta i sottodirectory, e `position.py` sta in `scalping/rest/`, non in
-`scalping/`. Dopo ogni copia verificare `git diff --stat`: se il file non compare, è finito nel posto
-sbagliato.
+**File:** `synthtrade/backend/app/scalping/intelligence/collectors/long_short_ratio.py`
+
+### Fix 2 — Fear & Greed: peso ridotto e de-normalizzato dal calcolo real-time
+
+**Problema:** F&G pesa 10.5% normalizzato ma cambia 1×/giorno → drag costante −2.1 punti.
+
+**Fix:** Il peso scende da 0.10 a 0.03 in `DEFAULT_WEIGHTS`. Non viene eliminato (ha valore in condizioni estreme F&G < 20 o > 80) ma non domina più il denominatore. La funzione `value_to_score` rimane invariata.
+
+**File:** `synthtrade/backend/app/scalping/intelligence/signal_score_engine.py`
+
+### Fix 3 — CVD: baseline dinamica proporzionale al volume medio
+
+**Problema:** Baseline hardcoded `Decimal("1000")` → su BTC-EUR con volume per-candela 0.05-0.2 BTC, CVD non supera mai valori > 10-20 → score ~0-2% → irrilevante.
+
+**Fix:** La baseline viene calcolata come media mobile del CVD assoluto osservato nelle ultime 20 finestre di accumulo, o se non disponibile come percentuale del volume stimato (0.1 BTC). Il grace period `< 100 trades` rimane.
+
+**File:** `synthtrade/backend/app/scalping/intelligence/signal_score_engine.py`, `cvd_calculator.py`
 
 ---
 
-### Da: sessione manutenzione suite test (TASK-1256 + de-hang + pausa non-scalping) → prossima sessione
+## 6. Architettura chiave (riferimento rapido)
 
-**Data:** 2026-09-28
+### Flusso di esecuzione (per-candela, ogni ~60s)
+```
+OKX WS candle → candle_processor.py
+  → regime_detector (ranging/trending_up/volatile/unknown)
+  → strategy_selector (ema_cross/rsi_bollinger/vwap_reversion) 
+     + macro_override TASK-1250 (BTC > EMA20_4h → ema_cross forzato)
+  → signal_aggregator (tech_score × 0.7 + intel_score × 0.3)
+  → candle_processor: open trade se score ≥ threshold E bias=bullish E no posizione aperta
+```
 
-**Contesto:** Run completo `tests/unit` si bloccava (~∞) e 33 test fallivano. Obiettivo di Andrea: suite scalping 100% pass; tutto ciò che non riguarda lo scalping va in pausa.
+### State globale
+```python
+# synthtrade/backend/app/scalping/router.py:83
+_execution_state = {
+    "exchange":          OkxExchangeAdapter,
+    "position_manager":  PositionManager,
+    "session":           { symbol, mode, balance, status },
+    "fee_tier":          dict | FeeTier,  # usa _get_fee_rate() per normalizzare
+    "signal_engine":     SignalScoreEngine,
+    "ws_client":         OkxWSClient,
+    "risk_config":       dict,             # SL/TP/trailing
+}
+```
 
-### ✅ Fatto in questa sessione
+### Config DB (tabella `scalping_runtime_config`)
+Chiavi rilevanti:
+```
+SCALPING_STOP_LOSS_PCT              = 0.5     # globale, fallback
+SCALPING_TAKE_PROFIT_PCT            = 0.8     # globale, fallback
+SCALPING_SIGNAL_STRENGTH_THRESHOLD  = 6.0     # soglia score (modificabile dal supervisor)
+TRAILING_ENABLED                    = true
+STRATEGY_RSI_BOLLINGER_SL_PCT       = 0.30    # per-strategia, da TASK-1256
+STRATEGY_RSI_BOLLINGER_TP_PCT       = 0.55    # per-strategia, da TASK-1256
+```
 
-- **Root cause hang**: `test_generator*` chiamavano `generate_funny_name` → cascade AI reale (~4s × centinaia di varianti) + dataset OHLCV 8000 candele. Fix: naming mockato (fixture autouse), dataset ridotto (1600/3000), `symbols` espliciti, `max_strategies` alto dove si testa il filtro duration/risk e non il ritaglio top-N.
-- **Eliminati test obsoleti** (API non più esistenti nel codice):
-  - `tests/unit/test_exchange_oco.py` — file rimosso (7: `place_stop_loss_order`/`place_limit_order` e fallback OCO sintetico non esistono più).
-  - `tests/unit/test_okx_adapter.py` — rimossi 21 test (margin/short/leverage/borrow + mock vecchio `client=` del costruttore) e la fixture `_make_adapter`; tenuti i 34 verdi (SymbolRef, WS client, normalize order, factory).
-  - `tests/unit/test_task_1225.py` — rimossa classe `TestTimestopJobIntegration` (5 test; `short_timestop_job` non esiste più in `app/scheduler`). Tenute le altre classi (44 verdi).
-- **Pausa non-scalping** in `synthtrade/backend/pytest.ini` (`addopts --ignore`): `tests/audit`, `tests/e2e`, `tests/integration`, `tests/test_connectivity.py`, `tests/test_main.py`. File conservati, esclusi dalla run di default. Per riattivarli: commentare la riga `addopts`.
-- **Stato suite: 780 passed, 0 failed, exit 0, ~4 min** (run da `synthtrade/backend/`). `tests/scalping`+`tests/unit` da root: 731 passed in ~3 min.
-- **Deploy VPS post-TASK-1256**: ok (bot live, rsi_bollinger SL 0.30/TP 0.55 effective).
+### Whitelist regime → strategia (hardcoded nel supervisor e in `strategy_selector.py`)
+```
+ranging       → rsi_bollinger
+trending_up   → ema_cross
+trending_down → rsi_bollinger
+volatile      → vwap_reversion
+unknown       → vwap_reversion
+```
+Eccezione macro (TASK-1250): se BTC_4h > EMA20_4h, qualunque sia il regime locale → `ema_cross`.
 
-### ⏳ Pendenti / note
-
-- I ~40 test legacy rimossi erano stati già classificati "superseded" — nessuna copertura persa su API vive; le API exchange scalping (OKX) sono coperte da `tests/scalping` + `test_okx_oco_reconciliation` + `test_task_1243`.
-- `test_okx_adapter.py` eventuali test futuri sull'adapter devono mockare il REST diretto (`_direct_*` / httpx), non più un ccxt `client=`.
-- Calibrazione TASK-1257/1258: gated su ≥30 trade post-deploy 1.7.0 (deploy 2026-09-25 16:12 UTC → conteggio ripartito da lì).
-
-### Da: sessione TASK-1252 (analisi + fix pipeline bloccata) → prossima sessione
-
-**Data:** 2026-09-02
-
-**Contesto:** Analisi comparativa DB delle due sessioni post-fix (sessione A: 14 gg/48 trade `eaabe577`; sessione B: 7 gg/1 trade `f9414de8`). Trovata e fixata la causa del crollo della frequenza dei trade nella sessione B.
-
-### ✅ Fatto in questa sessione
-
-- **Analisi DB completa**: estratte e confrontate le due sessioni dal DB Supabase. Sessione A (pre-fix TASK-1250/1251): 48 trade, win rate 35.4%, PnL -2.16 EUR. Sessione B (post-fix): 1 solo trade, PnL -0.10 EUR.
-- **Root cause trovata** — doppio gate contraddittorio:
-  - `signal_aggregator.py` approvava correttamente 228 `mean_reversion_override` (execute=True, is_mean_reversion_override=True)
-  - `candle_processor.py` (TASK-1242) poi bloccava via `continue` tutti i BUY quando `btc_price < ema20_4h`
-  - Nella settimana 25ago-1set, BTC era strutturalmente sotto EMA20 4h → blocco totale della pipeline
-  - La mean-reversion per definizione opera in downtrend (btc sotto la media) → contraddizione logica
-- **Fix TASK-1252** (`candle_processor.py`): il filtro `btc < ema20_4h` è ora esente per `is_mean_reversion_override=True`. Il filtro `change_1h < -0.5%` rimane attivo per tutti (crash protection). Commit `5228ac0`.
-- **4 nuovi test** `TestTask1252MeanReversionNotBlockedByEMA20` — tutti verdi (26/28 totali, 2 pre-existing stale).
-- **Documentazione**: TASKS.md, STORY.md, HANDOFF.md aggiornati.
-
-### ⏳ Da fare la settimana del 2026-09-08
-
-1. **Monitorare la sessione corrente** (`ce2dcee2`, avviata il 1 set): verificare che con il fix i trade riprendano (al momento 0 execute su 401+94 segnali — la sessione NON è stata riavviata col fix ancora).
-2. **⚠️ IMPORTANTE: riavviare il backend** per applicare il fix `candle_processor.py` alla sessione corrente (il codice non viene ricaricato a caldo senza `--reload`).
-3. **Raccogliere almeno 30 trade** post-fix per poter procedere con TASK-1252 Fase 2 (ricalibrazione soglia score) e TASK-1253 (SL/TP).
-4. **Analisi 30 trade**: win rate per combinazione regime/strategia, correlazione score→PnL sui nuovi dati.
-
-### ⚠️ Cosa NON fare finché non ci sono 30 trade post-fix
-
-- **NON toccare SL/TP** (TASK-1253): win rate da misurare su dati puliti post-fix.
-- **NON ricalibrar la soglia score** (TASK-1252 Fase 2): la correlazione score→PnL va remisurata dopo che il fix ha cambiato il mix dei trade.
-- **NON disabilitare il filtro change_1h < -0.5%**: è l'unico guard crash rimasto per MR.
-
-### ⚠️ Test stale pre-esistenti (non regressioni)
-
-- `test_blocks_sell_when_bullish` — SELL permanentemente disabilitati (long-only engine)
-- `test_allows_sell_when_bearish` — stessa causa
-
-
-
-**Contesto:** Analisi sessione 11-25 agosto (48 trade, 14 giorni) ha confermato che il bot perdeva per cause strutturali: override mean-reversion con win rate 25%, regime detector che vedeva "ranging" durante un rally +27% BTC. Implementati due fix chirurgici che indirizzano entrambe le cause.
-
-### ✅ Fatto in questa sessione
-
-- **TASK-1251 — Strong Bearish Guard** (`signal_aggregator.py` + `config_loader.py`): Blocco override mean-reversion quando bias bearish forte (score < -15.0). Soglia configurabile via DB (`MEAN_REVERSION_STRONG_BEARISH_THRESHOLD`). 4 nuovi test — tutti verdi.
-- **TASK-1250 — Macro Trend Filter** (4 file): Se BTC > EMA20 4h, strategy selector forza `ema_cross` invece di `rsi_bollinger` su regime ranging; signal aggregator blocca qualsiasi override mean-reversion residuo. Macro context fetchato una sola volta per candela (eliminata chiamata duplicata all'exchange). 8 nuovi test — tutti verdi.
-- **Archivio e doc**: ARCHIVE_TASKS.md, TASKS.md, STORY.md, HANDOFF.md, CHANGELOG.md aggiornati.
-
-### ⚠️ Cosa NON fare la prossima settimana
-
-- **NON cambiare SL/TP** (TASK-1253) finché non ci sono almeno 30 trade post-fix. I parametri attuali potrebbero essere già adeguati se il win rate sale con il nuovo filtro macro.
-- **NON ricalibrar lo score** (TASK-1252) prima di avere dati puliti: la correlazione score→PnL era misurata su sessioni con l'override difettoso, non è detto che resti zero.
-- **NON attivare trailing** su sessioni nuove prima di aver verificato che il win rate sia salito a >38%.
-
-### ⏳ Da fare la settimana del 2026-09-01
-
-1. **Raccogliere dati:** avviare sessione live con TASK-1250/1251 attivi, raccogliere almeno 30 trade.
-2. **Analizzare:** win rate per combinazione regime/strategia (regime=ranging+ema_cross vs rsi_bollinger), correlazione score→PnL sui nuovi dati.
-3. **TASK-1252:** se score resta con correlazione ~0, implementare ricalibrazione soglia.
-4. **TASK-1253:** se win rate resta <38%, adeguare SL/TP o bloccare combinazioni low-win-rate.
-
-### ⚠️ Test stale pre-esistenti (non regressioni)
-
-- `test_blocks_sell_when_bullish` — si aspetta "conflitto" nel reason, ma i SELL sono disabilitati permanentemente (long-only engine, TASK-1240) e restituiscono "SELL signals disabled".
-- `test_allows_sell_when_bearish` — stessa causa: SELL disabilitati.
-- `test_historical_context.py` — mock `get_supabase` non nel namespace modulo.
-- `test_task_906.py::test_falling_knife_does_not_block_mean_reversion_sell` — testa SELL mean-reversion, permanentemente disabilitati.
-
-### ⏳ GATE pre-live TASK-1246 (trailing stop) ancora pendente
-
-1. `python -m scripts.test_okx_amend_rate [--symbol BTC-EUR] [--interval 15]` con `TRADING_MODE=test` → 6 amend consecutivi su OKX Demo, zero 429/sCode rate-limit.
-2. Query storica TP per confermare `TRAILING_STEP_NET_PCT=0.15`.
-3. ≥20 trade con `trailing_enabled=true` prima di considerare stabile la feature.
+### DB
+```bash
+docker exec vps_postgres psql -U synthtrade -d synthtrade
+```
+Tabelle chiave: `scalping_sessions`, `scalping_trades`, `supervisor_memory`, `scalping_runtime_config`  
+View chiave: `signal_outcome_by_strategy_regime` (WR/PnL aggregato per combo regime/strategia)
 
 ---
 
-### Handoff Precedente
+## 7. Task aperti con priorità
 
-### Da: sessione TASK-1246 (trailing stop) → prossima sessione
+### 🔴 TASK-1262 — Fix bias strutturali nel signal scoring engine
+**Stato:** In esecuzione (questo handoff documenta l'analisi; il codice è in fase di scrittura)  
+**Problema:** Tre bias permanenti abbassano lo score di −4.3 punti fissi → bullish quasi impossibile  
+**Fix:** L/S Ratio variazione relativa, F&G peso ridotto, CVD baseline dinamica  
+**File:** `signal_score_engine.py`, `long_short_ratio.py`, `cvd_calculator.py`  
+**Impatto atteso:** Score medio da −5.0 a ~0, candele bullish da 1% a ~35-40%
 
-**Data:** 2026-08-05
+### 🟡 TASK-1257 — Calibrazione valori SL/TP per-strategia
+**Stato:** Aperta, in raccolta dati (infrastruttura TASK-1256 in LIVE dal 2026-09-25)  
+**Gating:** Almeno 30 trade post-TASK-1256 (al 2026-09-29 abbiamo 0 trade per via del bug scoring)  
+**Azione:** Analisi MFE/MAE quando il bot riprende a tradare dopo TASK-1262
 
-**Contesto:** TASK-1246 (trailing stop progressivo post break-even) — implementazione completata, migration `trailing_step` applicata. GATE pre-live ancora pendente.
+### 🟡 TASK-1258 — Calibrazione trailing stop per-strategia  
+**Stato:** Aperta, dipende da TASK-1257  
+**Problema noto:** Step trailing fissi 0.15% non proporzionali al TP; con TP=0.55% solo 1 step possibile  
+**Azione:** Dopo TASK-1257, implementare chiavi DB `STRATEGY_*_BE_TRIGGER/STEP/BUFFER`
 
-### ✅ Fatto in questa sessione
+### 🟡 TASK-1252 (Fase 2) — Ricalibrare peso score nella decisione
+**Stato:** Fase 1 completa (fix pipeline), Fase 2 aspetta 30 trade post-fix  
+**Note:** Correlazione score→PnL ≈ 0 misurata sui 188 trade live. Dopo TASK-1262 la correlazione cambierà (score sarà più dinamico), quindi misurare di nuovo dopo.
 
-- **Migration DB applicata:** `scalping_trades.trailing_step int NOT NULL DEFAULT 0` (mancava mentre `TRAILING_ENABLED=true` era già attivo). File locale: `synthtrade/supabase/migrations/20260805000000_task1246_add_trailing_step.sql`.
-- **Fix flaky test** `test_polling_is_async_not_blocking` (`test_wait_for_fill.py`): `time.monotonic()` + soglia tollerante.
-- **Dedup `_update_trailing_in_db`** in `db_ops.py` (doppia definizione).
-- **38/38 test verdi** (`test_wait_for_fill.py` + `test_task_1243.py`). La suite unit completa `tests/unit` va in timeout — non è regressione di questa sessione.
-- Commit `68eddb5` (parallelo, già su main): `_wait_for_fill()` per sCode 51008 + filtro log WinError 10054 + cleanup banner position-ticker.
-
-### ⏳ GATE pre-live TASK-1246 ancora da eseguire
-
-1. `python -m scripts.test_okx_amend_rate [--symbol BTC-EUR] [--interval 15]` con `TRADING_MODE=test` → 6 amend consecutivi su OKX Demo, verificare zero 429/sCode rate-limit e `algoId` invariato.
-2. Query storica TP (`docs/plans/trailing-stop-progressive.md` §step size) per confermare `TRAILING_STEP_NET_PCT=0.15`.
-3. ≥20 trade con `trailing_enabled=true` prima di considerare stabile la feature.
-
-### ⚠️ Note operative
-
-- Config runtime in `scalping_runtime_config`: `BREAK_EVEN_ENABLED=true`, `TRAILING_ENABLED=true` (entrambi attivi).
-- Colonna `trailing_step` è solo telemetria/UI; la fonte di verità del prezzo SL resta `sl_price`.
-- Sessione LIVE attiva al momento (`d253c56e-…`) — non riavviare il backend se non necessario; niente `--reload`.
-
----
-
-## Handoff Precedenti
-
-### Da: Kiro → prossima sessione
-
-**Data:** 2026-08-04
-
-**Contesto:** TASK-1243 — Break-even profit lock OCO OKX — **COMPLETATO e validato in produzione**.
+### 🟡 TASK-1253 — Rivedere asimmetria SL/TP globale
+**Stato:** Aperta, aspetta dati  
+**Note:** Con 0 trade da TASK-1256, impossibile misurare. Aspettare TASK-1262 + raccolta dati.
 
 ---
 
-### ✅ Cosa è stato fatto
+## 8. Cosa NON fare
 
-**Feature implementata end-to-end:**
-- `app/scalping/break_even.py` — modulo autonomo con trigger, amend, lock async, DB, WS
-- `execution/okx_exchange.py` — `amend_exit_bracket_stop_loss()` firmato verso `/api/v5/trade/amend-algos`
-- `execution/exchange_models.py` — metodo nel protocollo `ExchangeAdapterProtocol`
-- `execution/exchange.py` — stub Binance `NotImplementedError`
-- `scalping/db_ops.py` — `_update_break_even_in_db()` filtra solo per `exchange_bracket_id`
-- `scalping/config_loader.py` — chiavi `BREAK_EVEN_ENABLED` (default false), `BREAK_EVEN_TRIGGER_NET_PCT` (0.15), `BREAK_EVEN_LOCK_NET_PCT` (0.05)
-- `scalping/candle_processor.py` — chiamata `_check_and_apply_break_even` su ogni candela chiusa + `profit_lock_active` nel broadcast WS
-- `main.py` — restore dei 3 campi `break_even_*` dal DB per impedire doppio amend dopo restart
-- Migration DB: colonne `break_even_triggered`, `break_even_activated_at`, `break_even_sl_price` su `scalping_trades`
-- 22 test automatici verdi (`tests/test_task_1243.py`)
-
-**Feature flag:** `BREAK_EVEN_ENABLED` in tabella `scalping_runtime_config`. Al momento è `true` (attivato manualmente il 2026-08-04).
+- **Non usare `--reload`** con uvicorn in produzione: WatchFiles riavvia i WS e causa "unknown" regime
+- **Non eseguire pytest dalla root** del progetto: usare `cd synthtrade/backend && python -m pytest`
+- **Non modificare il DB schema**: i nuovi parametri vanno in `scalping_runtime_config` come nuove chiavi
+- **Non abbassare la soglia score** sotto 5.0 come fix al problema bullish: il problema è il bias strutturale negativo, non la soglia (§3)
+- **Non fidarsi del WR 100% di ema_cross/ranging** (2 trade): statisticamente non valido
+- **Non cambiare SL/TP mentre il bot ha posizioni aperte**: rischio di lasciare ordini OCO senza copertura
 
 ---
 
-### 🧪 Prova live eseguita — 2026-08-04
-
-**Sessione:** `6701e55b-8208-4dd2-a34f-0cf9552cbd14`
-**algoId:** `3802582373171404800`
-**Simbolo:** BTC-EUR
-
-| Evento | Ora | Dettaglio |
-|--------|-----|-----------|
-| Restore posizione | 11:39:49 | entry=55154.6, qty=0.000363, SL=54988.75 |
-| BE TRIGGER | 12:53:01 | current=55368.0, net_pct=+0.186%, newSL=55292.70 |
-| AMEND_SL SUCCESS | 12:53:01 | sCode=0, latenza ~0.77s |
-| Trade chiuso (SL) | 13:08:04 | exit=55291.0, **PnL=+0.01 EUR (+0.05%)** |
-| Nuovo trade aperto | 13:33:00 | entry=55270.4, algoId=3803085709051285504 |
-
-**Risultato:** senza break-even → perdita attesa ~-0.06 EUR se SL originale colpito. Con break-even → +0.01 EUR. **Delta +0.07 EUR su trade da 20 EUR.**
-
----
-
-### 📌 Prossimi passi consigliati
-
-1. **Raccogliere almeno 20 trade** con `BREAK_EVEN_ENABLED=true` e ricalcolare EV medio per validare l'impatto statistico.
-2. **Frontend:** aggiungere badge "🔒 Profit Lock" nel componente posizione quando `profit_lock_active=true` nel payload WS.
-3. **Calibrazione soglie:** dopo 20 trade valutare se `BREAK_EVEN_TRIGGER_NET_PCT=0.15` è troppo aggressivo (trigger troppo presto) o conservativo (trigger raramente). Modificabile via `scalping_runtime_config` senza restart.
-
----
-
-### ⚠️ Regole invarianti da non toccare
-
-- L'identità dell'ordine è sempre e solo `algoId` (`pos.oco_order_list_id`). Non usare mai match per simbolo/lato.
-- `break_even_triggered` è una transizione monotona (false→true). Non può tornare false.
-- L'amend viene applicato **solo dopo** conferma OKX (`code=="0"` AND `sCode=="0"`). Se OKX rigetta, stato locale invariato.
-- Il nuovo SL deve essere strettamente > SL attuale per un long. Il guard è nel codice — non rimuoverlo.
-
-
-
-- Il piano completo è in `docs/plans/phase3-trailing-sl.md`. La configurazione proposta
-  attiva a circa +0.15% netto (circa +0.35% lordo con fee 0.10%+0.10%) e mira a un nuovo
-  SL di circa +0.05% netto. Non è un profitto garantito perché lo SL OCO esegue a mercato.
-- L'unica identità ammessa è `Position.oco_order_list_id` / `exchange_bracket_id`
-  (OKX parent `algoId`). Non ricercare un SELL o “il primo ordine” di BTC-EUR: romperebbe
-  multi-sessione e il reconcile OCO appena corretto.
----
-
-### Da: Codex → prossima sessione
-
-**Data:** 2026-08-04
-
-**Contesto:** TASK-1244 — correzione definitiva della riconciliazione delle chiusure OCO OKX mentre l'app era offline.
-
-### Riparazione storico già chiuso
-- `scripts/repair_okx_trade_history.py` non modifica nulla per default. Eseguire il dry-run con `--session-id <uuid> --report C:\tmp\okx-repair.json`, verificare le righe `update_verified`, quindi applicare con `--apply --report ... --confirm APPLY_OKX_REPAIR`.
-- Il job non usa matching per simbolo/lato e scarta i casi senza catena `algoId → ordId → fill`. Non eseguire gli script storici `fix_db.py`/`list_db.py`: sono stati rimossi perché non sicuri.
-
-### ✅ Diagnosi e fix
-- Il codice precedente chiamava `get_algo_orders_history()`, ma l'adapter interrogava prima `/api/v5/trade/fills` per l'intero simbolo e ritornava subito. Il reconcile, se l'`algoId` non compariva in quel fill, sceglieva la prima vendita `side=sell`: non era una correlazione con l'OCO e poteva usare il trade di un'altra sessione.
-- `OkxExchangeAdapter.get_algo_orders_history(symbol, bracket_id)` ora legge `orders-algo-history` per lo specifico `algoId` salvato nel DB, estrae il child `ordId` e richiede i fill soltanto per quell'ordine. Restituisce prezzo medio ponderato, `actualSide` (TP/SL) e `fillTime` reale.
-- `reconciliation.py` accetta una chiusura solo con match esatto `algoId`. Rimossi fallback ``exit side`` e ``entry_price``; se l'API non ha ancora propagato il fill, la posizione locale non viene chiusa/corrotta e il retry successivo resta sicuro.
-
-### 🧪 Verifica eseguita
-- `.venv\\Scripts\\python.exe -m pytest synthtrade/backend/tests/unit/test_reconcile_position.py synthtrade/backend/tests/unit/test_okx_oco_reconciliation.py -q`
-- Risultato: **7 passed**. `ruff` non è installato nel virtualenv.
-
-### 📌 Test manuale raccomandato
-1. Aprire un trade live con OCO, annotare `exchange_bracket_id` nella riga `scalping_trades`.
-2. Fermare il backend, lasciare scattare SL o TP su OKX, riavviare.
-3. Verificare che `exit_price`/`exit_time` coincidano con il fill del child `ordId` dell'OCO e che la riga diventi `closed`; sia dashboard sia pagina Log leggono la stessa riga DB.
-4. In caso di ritardo API, verificare il warning ``no verified fill exists``: non deve comparire una chiusura a entry price.
-
----
-
-### Da: Antigravity → prossima sessione
-
-**Data:** 2026-08-03 09:45
-
-**Contesto:** Fix bug timestamp riconciliazione exit_time OKX post-riavvio weekend e fix formattazione data/ora trade log sessioni frontend.
-
----
-
-### ✅ Fix 1 — Timestamp riconciliazione exit_time (`okx_exchange.py`)
-- **Problema:** Post-riavvio del weekend, i trade riconciliati mostravano come `exit_time` l'orario di esecuzione della riconciliazione (`datetime.now()`) invece del reale timestamp di fill su OKX.
-- **Root Cause:** OKX `/api/v5/trade/fills` utilizza la chiave `ts` per il timestamp dei fill e non `fillTime`. L'adapter `okx_exchange.py` (L.745) eseguiva `fill.get("fillTime")` che ritornava sempre `None`.
-- **Fix:** Modificato in `fill.get("fillTime") or fill.get("ts")`. Ora `exit_time` viene estratto correttamente dal fill OKX.
-
----
-
-### ✅ Fix 2 — Formattazione data/ora trade log sessioni (`logs.page.ts`)
-- **Problema:** La tabella dei trade nel dettaglio sessione mostrava solo l'ora (`HH:mm`) per `entry_time`, rendendo ambigua la data dei trade.
-- **Fix:** In `logs.page.ts` (L.184), aggiornato il pipe di formattazione a `dd/MM/yy HH:mm` e rinominata l'intestazione da `Ora` a `Data/Ora`, allineandola allo Storico Trade.
-
----
-
-### ⚠️ Punto Aperto Residuo
-- **`position_manager.py` (Live close path):** Il percorso di chiusura in-memory/live imposta ancora `closed_at = datetime.now()` al momento della ricezione/gestione dell'evento di chiusura anziché adottare il timestamp esatto dal payload dell'exchange/WS. Resta da gestire in un task separato.
-
----
-
-### Precedente Handoff
-
-### Da: Antigravity → prossima sessione
-
-**Data:** 2026-07-28 09:30
-
-**Contesto:** Analisi completa log sessione 4a42133e (10.847 righe) — 5 nuovi task creati per approfondimento e fix.
-
----
-
-### ✅ Recap mancante — Risolto
-
-Il blocco SESSION ANALYSIS SUMMARY ora è presente in testa al dump e popolato correttamente. La fix applicata:
-- Rimuovere conteggio SELL dal summary (long-only engine)
-
-**Verificato:** Decisioni=891 totali, Segnali=1, Trades=8, Intelligence min=-26.2 max=18.9 avg=-4.3
-
-### ✅ Punto 1 aggiornato — Task TASK-1231 creato
-
-Cleanup: rimuovere scomposizione BUY/SELL dal Session Summary.
-
----
-
-### 🔴 TASK-1232: Query storica win rate mean-reversion override
-
-Join `session_signal_log` → `scalping_trades` via `signal_log_id`, bucket per `intel_score`, calcolo win rate e avg PnL per bucket. Documento in `docs/recap/`.
-
-**Bloccante:** TASK-1233 (verifica integrità signal_log_id)
-
-### 🔴 TASK-1233: Verifica integrità signal_log_id sessione 4a42133e
-
-Query LEFT JOIN tra `scalping_trades` e `session_signal_log`. Documentare se trade con signal_log_id NULL.
-
-### 🟡 TASK-1234: Signal log writer — aggiungere conferma successo esplicita
-
-Aggiungere log INFO con signal_log_id su insert riusciti per override mean-reversion. Oggi solo ERROR loggato.
-
-### 🔴 TASK-1235: fee_tier_certified False dal 2° trade in poi
-
-Solo trade 1/8 ha certified=True. Verificare `candle_processor.py` e `okx_exchange.py`. Fix minimo: loggare motivo del fallback.
-
-### 🟡 TASK-1236: Verificare fee_tier_certified persistito per-trade in DB
-
-Query `scalping_trades.entry_fee_rate/exit_fee_rate` vs `scalping_sessions.fee_tier_certified`.
-
----
-
-### 📋 Task ancora Pending
-
-| Task | Descrizione | Priorità |
-|------|-------------|----------|
-| TASK-1230 | Session Max Loss + Drawdown Fix | 🔴 ALTA |
-| TASK-1231 | Cleanup: rimuovere SELL dal Session Summary | 🟢 BASSA |
-| TASK-1232 | Query storica win rate mean-reversion override | 🔴 ALTA (dipende da 1233) |
-| TASK-1233 | Verifica integrità signal_log_id sessione 4a42133e | 🔴 ALTA |
-| TASK-1234 | Signal log writer: aggiungere conferma successo | 🟡 MEDIA |
-| TASK-1235 | fee_tier_certified False dal 2° trade | 🔴 ALTA |
-| TASK-1236 | Verificare fee_tier_certified per-trade in DB | 🟡 MEDIA |
-
-### 📊 Scoperte chiave dalla sessione 4a42133e
-
-1. **Mean-reversion override → trade:** 29 override, solo 8 con trade reale. 18 fallimenti scrittura DB (hold), 0 coincidenti con entry.
-2. **Fee tier certified:** Solo trade 1/8 ha certified=True. Tutti gli altri fallback a 0.001/0.001.
-3. **Supervisor auto-decay:** Dalle 00:26:38, session in paused — override continuano senza esecuzione (~15 "fantasma").
-
----
-
-### Precedente Handoff
-
-**Data:** 2026-07-24 11:40
-
-**Contesto:** Risoluzione errore 51155 OKX e pulizia finale epica short.
-
----
-
-### ✅ Risoluzione Errore 51155 (OKX Compliance)
-
-**Problema:** Nonostante il codice fosse tornato allo Spot puro (`tdMode="cash"`), le operazioni su OKX fallivano con `51155 Local compliance restrictions`.
-**Causa:** L'errore scattava perché la sessione era avviata sulla coppia **`BTC-USD`** (valuta fiat americana), che è bloccata dalle policy MiCA per gli account retail in EU, indipendentemente dalla modalità di margin.
-**Soluzione:** L'utente ha cambiato il balance e ha avviato la sessione su `BTC-EUR`, e gli ordini BUY a mercato con relativi bracket exit (OCO) sono partiti perfettamente.
-
-### ✅ Cleanup default symbol
-
-**Fix applicati:**
-- Modificati i default del frontend in `session-api.service.ts` e `market-intel-panel.component.ts` da `OKBEUR` a `BTC-EUR` per evitare che l'app parta sulla chart sbagliata all'avvio.
-
-**Prossimi passi:**
-- Focus su strategie Long-only (mean reversion, ecc).
-- Nessun residuo short rimasto nel codice.
-
----
-
-### Precedente Handoff
-
-### Da: Antigravity → prossima sessione
-
-**Data:** 2026-07-17 14:30
-
-**Contesto:** TASK-1166 Refactoring `router.py` — Fasi 1-4 completate.
-
----
-
-### ✅ TASK-1166 Completato: `router.py` da 4310→180 righe (95.8% riduzione)
-
-**Problema:** `router.py` era un monolite ingestibile da oltre 4300 righe.
-**Soluzione completa (4 fasi):**
-- **Fase 1:** Estratti `_state.py` (50 righe), `pricing.py` (149), `reconciliation.py` (162), `db_ops.py` (169).
-- **Fase 2:** Estratti `trade_executor.py` (451), `session_lifecycle.py` (59).
-- **Fase 3:** Estratti `broadcast.py` (38), `pipeline.py` (224), `market_processors.py` (1006).
-- **Fase 4:** Estratti REST endpoints in `rest/`:
-  - `rest/market_data.py` (245): exchange-info, instruments, sessions, trade-history, candles, `_snapshot_to_dict`
-  - `rest/backtest.py` (75): run, result, list endpoints
-  - `rest/session.py` (968): control_session, get_session, logs, position, config, risk, performance, health
-  - `rest/intel_opportunity.py` (243): intelligence, opportunities, debug, supervisor endpoints
-- `router.py` (180 righe) ora è un thin shell che include 4 sub-router + re-export backward-compat + WS endpoint.
-- Tutti i test passano: 12/12 OKX integration, 6/6 reconcile, 27/27 unit.
-- Pre-existing bugs fixati: `session_lifecycle.py` import path, `market_processors.py` loose code syntax.
-
-### 📋 Task ancora Pending
-
-| Task | Descrizione | Priorità |
-|------|-------------|----------|
-| TASK-1166.Cleanup | Eliminare eventuali test o commenti obsoleti, aggiornare TASKS.md | BASSA |
-
-### 🔍 Verifica manuale da fare al prossimo avvio
-
-- Testare start sessione live per verificare che `_on_order_update` funzioni correttamente da `trade_executor.py`.
-- Verificare che il WebSocket endpoint inizia correttamente (lo WS è ancora in `router.py`).
-- Controllare che tutti gli import backward-compat in `router.py` funzionano con main.py, config_api.py, scalping_jobs.py, user_data_stream.py, supervisor_scheduler.py, parameter_updater.py.
-
----
-
-(Il resto del file HANDOFF.md precedente è preservato ma troncato per chiarezza — vedi versione completa su disco)
+## 9. Come verificare che il bot stia funzionando
+
+```bash
+# Score corrente e bias
+docker logs synthtrade_backend --tail 20 2>&1 | grep "ExecLoop\|COLLECTORS\|COVERAGE"
+
+# Ultima decisione supervisor
+docker exec vps_postgres psql -U synthtrade -d synthtrade -c \
+  "SELECT decided_at, action, was_applied, LEFT(reason,200) FROM supervisor_memory ORDER BY decided_at DESC LIMIT 3;"
+
+# Trade della sessione corrente
+docker exec vps_postgres psql -U synthtrade -d synthtrade -c \
+  "SELECT COUNT(*), SUM(pnl), AVG(pnl) FROM scalping_trades WHERE session_id = (SELECT id FROM scalping_sessions WHERE status='active' LIMIT 1);"
+
+# WR per combo (vista)
+docker exec vps_postgres psql -U synthtrade -d synthtrade -c \
+  "SELECT * FROM signal_outcome_by_strategy_regime ORDER BY n_trades DESC;"
+```

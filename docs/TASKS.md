@@ -1,8 +1,9 @@
 # TASKS.md — SynthTrade Task Tracking
 
-> **Aggiornato:** 2026-09-29. Task completati in `docs/ARCHIVE_TASKS.md`.
-> **Stato suite:** 792 passed / 0 failed, lanciata **da `synthtrade/backend/`** (non dalla root).
-> **In produzione:** TASK-1256/1257 deployati e verificati in LIVE sulla VPS il 2026-09-29.
+> **Aggiornato:** 2026-09-29 ~14:30 UTC. Task completati in `docs/ARCHIVE_TASKS.md`.
+> **Stato suite:** 790 passed / 0 failed, lanciata **da `synthtrade/backend/`** (non dalla root).
+> **In produzione:** TASK-1256 deployato 2026-09-25; TASK-1261 deployato 2026-09-29 ~14:00.
+> **Handoff completo:** `docs/HANDOFF.md` — leggere prima di qualsiasi intervento.
 
 ---
 
@@ -15,7 +16,79 @@
 > 4. SL/TP asimmetrici richiedono win rate >38% per pareggio, ma il bot reale era al 25-30%.
 >
 > **TASK-1250 e TASK-1251 sono stati completati il 2026-08-25** e indirizzano le cause 1 e 2.
-> I TASK sotto (1252, 1253) restano da fare e richiedono dati post-fix per essere calibrati correttamente.
+> **Analisi completa su 188 trade LIVE (luglio–settembre 2026):** vedere `docs/HANDOFF.md` §2.
+
+---
+
+### TASK-1261 — Supervisor: Fee Awareness, Memoria Cross-Sessione, Anti-Loop Pause ✅
+
+**Stato:** Completato e deployato in LIVE 2026-09-29 ~14:00. Commit `77339b0` + `df9b67c`.
+
+**Problemi risolti:**
+1. **Stop&go stallo loop:** dopo restart, supervisor entrava in loop `no_action` perché vedeva 0 trade in sessione e applicava la regola "< 5 trade → no_action". Fix: se lo storico cross-sessione ha ≥ 20 trade, il gate viene bypasato e si usa la performance storica.
+2. **Nessuna fee awareness:** il supervisor non sapeva che il breakeven WR reale è ~65% (non 38%). Fix: il contesto ora include `fee_info` con taker% e round-trip drag% calcolati a runtime da `_get_fee_rate()` / `_round_trip_fee_drag_pct()`.
+3. **Anti-loop pause:** pattern `pause_trading` + `update_threshold` alternati sugli stessi dati. Fix: cooldown 30 min su `pause_trading` in `supervisor_scheduler.py` (campo `_last_pause_time`).
+4. **History troppo corta:** solo ultime 10 decisioni, sparivano in minuti con 144 decisioni/giorno. Fix: estesa a 20 voci con `blocked_reason` visibile.
+5. **System prompt hardcoded:** conteneva `BTC-EUR`, `OKX`, valori numerici storici BTC-EUR specifici. Fix: prompt generico con formula breakeven dinamica, riferimento al blocco `=== FEE REALI ===` nel contesto.
+
+**Verifica post-deploy:** Prima decisione (14:00:30) il supervisor ha correttamente: applicato l'eccezione stop&go (186 trade ≥ 20), calcolato breakeven WR 65% dai dati runtime, concluso che `rsi_bollinger/ranging` WR 35.8% è strutturalmente perdente, emesso `no_action` perché non esiste alternativa migliore.
+
+**File modificati:**
+- `synthtrade/backend/app/ai/supervisor_context.py` — `fee_info` injection, `session_just_started`, history × 20
+- `synthtrade/backend/app/scalping/supervisor/supervisor_client.py` — system prompt v3, `_format_context` fee block
+- `synthtrade/backend/app/scalping/supervisor/supervisor_scheduler.py` — `_last_pause_time`, cooldown 30 min
+
+---
+
+### TASK-1262 — Fix Bias Strutturali nel Signal Scoring Engine
+
+**Priorità:** 🔴 Alta — il bot non apre trade da 2026-09-29 08:22 (sessione `5c7e9329` → `a12483b5`)
+
+**Analisi:** Vedere `docs/HANDOFF.md` §3 per la diagnosi completa con dati.
+
+**Problema in sintesi:** Su 9 collector attivi (peso > 0), solo `order_book_imbalance` è dinamico per BTC-EUR. Tre bias permanenti abbassano lo score di −4.3 punti fissi:
+
+| Causa | Contributo fisso | Natura |
+|-------|-----------------|--------|
+| Long/Short Ratio (~63% long BTC) | −2.2 pt | Valore assoluto sempre bearish per BTC |
+| Fear & Greed (73 oggi) | −2.1 pt | Aggiornato 1×/giorno, drag costante |
+| CVD (baseline 1000 hardcoded) | 0 pt (peso sprecato) | Volume BTC-EUR << 1000, score ~0 sempre |
+
+Risultato: su 194 candele (12h), bias bullish solo 2 volte (1%). Il bot non può mai aprire un BUY.
+
+**Fix 1 — Long/Short Ratio: usare variazione rispetto alla media mobile recente**
+- **Perché:** BTC ha strutturalmente 60-65% long → il valore assoluto non dice nulla di nuovo. Quello che conta è se oggi è *più* o *meno* long del recente storico.
+- **Implementazione:** `LongShortRatioCollector` mantiene un buffer delle ultime `N` letture. Il metodo `ratio_to_score` riceve anche la media recente e produce un delta normalizzato: +100 se long% in forte calo (bullish), −100 se in forte crescita (bearish).
+- **Parametro:** `_LSR_LOOKBACK = 12` letture (≈60 min con aggiornamento ogni 5 min)
+
+**Fix 2 — Fear & Greed: peso da 0.10 → 0.03**
+- **Perché:** Pesa 10.5% normalizzato ma cambia 1×/giorno → contributo −2.1 punti fissi. Non è un segnale per-minuto. Ha senso come gate estremo (F&G < 20 o > 80) ma non come componente continua dello score.
+- **Implementazione:** basta modificare `DEFAULT_WEIGHTS["fear_greed"]` da `0.10` a `0.03`. La logica `value_to_score` rimane invariata (i valori estremi < 20 / > 80 continuano a produrre score significativi anche con peso ridotto).
+
+**Fix 3 — CVD: baseline dinamica proporzionale al volume osservato**
+- **Perché:** Baseline hardcoded `Decimal("1000")` in due punti del codice. BTC-EUR su OKX spot ha volumi da 0.05–0.2 BTC per candela → CVD << 1000 → score sempre ~0–2%. Il 15.8% del peso non contribuisce mai.
+- **Implementazione:** `CVDCalculator` espone `get_dynamic_baseline()` che restituisce la media del CVD assoluto massimale visto nelle ultime `M` finestre di reset, con lower bound di sicurezza (5.0 BTC). `signal_score_engine.py` chiama questo metodo invece di usare `Decimal("1000")`.
+
+**File coinvolti:**
+- `synthtrade/backend/app/scalping/intelligence/collectors/long_short_ratio.py`
+- `synthtrade/backend/app/scalping/intelligence/signal_score_engine.py`
+- `synthtrade/backend/app/scalping/intelligence/collectors/cvd_calculator.py`
+
+**Test da aggiornare/aggiungere:**
+- `tests/unit/test_signal_score_engine.py` (se esiste)
+- `tests/unit/test_collectors.py` (se esiste)
+
+**Impatto atteso:** Score medio da −5.0 a ~0 (da verificare dopo deploy), distribuzione bullish/bearish/neutral più bilanciata, bot riprende ad aprire trade.
+
+**Criteri di accettazione:**
+- [ ] Bias strutturale da L/S Ratio neutralizzato: score medio LSR nell'intervallo −5..+5 invece di −21
+- [ ] Peso F&G ridotto: contributo fisso da −2.1 a −0.6 punti (tollerabile)
+- [ ] CVD baseline dinamica: score CVD > 5 almeno nelle ore ad alto volume
+- [ ] Suite test: 790+ passed, 0 failed
+- [ ] Deploy VPS + verifica distribuzione score nelle prime 2h post-deploy
+- [ ] Bot apre almeno 1 trade nelle prime 4h post-deploy (se regime e tecnica lo consentono)
+
+**Stato: IN ESECUZIONE**
 
 ---
 

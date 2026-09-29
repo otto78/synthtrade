@@ -75,19 +75,29 @@ class CVDCalculator:
     def cvd(self) -> Decimal:
         return self._cvd
 
-    def get_dynamic_baseline(self) -> Decimal:
+    def has_baseline(self) -> bool:
+        """True se esiste almeno una finestra completa su cui basare la scala."""
+        return bool(self._historical_max_abs)
+
+    def get_dynamic_baseline(self) -> Optional[Decimal]:
         """Baseline dinamica: media delle escursioni per finestra gia' chiuse.
 
         TASK-1262: la baseline hardcoded a 1000 era nonsensicala su BTC-EUR su OKX
         spot, dove una finestra vale 0.05-0.2 BTC: il rapporto restava sotto 0.2 e
         lo score non superava mai i +-2 punti, sprecando il 15% del peso.
 
-        Usa la media di |CVD| delle ultime finestre di reset. Il lower bound
-        (BASELINE_FLOOR) e' un epsilon anti divisione-per-zero, non una soglia
-        di scala: altrimenti neutralizzerebbe il fix proprio su BTC-EUR.
+        Ritorna None finche' nessuna finestra e' stata chiusa: senza una finestra
+        completa non esiste una scala di riferimento, e usare il lower bound
+        epsilon farebbe saturare cvd_to_score a +-100, producendo un contributo
+        costante di 15 punti invece di un segnale. Il chiamante (SignalScoreEngine)
+        esclude il collector da score e normalizzazione in quel caso, come gia'
+        fa per Long/Short Ratio.
+
+        Il lower bound (BASELINE_FLOOR) resta un epsilon anti divisione-per-zero
+        applicato solo quando esiste gia' una scala osservata.
         """
         if not self._historical_max_abs:
-            return BASELINE_FLOOR
+            return None
         total = sum(self._historical_max_abs, Decimal("0"))
         avg_max = total / Decimal(str(len(self._historical_max_abs)))
         return max(BASELINE_FLOOR, avg_max)

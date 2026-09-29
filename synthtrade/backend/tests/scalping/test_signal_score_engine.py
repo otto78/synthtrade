@@ -164,15 +164,22 @@ class TestSignalScoreEngine:
 
     @pytest.mark.asyncio
     async def test_compute_with_cvd(self):
-        """CVDCalculator collegato contribuisce allo score."""
+        """CVDCalculator con scala disponibile contribuisce allo score."""
         from datetime import datetime, timezone
 
         engine = SignalScoreEngine(symbol="BTCUSDT", threshold=30.0)
 
-        # Crea CVDCalculator con abbastanza trades da superare il grace period (100)
+        # Servono tre condizioni: grace period (>=100 trade), una finestra chiusa
+        # (1000 trade, che azzera _trades_since_reset) e di nuovo la grace period
+        # della NUOVA finestra (>=100 trade). Con 1100 trade tutte e tre valgono:
+        # la finestra 1 chiude al trade 1000, e i 100 successi portano
+        # _trades_since_reset a 100.
         cvd = CVDCalculator()
-        for _ in range(101):
-            cvd.on_trade(price=50000, quantity=1000, is_buyer_maker=False)  # buy pressure
+        for _ in range(1100):
+            cvd.on_trade(price=50000, quantity=1.0, is_buyer_maker=False)  # buy pressure
+
+        assert cvd.has_baseline() is True
+        assert cvd._trades_since_reset >= 100
 
         engine._set_cvd_calculator(cvd)
 
@@ -190,6 +197,33 @@ class TestSignalScoreEngine:
 
         assert "cvd" in score.breakdown
         assert score.breakdown["cvd"] > 0  # CVD positivo = bullish
+
+    @pytest.mark.asyncio
+    async def test_cvd_excluded_without_baseline(self):
+        """Regressione TASK-1262: senza finestra chiusa il CVD non entra nello score.
+
+        In LIVE il 2026-09-29 il CVD risultava a s=100.0 (massimo bullish) perche'
+        get_dynamic_baseline() restituiva il lower bound epsilon durante il warmup:
+        un contributo costante di 15 punti che spingeva lo score falso verso
+        l'alto. Ora il collector e' escluso finche' non c'e' una scala reale.
+        """
+        engine = SignalScoreEngine(symbol="BTCUSDT", threshold=30.0)
+
+        # 500 trade: oltre la grace period (100) ma sotto la finestra (1000)
+        cvd = CVDCalculator()
+        for _ in range(500):
+            cvd.on_trade(price=50000, quantity=1.0, is_buyer_maker=False)
+
+        engine._set_cvd_calculator(cvd)
+
+        for name in ('_funding_rate', '_open_interest', '_long_short', '_fear_greed',
+                     '_sentiment', '_whale', '_onchain', '_order_book_imbalance'):
+            getattr(engine, name).collect = AsyncMock(return_value=None)
+
+        score = await engine.compute()
+
+        assert "cvd" not in score.breakdown
+        assert score.breakdown == {}
 
     @pytest.mark.asyncio
     async def test_get_snapshot_structure(self):

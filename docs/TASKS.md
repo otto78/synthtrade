@@ -22,7 +22,7 @@
 
 ### TASK-1261 — Supervisor: Fee Awareness, Memoria Cross-Sessione, Anti-Loop Pause ✅
 
-**Stato:** Completato e deployato in LIVE 2026-09-29 ~14:00. Commit `77339b0` + `df9b67c`.
+**Stato:** ✅ Completato e deployato in LIVE 2026-09-29 ~14:00. Commit `77339b0` + `df9b67c` — push su `origin/main` completato il 2026-09-29 (erano rimasti locali fino al push di TASK-1262).
 
 **Problemi risolti:**
 1. **Stop&go stallo loop:** dopo restart, supervisor entrava in loop `no_action` perché vedeva 0 trade in sessione e applicava la regola "< 5 trade → no_action". Fix: se lo storico cross-sessione ha ≥ 20 trade, il gate viene bypasato e si usa la performance storica.
@@ -80,6 +80,9 @@ Distribuzione reale (68 snapshot, soglia |score| ≥ 6.0): **bullish 0 (0.0%)**,
 - **Perché:** Baseline hardcoded `Decimal("1000")` in due punti del codice. BTC-EUR su OKX spot ha volumi da 0.05–0.2 BTC per candela → CVD << 1000 → score sempre ~0–2%. Il 15.8% del peso non contribuisce mai.
 - **Implementazione:** `CVDCalculator` espone `get_dynamic_baseline()` che restituisce la media del CVD assoluto massimale visto nelle ultime `M` finestre di reset. `signal_score_engine.py` chiama questo metodo invece di usare `Decimal("1000")`.
 - **⚠️ Deviazione deliberata dal lower bound di 5.0 BTC specificato inizialmente.** Con un floor di 5.0 la baseline dinamica sarebbe stata comunque `max(5.0, ~0.2) = 5.0` su BTC-EUR, cioè 25× la scala reale: il rapporto CVD/baseline restava sotto 0.2 e il fix era **privo di effetto proprio nel caso che doveva risolvere**. Il lower bound è stato ridotto a `BASELINE_FLOOR = Decimal("0.01")`, un puro epsilon anti divisione-per-zero. Verificato da `test_dynamic_baseline_floor_does_not_dominate_real_scale`.
+- **🐛 Bugfound in LIVE e corretto lo stesso giorno (commit `3c1a7f2`).** Il floor epsilon da solo **non bastava**: `window_size` è 1000 trade ma la grace period ne richiede solo 100, quindi fra trade 100 e 1000 il CVD veniva valutato con una baseline inesistente, restituita come epsilon. `cvd_to_score` saturava a ±100 e il CVD contribute **un +15,0 costante** (peso 0.15 × 100) — il bias strutturale che il task voleva eliminare, invertito di segno. Confermato in LIVE: `cvd=OK(w=0.15,s=100.0)`.
+  Correzione: `get_dynamic_baseline()` ritorna `None` finché nessuna finestra è chiusa, e l'engine esclude il CVD da score e normalizzazione in quel caso — stesso pattern già usato per l'LSR. Il log diagnostico dichiara ora `cvd=WARMUP` invece di un `s=0.0` fuorviante. Regressione coperta da `test_cvd_excluded_without_baseline`.
+- **Interazione da conoscere:** la grace period usa `_trades_since_reset`, che si azzera a ogni finestra. Quindi il CVD è escluso per i primi 100 trade **di ogni** finestra da 1000, cioè ~10% del tempo. Voluto: un CVD parziale confrontato con la media delle finestre chiuse è rumore.
 - **Nota:** il default `cvd_to_score(..., baseline=Decimal("1000"))` è mantenuto solo per compatibilità con i chiamanti esistenti; l'engine passa sempre la baseline dinamica.
 
 **File coinvolti:**
@@ -111,10 +114,17 @@ Fix 1 e Fix 3 non sono ricostruibili dallo storico (servono le letture LSR e le 
 - [x] Peso F&G ridotto a 0.03: contributo misurato −2.700 → −0.810 (−69%)
 - [x] CVD baseline dinamica: scala reale 0.2 BTC gestita correttamente, floor non più dominante
 - [x] Suite test: **804 passed, 1 failed** (HEAD baseline: 791 passed, 1 failed — lo stesso fallimento preesistente `tests/unit/test_task_908.py::test_guard_does_not_affect_other_actions`, fuori scope, introdotto da TASK-1261). Nessuna regressione.
-- [ ] Deploy VPS + verifica distribuzione score nelle prime 2h post-deploy
+- [x] Deploy VPS + verifica distribuzione score — deploy eseguito 15:44:23 UTC, pesi e coverage verificati nei log LIVE
 - [ ] Bot apre almeno 1 trade nelle prime 4h post-deploy — **attendibile solo se il regime lo consente; vedi nota sopra**
 
-**Stato: IMPLEMENTATO E TESTATO — non deployato in produzione.**
+**Stato:** ✅ **COMPLETATO, COMMITTATO E IN LIVE** — commit `4ff3073` (push su `origin/main` 2026-09-29). Deploy avvenuto alle 15:44:23 UTC, pochi secondi prima dell'avvio del container (15:44:27): i tre file di TASK-1262 erano già in `/app`, quindi il processo in esecuzione gira il codice nuovo. Confermato nei log LIVE:
+
+```
+[ScoreEngine] COLLECTORS: btc-eur | ... fear_greed=OK(w=0.03,s=-19.5) ...
+[ScoreEngine] COVERAGE: btc-eur total=0.88 responded=0.58
+```
+
+`w=0.03` (era 0.10) e `total=0.88` (era 0.95) verificano il Fix 2 attivo. `long_short_ratio=OK(w=0.10,s=0.0)` con score a zero è il comportamento atteso durante il warmup: senza baseline il collector è escluso dal punteggio e contribuisce 0. Dopo ~12 letture distinte (≈60 min, dato `period=5m` dell'endpoint) inizierà a produrre delta reali.
 
 > **Nota su HANDOFF §3:** la sezione riporta l'LSR a 63% con contributo −2.2 pt e un totale di −5.0. Entrambi i valori sono contraddetti dai log reali (49% e +0.208, totale −3.741). Se HANDOFF viene usato come riferimento, leggerlo con questa correzione.
 
@@ -122,7 +132,7 @@ Fix 1 e Fix 3 non sono ricostruibili dallo storico (servono le letture LSR e le 
 
 ### TASK-1252 — Ricalibrare Peso Signal Score nella Decisione ✅ (Fase 1 completata)
 
-**Stato:** Fix pipeline completato il 2026-09-02. Fase 2 (ricalibrazione soglia score) da fare dopo 30 trade.
+**Stato:** 🔶 Fase 1 completata il 2026-09-02. **Fase 2 (ricalibrazione soglia score) ora prioritaria e sbloccata dall'evidenza di TASK-1262:** su 68 snapshot reali il bias dei collector è stato corretto (score medio −3.741 → −1.891) ma **nessuno dei 68 snapshot ha superato la soglia +6.0**: il segnale bullish resta a 0.0%. Il constraint non è più il bias dei collector ma l'ampiezza del segnale e la soglia che lo filtra. Prima di ricalibrare va però chiarito *cosa* misurare, dato che la correlazione score→PnL misurata è ≈ 0.004.
 
 **Fix applicato (Fase 1 — TASK-1252 fix):**
 Diagnosi sessione B (25ago-1set, 7gg, 1 solo trade): il filtro TASK-1242 in `candle_processor.py` bloccava tutti i `mean_reversion_override` quando `btc_price < ema20_4h`. I 228 override approvati dall'aggregator non raggiungevano l'esecuzione. Fix: il filtro `btc < ema20_4h` è ora esente per `is_mean_reversion_override=True`. Il filtro `change_1h < -0.5%` rimane attivo per tutti. Commit `5228ac0`.
@@ -155,6 +165,8 @@ Il TASK-1159 era bloccato per campione insufficiente — ora il campione c'è (4
 ---
 
 ### TASK-1253 — Rivedere Asimmetria SL/TP in Funzione del Win Rate Reale
+
+**Stato:** ⏸️ **APERTA — in attesa di dati.** Bloccata sul campione: servono ≥30 trade dopo TASK-1250/1251 per misurare il win rate reale per combinazione regime/strategia. Ottimizzare ora significherebbe calibrare su dati corrotti dal vecchio override mean-reversion. Nota: l'attuale SL 0.30% / TP 0.55% (non più 0.50%/0.80% — verificato sulla posizione LIVE) richiede win rate > 35.29% per pareggio (SL/(SL+TP)), contro i 38.46% della combinazione precedente. La soglia di break-even si è quindi abbassata di 3.2 pp con TASK-1256: va comunque rimisurata sui dati reali, non considerata risolta.
 
 **Priorità:** 🟡 Media — aspettare 1 settimana di dati live post-TASK-1250/1251 prima di cambiare
 
@@ -236,7 +248,7 @@ Lo stesso pattern va esteso ai parametri trailing/break-even in `break_even.py`.
 - [x] Test fallback: globale usato se non c'è override per strategia — `tests/unit/test_task_1256_per_strategy_sl_tp.py`
 - [x] Test override: valore strategia usato se chiave DB presente — idem (13 test, tutti verdi)
 
-**Stato: COMPLETATO e IN LIVE** (commit `87a8f03`; deploy VPS + verifica 2026-09-29). Prerequisito per TASK-1257/1258 sbloccato, ma la calibrazione resta gated su ≥30 trade post-deploy.
+**Stato:** ✅ **COMPLETATO e IN LIVE** (commit `87a8f03`; deploy VPS + verifica 2026-09-29). Prerequisito per TASK-1257/1258 sbloccato, ma la calibrazione resta gated su ≥30 trade post-deploy.
 
 **Nota di deployment (2026-09-29):** i valori in LIVE per `rsi_bollinger` sono **SL 0.30 / TP 0.55 netti**. Al momento
 della verifica la strategia in esecuzione era `ema_cross` per override macro TASK-1250, quindi usava i
@@ -290,7 +302,7 @@ Round-trip fee drag = `1 - (1-0.001)² ≈ 0.20%`
 - [ ] Simulazione: nuovi vs vecchi SL/TP sulle stesse entry → confronto PnL
 - [ ] Monitoring 2 settimane post-cambio per conferma
 
-**Stato: APERTA — in raccolta dati.** L'infrastruttura è in LIVE e le percentuali restituite dalla position
+**Stato:** ⏸️ APERTA — in raccolta dati.  L'infrastruttura è in LIVE e le percentuali restituite dalla position
 card ora corrispondono ai valori effettivamente usati, quindi la verifica non richiede più ricostruzioni manuali.
 Prima di estrarre i dati, **filtrare per `strategy_type`**: mescolare `ema_cross` e `rsi_bollinger` produrrebbe
 una distribuzione MFE/MAE meaningless, perché usano SL/TP diversi.
@@ -371,7 +383,7 @@ Il supervisor AI può aggiornare singoli parametri senza modifiche al codice.
 - [ ] `BREAK_EVEN_TRIGGER` ≈ 25% TP per ogni strategia (verificato)
 - [ ] Il supervisor AI può aggiornare singoli parametri trailing via DB senza deploy
 
-**Stato: APERTA — la lacuna concreta oggi in LIVE.**
+**Stato:** ⏸️ APERTA — la lacuna concreta oggi in LIVE. 
 
 Il punto scoperto il 2026-09-29: gli step del trailing **non sono proporzionali al TP**, sono valori
 fissi in `break_even.py` (`STEP 0.15`, `BUFFER 0.10`, `SAFETY 0.10`), identici per tutte le strategie e

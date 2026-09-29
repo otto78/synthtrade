@@ -98,14 +98,30 @@ class TestCVDCalculator:
 
     # ── TASK-1262: baseline dinamica ──
 
-    def test_dynamic_baseline_warmup_uses_floor(self):
-        """Prima della prima finestra chiusa si usa il lower bound epsilon.
+    def test_dynamic_baseline_warmup_is_none(self):
+        """Prima della prima finestra chiusa la baseline non e' disponibile.
 
-        Una baseline derivata da una sola finestra parziale amplificherebbe il
-        rumore a score pieni.
+        Non si restituisce il lower bound epsilon: senza una scala di riferimento
+        cvd_to_score saturerebbe a +-100, producendo un contributo costante di
+        15 punti invece di un segnale. Il chiamante esclude il collector.
         """
         calc = CVDCalculator()
-        assert calc.get_dynamic_baseline() == BASELINE_FLOOR
+        assert calc.get_dynamic_baseline() is None
+        assert calc.has_baseline() is False
+
+    def test_dynamic_baseline_warmup_would_saturate(self):
+        """Regressione del bug live: il floor epsilon saturava lo score a 100.
+
+        Prima del fix get_dynamic_baseline() restituiva BASELINE_FLOOR durante il
+        warmup, e con |cvd| >= floor cvd_to_score dava 100 -> contributo costante
+        di 15 punti sul peso CVD. Osservato in LIVE il 2026-09-29.
+        """
+        calc = CVDCalculator(window_size=1000)
+        for _ in range(500):  # oltre la grace period, sotto una finestra
+            calc.on_trade(price=1, quantity=0.01, is_buyer_maker=False)
+        assert calc.get_dynamic_baseline() is None
+        # il valore che il vecchio codice avrebbe usato produceva saturazione
+        assert CVDCalculator.cvd_to_score(Decimal("0.01"), BASELINE_FLOOR) == 100.0
 
     def test_dynamic_baseline_from_closed_windows(self):
         """La baseline e' la media delle escursioni delle finestre chiuse."""
@@ -117,6 +133,17 @@ class TestCVDCalculator:
             calc.on_trade(price=50000, quantity=qty, is_buyer_maker=True)
         # finestre: |8| e |-4| -> media 6.0
         assert calc.get_dynamic_baseline() == Decimal("6.0")
+        assert calc.has_baseline() is True
+
+    def test_has_baseline_flips_after_first_window(self):
+        """La scala diventa disponibile esattamente alla prima finestra chiusa."""
+        calc = CVDCalculator(window_size=3)
+        assert calc.has_baseline() is False
+        calc.on_trade(price=1, quantity=1.0, is_buyer_maker=False)
+        calc.on_trade(price=1, quantity=1.0, is_buyer_maker=False)
+        assert calc.has_baseline() is False
+        calc.on_trade(price=1, quantity=1.0, is_buyer_maker=False)  # finestra chiusa
+        assert calc.has_baseline() is True
 
     def test_dynamic_baseline_ignores_sign(self):
         """Escursioni negative e positive contano con lo stesso peso."""

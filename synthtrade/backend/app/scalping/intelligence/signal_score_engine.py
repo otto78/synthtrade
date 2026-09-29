@@ -419,13 +419,17 @@ class SignalScoreEngine:
         _cvd_snap = self._cvd_calculator.snapshot(self.symbol) if self._cvd_calculator else None
         _cvd_w = self.weights.get("cvd", 0.0)
         _cvd_s = None
+        _cvd_state = "NONE"
         if _cvd_snap is not None:
-            try:
-                _baseline = self._cvd_calculator.get_dynamic_baseline()
+            # Lo score diagnostico deve riflettere lo score effettivamente usato:
+            # senza baseline non c'e' uno score, quindi si dichiara escluso.
+            _baseline = self._cvd_calculator.get_dynamic_baseline() if self._cvd_calculator else None
+            if _baseline is None:
+                _cvd_state = "WARMUP"
+            else:
                 _cvd_s = CVDCalculator.cvd_to_score(_cvd_snap.cvd, _baseline)
-            except Exception:
-                pass
-        _status_parts.append(f"cvd={'OK' if _cvd_snap is not None else 'NONE'}(w={_cvd_w:.2f}" +
+                _cvd_state = "OK"
+        _status_parts.append(f"cvd={_cvd_state}(w={_cvd_w:.2f}" +
                             (f",s={_cvd_s:.1f})" if _cvd_s is not None else ")"))
 
         _DIM = "\033[2m"
@@ -462,9 +466,12 @@ class SignalScoreEngine:
             weighted_score += fr_score * self.weights.get("funding_rate", 0.20)
             total_weight += self.weights.get("funding_rate", 0.20)
 
-        # CVD — periodo di grazia: esclude il CVD nelle prime letture per non falsare
-        # lo score con un valore parziale (la baseline dinamica e' la media delle
-        # escursioni per finestra completa, confrontabile solo a finestra piena).
+        # CVD — due condizioni di esclusione, distinte.
+        # 1) grace period: la finestra corrente e' parziale, il delta e' rumore.
+        # 2) baseline non ancora disponibile: senza una finestra chiusa non esiste
+        #    una scala di riferimento. Senza questo controllo get_dynamic_baseline()
+        #    restituiva il lower bound epsilon e cvd_to_score saturava a +-100,
+        #    producendo un contributo costante di 15 punti (TASK-1262, bugfix).
         trades_count = 0  # default per logging e grace period
         if cvd_data is not None:
             trades_count = getattr(self._cvd_calculator, '_trades_since_reset', 0) if self._cvd_calculator else 0
@@ -475,11 +482,17 @@ class SignalScoreEngine:
                 )
                 # Non aggiungere CVD al breakdown né al weighted score
             else:
-                baseline = self._cvd_calculator.get_dynamic_baseline()
-                cvd_score = CVDCalculator.cvd_to_score(cvd_data.cvd, baseline)
-                breakdown["cvd"] = round(cvd_score, 2)
-                weighted_score += cvd_score * self.weights.get("cvd", 0.20)
-                total_weight += self.weights.get("cvd", 0.20)
+                baseline = self._cvd_calculator.get_dynamic_baseline() if self._cvd_calculator else None
+                if baseline is None:
+                    logger.debug(
+                        "[ScoreEngine] CVD warmup: nessuna finestra chiusa, "
+                        "escluso dallo score e dalla normalizzazione"
+                    )
+                else:
+                    cvd_score = CVDCalculator.cvd_to_score(cvd_data.cvd, baseline)
+                    breakdown["cvd"] = round(cvd_score, 2)
+                    weighted_score += cvd_score * self.weights.get("cvd", 0.20)
+                    total_weight += self.weights.get("cvd", 0.20)
 
         # Open Interest — usa baseline rolling dinamica invece di valore fisso
         if oi is not None:

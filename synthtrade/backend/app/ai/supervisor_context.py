@@ -6,6 +6,11 @@ from typing import Optional
 from app.scalping.models.intelligence import MarketIntelSnapshot, SignalScore
 from app.scalping.models.market import MarketRegime
 
+# TASK-1261: soglia minima di trade storici cross-sessione necessari per sbloccare
+# la guardia "< 5 trade di sessione". Se il sistema ha già questo storico su BTC-EUR,
+# la sessione appena partita (stop&go) non va trattata come tabula rasa.
+_MIN_HISTORICAL_TRADES_TO_OVERRIDE_SESSION_GATE = 20
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,6 +50,25 @@ async def build_scalping_context(
         "regime_confidence": regime.confidence if regime else 0.0,
         "vol_anomaly": vol_anomaly,
     }
+
+    # TASK-1261: fee awareness — il supervisor deve conoscere le fee reali
+    # per calcolare il breakeven WR correttamente (non stimarlo a 38%).
+    try:
+        from app.scalping._state import _execution_state
+        from app.scalping.pricing import _get_fee_rate, _round_trip_fee_drag_pct
+        fee_tier = _execution_state.get("fee_tier", {"maker": 0.001, "taker": 0.001})
+        taker_rate = _get_fee_rate(fee_tier, "taker", 0.001)
+        fee_drag_pct = round(_round_trip_fee_drag_pct(taker_rate, taker_rate), 4)
+        context["fee_info"] = {
+            "taker_pct": round(taker_rate * 100, 4),
+            "round_trip_drag_pct": fee_drag_pct,
+        }
+    except Exception:
+        # fallback fee OKX taker standard
+        context["fee_info"] = {
+            "taker_pct": 0.10,
+            "round_trip_drag_pct": 0.1999,
+        }
     # TASK-1249: strategia attiva e parametri correnti — l'AI deve vedere
     # i parametri modificabili per poter usare update_params in modo mirato.
     if strategy_name:
@@ -140,6 +164,22 @@ async def build_scalping_context(
                     (total_pnl / trade_history[0].get("trade_value", 20) * 100 if trade_history else 0) - hold_return_pct, 1
                 )
 
+    # TASK-1261: se la sessione corrente è vuota (stop&go appena partito) ma c'è
+    # sufficiente storico cross-sessione, lo segnaliamo esplicitamente così il supervisor
+    # non tratta questa sessione come tabula rasa e non si blocca con no_action.
+    if not context.get("session_performance"):
+        context["session_performance"] = {
+            "total_trades": 0,
+            "winning_trades": 0,
+            "losing_trades": 0,
+            "win_rate_pct": 0.0,
+            "total_pnl": 0.0,
+            "avg_pnl_per_trade": 0.0,
+            "last_5_pnl": [],
+            "last_5_reasons": [],
+            "session_just_started": True,
+        }
+
     # ── Performance sessione (TASK-844) ─────────────────────────────────
     if session_id:
         try:
@@ -188,18 +228,21 @@ async def build_scalping_context(
                     (total_pnl / 20 * 100) - hold_return_pct, 1  # fallback trade_value=20
                 )
 
-    # ── Supervisor history (TASK-847) ────────────────────────────────────
+    # ── Supervisor history (TASK-847, TASK-1261) ─────────────────────────
+    # Filtrata per symbol (cross-sessionale) — le ultime 15 decisioni APPLICATE
+    # più le ultime 5 non applicate, per distinguere azioni reali da blocchi.
     if session_id:
         try:
             from app.db.supabase_client import get_supabase
 
             def _fetch_supervisor_history():
                 supabase = get_supabase()
+                # Ultime 20 decisioni cross-sessione per simbolo
                 resp = supabase.table("supervisor_memory") \
-                    .select("action, reason, decided_at, was_applied, market_bias") \
+                    .select("action, reason, decided_at, was_applied, blocked_reason, market_bias") \
                     .eq("symbol", symbol) \
                     .order("decided_at", desc=True) \
-                    .limit(10) \
+                    .limit(20) \
                     .execute()
                 return resp.data if resp.data else []
 
@@ -212,9 +255,10 @@ async def build_scalping_context(
             for h in history:
                 applied = "✅" if h.get("was_applied") else "❌"
                 action = h.get("action", "?")
-                reason = (h.get("reason") or "")[:60]
+                reason = (h.get("reason") or "")[:80]
                 decided = (h.get("decided_at") or "")[:16] if h.get("decided_at") else "?"
-                history_lines.append(f"  {applied} [{decided}] {action}: {reason}")
+                blocked = f" [BLOCCATA: {h.get('blocked_reason', '')}]" if not h.get("was_applied") and h.get("blocked_reason") else ""
+                history_lines.append(f"  {applied} [{decided}] {action}{blocked}: {reason}")
             context["supervisor_history"] = "\n".join(history_lines)
 
     # ── Historical performance (TASK-901/902) ───────────────────────────────

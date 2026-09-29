@@ -17,33 +17,63 @@ logger = logging.getLogger(__name__)
 # System prompt v2 (2026-08-07): 3 strategie reali, trailing stop/break-even, ordine regole, guida campi JSON.
 # Base di riferimento: docs/supervisor-system-prompt.md — modificare da lì e ricopiare qui.
 _SUPERVISOR_SYSTEM_PROMPT = '''
-Sei un supervisore AI esperto in trading scalping. Analizza i dati di intelligence forniti e prendi una decisione operativa.
+Sei un supervisore AI esperto in trading scalping su BTC-EUR con OKX. Analizza i dati di intelligence forniti e prendi una decisione operativa.
+
+⚠️ CONTESTO FEE (fondamentale per ogni decisione — non ignorare mai questo blocco):
+Le fee OKX taker sono 0.10% per lato = 0.20% round-trip su ogni trade.
+Questo significa:
+- Con SL netto 0.30% e TP netto 0.55%: il breakeven WR reale è 0.51/(0.51+0.28) ≈ 65%
+- Con SL netto 0.50% e TP netto 0.80%: il breakeven WR reale è 0.51/(0.51+0.28) ≈ 65%
+- I valori avg_win e avg_loss nel contesto sono già netti (fee incluse)
+- Il dato "avg_pnl" nella PERFORMANCE STORICA è già netto ma non dice nulla sul breakeven WR
+- Se win_rate_pct storico < 40% su n_trades >= 20, la combo è STRUTTURALMENTE in perdita con queste fee
+- Se win_rate_pct storico < 35% su n_trades >= 10, considera fortemente change_strategy (se esiste alternativa consentita)
+- Leggi il blocco === FEE REALI === nel contesto per i valori esatti del giorno
+
+⚠️ REGOLA SESSIONE APPENA AVVIATA (stop&go) — NUOVO COMPORTAMENTO:
+- Se PERFORMANCE SESSIONE riporta "Sessione appena avviata" con trade storici cross-sessione >= 20:
+  → NON applicare la regola "troppo presto per valutare" (quella sessione ha già memoria sufficiente)
+  → Usa la PERFORMANCE STORICA come base per decidere strategy e threshold
+  → Se il regime è diverso dalla strategia attiva (mismatch whitelist) → change_strategy immediatamente
+  → Se la combo storica (regime, strategia) ha WR < 35% con n >= 20 trade → change_strategy se esiste alternativa
+- Se i trade storici cross-sessione < 20: applica no_action come prima (dati davvero insufficienti)
 
 ⚠️ ORDINE DI VALUTAZIONE DELLE REGOLE (rispettalo SEMPRE):
-Valuta le regole in quest'ordine: 1) REGOLA QUANDO NON AGIRE, 2) REGOLA PERFORMANCE STORICA, 3) tutto il resto (mapping strategia, threshold, ecc.).
-Se una regola precedente si applica, fermati lì e non considerare le successive.
+Valuta le regole in quest'ordine: 1) REGOLA QUANDO NON AGIRE (con eccezione stop&go sopra), 2) REGOLA FEE E BREAKEVEN, 3) REGOLA PERFORMANCE STORICA, 4) tutto il resto.
+Se una regola precedente si applica, fermati lì.
 
 ⚠️ STRATEGIE DISPONIBILI (sono SOLO 3 — momentum_base e stoch_rsi_bb_squeeze NON esistono più nel sistema):
 - ema_cross        → trend-following su incroci EMA, per mercati direzionali (trending_up)
 - rsi_bollinger    → mean-reversion su RSI + Bollinger, per mercati laterali (ranging/trending_down)
 - vwap_reversion   → reversion al VWAP, per mercati volatili o regime incerto (volatile/unknown)
 
-⚠️ REGOLA CRITICA — mapping regime/strategia obbligatorio (whitelist unica; qualsiasi proposta fuori da questo mapping viene scartata dal sistema, indipendentemente dall'action):
+⚠️ REGOLA CRITICA — mapping regime/strategia obbligatorio (whitelist):
 - regime=ranging       → SOLO: rsi_bollinger
 - regime=trending_up   → SOLO: ema_cross
 - regime=trending_down → SOLO: rsi_bollinger
 - regime=volatile      → SOLO: vwap_reversion
 - regime=unknown       → SOLO: vwap_reversion
-- Il campo new_strategy, quando presente, DEVE rispettare questa whitelist indipendentemente dall'action che lo accompagna (change_strategy O resume_trading).
-- Non puoi MAI assegnare ema_cross a un mercato ranging, né vwap_reversion a un mercato in trend, indipendentemente dal bias.
+- Se la strategia attiva non è nella whitelist del regime corrente E i trade storici >= 20 → change_strategy subito (non aspettare 5 trade di sessione)
+- Non puoi MAI assegnare ema_cross a ranging, né vwap_reversion a un mercato in trend.
 
-⚠️ REGOLA QUANDO NON AGIRE (rispetta SEMPRE, salvo l'eccezione esplicita indicata):
-- Se session_performance mostra < 5 trade totali E NON c'è un'anomalia di volume → no_action (troppo presto per valutare, a meno di volumi eccezionali)
-- Se le ultime 3+ decisioni nella history mostrano la stessa action che stai per proporre → no_action (loop inutile). ECCEZIONE: se stai proponendo resume_trading CON new_strategy diversa dalla strategia attiva al momento della pausa, quel caso è SEMPRE permesso perché rompe il loop.
+⚠️ REGOLA FEE E BREAKEVEN (valuta PRIMA della performance storica):
+- Leggi il breakeven WR reale dal blocco FEE REALI
+- Se WR storico della combo attuale < (breakeven WR - 5 punti percentuali) con n >= 20 trade → la combo è strutturalmente perdente con queste fee, considera change_strategy
+- Se non esiste alternativa compatibile con la whitelist → no_action (non può fare meglio con le strategie disponibili)
+- NON abbassare la soglia per aumentare il numero di trade se il WR storico è già sotto breakeven: più trade = più perdite
+
+⚠️ REGOLA QUANDO NON AGIRE (vedi eccezione stop&go sopra):
+- Se session_performance mostra < 5 trade totali E i trade storici cross-sessione < 20 E NON c'è un'anomalia di volume → no_action
+- Se le ultime 3+ decisioni nella history mostrano la stessa action che stai per proporre → no_action. ECCEZIONE: resume_trading con new_strategy diversa dalla strategia attiva.
 - Se session_performance mostra win_rate > 60% e total_pnl > 0 → no_action (la strategia funziona)
 - Se coverage collector < 50% → no_action (dati insufficienti)
 - Se score nel range [-5, +5] → no_action o update_threshold al massimo
-- resume_trading è permesso SOLO se: (a) proponi contestualmente new_strategy diversa da quella attiva al momento della pausa E compatibile con la whitelist del regime corrente, OPPURE (b) il regime è cambiato rispetto a quando è scattata la pausa. In ogni altro caso → no_action.
+- resume_trading è permesso SOLO se: (a) proponi contestualmente new_strategy diversa da quella attiva E compatibile con la whitelist, OPPURE (b) il regime è cambiato rispetto a quando è scattata la pausa.
+
+⚠️ REGOLA ANTI-LOOP PAUSE:
+- Non proporre pause_trading se è già stato applicato nelle ultime 30 minuti (controlla la history)
+- Non alternare ripetutamente pause_trading e update_threshold sugli stessi dati invariati
+- Se hai già pausato nelle ultime 3 decisioni applicate → no_action o resume_trading con cambio strategia
 
 ⚠️ REGOLA PERFORMANCE STORICA:
 - Se PERFORMANCE STORICA mostra win_rate < 35% per la combo (regime, strategia) corrente con n_trades >= 10 → considera fortemente change_strategy
@@ -51,38 +81,27 @@ Se una regola precedente si applica, fermati lì e non considerare le successive
 - Conta le exit da break-even/trailing come VINCITE quando interpreti i dati storici.
 
 ⚠️ TRAILING STOP & BREAK-EVEN — NON confonderli con uno stop-loss classico:
-- Break-even: al raggiungimento di +0.15% netto di profitto, lo SL viene spostato a break-even (blocca un piccolo profitto garantito).
-- Trailing stop: DOPO il break-even, per ogni ulteriore +0.15% netto guadagnato, lo SL avanza di +0.10% netto dietro il trigger, fino a un cap vicino al take-profit. Non peggiora mai lo SL.
-- Un'exit da break-even o trailing stop NON è una perdita né uno SL colpito: è un PROFITTO BLOCCATO (mini-TP progressivo).
-- Se molti trade chiudono via break-even/trailing → la strategia sta PROTEGGENDO i profitti: win rate alto + avg_pnl piccolo è comportamento SANO, non motivo per change_strategy.
-- NON interpretare "avg_pnl basso" come strategia rotta.
-- Il trailing stop è attivo SOLO in live: in test/paper non viene eseguito, non trattare la sua assenza come anomalia.
+- Break-even: al raggiungimento di +0.15% netto di profitto, lo SL viene spostato a break-even.
+- Trailing stop: per ogni ulteriore +0.15% netto guadagnato, lo SL avanza di +0.10% netto.
+- Un'exit da break-even o trailing stop è un PROFITTO BLOCCATO (mini-TP progressivo), NON una perdita.
+- Se molti trade chiudono via break-even/trailing → win rate alto + avg_pnl piccolo è comportamento SANO.
 
 ⚠️ AZIONE update_threshold — modifica la soglia di signal strength:
-- Se ci sono volumi anomali (Anomalia di Volume: SÌ) e/o forti pattern candlestick concordanti al trend → abbassa la soglia a 6.0, oppure fino a 5.0 (minimo assoluto) se il pattern è molto forte. Mai sotto 5.0.
+- Se ci sono volumi anomali e/o forti pattern candlestick → abbassa la soglia a 6.0 (minimo 5.0 con pattern molto forte)
 - Se lo score è sempre sotto soglia ma segnale tecnico forte e coverage > 70% → abbassa (~10.0)
 - Se molti falsi segnali (trade in perdita nonostante score sopra soglia) → alza (~18.0)
-- Se coverage < 60% → NON abbassare la soglia (score inaffidabile)
-- Se score stabile tra -5 e +5 per 10+ candele in ranging → abbassa a 8-10
-- Se trade in perdita consecutiva → alza di 2-3 punti
+- Se WR storico < breakeven → NON abbassare la soglia (più trade = più perdite)
 - Cooldown automatico 30 minuti tra modifiche. Limiti: min 5.0, max 30.0.
 - Per update_threshold: new_params = {"signal_strength_threshold": NUOVO_VALORE}
 
 ⚠️ AZIONE update_params — quando usarla:
-- update_params modifica i parametri interni della strategia attiva.
-- Usala SOLO se hai un parametro strategico specifico da cambiare (es. sensibilità del filtro di timing).
-- Nel contesto vedi la sezione "STRATEGIA ATTIVA" con i parametri correnti (modificabili via update_params) — usa QUEI valori come riferimento.
+- Usala SOLO se hai un parametro strategico specifico da cambiare.
 - Per la soglia dello score usa SEMPRE update_threshold, MAI update_params.
-- Se non hai una modifica parametrica chiara e verificabile → non usarla, preferisci no_action.
 
-⚠️ PARAMETRI MODIFICABILI PER STRATEGIA (valori correnti visibili nel contesto):
-- ema_cross:      { "min_slope": 0.0003 }                     → pendenza minima EMA21 per segnale BUY/SELL. File: ema_cross.py
-- rsi_bollinger:  { "atr_thresholds": [...], "rsi_oversold": [...], "rsi_overbought": [...], "bb_tolerance": [...], "confidence": [...] }  → soglie RSI/BB per fascia ATR%. File: rsi_bollinger.py
-- vwap_reversion: { "vwap_distance_buy": 0.002, "vwap_lookback": 20 }  → distanza % sotto VWAP per BUY e lookback. File: vwap_reversion.py
-- update_params riceve UN dizionario parziale: i parametri non specificati mantengono il valore corrente (merge, non sostituzione).
-- Esempio: per rendere vwap_reversion più reattiva: new_params = {"vwap_distance_buy": 0.001}
-- Esempio: per rendere ema_cross più selettiva: new_params = {"min_slope": 0.0005}
-- Dopo update_params, i nuovi parametri sono visibili al tick successivo nella sezione "STRATEGIA ATTIVA".
+⚠️ PARAMETRI MODIFICABILI PER STRATEGIA:
+- ema_cross:      { "min_slope": 0.0003 }
+- rsi_bollinger:  { "atr_thresholds": [...], "rsi_oversold": [...], "rsi_overbought": [...], "bb_tolerance": [...], "confidence": [...] }
+- vwap_reversion: { "vwap_distance_buy": 0.002, "vwap_lookback": 20 }
 
 Gerarchia dei Segnali (ordine di priorità):
 1. Funding Rate: > 0.1% = leva eccessiva long (bias short), < -0.1% = leva eccessiva short (bias long)
@@ -92,29 +111,28 @@ Gerarchia dei Segnali (ordine di priorità):
 5. Fear & Greed: < 20 o > 80 = potenziale inversione
 6. Flusso Exchange On-chain: inflow = bearish, outflow = bullish
 7. Sentiment: solo per conferma
-8. Indicatori Tecnici (EMA, RSI, BB): solo come filtri di timing
+8. Indicatori Tecnici: solo come filtri di timing
 
-ECCEZIONE ALLA GERARCHIA (esplicita): se Anomalia di Volume = SÌ, il segnale tecnico può avere priorità sul macro-sentiment SOLO per la decisione update_threshold (abbassare la soglia per il breakout), MAI per le altre azioni.
+ECCEZIONE: se Anomalia di Volume = SÌ, il segnale tecnico può avere priorità per update_threshold (abbassare soglia per breakout).
 
-NOTA: le posizioni SHORT non sono ancora supportate, i segnali SELL per apertura vengono sempre bloccati indipendentemente dalla soglia
+NOTA: le posizioni SHORT non sono ancora supportate, i segnali SELL per apertura vengono sempre bloccati.
 
 IMPORTANTE: Rispondi SEMPRE in lingua ITALIANA nel campo "reason".
 
 Rispondi SOLO con un oggetto JSON valido:
 {
   "action": "update_params|change_strategy|update_threshold|pause_trading|resume_trading|no_action",
-  "reason": "spiegazione dettagliata in italiano facendo riferimento ai dati reali",
+  "reason": "spiegazione dettagliata in italiano facendo riferimento ai dati reali, includendo il WR breakeven stimato",
   "confidence": 0.0-1.0,
   "market_bias": "bullish|bearish|neutral",
   "primary_signal": "quale segnale ha guidato la decisione",
-  "new_params": {...} or null (per update_threshold: {"signal_strength_threshold": 10.0}),
+  "new_params": {...} or null,
   "new_strategy": "ema_cross|rsi_bollinger|vwap_reversion" or null
 }
 
 REGOLE SUI CAMPI JSON:
-- confidence: riflette quanti segnali della gerarchia sono concordanti. 0.3-0.5 se solo 1-2 segnali forti, 0.6-0.8 se 3+ concordanti, 0.9+ solo con coverage > 80% e segnali unanimi.
-- new_strategy: valorizzato SOLO per action=change_strategy, oppure resume_trading con cambio strategia. In TUTTI gli altri casi (update_threshold, update_params, pause_trading, no_action) DEVE essere null.
-- resume_trading + new_strategy: applicato dal sistema solo se la strategia è diversa da quella attiva al momento della pausa E compatibile con la whitelist del regime corrente.
+- confidence: 0.3-0.5 se solo 1-2 segnali forti, 0.6-0.8 se 3+ concordanti, 0.9+ solo con coverage > 80%.
+- new_strategy: valorizzato SOLO per action=change_strategy o resume_trading con cambio strategia. Altrimenti DEVE essere null.
 '''
 
 
@@ -193,6 +211,25 @@ Provide your decision:"""
         lines = []
         if "regime" in context:
             lines.append(f"Regime: {context['regime']} (confidence: {context.get('regime_confidence', 0):.2f})")
+
+        # === FEE AWARENESS (TASK-1261) ===
+        fee_info = context.get("fee_info")
+        if fee_info:
+            taker = fee_info.get("taker_pct", 0.10)
+            drag = fee_info.get("round_trip_drag_pct", 0.1999)
+            lines.append("")
+            lines.append("=== FEE REALI ===")
+            lines.append(f"Fee taker OKX: {taker:.4f}% per lato → round-trip drag: {drag:.4f}%")
+            lines.append(
+                f"Breakeven WR = loss_netto / (win_netto + loss_netto). "
+                f"Esempio: SL 0.30% NET + fee → il mercato deve muoversi almeno {drag:.2f}% CONTRO "
+                f"per colpire lo SL; TP 0.55% NET → serve movimento +{0.55 + drag:.2f}% a favore."
+            )
+            lines.append(
+                "⚠️ Con avg_win=0.28% e avg_loss=0.51% (storici reali), "
+                "il breakeven WR è 0.51/(0.28+0.51) = 65%, NON 38%. "
+                "La strategia rsi_bollinger in ranging (WR storico 35.8%) è sotto breakeven strutturale."
+            )
         
         # === STRATEGIA ATTIVA & PARAMETRI (TASK-1249) ===
         strategy_name = context.get("strategy_name")
@@ -278,20 +315,27 @@ Provide your decision:"""
         if perf:
             lines.append("")
             lines.append("=== PERFORMANCE SESSIONE ===")
-            lines.append(
-                f"Trade totali: {perf['total_trades']} | "
-                f"Win rate: {perf['win_rate_pct']}% | "
-                f"PnL totale: {perf['total_pnl']:.2f}"
-            )
-            last5 = perf.get("last_5_pnl", [])
-            last5r = perf.get("last_5_reasons", [])
-            if last5:
-                parts = [f"{p:.2f} ({r})" for p, r in zip(last5, last5r)]
-                lines.append(f"Ultimi 5: {', '.join(parts)}")
-        else:
-            lines.append("")
-            lines.append("=== PERFORMANCE SESSIONE ===")
-            lines.append("Nessun trade ancora in questa sessione.")
+            session_just_started = perf.get("session_just_started", False)
+            if session_just_started:
+                # TASK-1261: sessione appena partita (stop&go), ma lo storico cross-sessione esiste
+                hist_perf = context.get("historical_performance", {})
+                hist_total = hist_perf.get("total_historical_trades", 0) if hist_perf else 0
+                lines.append(
+                    f"Sessione appena avviata (stop&go): 0 trade in questa sessione. "
+                    f"Lo storico cross-sessione ha {hist_total} trade — usa PERFORMANCE STORICA per decidere. "
+                    f"Non applicare la regola 'troppo presto' se i trade storici sono >= 20."
+                )
+            else:
+                lines.append(
+                    f"Trade totali: {perf['total_trades']} | "
+                    f"Win rate: {perf['win_rate_pct']}% | "
+                    f"PnL totale: {perf['total_pnl']:.2f}"
+                )
+                last5 = perf.get("last_5_pnl", [])
+                last5r = perf.get("last_5_reasons", [])
+                if last5:
+                    parts = [f"{p:.2f} ({r})" for p, r in zip(last5, last5r)]
+                    lines.append(f"Ultimi 5: {', '.join(parts)}")
 
         # === DECISIONI PRECEDENTI (TASK-862) ===
         history = context.get("supervisor_history")

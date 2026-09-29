@@ -54,6 +54,7 @@ class SupervisorScheduler:
         self._last_strategy_change: float = 0.0
         self._last_param_update: float = 0.0
         self._last_threshold_change: float = 0.0
+        self._last_pause_time: float = 0.0  # TASK-1261: anti-loop pause cooldown
         self._current_strategy: Optional[str] = None
         # TASK-866: budget giornaliero chiamate AI
         self._daily_ai_calls: int = 0
@@ -375,6 +376,18 @@ class SupervisorScheduler:
                 blocked_reason = f"regime mismatch: {decision.new_strategy} not in {allowed}"
                 was_applied = False
 
+        # TASK-1261: anti-loop pause — blocca pause_trading ripetute in < 30 min
+        if decision.action == "pause_trading" and was_applied:
+            elapsed_since_last_pause = now - self._last_pause_time
+            if elapsed_since_last_pause < 1800:  # 30 minuti
+                remaining_min = int((1800 - elapsed_since_last_pause) / 60)
+                logger.info(
+                    f"⏳ Pause cooldown attivo — {remaining_min} min rimanenti. "
+                    f"Ultima pausa: {int(elapsed_since_last_pause/60)} min fa."
+                )
+                blocked_reason = f"pause cooldown: {remaining_min} min rimanenti"
+                was_applied = False
+
         # TASK-908: blocca resume in regime bearish senza possibilità di short
         if decision.action == "resume_trading" and was_applied:
             current_regime = self._loop.regime if self._loop else None
@@ -448,6 +461,8 @@ class SupervisorScheduler:
             self._last_param_update = now
         elif decision.action == "update_threshold":
             self._last_threshold_change = now
+        elif decision.action == "pause_trading":
+            self._last_pause_time = now  # TASK-1261
 
         await self._save_decision_to_memory(decision, was_applied=True, trade_history=trade_history)
 

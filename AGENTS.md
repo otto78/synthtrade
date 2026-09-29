@@ -45,16 +45,27 @@ uvicorn app.main:app --port 8888 --ws-ping-interval 60 --ws-ping-timeout 30
 
 ## How to Test
 
+**Run pytest from `synthtrade/backend/`, NOT from the project root.**
+
+`synthtrade/backend/pytest.ini` holds `asyncio_mode = auto` plus the `addopts --ignore` list. Running
+from the project root does not pick up that file, so async tests degrade and the failure count comes
+out completely different and misleading (110 fake failures vs 0 real ones on 2026-09-29).
+
 ```bash
-# Backend — from project root (conftest.py adds synthtrade/backend/app to sys.path)
-pytest synthtrade/backend/tests/
-pytest synthtrade/backend/tests/integration/test_okx_integration.py  # single file
-pytest -k "test_1111e"  # single test by name
+# Backend — from synthtrade/backend/
+cd synthtrade/backend
+python -m pytest -q                                    # 792 passed, 0 failed (~2:35)
+python -m pytest tests/scalping/test_okx_integration.py # single file (critical order path)
+python -m pytest -k "test_1111e"                       # single test by name
 
 # Frontend — from synthtrade/frontend/synthtrade-ui/
 npm test              # Jest
 npm run test:e2e      # Playwright
 ```
+
+Paused by default via `pytest.ini addopts` (files kept, excluded from the default run):
+`tests/audit`, `tests/e2e`, `tests/integration`, `tests/test_connectivity.py`, `tests/test_main.py`.
+To re-run them, comment out the `addopts` line or pass the paths explicitly.
 
 Backend conftest at `synthtrade/backend/tests/conftest.py` mocks Supabase via `mock_supabase` fixture.
 

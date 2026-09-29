@@ -7,6 +7,37 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.7.1] — 2026-09-29
+
+### Fixed
+- **Copertura del percorso ordine reale riattivata nella suite attiva**: i 12 test
+  entry → bracket → fill → close basati su `FakeOkxAdapter` (`test_okx_integration.py`) spostati da
+  `tests/integration/` (direzione esclusa da `pytest.ini`) a `tests/scalping/`. Prima stavano in pausa
+  e non giravano, pur essendo l'unica copertura di `place_exit_bracket`, `cancel_open_exit_orders` e
+  `get_trade_fee` — il codice che piazza e cancella ordini SL/TP reali. Il `FakeOkxAdapter` resta in
+  `tests/integration/` perché è importato anche dalla suite attiva.
+- **`AGENTS.md`**: la procedura di test indicava di lanciare pytest dalla root del progetto. Non
+  funziona — `synthtrade/backend/pytest.ini` (con `asyncio_mode = auto` e gli `addopts --ignore`) non
+  viene applicato da fuori, i test asincroni si degradano e il conteggio dei fallimenti è
+  completamente diverso e fuorviante. Ora la procedura indica esplicitamente di lanciare da
+  `synthtrade/backend/`.
+
+### Changed
+- Suite: **792 passed, 0 failed** (~2:35, lanciata da `synthtrade/backend/`), da 780.
+- `docs/HANDOFF.md` e nuovo recap `docs/recap/2026-09-29_sl-tp-per-strategia-suite-test.md`: stato
+  corrente, procedura di deploy VPS collaudata (CRLF→LF, verifica hash, trappola del sottodirectory
+  `rest/`) e task ancora aperti.
+
+### Audit (nessuna modifica al codice di produzione)
+- Verificato che i 53 errori `ruff` sui file toccati siano **tutti pre-esistenti**: confronto con un
+  worktree sul commit precedente (`dc29674`) dà lo stesso conteggio e la stessa distribuzione
+  (34 F401, 15 E402, 3 F541, 1 F841). Nessuna regressione introdotta.
+- Documentato che l'F401 su `MarketOrderRequest`/`ExitBracketRequest`/`SymbolRef` in
+  `candle_processor.py` è pre-esistente e strutturale: esiste un import a livello di modulo e uno
+  locale dentro la funzione, ed è usato quello locale.
+
+---
+
 ## [1.7.0] — 2026-09-25
 
 ### Added

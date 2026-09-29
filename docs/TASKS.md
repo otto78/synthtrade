@@ -1,6 +1,8 @@
 # TASKS.md — SynthTrade Task Tracking
 
-> **Aggiornato:** 2026-09-02. Task completati in `docs/ARCHIVE_TASKS.md`.
+> **Aggiornato:** 2026-09-29. Task completati in `docs/ARCHIVE_TASKS.md`.
+> **Stato suite:** 792 passed / 0 failed, lanciata **da `synthtrade/backend/`** (non dalla root).
+> **In produzione:** TASK-1256/1257 deployati e verificati in LIVE sulla VPS il 2026-09-29.
 
 ---
 
@@ -133,7 +135,12 @@ Lo stesso pattern va esteso ai parametri trailing/break-even in `break_even.py`.
 - [x] Test fallback: globale usato se non c'è override per strategia — `tests/unit/test_task_1256_per_strategy_sl_tp.py`
 - [x] Test override: valore strategia usato se chiave DB presente — idem (13 test, tutti verdi)
 
-**Stato: COMPLETATO** (commit `87a8f03`, test commit successivo — 2026-09-25). Prerequisito per TASK-1257/1258 ora sbloccato, ma la calibrazione resta gated su ≥30 trade post-TASK-1252.
+**Stato: COMPLETATO e IN LIVE** (commit `87a8f03`; deploy VPS + verifica 2026-09-29). Prerequisito per TASK-1257/1258 sbloccato, ma la calibrazione resta gated su ≥30 trade post-deploy.
+
+**Nota di deployment (2026-09-29):** i valori in LIVE per `rsi_bollinger` sono **SL 0.30 / TP 0.55 netti**. Al momento
+della verifica la strategia in esecuzione era `ema_cross` per override macro TASK-1250, quindi usava i
+globali 0.50/0.80: i valori dedicati della bollinger erano presenti ma non attivi. **Prima di giudicare
+l'effetto dei valori per-strategia, controllare sempre la strategia attiva nei log.**
 
 ---
 
@@ -150,7 +157,7 @@ Round-trip fee drag = `1 - (1-0.001)² ≈ 0.20%`
 
 | Strategia | SL netto proposto | TP netto proposto | WR breakeven | Razionale |
 |-----------|------------------|------------------|--------------|-----------|
-| `rsi_bollinger` | **0.35%** | **0.55%** | 38.9% | Ranging: oscillazioni tipiche BTC-EUR 0.2–0.5%; TP più raggiungibile |
+| `rsi_bollinger` | **0.30%** | **0.55%** | 35.3% | Ranging: oscillazioni tipiche BTC-EUR 0.2–0.5%; TP più raggiungibile. SL 0.30 in LIVE dal 2026-09-25 |
 | `ema_cross` | **0.60%** | **1.20%** | 33.3% | Trend: posizioni più lunghe; R:R 1:2 migliora expectancy |
 | `vwap_reversion` | **0.25%** | **0.45%** | 35.7% | Trade brevi su dip VWAP, movimenti piccoli ma rapidi |
 
@@ -176,11 +183,19 @@ Round-trip fee drag = `1 - (1-0.001)² ≈ 0.20%`
 - DB `scalping_runtime_config` — chiavi `STRATEGY_RSI_BOLLINGER_SL_PCT`, `STRATEGY_EMA_CROSS_TP_PCT`, ecc.
 
 **Criteri di accettazione:**
-- [ ] Almeno 30 trade post-TASK-1252 con dati disponibili
+- [ ] Almeno 30 trade post-deploy 1.7.0 (dal 2026-09-25, verifica VPS 2026-09-29)
 - [ ] Analisi MFE/MAE per `rsi_bollinger` (strategia dominante attuale)
 - [ ] Valori SL/TP scelti con WR breakeven ≤ WR osservato (expectancy ≥ 0)
 - [ ] Simulazione: nuovi vs vecchi SL/TP sulle stesse entry → confronto PnL
 - [ ] Monitoring 2 settimane post-cambio per conferma
+
+**Stato: APERTA — in raccolta dati.** L'infrastruttura è in LIVE e le percentuali restituite dalla position
+card ora corrispondono ai valori effettivamente usati, quindi la verifica non richiede più ricostruzioni manuali.
+Prima di estrarre i dati, **filtrare per `strategy_type`**: mescolare `ema_cross` e `rsi_bollinger` produrrebbe
+una distribuzione MFE/MAE meaningless, perché usano SL/TP diversi.
+
+**Dimensionamento da tenere presente:** SL 0.30% netto ≈ **−0.10% di movimento prezzo**, perché le fee
+(0.20% round-trip) consumano circa due terzi dello stop. Su un trade da 20 € lo stop scatta a ~2 cent.
 
 ---
 
@@ -250,9 +265,30 @@ Il supervisor AI può aggiornare singoli parametri senza modifiche al codice.
 - [ ] `break_even.py` legge parametri trailing per-strategia con fallback al globale
 - [ ] `config_loader.py` espone helper `trailing_params_for_strategy(name)` → dict
 - [ ] Tabella proporzionale documentata e validata (come sopra)
+- [ ] Simmetria BE/trailing verificata con i valori in LIVE: BE trigger 0.15% = **27%** del TP 0.55 (target ~25%, quindi già in linea), ma `LOCK 0.05%` = 9% del TP contro un 7% atteso
 - [ ] Simulazione: quanti trade si sarebbero chiusi anticipatamente (trailing hit < TP) con vecchi vs nuovi parametri
 - [ ] `BREAK_EVEN_TRIGGER` ≈ 25% TP per ogni strategia (verificato)
 - [ ] Il supervisor AI può aggiornare singoli parametri trailing via DB senza deploy
+
+**Stato: APERTA — la lacuna concreta oggi in LIVE.**
+
+Il punto scoperto il 2026-09-29: gli step del trailing **non sono proporzionali al TP**, sono valori
+fissi in `break_even.py` (`STEP 0.15`, `BUFFER 0.10`, `SAFETY 0.10`), identici per tutte le strategie e
+overridabili solo via DB. A essere dinamico è solo **quanti step** stanno sotto il tetto `TP - SAFETY`:
+
+| Strategia | TP netto | Tetto (TP − SAFETY) | Step effettivi |
+|---|---|---|---|
+| `rsi_bollinger` | 0.55 | 0.45 | **1** (0.30) |
+| `ema_cross` | 0.80 | 0.70 | **3** (0.30 / 0.45 / 0.60) |
+
+Conseguenza: con TP 0.55 la scala fissa viene troncata a un solo livello, quindi **aumentare il TP da
+0.45 a 0.55 non produce più step**. È la ragione per cui la tabella proporzionale qui sopra è ancora
+necessaria, e va applicata agli step e non solo al cap (che TASK-1256 ha già reso dinamico).
+
+**Da non toccare:** il break-even è corretto e fee-aware (trigger +0.15% netto, stop sicurezza +0.05%
+netto via `_exit_price_ratio`). L'obiettivo è "non perdere", non guadagnare: su un trade da 20 € uno
+stop a +0,05% vale 1 cent ed è corretto che ci sia. Le chiavi `STRATEGY_*_BE_TRIGGER/STEP/BUFFER` hanno
+un ulteriore ostruzione: nessun consumatore finché `TRAILING_ENABLED=False` di default.
 
 ---
 

@@ -2,6 +2,73 @@
 
 ## Ultimo Handoff
 
+### Da: sessione SL/TP per-strategia in LIVE + bonifica suite → prossima sessione (ripresa da VPS)
+
+**Data:** 2026-09-29
+**Recap completo:** `docs/recap/2026-09-29_sl-tp-per-strategia-suite-test.md`
+
+**Stato:** `main` allineato con `origin/main` (0/0), working tree pulito. Sessione live
+`09219901-1cd0-4475-a836-0ca3820f6bec` attiva in `live` su BTC-EUR, `fee_tier_certified: true`.
+Suite **792 passed / 0 failed**. Nessun test che tocchi la rete.
+
+#### Fatto
+
+- **TASK-1256/1257 deployati e verificati in LIVE.** `rsi_bollinger` ora usa SL 0.30 / TP 0.55 netti
+  (prima usava i globali 0.50/0.80). Override in DB `scalping_runtime_config`
+  (`STRATEGY_<NOME>_SL_PCT` / `_TP_PCT`) con fallback ai globali.
+- **Fix UI SL/TP**: la scheda posizione, il ripristino sessione e l'update realtime mostravano le
+  percentuali **globali** invece di quelle effettive. Ora derivano dai prezzi OCO realmente piazzati.
+- **Audit suite**: 110 fallimenti → 85 obsoleti, 11 test mal scritti, **0 bug reali**. Cause: rimozione
+  short selling (`cd4ec96`), passaggio long-only, soglie cambiate (TASK-1255 −15 → −8.0, TASK-1159).
+- **`test_fear_greed.py` faceva rete vera** (patchava `httpx` ma il collector usa `aiohttp`). Ora una
+  fixture autouse fa fallire il test se viene toccata la rete.
+- **Copertura del percorso ordine reale riattivata**: i 12 test entry → bracket → fill → close
+  (`FakeOkxAdapter`) spostati da `tests/integration/` (in pausa) a `tests/scalping/` (attiva).
+  Suite 780 → 792.
+- **Ruff senza regressioni**: stessi 53 errori pre-esistenti del commit precedente, verificato con
+  worktree su `dc29674`. Nessuno nuovo.
+
+#### ⚠️ Da sapere prima di toccare i test
+
+**Lanciare pytest SEMPRE da `synthtrade/backend/`, mai dalla root del progetto.**
+`pytest.ini` (con `asyncio_mode = auto`) sta in `synthtrade/backend/` e non viene applicato se si
+lancia da fuori: i test asincroni si degradano e il risultato è un numero di fallimenti completamente
+diverso e fuorviante.
+
+```bash
+cd synthtrade/backend && python -m pytest -q
+```
+
+#### Da fare / aperto
+
+| Task | Blocco |
+|---|---|
+| **TASK-1258** | gli step trailing sono **fissi** (0.15/0.10/0.10/0.15), non proporzionali al TP. Con TP 0.55 la scala si tronca a 1 solo step: alzare il TP non aggiunge livelli. |
+| **TASK-1257** | calibrazione valori: servono ≥30 trade post-deploy 1.7.0 (dal 2026-09-25). |
+| **TASK-1252** fase 2 | correlazione score→PnL su dati nuovi. |
+| **TASK-1253** | win rate per combinazione regime/strategia. |
+| `tests/integration`, `audit`, `e2e` | 22 fallimenti (dashboard, strategies API, Binance legacy), in pausa via `pytest.ini`. Rientrare per directory, commentando la riga `addopts`. |
+
+#### Decisioni da non ribaltare
+
+- **Break-even: non toccarlo.** Trigger +0.15% netto, stop sicurezza +0.05% netto, entrambi fee-aware.
+  Obiettivo "non perdere", non guadagnare. Su trade da 20 € lo stop a +0,05% vale 1 cent.
+- **Bollinger: 1 solo step trailing** finché TASK-1258 non rende gli step proporzionali.
+- SL 0.30% netto ≈ **−0.10% di movimento prezzo** (le fee 0.20% mangiano due terzi dello stop).
+- In LIVE la strategia selezionata cambia: il filtro macro TASK-1250 può passare da `rsi_bollinger` a
+  `ema_cross`. **Controllare sempre la strategia attiva prima di giudicare SL/TP per-strategia.**
+
+#### Ripresa dalla VPS
+
+Il repo del VPS (`/opt/vps/synthtrade/app`) **è divergente** da locale: non fare `git pull`, copia
+file singoli. Procedura collaudata in `docs/recap/2026-09-29_sl-tp-per-strategia-suite-test.md` §1.5:
+backup → `git hash-object` di verifica → `scp` → **normalizzazione CRLF→LF** → rebuild → verifica.
+Attenzione: `scp` rispetta i sottodirectory, e `position.py` sta in `scalping/rest/`, non in
+`scalping/`. Dopo ogni copia verificare `git diff --stat`: se il file non compare, è finito nel posto
+sbagliato.
+
+---
+
 ### Da: sessione manutenzione suite test (TASK-1256 + de-hang + pausa non-scalping) → prossima sessione
 
 **Data:** 2026-09-28

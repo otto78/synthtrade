@@ -1,10 +1,13 @@
 # SynthTrade — MASTER RECAP DI PROGETTO
 
 **Generato il:** 26 giugno 2026
-**Ultimo aggiornamento stato:** 24 settembre 2026 — 🟢 **PROGETTO ONLINE**
-**Stato produzione:** backend su VPS europea (Docker Compose) + frontend su GitHub Pages (`/synthtrade/`) · futuro frontend su VPS · log/DB accessibili via SSH + `.env` del VPS (MCP Render/Supabase rimossi).
+**Ultimo aggiornamento stato:** 29 settembre 2026 — 📌 **PROGETTO ONLINE — TASK-1256/1257 in LIVE**
+**Stato produzione:** backend su VPS europea (Docker Compose) + frontend su GitHub Pages (`/synthtrade/`) — futuro frontend su VPS — log/DB accessibili via SSH + `.env` del VPS (MCP Render/Supabase rimossi).
 **Fonte:** consolidamento di 8 documenti di recap sessione (20-28 giugno 2026)
 **Scopo:** punto di riferimento unico per capire cosa è stato fatto, cosa è ancora aperto, e dove riprendere
+
+> **Recap più recente:** `2026-09-29_sl-tp-per-strategia-suite-test.md` — SL/TP per-strategia
+> deployati in LIVE, bonifica suite (792 passed / 0 failed), procedura deploy VPS.
 
 ---
 
@@ -32,6 +35,11 @@
 | 26/06 | EMA Angle / Short Selling Margin / Wallet Orchestrator | Solo analisi: margin Binance, WalletOrchestrator, EMA slope |
 | 26/06 | Trailing Stop Loss Strategy | Solo analisi: nuova strategia "growth" con SL variabile |
 | 27-28/06 | Strategie Scalping, Bug Fix a Cascata & Regressione | Sessione più operativa: nuova strategia implementata, regressione, rollback |
+| 29/09 | SL/TP per-strategia in LIVE + bonifica suite | TASK-1256/1257 deployati su VPS e verificati in LIVE; fix UI SL/TP; suite a 792 passed / 0 failed (110 fallimenti, 0 bug reali); copertura del percorso ordine reale riattivata nella suite attiva |
+
+> **Nota:** questa tabella copre le sessioni di giugno più quella corrente. Le sessioni di luglio,
+> agosto e settembre 2026 **non** sono state riportate qui: il dettaglio è nei singoli file di
+> `docs/recap/` e nello stato corrente in `docs/HANDOFF.md`.
 
 **Nota metodologica:** alcuni argomenti (sync bug strategia, short selling, fee/PnL, regime detection) sono stati toccati in più sessioni in momenti diversi. In questo recap riporto lo **stato più recente conosciuto**, non quello della singola sessione in cui sono stati menzionati per la prima volta.
 

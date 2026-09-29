@@ -14,13 +14,14 @@ from app.scalping.intelligence.collectors.cvd_calculator import CVDCalculator
 
 class TestDefaultWeights:
     def test_weights_non_negative_and_complete(self):
-        """I pesi runtime sono relativi e corrispondono a TASK-1159."""
+        """I pesi runtime sono relativi e corrispondono a TASK-1159, con fear_greed
+        ridotto a 0.03 da TASK-1262."""
         expected_weights = {
             "order_book_imbalance": 0.30,
             "funding_rate": 0.15,
             "cvd": 0.15,
             "long_short_ratio": 0.10,
-            "fear_greed": 0.10,
+            "fear_greed": 0.03,
             "whale": 0.05,
             "open_interest": 0.05,
             "onchain": 0.05,

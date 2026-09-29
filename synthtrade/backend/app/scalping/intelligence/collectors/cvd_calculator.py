@@ -8,11 +8,19 @@ CVD calante    = piu pressione sell -> momentum ribassista
 CVD divergente dal prezzo = forte segnale inversione imminente
 """
 
+import collections
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
 from app.scalping.models.intelligence import CVDData
+
+# TASK-1262: lower bound della baseline dinamica.
+# Il task specificava 5.0 BTC, ma la stessa analisi riporta volumi di 0.05-0.2 BTC
+# per finestra su BTC-EUR: un floor di 5.0 e' 25-100x il valore reale e riporterebbe
+# il rapporto cvd/baseline sotto 0.2, azzerando di fatto il fix. Qui si usa solo un
+# epsilon anti divisione-per-zero, lasciando la scala reale ai dati osservati.
+BASELINE_FLOOR = Decimal("0.01")
 
 
 class CVDCalculator:
@@ -36,6 +44,8 @@ class CVDCalculator:
         self._last_delta = Decimal("0")
         self._last_prices: list[float] = []
         self._previous_cvd = Decimal("0")
+        # TASK-1262: storico CVD massimi per baseline dinamica
+        self._historical_max_abs = collections.deque(maxlen=20)
 
     def on_trade(self, price: float, quantity: float, is_buyer_maker: bool) -> None:
         """Aggiorna CVD con un nuovo trade.
@@ -54,6 +64,8 @@ class CVDCalculator:
 
         # Reset periodico per evitare drift numerico
         if self._trades_since_reset >= self._window_size:
+            # TASK-1262: memorizza l'escursione massima prima del reset
+            self._historical_max_abs.append(abs(self._cvd))
             self._previous_cvd = self._cvd
             self._cvd = Decimal("0")
             self._trades_since_reset = 0
@@ -62,6 +74,23 @@ class CVDCalculator:
     @property
     def cvd(self) -> Decimal:
         return self._cvd
+
+    def get_dynamic_baseline(self) -> Decimal:
+        """Baseline dinamica: media delle escursioni per finestra gia' chiuse.
+
+        TASK-1262: la baseline hardcoded a 1000 era nonsensicala su BTC-EUR su OKX
+        spot, dove una finestra vale 0.05-0.2 BTC: il rapporto restava sotto 0.2 e
+        lo score non superava mai i +-2 punti, sprecando il 15% del peso.
+
+        Usa la media di |CVD| delle ultime finestre di reset. Il lower bound
+        (BASELINE_FLOOR) e' un epsilon anti divisione-per-zero, non una soglia
+        di scala: altrimenti neutralizzerebbe il fix proprio su BTC-EUR.
+        """
+        if not self._historical_max_abs:
+            return BASELINE_FLOOR
+        total = sum(self._historical_max_abs, Decimal("0"))
+        avg_max = total / Decimal(str(len(self._historical_max_abs)))
+        return max(BASELINE_FLOOR, avg_max)
 
     def snapshot(self, symbol: str = "BTCUSDT") -> CVDData:
         """Cattura lo stato corrente del CVD.
@@ -104,6 +133,11 @@ class CVDCalculator:
 
         CVD positivo (pressione buy) -> score positivo (bullish)
         CVD negativo (pressione sell) -> score negativo (bearish)
+
+        TASK-1262: il default resta 1000 per compatibilita' con i chiamanti che
+        passano la baseline esplicitamente. SignalScoreEngine usa
+        get_dynamic_baseline() perche' il valore reale di BTC-EUR e' 2-3 ordini
+        di grandezza inferiore.
         """
         if baseline == 0:
             return 0.0

@@ -66,7 +66,9 @@ DEFAULT_WEIGHTS: Dict[str, float] = {
     "funding_rate": 0.15,          #TASK-1159: 0.20→0.15 — bias macro, ridotto
     "cvd": 0.15,                   #TASK-1159: 0.20→0.15 — ridotto provvisoriamente
     "long_short_ratio": 0.10,      #TASK-1159: 0.15→0.10 — ridondante con funding_rate
-    "fear_greed": 0.10,            #TASK-1159: 0.15→0.10 — contesto, non trigger
+    "fear_greed": 0.03,            # TASK-1262: 0.10→0.03 — score costante -27 su F&G=73
+                                   # (aggiornato 1x/giorno) valeva -2.70 punti su -3.55
+                                   # totali misurati: 76% del drag, non e' un segnale per-candela
     "whale": 0.05,                 #TASK-1159: 0.10→0.05 — contributo non verificabile
     "open_interest": 0.05,         #TASK-1159: 0.15→0.05 — rumore puro osservato
     "onchain": 0.05,               # invariato — proxy macro stabile
@@ -161,7 +163,13 @@ class SignalScoreEngine:
                     baseline = result.value_usd
                 return OpenInterestCollector.oi_to_score(result.value_usd, baseline)
             elif name == "long_short_ratio" and hasattr(result, "long_pct"):
-                return LongShortRatioCollector.ratio_to_score(result.long_pct)
+                # TASK-1262: il log deve riflettere lo score effettivamente usato
+                # (delta vs baseline), non il vecchio valore assoluto.
+                if not self._long_short.has_baseline():
+                    return 0.0
+                return LongShortRatioCollector.ratio_to_score(
+                    result.long_pct, self._long_short.get_baseline()
+                )
             elif name == "fear_greed" and hasattr(result, "value"):
                 return FearGreedCollector.value_to_score(result.value)
             elif name == "sentiment" and hasattr(result, "score"):
@@ -413,7 +421,8 @@ class SignalScoreEngine:
         _cvd_s = None
         if _cvd_snap is not None:
             try:
-                _cvd_s = CVDCalculator.cvd_to_score(_cvd_snap.cvd, Decimal("1000"))
+                _baseline = self._cvd_calculator.get_dynamic_baseline()
+                _cvd_s = CVDCalculator.cvd_to_score(_cvd_snap.cvd, _baseline)
             except Exception:
                 pass
         _status_parts.append(f"cvd={'OK' if _cvd_snap is not None else 'NONE'}(w={_cvd_w:.2f}" +
@@ -453,8 +462,9 @@ class SignalScoreEngine:
             weighted_score += fr_score * self.weights.get("funding_rate", 0.20)
             total_weight += self.weights.get("funding_rate", 0.20)
 
-        # CVD — con periodo di grazia: salta CVD se il calculator è appena partito
-        # (meno di 100 trades accumulati) per non falsare lo score con CVD=0
+        # CVD — periodo di grazia: esclude il CVD nelle prime letture per non falsare
+        # lo score con un valore parziale (la baseline dinamica e' la media delle
+        # escursioni per finestra completa, confrontabile solo a finestra piena).
         trades_count = 0  # default per logging e grace period
         if cvd_data is not None:
             trades_count = getattr(self._cvd_calculator, '_trades_since_reset', 0) if self._cvd_calculator else 0
@@ -465,9 +475,8 @@ class SignalScoreEngine:
                 )
                 # Non aggiungere CVD al breakdown né al weighted score
             else:
-                cvd_score = CVDCalculator.cvd_to_score(
-                    cvd_data.cvd, Decimal("1000")
-                )
+                baseline = self._cvd_calculator.get_dynamic_baseline()
+                cvd_score = CVDCalculator.cvd_to_score(cvd_data.cvd, baseline)
                 breakdown["cvd"] = round(cvd_score, 2)
                 weighted_score += cvd_score * self.weights.get("cvd", 0.20)
                 total_weight += self.weights.get("cvd", 0.20)
@@ -483,12 +492,23 @@ class SignalScoreEngine:
             weighted_score += oi_score * self.weights.get("open_interest", 0.15)
             total_weight += self.weights.get("open_interest", 0.15)
 
-        # Long/Short Ratio
+        # Long/Short Ratio — TASK-1262: score basato sul delta rispetto alla media
+        # delle letture recenti. Senza baseline non e' calcolabile: il collector
+        # viene escluso da breakdown e normalizzazione, altrimenti contribuirebbe
+        # 0.0 diluendo il peso degli altri collector durante il warmup.
         if ls_result is not None:
-            ls_score = LongShortRatioCollector.ratio_to_score(ls_result.long_pct)
-            breakdown["long_short_ratio"] = round(ls_score, 2)
-            weighted_score += ls_score * self.weights.get("long_short_ratio", 0.15)
-            total_weight += self.weights.get("long_short_ratio", 0.15)
+            ls_w = self.weights.get("long_short_ratio", 0.15)
+            if self._long_short.has_baseline():
+                ls_baseline = self._long_short.get_baseline()
+                ls_score = LongShortRatioCollector.ratio_to_score(ls_result.long_pct, ls_baseline)
+                breakdown["long_short_ratio"] = round(ls_score, 2)
+                weighted_score += ls_score * ls_w
+                total_weight += ls_w
+            else:
+                logger.debug(
+                    "[ScoreEngine] LSR warmup: %d letture, escluso dallo score",
+                    len(self._long_short._history),
+                )
 
         # Fear & Greed
         if fg is not None:

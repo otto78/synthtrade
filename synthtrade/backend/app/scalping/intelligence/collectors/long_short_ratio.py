@@ -9,6 +9,7 @@ Documentazione API:
 """
 
 import asyncio
+import collections
 import logging
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -60,6 +61,12 @@ class LongShortRatioCollector:
         self._timeout = timeout_seconds
         self._max_retries = max_retries
         self._adapter = adapter
+        # TASK-1262: storico letture DISTINTE per baseline dinamica.
+        # I collector girano ogni SCALPING_INTEL_UPDATE_INTERVAL_SEC (60s) ma gli
+        # endpoint espongono period="5m": senza dedupe ogni valore reale verrebbe
+        # campionato 5 volte consecutive e il lookback coprirebbe 12 minuti di
+        # cronometro invece delle 12 letture distinte (= ~60 min) previste dal task.
+        self._history = collections.deque(maxlen=12)
         from app.scalping.intelligence.collectors.circuit_breaker import CollectorCircuitBreaker
         self._cb = CollectorCircuitBreaker("long_short_ratio")
 
@@ -117,6 +124,7 @@ class LongShortRatioCollector:
             )
 
             self._cb.on_success()
+            self._record_reading(float(long_pct))
             return LongShortRatio(
                 symbol=symbol.upper(),
                 long_pct=long_pct,
@@ -156,10 +164,13 @@ class LongShortRatioCollector:
                     
                     logger.debug("Raw LS data for %s: long=%s, short=%s", symbol, long_val, short_val)
 
+                    long_pct = long_val * 100
+                    self._record_reading(float(long_pct))
+
                     self._cb.on_success()
                     return LongShortRatio(
                         symbol=symbol.upper(),
-                        long_pct=long_val * 100,
+                        long_pct=long_pct,
                         short_pct=short_val * 100,
                         timestamp=datetime.fromtimestamp(entry.get("timestamp", 0) / 1000),
                     )
@@ -172,15 +183,59 @@ class LongShortRatioCollector:
                 self._cb.on_failure()
                 return None
 
+    def _record_reading(self, long_pct: float) -> None:
+        """Accoda una lettura solo se è una lettura distinta.
+
+        Il collector viene invocato ogni 60s ma l'endpoint restituisce la stessa
+        candela da 5 minuti: accodare sempre duplicherebbe ogni valore reale.
+        Con la dedupe il deque contiene letture uniche e il lookback di 12
+        copre ~60 min di storia reale.
+        """
+        if self._history and abs(self._history[-1] - long_pct) < 1e-9:
+            return
+        self._history.append(long_pct)
+
+    def get_baseline(self) -> Optional[float]:
+        """Media delle letture *precedenti* a quella corrente.
+
+        collect() accoda la lettura appena presa prima che l'engine chieda la
+        baseline, quindi l'ultimo elemento dello storico e' per definizione il
+        valore corrente: va escluso. Includerlo smorzerebbe il delta di un
+        fattore N/(N+1) e un cambio di regime resterebbe invisibile.
+
+        Ritorna None finche' non ci sono letture storiche utilizzabili.
+        """
+        if not self.has_baseline():
+            return None
+        previous = list(self._history)[:-1]
+        return sum(previous) / len(previous)
+
+    def has_baseline(self) -> bool:
+        """True se esiste una baseline utilizzabile per lo score."""
+        return len(self._history) >= 2
+
     @staticmethod
-    def ratio_to_score(long_pct: Decimal) -> float:
+    def ratio_to_score(long_pct: Decimal, baseline: Optional[float] = None) -> float:
         """Converte il long % in contributo score (-100 a +100).
 
-        > 70% long  -> mercato esposto -> bias short (score negativo)
-        > 70% short -> mercato esposto -> bias long (score positivo)
+        TASK-1262: usa la variazione dell'LSR invece del valore assoluto.
+        Il long_pct assoluto di BTC e' stazionario intorno al 49% (misurato su
+        194 candele: score +2.1 medio, contributo +0.21 punti) e non distingue
+        "oggi e' piu' long di ieri" dal semplice fatto che BTC e' sempre long.
+        Il delta rispetto alla media recente e' l'unica informazione utile.
+
+        - long% in crescita vs media -> piu' esposizione long -> score negativo
+        - long% in calo   vs media -> long che scaricano    -> score positivo
         """
         long_val = float(long_pct)
-        # Centro a 50%: (50 - long%) * 3.333
-        # 80% long -> -100, 20% long -> +100
-        score = (50.0 - long_val) * (100.0 / 30.0)
+        if baseline is None:
+            # Nessuna baseline: il contributo non e' calcolabile. Il chiamante
+            # (SignalScoreEngine) esclude il collector dal punteggio, quindi
+            # restituire 0.0 qui e' solo una difesa per usi diretti.
+            return 0.0
+
+        diff = long_val - baseline
+        # Saturazione a +/-5 punti percentuali: un'escursione di 5pp del long%
+        # in un'ora e' un movimento forte, non rumore di micro-tick.
+        score = -diff * 20.0
         return max(-100.0, min(100.0, score))

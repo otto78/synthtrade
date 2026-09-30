@@ -1,13 +1,33 @@
 # TASKS.md — SynthTrade Task Tracking
 
-> **Aggiornato:** 2026-09-30 ~07:30 UTC. Task completati in `docs/ARCHIVE_TASKS.md`.
+> **Aggiornato:** 2026-09-30 ~13:00 UTC. Task completati in `docs/ARCHIVE_TASKS.md`.
 > **Stato suite:** 809 passed / 1 failed, lanciata **da `synthtrade/backend/`** (non dalla root). L'unico fallimento è `tests/unit/test_task_908.py::test_guard_does_not_affect_other_actions`, preesistente e non correlato.
 > **In produzione:** TASK-1256 deployato 2026-09-25; TASK-1261 deployato 2026-09-29 ~14:00; TASK-1262 deployato 2026-09-29 15:44; TASK-1270 deployato 2026-09-30 ~07:25.
 > **Handoff completo:** `docs/HANDOFF.md` — leggere prima di qualsiasi intervento.
 
 ---
 
-## Fase 2 — Trading Logic Fix (In corso — obiettivo: bot profittevole)
+## 🛑 PROGETTO SCALPING DIREZIONALE — CHIUSO (2026-09-30)
+
+> **La sessione live è fermata** (2026-09-30 12:57:50 UTC, `status=idle`, 0 posizioni,
+> `live_balance` 21,942 EUR). Non risorge: `status=stopped` nel DB e `main.py:60` filtra
+> `status == "running"`.
+>
+> **Motivazione:** TASK-1273 (random-entry test) ha mostrato che il timing d'ingresso è
+> **indistinguibile dal caso** (p=0.207), e TASK-1275 (ricerca web) ha confermato che non
+> esiste edge AI-crypto direzionale retail verificabile out-of-sample, e che le alternative
+> strutturali sono incompatibili con €22 di capitale.
+>
+> **Non è un rifiuto del codice o dell'impegno:** è l'esito corretto di un test ben progettato.
+> Diagnosi completa e verificata: **`docs/ANALISI_SEGNALE_E_PIANO.md` v3**.
+>
+> **Se si riapre il progetto**, serve una decisione preventiva su **capitale** e **orizzonte
+> temporale**: nessuna leva di configurazione (score, soglie, SL/TP, supervisor, fee) è
+> risultata attiva, perché l'ingresso non contiene informazione.
+
+---
+
+## ~~Fase 2 — Trading Logic Fix~~ (Chiusa 2026-09-30 — obiettivo "bot profittevole" non raggiungibile con questa architettura)
 
 > **Contesto generale Fase 2:** L'analisi statistica della sessione 11-25 agosto 2026 (48 trade, 14 giorni) ha rivelato che il bot aveva un win rate globale del ~25-30%, con expectancy negativa. Le cause principali:
 > 1. Il regime detector classificava il 97% delle candele come "ranging" → attivava `rsi_bollinger` (mean-reversion) anche durante un rally BTC +27%.
@@ -324,6 +344,77 @@ Quattro varianti: full, solo break-even, solo trailing, nessuno.
 **File coinvolti:**
 - `scripts/random_entry_test.py`
 - `docs/RANDOM_ENTRY_TEST.md`
+
+---
+
+### TASK-1275 — Ricerca web: esiste un edge AI-crypto direzionale? E chiusura del live ✅
+
+**Stato:** ✅ **COMPLETATA — la ricerca è negativa e converge.** Analisi v3:
+`docs/ANALISI_SEGNALE_E_PIANO.md`. Sessione live **fermata** il 2026-09-30 12:57:50 UTC.
+
+**Domanda posta:** esistono bot/app AI crypto con edge reale, netto di fee e valido
+out-of-sample? Oppure il progetto sta reinventando una strada senza vantaggio?
+
+**Risposta: no, e non è un problema di configurazione.** Tre ricerche indipendenti convergono.
+
+**1. Dati reali su agenti AI che tradano**
+- *Paper Agents, Paper Gains* (Pantera/Stanford/IC3/Ava Labs): 11 piattaforme, 925.323
+  wallet su Solana → **−$191,7M** reali contro **+$34,3M** di "paper gains" dichiarati.
+  62,2% in perdita, top 1% dei vincenti prende l'81,4% dei guadagni, mediana negativa su
+  quasi ogni piattaforma. **Solo 3 dei 10 progetti eseguivano trade in autonomia.**
+- *Alpha Arena* (Nof1): 8 modelli frontier, $10k ciascuno → portafoglio **−1/3**,
+  profitable in 6 casi su 32.
+- LA Times 01/05/2026: agente retail, −22% drawdown, il trader non lo consiglia con soldi veri.
+
+**2. Tasso di fallimento di base** — 74–89% dei retail perde in ogni evento di volatilità,
+costante dal 1998 al 2025 senza variazioni. ⚠️ fonte con conflitto d'interesse (il venditore
+di agenti AI): usata solo per la costante di fondo, non come carico probatorio.
+
+**3. Dove sta l'edge vero** — è **market-neutral e strutturale**, non direzionale: funding /
+cash-and-carry (CoinDesk, ~0,01%/8h senza scommettere sulla direzione), spread, prezzo di
+esecuzione (Polymarket: i bot vincevano **non** prevedendo meglio, ma **entrando prima e a
+prezzi migliori**). Il funding arb è sceso da 36–108% a 7–9% annui man mano che la
+competizione entrava. L'edge è stato arbitraggiato via.
+
+**4. Il vincolo decisivo è il capitale.** Tutte le alternative strutturali sono fattibili solo
+con migliaia di euro. A **€22** nessuna sopravvive alle fee: 0,02–0,08% per lato su €22 è
+rumore. Ogni euro di P&L prodotto è un artefatto di rounding.
+
+**Conseguenze — cosa è stato scartato e perché:**
+
+| Candidato | Stato | Motivo |
+|---|---|---|
+| Riduzione fee (piano v2 §4.3) | **❌ scartato** | su un ingresso privo di informazione le fee rendono il drenaggio più lento, non positivo |
+| Timeframe più lungo | **❌ scartato** | stessa expectancy per trade ≈ 0 − fee; riduce varianza e bleed, non crea il segno |
+| Maker vs taker | **❌ irrilevante** | differenziale reale 0,08% vs 0,10% (rilevato live): 0,02% per lato |
+| Ricalibrazione TP | **❌ già escluso** | griglia TASK-1274: 12 combinazioni, nessuna fora il drenaggio |
+| Tuning supervisor | **❌ fuori percorso** | nessuna azione d'ingresso, nessun riferimento in `pipeline.py` / `execution_loop.py`, gira a timer |
+| Funding / basis arb | **⚠️ incompatibile** | 7–9% annui, serve capitale; irraggiungibile a €22 |
+| Market making passivo | **⚠️ incompatibile** | 0,02–0,08% per lato su €22 è rumore |
+
+**Azioni eseguite:**
+- [x] Tre ricerche web indipendenti (dati reali, tasso di fallimento, meccanica dell'edge)
+- [x] Conflitti d'interesse dichiarati e due fonti escluse (AriseAlpha = marketing puro;
+      PiP World = il venditore)
+- [x] Analisi riscritta in v3, con le correzioni della v2 conservate e il suo piano §4.3
+      dichiarato superato
+- [x] **Fermata la sessione live** dopo la chiusura del trade in corso
+- [x] Verificato che non risorga: `status=idle` in memoria, `status=stopped` nel DB
+      (`main.py:60` filtra `status == "running"`), `auto_restart_weekly` è guardato da
+      `session_auto_restart.py:28` che ritorna se `status != "running"`
+- [x] Nessuna posizione forzata: balance invariato a 21,942 EUR
+
+**Stato finale live:** `idle`, 0 posizioni, `live_balance` 21,942 EUR
+(`starting_balance` 22,277 EUR → **−0,335 EUR, −1,50%** sulla sessione).
+
+**Onestà statistica (documentata in v3 §8):** il test da 180 trade era dimensionato per
+**confutare un edge grande**, e l'ha fatto. Non può confermare un edge piccolo: servirebbero
+~5.400 trade indipendenti per rilevare +0,02%/trade. Ma un edge sotto `+0,019%/trade` è più
+piccolo del costo di round-trip già pagato, quindi non è sfruttabile comunque.
+
+**File coinvolti:**
+- `docs/ANALISI_SEGNALE_E_PIANO.md` (v3, riscritta)
+- `docs/TASKS.md`
 
 ---
 

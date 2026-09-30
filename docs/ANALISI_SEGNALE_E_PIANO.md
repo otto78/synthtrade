@@ -1,346 +1,272 @@
-# ANALISI — Il gate dello score non distingue i trade buoni
+# ANALISI — Il bot non ha un edge; le fee mangiano tutto
 
-> **Scopo di questo documento:** raccogliere tutti i dati reali sul problema dello score
-> affinché altre IA possano analizzarlo in parallelo e trovare la soluzione migliore.
-> **Non è ancora un piano di risoluzione** — è il materiale su cui costruirlo.
->
-> **Autore:** raccolta dati 2026-09-30, da DB di produzione (Supabase) e log LIVE.
-> **Tutte le cifre sono misurate**, non stimate. Le inferenze sono marcate esplicitamente.
-> **Riproducibile:** le query sono in `§9`.
+> **Versione 2 — 2026-09-30.** Riscritta dopo l'analisi di Claude sulla v1.
+> Tutte le cifre sono **rimisurate sul DB di produzione** (197 trade chiusi, 2026-07-24 → 2026-09-30).
+> Le inferenze sono marcate. L'inferenza è marcata come tale anche quando è mia.
+> Query di riproduzione: §10.
+
+---
+
+## 0. Cosa cambia rispetto alla v1 — due errori miei
+
+La v1 conteneva due affermazioni che **non reggono**. Le correggo qui esplicitamente.
+
+### 0.1 ❌ Errore mio: `pnl_pct` non è corrotta
+
+La v1 riportava «valori da −106% a +125%, colonna corrotta, va sanata prima di ogni analisi».
+
+**Era un mio errore di calcolo, non un difetto dei dati.** Avevo stampato `mean(pnl_pct) * 100`, cioè moltiplicato per 100 un campo che è già in percentuale. Il risultato (−22.99% medio, −106% min, +125% max) era il doppio dei valori veri.
+
+Verifica sul codice (`trade_executor.py:280`): `pnl_pct = (pnl / (entry_f * qty_f)) * 100` — corretta. Ricalcolata su tutti i trade, errore max **0.20 punti** (arrotondamento a 2 decimali).
+
+```
+pnl_pct reale:  min -1.060%   max +1.250%   media -0.230%
+```
+
+Valori perfettamente normali. **Nessuna anomalia, nessun lavoro di sanatoria necessario.** La voce "pulizia dei dati" della v1 (che la elencava come anomalia #1, ora ritirata in §7) era infondata su questo punto.
+
+### 0.2 ⚠️ Claude ha ragione: lo score non è mai stato il gate
+
+La v1 concludeva «lo score non predice il P&L (r = +0.0098)». **Questa inferenza non era sostenuta**, perché non ho verificato come i trade entrassero effettivamente.
+
+Verifica sul campo `strategy_rejection_reason` (popolato su 197/197 trade):
+
+```
+178 trade  "MEAN-REVERSION BUY permesso (source=rsi_bollinger(atr=0.04%)) nonostante bias=..."
+ 12 trade  "intelligence=N (bullish) [trend=N diverging] + tecnico=BUY@N"
+  7 trade  altri (live_mode fallback, trend converging/stable)
+```
+
+| | n | score medio | score > +6.0 | win rate | P&L tot |
+|---|---|---|---|---|---|
+| **mean-revision** | **178 (90%)** | **−9.37** | **0** | 33.1% | −7.930 |
+| altri ingressi | 19 (10%) | — | 13 | 21.1% | −1.030 |
+
+**Il 90% dei trade entra da un override mean-reversion esplicitamente permesso "nonostante bias" negativo. Di quei 178, ZERO ha score > +6.0.**
+
+La soglia `+6.0` non ha mai autorizzato un trade. Il gate reale è l'override mean-reversion di `rsi_bollinger`, che scavalca l'intelligence.
+
+Quindi la correlazione score↔PnL che ho misurato descrive **una variabile che non ha avuto un ruolo causale nel 90% dei campioni**. Non dimostra che lo score sia inutile: dimostra che **non esiste un test valido su questi dati**. La v1 confondeva misurazione e causalità.
+
+*Nota di metodo:* Claude indica `strategies_considered` come campo da interrogare, ma quel campo è vuoto su tutti i trade. Il campo popolato è `strategy_rejection_reason`. La sostanza della critica è corretta, il campo indicato no.
 
 ---
 
 ## 1. TL;DR
 
-Il bot perde soldi in modo costante da 3 mesi. La causa **non** è la soglia dello score.
+1. **Il bot è quasi a zero lordo e perde solo di fee.** Su 197 trade: P&L netto **−8.96 €**, di cui **+7.32 €** di commissioni. Il **lordo è −1.12 €** (stima che include i 14 trade senza commissione registrata) cioè **−0.006 €/trade**. Non ha un edge negativo: ha **edge ≈ zero e paga 0.186% a ogni round trip**.
 
-Tre fatti misurati che compongono il problema:
+2. **Le fee sono 4.5× più grandi dell'edge lordo.** Netto −0.227% per trade, fee +0.186%, lordo −0.042%. Anche un edge lordo leggermente positivo verrebbe annullato dai costi.
 
-1. **Lo score non predice il PnL.** Correlazione di Pearson `score ↔ pnl` = **+0.0098** su 168 trade. Spearman ≈ **−0.11** (debolmente *negativa*: score più alto → esito leggermente peggiore).
+3. **Il 62% dei trade muore a stop loss** (121/197). Su SL 0.5% / TP 0.8% un random walk darebbe ≈ 0.8/(0.5+0.8) = **62%**. Coincidenza suggestiva, **non è una prova** — i trailing/break-even rendono il modello di "primo tocco" non applicabile.
 
-2. **I trade con score più alto non battono la media.** I 13 trade con `score > +6.0` hanno win rate **30.8%**, contro il **31.8%** della baseline. `-0.0254` EUR/trade contro `-0.0458`. Migliorano, ma restano negativi e non distinguono.
+4. **`take_profit` scatta 4 volte su 197 (2%).** L'82% del P&L positivo viene da trailing stop e break-even, non dal TP. Il take profit è di fatto uno strumento inutilizzato.
 
-3. **L'obiettivo di win rate necessario è ~63%, quello reale è 31.8%.** Con i valori di SL/TP effettivamente misurati, servirebbe quasi il doppio. *Nessuna regolazione di soglia, peso o segnale può colmare un buco del genere: è un problema di edge, non di filtro.*
+5. **Lo score non è il gate** (§0.2). Qualsiasi lavoro su score, pesi, soglie o supervisor non tocca la causa della perdita.
 
-Conseguenza: abbassare la soglia da `+6.0` a `+1.0` farebbe entrare più trade **senza motivo**, degradando un PnL già negativo. Il rischio concreto è **perdere più soldi, non smettere di guadagnarne**.
-
-> **La domanda da decidere non è "quanto abbasso la soglia", ma "esiste una strategia con edge su questo mercato, e come la misuro per saperlo".**
+**Conseguenza operativa:** la leva non è "selezionare meglio i trade", è **ridurre il costo per trade o aumentare il movimento catturato per trade**. Frequenza, timeframe, e costo di esecuzione. Non intelligenza.
 
 ---
 
-## 2. La decisione richiesta
+## 2. I numeri, per intero
 
-Chi non è un trader professionista non dovrebbe decidere da solo. Le opzioni oneste sono tre:
-
-| # | Opzione | Cosa comporta | Rischio |
-|---|--------|---------------|---------|
-| **A** | **Fermare e misurare** | Spegnere il trading, accumulare dati con la logica attuale *senza* eseguire, e validare su storico se esiste un edge. | Nessun guadagno, nessuna perdita. Costo: tempo. |
-| **B** | **Ridurre il rischio** | Tenere il bot, ma con `TRADE_VALUE` e/o frequenza ridotti all'1, finché il problema non è capito. | Perdita ridotta ma ancora presente. |
-| **C** | **Calibrare lo score** | Ricalibrare pesi/soglia come previsto da TASK-1252 fase 2. | **Alto** — i dati (§4) indicano che non funzionerà. |
-
-**La raccomandazione di chi ha scritto il documento: A o B.** I dati di §4 sono espliciti sul perché C è la scelta sbagliata. Ma la scelta finale spetta a chi conosce l'obiettivo economico (quanto si è disposti a rischiare, per quanto tempo, con quale capitale).
-
----
-
-## 3. Contesto di sistema
-
-- **Cosa fa:** bot di scalping automatico su BTC-EUR (OKX spot), regime detection → scelta strategia → score intelligence → esecuzione con OCO bracket (SL + trailing + TP).
-- **Scala:** 196 trade chiusi dal 2026-07-24 al 2026-09-30, ~2 mesi e mezzo.
-- **Stake:** `SCALPING_TRADE_VALUE = 10.0` in config, ma il **notional effettivo è 20.00 EUR** (mediana e media su tutti i trade). Quantità media `0.00031918` BTC, entry medio `63254` EUR. ⚠️ Vedi §6.5.
-- **Strategie:** `rsi_bollinger` (189/196, 96%) e `ema_cross` (7/196, 4%).
-- **Regimi:** `ranging` 161, `trending_down` 5, `trending_up` 3, non classificati 27.
-- **Soglia corrente:** `SCALPING_SIGNAL_STRENGTH_THRESHOLD = 6.0` (da DB, vedi §7 per la discrepanza).
-- **Fee reali misurate:** `0.019998` entry + `0.019883` exit ≈ **0.04 EUR round-trip** su 20 EUR di notional = **0.2%**.
-
----
-
-## 4. Evidenza
-
-### 4.1 Performance complessiva
+### 2.1 Lordo vs netto
 
 ```
-n = 195 chiusi
-win rate        31.8%
-P&L totale      -8.940 EUR
-P&L medio       -0.0458 EUR / trade
+pnl netto (DB, già dopo fee)      =  -8.960 EUR
+fee osservate (183/197 trade)    =  +7.318 EUR    media 0.0371
+fee stimate sui 14 mancanti      =  +0.519 EUR
+─────────────────────────────────────────────────────
+LORDO osservato                  =  -1.642 EUR
+LORDO con stima completa         =  -1.122 EUR   <- bound superiore
 ```
 
-### 4.2 Correlazione score → P&L
+Per trade, su notional 20 EUR:
 
-Pearson e rank correlation su 168 trade con entrambi i dati:
+| | €/trade | % del notional |
+|---|---|---|
+| netto | −0.0455 | −0.227% |
+| fee | +0.0371 | +0.186% |
+| **lordo** | **−0.0083** | **−0.042%** |
 
-| Metrica | Valore | Lettura |
-|---------|--------|---------|
-| Pearson `score ~ pnl` | **+0.0098** | Nessuna relazione |
-| Pearson `score ~ pnl_pct` | +0.0242 | Nessuna relazione |
-| Spearman (rank) | **−0.1108** | Debolmente **inversa** |
+**Il rapporto fee/edge lordo è 4.5×.** Questo è il numero che riorganizza l'intero problema: il bot non sbaglia le entrate in modo sistematico, non genera abbastanza movimento favorevole da coprire il costo di esistere come trade.
 
-### 4.3 Win rate per fascia di score
+### 2.2 Perché `pnl` è netto — verifica
 
-Questa è la tabella che rifiuta l'ipotesi "abbasso la soglia".
+`trade_executor.py:279` e `:383`: `pnl = gross_pnl - total_fees`. Il campo `pnl` nel DB **è già al netto delle commissioni**. Quindi il lordo si ottiene *sommando* le commissioni, non sottraendole.
 
-| Fascia score | n | Win rate | P&L medio |
-|---------------|---|----------|-----------|
-| [-100, -20) | 4 | 75.0% | +0.0125 |
-| [-20, -10) | 46 | 30.4% | −0.0465 |
-| [-10, -5) | 103 | 34.0% | −0.0482 |
-| [-5, 0) | 1 | 0.0% | −0.1000 |
-| [0, 5) | 1 | 0.0% | −0.1000 |
-| **[5, 10)** | **8** | **25.0%** | **−0.0475** |
-| **[10, 100)** | **5** | **40.0%** | **+0.0100** |
+*Nota:* l'analisi di Claude presenta "P&L −8.59 € di cui −6.96 € di fee → senza fee −0.79 €" su 188 trade tratti da HANDOFF. I miei numeri su 197 trade dal DB sono −8.96 / +7.32 / **−1.12**. La **conclusione è identica** (lordo ≈ zero, fee dominanti); i valori differiscono per il campione e per il fatto che 14 trade non hanno commissione registrata, che ho stimato invece di ignorare. Il mio lordo è il caso peggiore: se le fee fossero tutte registrate, il lordo sarebbe −1.64 €.
 
-Il bucket `[5,10)` — quello che si aprirebbe abbassando la soglia a `+5` — ha il **peggiore** win rate insieme a `[0,5)`. Non c'è monotonia: più alto lo score, peggio (o identico) il risultato.
+### 2.3 Motivi di uscita
 
-### 4.4 I 13 trade con score > +6.0 (la soglia attuale)
+| Motivo | n | % | win rate | P&L tot | P&L medio | % notional |
+|---|---|---|---|---|---|---|
+| `stop_loss` | **121** | 61.4% | 0.0% | **−11.950** | −0.0988 | −0.494% |
+| `stop_loss_breakeven` | 36 | 18.3% | 75.0% | +0.870 | +0.0242 | +0.121% |
+| `stop_loss_trailing` | 29 | 14.7% | 100% | +1.560 | +0.0538 | +0.269% |
+| `take_profit` | **4** | **2.0%** | 100% | +0.490 | +0.1225 | +0.613% |
+| `external_close` | 5 | 2.5% | 40.0% | −0.080 | −0.0160 | −0.080% |
+| `session_stop` | 1 | 0.5% | 100% | +0.210 | +0.2100 | +1.050% |
 
-| Data | Score | P&L | Strategia | Regime |
-|------|-------|-----|-----------|--------|
-| 2026-08-03 | +15.1 | +0.210 | ema_cross | trending_up |
-| 2026-08-04 | +6.6 | −0.100 | rsi_bollinger | ranging |
-| 2026-08-05 | +10.3 | +0.040 | ema_cross | trending_up |
-| 2026-08-05 | +7.3 | −0.100 | rsi_bollinger | ranging |
-| 2026-08-07 | +10.0 | −0.100 | ema_cross | trending_up |
-| 2026-08-12 | +6.1 | −0.100 | rsi_bollinger | ranging |
-| 2026-08-20 | +9.4 | +0.070 | rsi_bollinger | ranging |
-| 2026-08-24 | +7.3 | −0.110 | rsi_bollinger | ranging |
-| 2026-08-25 | +19.3 | −0.100 | rsi_bollinger | ranging |
-| 2026-08-25 | +14.8 | 0.000 | ema_cross | ranging |
-| 2026-08-28 | +6.1 | −0.100 | rsi_bollinger | ranging |
-| 2026-09-11 | +9.7 | +0.160 | ema_cross | ranging |
-| 2026-09-23 | +8.6 | −0.100 | rsi_bollinger | ranging |
+Il P&L lordo positivo dei vincitori (1.560 + 0.870 + 0.490 + 0.210 = **+3.13 €**) è eroso da −11.95 € di stop loss. Le fee (−7.32 €) sono il secondo buco.
+
+### 2.4 R:R
 
 ```
-n = 13   win rate 30.8%   P&L tot -0.330   medio -0.0254
-baseline: win rate 31.8%  P&L tot -8.940   medio -0.0458
-```
-
-**Passare la soglia non migliora il win rate.** E tutti i 13 sono **precedenti al 2026-09-24**, cioè quasi tutti generati quando il CVD aveva il bug del `+15` costante (§6.3).
-
-### 4.5 Distribuzione dello score
-
-```
-score > -20 : 165/169  (97.6%)
-score > -10 : 118/169  (69.8%)
-score >  -6 :  22/169  (13.0%)
-score >   0 :  13/169  ( 7.7%)
-score >  +6 :  13/169  ( 7.7%)   <- la soglia corrente
-score > +10 :   4/169  ( 2.4%)
-score > +15 :   2/169  ( 1.2%)
-```
-
-Il segnale è **sistematicamente negativo**: 87% dei trade ha score sotto `−10`. Non è un segnale centrato su zero che ogni tanto va positivo — è un segnale che vive quasi interamente nel territorio negativo.
-
-### 4.6 Perché il +6.0 è praticamente irraggiungibile
-
-Snapshot LIVE reale del 2026-09-30:
-
-```
-order_book_imbalance=OK(w=0.30, s=-8.9)   <- 41% del peso rispondente
-funding_rate=OK(w=0.15, s=-1.9)
-long_short_ratio=OK(w=0.10, s=1.8)
-fear_greed=OK(w=0.03, s=-16.5)
-onchain=OK(w=0.05, s=-0.8)
-open_interest=OK(w=0.05, s=-0.3)          <- ~0
-whale=OK(w=0.05, s=0.0)                   <- SEMPRE 0
-sentiment=OK(w=0.00, s=10.0)              <- peso zero
-spread=OK(w=0.00)                         <- peso zero
-cvd=WARMUP(w=0.15)                        <- escluso
-COVERAGE: total=0.88 responded=0.68
-```
-
-Calcolo di quello snapshot: `Σ(score_i × w_i) = −3.33`, su peso rispondente `0.73` → **score normalizzato ≈ −4.6**.
-
-Per arrivare a `+6.0` servirebbe l'OBI al **massimo assoluto** del suo range storico misurato (`+16.6`) *mentre tutto il resto è a zero*. Contributo OBI massimo reale: `0.30/0.73 × 16.6 ≈ +6.8`. Quindi: **sulla carta appena possibile, nella pratica una coincidenza.**
-
-*Inferenza:* la soglia `+6.0` non è una soglia, è un muro. Il sistema è in pratica a un regime "sempre non apre" per costruzione.
-
-### 4.7 Il vero collo di bottiglia: R:R sbagliato
-
-Dai dati reali di uscita, non dalla documentazione:
-
-| Motivo uscita | n | Win rate | P&L tot | P&L medio | P&L % su notional |
-|---------------|---|----------|---------|-----------|--------------------|
-| `stop_loss` | **121** | 0.0% | **−11.950** | −0.0988 | **−0.494%** |
-| `stop_loss_breakeven` | 36 | 75.0% | +0.870 | +0.0242 | +0.121% |
-| `stop_loss_trailing` | 29 | 100% | +1.560 | +0.0538 | +0.269% |
-| `take_profit` | **4** | 100% | +0.490 | +0.1225 | +0.613% |
-| `external_close` | 5 | 40.0% | −0.080 | −0.0160 | −0.080% |
-| `session_stop` | 1 | 100% | +0.210 | +0.2100 | +1.050% |
-
-**Il dato che colpisce: `take_profit` scatta 4 volte su 196 (2.0%).** Il 62% dei trade muore a stop loss. Quasi tutto il P&L positivo arriva dal **trailing stop** (+1.56) e dal **break-even** (+0.87), non dal take profit.
-
-R:R reale, dai numeri effettivi:
-
-```
-vincite: n=63  medio +0.0548   (≈ +0.27%)
-perdite: n=133 medio -0.0929   (≈ -0.46%)
+vincite: n=63   medio +0.0548 EUR   (+0.27% notional)
+perdite: n=133  medio -0.0929 EUR   (-0.46% notional)
 R:R reale = 0.59 : 1
-win rate necessario per pareggio = 62.9%
+win rate per pareggio (config attuale) = 62.9%
 win rate reale = 31.8%
 ```
 
-**Il bot deve raddoppiare il win rate per non perdere.** Questo è il numero che nessuna calibrazione dello score sposta: lo score sceglie *quali* trade fare, non cambia *quanto* si guadagna quando si indovina.
+*Correzione rispetto alla v1:* presentavo il 62.9% come «servirebbe quasi il doppio, non è un edge». Claude ha ragione nel dire che è **descrittivo della configurazione di uscita attuale**, non una legge di natura: quegli avg win/avg loss sono a loro volta prodotti da trailing e break-even che chiudono i vincitori prima del TP. Riformulato: **non è il numero di trade a vincere che va corretto, è il fatto che i vincitori vengono chiusi a +0.27% mentre i perdenti a −0.46%.**
 
-### 4.8 Nessun miglioramento nel tempo
+### 2.5 Nessun miglioramento temporale
 
-| Mese | n | Win rate | P&L tot | P&L medio |
-|------|---|----------|---------|-----------|
+| Mese | n | win rate | P&L tot | €/trade |
+|---|---|---|---|---|
 | 2026-07 | 25 | 20.0% | −1.420 | −0.0568 |
 | 2026-08 | 91 | 39.6% | −3.510 | −0.0386 |
 | 2026-09 | 80 | 27.5% | −3.970 | −0.0496 |
 
-Nonostante TASK-1250, TASK-1251, TASK-1256 e TASK-1262, la perdita per trade **non si riduce**. Settembre è il mese peggiore.
+### 2.6 Cosa vedeva il supervisor
 
-### 4.9 Per regime
+`signal_outcome_by_strategy_regime` (fonte di `historical_context.py:54`):
 
-| Regime | n | Win rate | P&L tot | P&L medio | Score medio |
-|-------|---|----------|---------|-----------|-------------|
-| `ranging` | 161 | 32.3% | −7.520 | −0.0467 | −8.21 |
-| non classificato | 27 | 22.2% | −1.360 | −0.0504 | — |
-| `trending_down` | 5 | 60.0% | −0.170 | −0.0340 | −7.28 |
-| `trending_up` | 3 | 66.7% | +0.150 | +0.0500 | +11.80 |
-
-*Il regime distingue lo score* (trending_up +11.8 vs ranging −8.21) **ma non distingue il P&L**: ranging 32.3% e trending_down 60% sono entrambi negativi. Le due cose che *dovrebbero* selezionare il trade non selezionano.
-
-### 4.10 La vista che il supervisor usa davvero
-
-`signal_outcome_by_strategy_regime` (la fonte di `historical_context.py:54`):
-
-| Strategia | Regime | n | Win rate | P&L medio | P&L tot |
-|----------|--------|---|----------|----------|---------|
+| Strategia | Regime | n | win rate | €/trade | P&L tot |
+|---|---|---|---|---|---|
 | rsi_bollinger | ranging | 184 | 35.3% | −0.0475 | −8.74 |
 | ema_cross | ranging | 5 | 40.0% | −0.0300 | −0.15 |
 | rsi_bollinger | altro | 5 | 60.0% | −0.0340 | −0.17 |
-| ema_cross | altro | 2 | 100.0% | +0.0800 | +0.16 |
+| ema_cross | altro | 2 | 100% | +0.0800 | +0.16 |
 
-Il supervisor oggi vede che **ogni combinazione con campione significativo è negativa** e conclude `no_action`. È una conclusione corretta, non un bug. Il tuning del supervisor (TASK-1261) è fatto e funziona: dice correttamente che non ha niente di buono da usare.
-
----
-
-## 5. Cosa è già stato provato (e ha dato esito negativo)
-
-| Task | Intervento | Esito misurato |
-|------|------------|----------------|
-| TASK-1250 | filtro trend macro su BTC | nessun miglioramento (§4.8) |
-| TASK-1251 | guardia bearish sull'override mean-reversion | nessun miglioramento |
-| TASK-1252 F1 | soglia score ricalibrata | correlazione score/PnL ≈ 0 |
-| TASK-1255 | soglia strong-bearish a −8.0 | nessun miglioramento |
-| TASK-1256 | SL/TP/trailing per-strategia | nessun miglioramento |
-| TASK-1261 | tuning supervisor (fee awareness, memoria) | corretto, ma decide `no_action` — **la diagnosi è giusta** |
-| TASK-1262 | rimozione bias strutturali dallo score | score medio −3.741 → −1.891, **WR invariato** |
-
-Il pattern è chiaro: **sette interventi, tutti sul filtro e sulla selezione, nessuno che cambi l'edge.** La perdita per trade è stabile a ~−0.045 EUR da luglio.
+Ogni combinazione con campione significativo è negativa. Il supervisor conclude `no_action`: **è la diagnosi corretta.** Non va ritoccato.
 
 ---
 
-## 6. Anomalie rilevate durante l'analisi
+## 3. Perché la v1 era sbagliata nel metodo
 
-### 6.1 La colonna `pnl_pct` è corrotta
+Sette task (1250 → 1262) hanno agito su **selezione**: filtro trend, guardie, soglie, pesi dello score, fee-awareness del supervisor. Tutte modificano *quali* trade si fanno. Nessuna modifica *cosa succede dopo l'ingresso* o *quanto si paga per farlo*.
 
-`db_ops.py:185` scrive `round(pnl_pct, 2)` ma il valore ricevuto non è una percentuale coerente. Risultato su 196 trade:
+E i dati mostrano che la selezione non era nemmeno il collo di bottiglia: il 90% degli ingressi è un override che la bypassa (§0.2). Quindi sette interventi hanno agito su una leva che (a) non era il problema e (b) non era nemmeno attiva.
 
-```
-media -22.99%   min -106%   max +125%
-```
-
-Un valore di −106% o +125% è impossibile. *Inferenza:* some call site passano un ratio (0.0–1.0) e altri un valore già moltiplicato per 100.
-
-**Impatto:** qualsiasi analisi o decisione fatta su `pnl_pct` è corrotta. Fortunatamente `historical_context` usa `avg_pnl` (assoluto, in EUR) e non è toccata. Ma **`pnl_pct` va sanata prima di qualunque lavoro futuro** — è un campo che sembra affidabile e non lo è.
-
-### 6.2 Discrepanza di configurazione sulla soglia
-
-```
-DB  scalping_runtime_config  SCALPING_SIGNAL_STRENGTH_THRESHOLD = 6.0
-env (.env)                  SCALPING_SIGNAL_STRENGTH_THRESHOLD = 15.0
-```
-
-`config_loader.py:47-48` carica prima da settings e poi **sovrascrive col DB**. Quindi **6.0 è il valore effettivo** e `15.0` dall'env è configurazione morta che genera confusione. *Nessun impatto sul comportamento, ma chiunque legga l'.env si sbaglia.*
-
-### 6.3 Il bug del CVD ha gonfiato lo score storico
-
-Il bug corretto in TASK-1262 (commit `80f8862`) aggiungeva un `+15.0` **costante** allo score quando la baseline del CVD non esisteva. Questo spiega perché i 13 trade con score `> +6.0` (quasi tutti agosto/inizio settembre) esistono affatto: erano artefatti del bug.
-
-*Conseguenza:* **lo storico di score pre-2026-09-29 non è confrontabile** con quello post-fix. Qualsiasi backtest su score storici è invalido. Solo i dati da quel giorno in avanti sono utilizzabili — e sono insufficienti.
-
-### 6.4 Due fonti di verità sui collector morti
-
-Nello snapshot: `whale` ha peso 0.05 ma score sempre `0.0`; `open_interest` peso 0.05 con score `~0.0`; `sentiment` peso `0.00` ma viene comunque calcolato e loggato; `spread` peso `0.00`. La `COVERAGE` dichiara `total=0.88` — quindi il 12% del peso è formalmente morto.
-
-*Inferenza:* ~0.15 di peso nominale non contribuisce mai nulla. Ripulire la configurazione non cambierebbe il comportamento, ma renderebbe leggibile perché il bot non apre.
-
-### 6.5 ⚠️ Rischio per trade il doppio di quanto configurato
-
-```
-DB  scalping_runtime_config  SCALPING_TRADE_VALUE = 10.0
-env (.env)                  SCALPING_TRADE_VALUE = 10.0
-sessione in corso           trade_value          = 20.0
-notional effettivo dei trade (195 chiusi)  medio 20.00  mediana 20.00
-```
-
-**La configurazione dice 10 EUR, il bot ne mette 20.** Non è un dettaglio: è un raddoppio del rischio effettivo per operazione rispetto a quanto dichiarato. La sessione corrente è stata creata il 2026-09-29 con `trade_value=20.0` nonostante la config a 10.0.
-
-*Non ho determinato la causa* (candidato: la sessione viene creata con un valore di fallback, o il valore è stato letto prima di un cambio di config, o c'è un raddoppio in fase di calcolo della quantità). Va chiarito **prima** di fare qualunque decisione sul rischio, perché tutti i calcoli di P&L per trade in questo documento sono su 20 EUR reali, non sui 10 configurati.
+**La leva giusta è economica:** costo per trade, frequenza, e movimento catturato per trade.
 
 ---
 
-## 7. Le domande da porre alle altre IA
+## 4. Il piano
 
-Queste sono le domande su cui un piano di risoluzione dovrebbe poggiare. Sono ordinate per importanza.
+### Fase 0 — Decisione operativa
 
-1. **Il R:R è recuperabile o la strategia è strutturalmente perdente?**
-   Con SL 0.5% e fee 0.2% round-trip, servono ~0.7% di movimento a favore per coprire 0.5% + 0.2%. Su BTC-EUR a timeframe scalping, quanto spesso si muove 0.7% in direzione corretta entro la finestra di holding? È la domanda più importante e **non è stata mai misurata**.
+L'opzione "calibrare lo score" è **scartata**: i dati mostrano che lo score non è il gate (§0.2), quindi calibrarlo non cambia quali trade si fanno.
 
-2. **Perché `take_profit` scatta solo nel 2% dei casi?** Il trailing stop chiude 29 trade e il TP solo 4. È il TP mal posizionato, il tempo di holding troppo corto, o l'OCO non è attivo? Una diagnosi qui potrebbe valere più di tutta la calibrazione dello score.
+| Opzione | Costo | Informazione |
+|---|---|---|
+| **A. Sospendere il live, misurare offline** | 0 € di rischio | Alta — backtest e simulazioni sono gratuiti |
+| **B. Tenere il live a stake ridotto** | ~0.037 €/trade | Bassa — i dati post-fix del CVD sono 3 giorni, non sufficienti |
 
-3. **Qual è il win rate atteso per una strategia con questo R:R?** Se le simulazioni dicono che `rsi_bollinger` su BTC-EUR ha un edge strutturalmente negativo in regime `ranging`, allora la risposta è spegnere il bot, non tararlo.
+**Raccomandazione: A.** Con edge lordo −0.006 €/trade e fee 4.5× più grandi, ogni trade perso dal vivo è denaro perso per imparare qualcosa che si può imparare gratis su storico.
 
-4. **Conviene continuare a usare lo score come gate?** Se la correlazione è zero, il gate aggiunge complessità senza protezione. Una strategia di gestione del rischio (position sizing, stop dinamico) potrebbe rendere lo score irrilevante.
+### 4.1 Random-entry test — il test decisivo
 
-5. **Come validare un'ipotesi senza rischiare denaro?** Backtest su storico OKX con gli stessi parametri, o paper trading. Quale sarà il protocollo, e con quale criterio di accettazione?
+Su storico OKX BTC-EUR 1m, con le **stesse regole di uscita reali** (SL, TP, break-even, trailing, fee 0.1%/0.1%) e **entrate casuali** alla stessa frequenza del bot, migliaia di ripetizioni.
+
+- **Il bot cade dentro la distribuzione** → le entrate non portano informazione. Nessun lavoro su score/collector/supervisor cambierà l'esito. Si passa alle leve strutturali di §4.3.
+- **Il bot è chiaramente sopra** → esiste un segnale, e solo allora vale la pena calibrarlo, con la certezza di cosa si ottimizza.
+
+`BacktestEngine` (TASK-808) è riusabile: serve un generatore di segnali casuali al posto della strategia.
+
+**Nota:** dato §0.2, questo test è ancora più necessario di quanto sembrasse. Non sappiamo nemmeno se il gate dello score, se attivo, produrrebbe trade diversi da quelli attuali.
+
+### 4.2 Benchmark
+
+- **Buy & hold** BTC-EUR sullo stesso periodo e capitale.
+- **Expectancy lorda** di `rsi_bollinger` su 1 anno, walk-forward.
+- Soglia di sensatezza: l'edge lordo per trade deve superare **2× le fee** (≈ 0.4%) con margine per la varianza. Sotto, non è un timeframe praticabile.
+
+### 4.3 Se il test conferma assenza di edge
+
+Il problema è strutturale: fee 0.186% per round trip contro uno stop netto di 0.3%. In ordine di impatto atteso:
+
+1. **Timeframe più lungo (15m / 1h / 4h).** Il movimento tipico diventa 10–20× le fee invece di 2–3×. Miglior rapporto costo/beneficio.
+2. **Ridurre la frequenza per costruzione, non filtrando con lo score.** Un setup al giorno, solo breakout confermati. Meno trade → fee incidono meno.
+3. **Verificare maker vs taker sul tier effettivo.** Solo se c'è un differenziale reale: sull'account attuale taker e maker sembrano entrambi 0.10%, quindi il vantaggio sarebbe zero.
+4. **Rivedere il take profit.** 2% di hit rate significa che il movimento dopo l'ingresso è tipicamente più piccolo del TP nominale. O il TP è irraggiungibile, o la finestra di holding è troppo corta. Da chiarire *prima* di ricalibrare: è un problema di posizionamento, non di selezione.
+
+### 4.4 Se il test mostra un segnale
+
+Solo allora: ricalibrare soglia e pesi **su dati post-2026-09-29**, rimisurare la correlazione score→PnL su un campione in cui lo score ha effettivamente filtrato, e aumentare lo stake **solo** con expectancy netta positiva e statisticamente distinguibile da zero.
 
 ---
 
-## 8. Vincoli da rispettare
+## 5. Criteri di successo
 
-- **Non abbassare la soglia** per far aprire il bot: i dati di §4.3 e §4.4 mostrano che i trade a score medio-alto rendono peggio.
-- **Non ottimizzare su score storici pre-2026-09-29**: bug del CVD (§6.3).
-- **Non fidarsi di `pnl_pct`** finché non è sanato (§6.1). Usare `pnl` assoluto.
-- **Prima di ogni decisione**, sapere se il capitale è tempo-perso o denaro-perso. Cambia completamente la propensione al rischio.
-- Il supervisor funziona e dice `no_action` correttamente: non va ritoccato finché i dati a valle non cambiano.
+Da fissare **prima** di iniziare, per non ripetere sette task senza un metro comune.
+
+| Metrica | Oggi | Soglia per considerare valida un'ipotesi |
+|---|---|---|
+| Expectancy **lorda** per trade | −0.0083 € | > 2× le fee (≈ +0.037 €) |
+| Expectancy **netta** per trade | −0.0455 € | > 0, con CI che esclude lo zero |
+| Posizione nel random-entry test | non misurata | sopra il 95° percentile |
+| P&L netto vs buy & hold | non misurato | superiore, stesso periodo e capitale |
+| Campione per la conclusione | — | 200–300 trade (varianza attuale) |
+
+Nessuna di queste soglie è una previsione. Sono i criteri con cui decidere, *prima* di vedere i risultati.
 
 ---
 
-## 9. Riproduzione dei dati
+## 6. Cose da non fare
 
-Tutte le query sono state eseguite da dentro il container di produzione con le credenziali in `.env`:
+- **Non abbassare la soglia dello score**: non è il gate (§0.2), e i trade a score medio-alto non rendono meglio.
+- **Non aumentare lo stake**: scala il risultato di qualunque segno. Con edge ≈ zero, raddoppiare lo stake raddoppia la perdita.
+- **Non aggiungere collector, pesi o logica al supervisor** prima del random-entry test.
+- **Non modificare il supervisor**: dice `no_action` correttamente.
+- **Non usare `pnl_pct` come se fosse corrotto** — è integro (§0.1). Usare `pnl` in assoluto per i calcoli di margine.
+- **Non confrontare score storici pre-2026-09-29** col post-fix (bug CVD `+15`).
+
+## 7. Anomalie residue (riviste)
+
+| # | Anomalia | Stato |
+|---|---|---|
+| ~~6.1~~ `pnl_pct` corrotta | **Ritirata** — era un mio errore di calcolo (§0.1) | ✅ risolta, nessun lavoro |
+| 6.2 Soglia 6.0 (DB) vs 15.0 (env) | Vera, innocua: vince il DB. Config morta da rimuovere per non confondere | aperta, bassa priorità |
+| 6.3 Score pre-29/09 invalidato dal bug CVD +15 | Vera | aperta, dichiarata |
+| 6.4 Peso morto nei collector (`whale`≈0, `open_interest`≈0, `sentiment`/`spread` a 0) | Vera, `COVERAGE total=0.88` | aperta, documentale |
+| 6.5 Trade value 10 (config) vs 20 (effettivo) | **Ridimensionata**: i 20 € non sono un'anomalia, sono coerenti e sensati per l'arrotondamento. È la config a essere non allineata. Allineare a 20. | aperta, bassa |
+
+---
+
+## 8. Domande aperte per la prossima analisi
+
+1. **Quanto si muove BTC-EUR in 0.7% (0.5% SL + 0.2% fee) nella direzione prevista, entro la finestra di holding?** Non mai misurato. È la domanda che decide se il timeframe giusto è 1m o no.
+2. **Perché `take_profit` scatta nel 2% dei casi?** TP irraggiungibile, finestra troppo corta, o OCO non attivo? Potenzialmente più importante di tutto il resto.
+3. **I trailing e break-even chiudono i vincitori a +0.27% quando il TP è a +0.6%.** È un difetto di configurazione o il mercato non arriva? Se è difetto, il R:R reale si può correggere da solo.
+4. **Il random-entry test va fatto con quali parametri esatti?** Servono i valori vivi di SL/TP/trailing per strategia, non quelli documentati (che divergono).
+
+## 9. Stato del documento
+
+- **Diagnosi:** completa e verificata sui dati. Due errori della v1 corretti in §0.
+- **Piano:** §4, in attesa della decisione di Fase 0 (A o B).
+- **Prossimo passo:** scrivere lo script del random-entry test riusando `BacktestEngine`, dopo aver deciso A o B.
+
+## 10. Riproduzione
+
+Da dentro il container di produzione:
 
 ```python
 from supabase import create_client
 u = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_ANON_KEY"])
+cl = [t for t in u.table("scalping_trades").select("*").execute().data if t["status"] == "closed"]
 
-# §4.1 performance — tabela scalping_trades, status='closed' (n=195)
-r = u.table("scalping_trades").select("*").execute().data
-cl = [t for t in r if t["status"] == "closed"]
-
-# §4.7 motivi di uscita — colonna signal_reason
-# §4.2 correlazione — colonne signal_score, pnl (n=168 con entrambi)
-# §4.9 regime — colonna regime_classified
-# §4.10 vista usata dal supervisor
-u.table("signal_outcome_by_strategy_regime").select("*").execute()
-# §6.2 configurazione — tabella scalping_runtime_config (la DB sovrascrive l'env)
-u.table("scalping_runtime_config").select("key,value").execute()
+# §2.1 lordo vs netto   -> sum(pnl), sum(entry_commission + exit_commission)
+# §0.2 bypass del gate  -> colonna strategy_rejection_reason (popolata su 197/197)
+# §2.3 motivi di uscita  -> colonna signal_reason
+# §2.6 vista supervisor -> u.table("signal_outcome_by_strategy_regime").select("*")
+# §0.1 verifica pnl_pct -> ricalcolare pnl/(quantity*entry_price)*100 e confrontare
 ```
 
-Snapshot collector (§4.6): log del container, righe `[ScoreEngine] COLLECTORS: btc-eur | ...`.
+Calcolo lordo: `pnl` è già netto (`trade_executor.py:279`). Il lordo è `pnl + commissioni`.
+14 trade su 197 non hanno commissione registrata: le loro fee (0.0371 €) sono **stimate**, non misurate.
 
-Range storico: 2026-07-24 → 2026-09-30, 196 trade (195 chiusi + 1 aperto al momento della raccolta).
-
----
-
-## 10. Stato del documento
-
-- **§1-§7**: completi e verificati sui dati reali. Pronti per l'analisi esterna.
-- **Piano di risoluzione**: **non scritto.** È il deliverable da costruire insieme dopo aver raccolto le analisi.
-- **Decisione richiesta**: scegliere A, B o C di §2 — o rifiutarle tutte e formularne una quarta.
-
-*Ultima verifica stato LIVE: 2026-09-30, 1 posizione aperta (`e90d8f77`, entry 73111.5), sessione `running/live`.*
+*Stato LIVE al momento della stesura: sessione `running/live`, 1 posizione aperta.*

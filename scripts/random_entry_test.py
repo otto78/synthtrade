@@ -316,6 +316,8 @@ async def amain() -> None:
     ap.add_argument("--max-hours", type=float, default=24.0)
     ap.add_argument("--seed", type=int, default=1234)
     ap.add_argument("--cache", default="")
+    ap.add_argument("--grid", action="store_true",
+                    help="aggiunge la griglia SL/TP (Parte 3 del report)")
     ap.add_argument("--all-eras", action="store_true",
                     help="includi anche i trade successivi all'override per-strategia")
     args = ap.parse_args()
@@ -420,6 +422,26 @@ async def amain() -> None:
             obs, l, h, p = bootstrap_diff(a, b)
             verdict = ("batte il caso" if l > 0 else "NON batte" if h < 0 else "indistinguibile")
             print(f"  {vname:<18}{obs:>+9.4f}%  CI95 [{l:+.4f}%, {h:+.4f}%]  p={p:.3f}  {verdict}")
+
+    if args.grid:
+        print(f"\n=== 5. GRIGLIA SL/TP ({args.sample} entry casuali, sicurezza ON) ===")
+        print("  %-8s%-8s%6s%11s%8s%11s%10s%10s" % (
+            "SLnet", "TPnet", "step", "media", "win%", "TP centr.", "media +", "media -"))
+        for sl in (0.20, 0.30, 0.50):
+            for tp in (0.30, 0.40, 0.55, 0.80):
+                g = Bracket("grid", sl_net=sl, tp_net=tp)
+                v, ntp = [], 0
+                for i in rnd_idx:
+                    e = bars[i]["c"]
+                    r = simulate(e, i, bars, g, max_bars, True, True)
+                    if r:
+                        v.append(net_pct(e, r["exit"]))
+                        ntp += r["reason"] == "take_profit"
+                w = [x for x in v if x > 0]
+                l = [x for x in v if x <= 0]
+                print("  %-8.2f%-8.2f%6d%10.4f%%%7.1f%%%10.1f%%%9.4f%%%9.4f" % (
+                    sl, tp, len(g.trail_levels()), mean(v), len(w)/len(v)*100,
+                    ntp/len(v)*100, mean(w), mean(l)))
 
     print("\n  -- mix motivi d'uscita, braccio bot --")
     print(f"  {'variante':<18}{'TP':>8}{'trail':>8}{'BE':>8}{'SL':>8}")

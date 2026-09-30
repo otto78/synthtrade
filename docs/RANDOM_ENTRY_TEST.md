@@ -256,6 +256,91 @@ Meglio del −0.2333% dell'era precedente, ma con 13 trade non è conclusivo.
   avvicinare lo SL, e l'override appena entrato lo fa — ma con l'effetto collaterale di
   disattivare quasi del tutto la protezione.
 
+---
+
+# Parte 3 — Griglia SL/TP: accorciare o allungare il TP?
+
+Domanda posta durante la stesura: la combinazione "SL stretto con TP lontano" è davvero
+la peggiore, e serve accorciare il TP? **No, e la seconda parte era sbagliata.** La
+griglia lo mostra.
+
+6000 entry casuali, blocchi di sicurezza attivi, long. `step` = quanti scalini della
+ladder trailing sopravvivono (`cap = TP netto − 0.10`).
+
+| SL netto | TP netto | step | media/trade | win % | TP centrato % | media + | media − |
+|---|---|---|---|---|---|---|---|
+| 0.20 | 0.30 | 0 | −0.1880% | 3.0% | 1.8% | +0.200% | −0.200% |
+| 0.20 | 0.40 | 1 | −0.1879% | 3.0% | 1.1% | +0.204% | −0.200% |
+| 0.20 | 0.55 | 2 | −0.1880% | 3.0% | 0.6% | +0.206% | −0.200% |
+| 0.20 | 0.80 | 3 | −0.1874% | 3.0% | **0.3%** | +0.225% | −0.200% |
+| 0.30 | 0.30 | 0 | −0.1861% | 23.2% | **13.0%** | +0.190% | −0.300% |
+| 0.30 | 0.40 | 1 | −0.1842% | 23.2% | 8.4% | +0.199% | −0.300% |
+| 0.30 | 0.55 | 2 | −0.1838% | 23.2% | 4.1% | +0.202% | −0.300% |
+| 0.30 | 0.80 | 3 | −0.1832% | 23.2% | 1.5% | +0.204% | −0.300% |
+| 0.50 | 0.30 | 0 | −0.1742% | 47.1% | **26.7%** | +0.192% | −0.500% |
+| 0.50 | 0.40 | 1 | −0.1709% | 47.0% | 17.3% | +0.201% | −0.500% |
+| 0.50 | 0.55 | 2 | −0.1698% | 46.9% | 8.4% | +0.204% | −0.500% |
+| 0.50 | 0.80 | 3 | −0.1687% | 46.9% | 3.1% | +0.206% | −0.500% |
+
+## Cosa dice la griglia
+
+**1. Il P&L è praticamente costante.** Su tutte e 12 le combinazioni la media sta fra
+−0.1687% e −0.1880%: un'escursione di **0.019%**, che è il rumore e il drag delle fee.
+Nessuna combinazione crea un edge.
+
+**2. Lo SL, non il TP, determina il win rate.** A SL fissato il win rate è identico
+qualunque sia il TP: 3.0% con SL 0.20, 23.2% con SL 0.30, 47% con SL 0.50. Non cambia
+di una virgola passando da TP 0.30 a TP 0.80.
+
+Il motivo è la meccanica: il break-even si arma a +0.15% netto, cioè +0.35% lordo. Con
+SL a −0.10% lordo la probabilità di arrivarci prima dello stop è ≈ 0.10/0.45 = 22%, e i
+22.9% osservati lo confermano. Con SL a −0.30% è 0.30/0.65 = 46%, contro 47% osservati.
+Il win rate è interamente determinato da dove sta lo stop.
+
+**3. Il TP determina solo quanto spesso arrivi al pieno obiettivo**, e il trailing lo
+tronc comunque. Accorciare il TP da 0.80 a 0.30 fa salire il TP centrato da 1.5% a 13.0%
+a SL 0.30 — e il P&L si muove di **0.003%**. È cosmetico.
+
+**4. Perché è invariato.** Su un prezzo che si comporta come una passeggiata casuale, la
+coppia (SL, TP) non crea né distrugge valore: il risultato atteso è il drag delle fee,
+qualunque sia la coppia. Il bracket ridistribuisce la distribuzione, non il rendimento.
+Questo è esattamente ciò che la Parte 1 aveva mostrato misurando l'entry contro il caso:
+dato che l'entry non ha skill, non esiste una combinazione di uscita che la faccia
+guadagnare.
+
+**5. L'unica leva che muove il P&L è lo SL, e va verso il largo.** Da SL 0.20 a SL 0.50
+il P&L migliora di 0.019% (−0.1880% → −0.1687%), con un win rate che sale dal 3% al 47%
+e una perdita per perdente che raddoppia. Con uno stop stretto si paga il drag delle fee
+molte volte su micro-movimenti che non coprono il costo di transazione.
+
+Questo è l'opposto di quanto ha fatto l'override per-strategia, che ha spostato lo SL
+dal netto 0.50 al 0.30.
+
+## Ritiro
+
+Nella Parte 2 avevo scritto "per tornare produttivo serve accorciare il TP, non stringere
+lo SL". **È ritirato.** Accorciare il TP non migliora il P&L: cambia la percentuale di
+vittoria e la frequenza con cui si chiude al TP pieno, lasciando il rendimento
+invariato. Una configurazione con il 13% di TP centrati e una con l'1.5% perdono
+esattamente la stessa somma.
+
+Avevo anche scritto che "SL stretto con TP lontano è la combinazione peggiore". È vero
+solo nel senso di **caratteristiche osservabili** — 3.0% di vittoria e 0.3% di TP
+centrato sono l'aspetto peggiore possibile, e ogni trade diventa un lancio di moneta che
+perde quasi sempre — ma non in senso di **denaro**: −0.1874% contro i −0.1687% della
+config migliore. La formulazione mescolava le due cose.
+
+## Cosa ne segue
+
+Il ciclo di tuning SL/TP è chiuso, e non per un giudizio estetico ma perché la griglia
+mostra che non c'è nulla da ottimizzare: il P&L è bloccato al drag delle fee. Le uniche
+mosse che cambiano qualcosa sono fuori da questo ciclo:
+
+1. **Avere un edge sull'entry** — che la Parte 1 ha escluso misurandolo contro il caso.
+2. **Non pagare le fee** — maker invece che taker, o meno round-trip per unità di tempo.
+   Su 0.20% a lato è il drag dominante e l'unica leva che resta.
+3. **Non fare trading** — l'unica alternativa con rendimento atteso non negativo.
+
 ## Riproduzione
 
 ```bash

@@ -229,3 +229,76 @@ async def test_scenario_E_balance_fails_recovers_from_algo_history():
         print(f"\n[OK] Balance fallito, fill recuperato da algo history: {result}")
     else:
         print("\n[INFO] Balance fallito → result=None (nessun fill recuperato dal path di fallback)")
+
+
+# ── SCENARIO F: fill algo non ancora visibile (regressione LIVE 2026-09-29) ───
+
+@pytest.mark.asyncio
+async def test_scenario_F_retries_until_algo_fill_propagates(monkeypatch):
+    """
+    SCENARIO F (regressione): balance a zero ma orders-algo-history non espone
+    ancora il fill del leg eseguito.
+
+    In LIVE il 2026-09-29 lo SL di un BUY BTC-EUR è scattato su OKX alle 16:53:57.
+    L'order stream ha ricevuto l'evento un secondo dopo ma SENZA prezzo, quindi
+    ha delegato al reconcile. Il balance diceva 0 (chiusa), la singola lookup
+    della algo history non trovava ancora il leg con state="effective", e la
+    funzione loggava "retaining local trade for retry" restituendo None.
+
+    Non esisteva alcun retry su quel path (esisteva solo nel ramo di errore del
+    balance check, TASK-1175), quindi la posizione restava aperta per 14 ore
+    bloccando ogni nuovo ingresso finché un riavvio non l'avesse reconciliata.
+
+    Atteso: il reconcile riprova e recupera il fill appena OKX lo propaga.
+    """
+    real_fill = {
+        "algoId": "3966069478195580928",
+        "state": "effective",
+        "avgPx": "73268.1",
+        "fillPx": "73268.1",
+        "ordType": "oco_sl",
+        "side": "sell",
+    }
+
+    calls = {"n": 0}
+
+    class EventuallyConsistentExchange(MockExchange):
+        async def get_algo_orders_history(self, symbol: str, bracket_id=None):
+            calls["n"] += 1
+            # OKX espone il fill alla terza interrogazione
+            return [real_fill] if calls["n"] >= 3 else []
+
+    # accelera il backoff senza toccare asyncio.sleep globalmente
+    monkeypatch.setattr("app.scalping.reconciliation.FILL_VISIBILITY_DELAY", 0.0)
+
+    exchange = EventuallyConsistentExchange(holdings={"BTC": 0.0}, balance=0.0)
+    result = await _reconcile(exchange, bracket_id="3966069478195580928")
+
+    assert calls["n"] >= 3, f"dovrebbe riprovare, ha interrogato {calls['n']} volte"
+    assert result is not None, "il fill doveva essere recuperato al retry"
+    assert result["fill_price"] == pytest.approx(73268.1)
+    assert result["reason"] == "stop_loss"
+    assert result["source"] == "oco_verified_fill"
+
+
+@pytest.mark.asyncio
+async def test_scenario_G_never_closes_on_unverified_fill(monkeypatch):
+    """
+    La sicurezza di TASK-1184 resta prioritaria: se il fill non è mai verificato
+    il reconcile NON deve chiudere il trade con un prezzo sintetico, anche dopo
+    i retry. Deve segnalare l'esito in modo che l'operatore lo veda.
+    """
+    calls = {"n": 0}
+
+    class NeverVisibleExchange(MockExchange):
+        async def get_algo_orders_history(self, symbol: str, bracket_id=None):
+            calls["n"] += 1
+            return []
+
+    monkeypatch.setattr("app.scalping.reconciliation.FILL_VISIBILITY_DELAY", 0.0)
+
+    exchange = NeverVisibleExchange(holdings={"BTC": 0.0}, balance=0.0)
+    result = await _reconcile(exchange, bracket_id="algo-nope")
+
+    assert calls["n"] == 3, f"attesi 3 tentativi, eseguiti {calls['n']}"
+    assert result is None, "non deve mai chiudere senza fill verificato"

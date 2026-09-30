@@ -5,6 +5,13 @@ from typing import Dict, Any, Optional
 from app.scalping._state import _execution_state
 from app.execution.exchange_models import SymbolRef
 
+# TASK-1270: visibility window for an executed OCO leg. OKX reports the effective
+# OCO before the child fill price is exposed (TASK-1175 measured 1-5s), so the
+# lookup is polled instead of trusted on first read. Module constants (not inline
+# literals) so tests can shrink them without patching asyncio globally.
+FILL_VISIBILITY_ATTEMPTS = 3
+FILL_VISIBILITY_DELAY = 1.5
+
 logger = logging.getLogger(__name__)
 
 
@@ -73,6 +80,55 @@ def _matched_bracket_fill(
             "fill_time": _fill_time_from_ms(fill.get("fillTime") or fill.get("ts")),
             "exit_order_id": fill.get("ordId"),
         }
+    return None
+
+
+async def _await_verified_bracket_fill(
+    exchange,
+    symbol: str,
+    bracket_id: str,
+    *,
+    trailing_step: int = 0,
+    break_even_triggered: bool = False,
+    attempts: Optional[int] = None,
+    delay: Optional[float] = None,
+) -> Optional[Dict[str, Any]]:
+    """Poll the OCO history until the executed leg becomes visible.
+
+    ``orders-algo-history`` is eventually consistent: OKX reports the effective
+    OCO before the child fill price is exposed, so a single lookup issued right
+    after the trigger finds nothing.  TASK-1175 already documented a 1-5s
+    propagation window for the balance-failure path; this applies the same
+    tolerance to the ordinary "balance says closed" path, which previously
+    queried once, logged "retaining local trade for retry" and returned None --
+    with no retry ever scheduled, leaving the position open until the next
+    process restart.
+    """
+    # Resolved at call time rather than as parameter defaults, so the module
+    # constants stay the single source of truth and remain overridable in tests.
+    if attempts is None:
+        attempts = FILL_VISIBILITY_ATTEMPTS
+    if delay is None:
+        delay = FILL_VISIBILITY_DELAY
+    for attempt in range(attempts):
+        try:
+            match = _matched_bracket_fill(
+                await _get_verified_bracket_fills(exchange, symbol, bracket_id),
+                bracket_id,
+                trailing_step=trailing_step,
+                break_even_triggered=break_even_triggered,
+            )
+            if match:
+                return match
+        except Exception as exc:  # noqa: BLE001 - last attempt logs below
+            if attempt >= attempts - 1:
+                logger.warning(
+                    "[POSITION_RECONCILE] Verified OCO fill lookup failed after %d attempts: %s",
+                    attempts, exc,
+                )
+                return None
+        if attempt < attempts - 1:
+            await asyncio.sleep(delay)
     return None
 
 
@@ -150,33 +206,22 @@ async def _reconcile_position_with_exchange(
         # This handles the case where network was down during startup but bracket executed.
         # TASK-1175: Always retry 3 times — OKX can take 1-5s to propagate fills.
         if bracket_id:
-            for attempt in range(3):
-                try:
-                    match = _matched_bracket_fill(
-                        await _get_verified_bracket_fills(_exchange, symbol, bracket_id), bracket_id,
-                        trailing_step=trailing_step,
-                        break_even_triggered=break_even_triggered,
-                    )
-                    if match:
-                        logger.info(
-                            "[POSITION_RECONCILE] Balance check failed but recovered verified OCO fill: "
-                            "algoId=%s fill=%.4f reason=%s (attempt %d)",
-                            bracket_id, match["fill_price"], match["reason"], attempt + 1,
-                        )
-                        return match
-                    # No match in this attempt — retry if attempts remain
-                    if attempt < 2:
-                        await asyncio.sleep(1.5)
-                        continue
-                    logger.warning(
-                        "[POSITION_RECONCILE] Algo history: no fill found for bracket_id=%s after 3 attempts",
-                        bracket_id,
-                    )
-                except Exception as hist_e:
-                    if attempt < 2:
-                        await asyncio.sleep(1.0)
-                        continue
-                    logger.warning("[POSITION_RECONCILE] Algo history fallback failed after 3 attempts: %s", hist_e)
+            match = await _await_verified_bracket_fill(
+                _exchange, symbol, bracket_id,
+                trailing_step=trailing_step,
+                break_even_triggered=break_even_triggered,
+            )
+            if match:
+                logger.info(
+                    "[POSITION_RECONCILE] Balance check failed but recovered verified OCO fill: "
+                    "algoId=%s fill=%.4f reason=%s",
+                    bracket_id, match["fill_price"], match["reason"],
+                )
+                return match
+            logger.warning(
+                "[POSITION_RECONCILE] Algo history: no fill found for bracket_id=%s after 3 attempts",
+                bracket_id,
+            )
         return None
 
     # Never infer an exit from the instrument's generic order stream.  In a
@@ -190,22 +235,26 @@ async def _reconcile_position_with_exchange(
         )
         return None
 
-    try:
-        match = _matched_bracket_fill(
-            await _get_verified_bracket_fills(_exchange, symbol, bracket_id), bracket_id,
-            trailing_step=trailing_step,
-            break_even_triggered=break_even_triggered,
+    match = await _await_verified_bracket_fill(
+        _exchange, symbol, bracket_id,
+        trailing_step=trailing_step,
+        break_even_triggered=break_even_triggered,
+    )
+    if match:
+        logger.info(
+            "[POSITION_RECONCILE] Recovered verified OCO fill: algoId=%s fill=%.4f reason=%s",
+            bracket_id, match["fill_price"], match["reason"],
         )
-        if match:
-            logger.info(
-                "[POSITION_RECONCILE] Recovered verified OCO fill: algoId=%s fill=%.4f reason=%s",
-                bracket_id, match["fill_price"], match["reason"],
-            )
-            return match
-        logger.warning(
-            "[POSITION_RECONCILE] Balance indicates %s is closed, but no verified fill exists for OCO algoId=%s; retaining local trade for retry",
-            symbol, bracket_id,
-        )
-    except Exception as hist_e:
-        logger.warning("[POSITION_RECONCILE] Verified OCO fill lookup failed: %s", hist_e)
+        return match
+
+    # After ~3s of polling the exchange still shows no executable leg while the
+    # balance says the position is gone. That is no longer a propagation delay:
+    # the local trade is now unrecoverable in real time and will keep blocking
+    # entries. Escalate so it is visible instead of silently retained.
+    logger.error(
+        "[POSITION_RECONCILE] %s balance indicates closed but no verified OCO fill "
+        "for algoId=%s after polling: local trade retained and WILL block new entries "
+        "until a restart reconciles it. Check the exchange algo history manually.",
+        symbol, bracket_id,
+    )
     return None

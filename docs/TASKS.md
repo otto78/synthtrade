@@ -265,16 +265,61 @@ con stima puntuale negativa.** Stesso esito sul bracket override (−0.0185%, p=
 - i trade del bot vanno più spesso a stop pieno (59.1% vs 53.7%)
 - win rate del bot **inferiore** al caso
 
-**Conseguenza:** l'override SL/TP per-strategia (TASK-1256/1257) non è applicato
-nell'84% dei trade — SL e TP ricadono sui valori globali insieme o nessuno dei due
-(verificato: nessun trade con SL a -0.30% e TP a +0.75% nello stesso bracket).
-Dacorre a parte, e ha un impatto diretto su TASK-1257.
+**Conseguenza:** l'entry logic non ha edge misurabile. Cfr. anche TASK-1274.
+
+**Correzione:** una versione precedente di questa task riportava che l'override SL/TP
+per-strategia "non è applicato nell'84% dei trade". Era un errore di metodo: il campione
+mescolava l'era pre-override (in cui l'override non esisteva e il TP globale è corretto
+per definizione) con l'era post-override. **L'override funziona 13/13** nella sua era.
+Nessun bug.
+
+---
+
+### TASK-1274 — Break-even e trailing: bloccano le perdite o il win rate? ✅
+
+**Stato:** ✅ **COMPLETATA — l'ipotesi era invertita.** Report: `docs/RANDOM_ENTRY_TEST.md`
+Parte 2. Controfattuali 2×2 in `scripts/random_entry_test.py`.
+
+**Ipotesi da verificare:** che i due blocchi di sicurezza abbassino la percentuale di
+vittoria per ridurre le perdite.
+
+**Metodo:** l'override per-strategia è online dal 2026-09-25 15:16 UTC (TASK-1256), quindi
+il confronto è stato rifatto **sui soli 182 trade dell'era a bracket fisso**, dove SL e TP
+erano uguali per tutti. Simulatore validato (p=0.530, 144/180 motivi concordanti).
+Quattro varianti: full, solo break-even, solo trailing, nessuno.
+
+**Risposta: no, su entrambi i punti.**
+
+1. **Non riducono il win rate — lo raddoppiano.** 21.1% → 41.7% (bot), 22.2% → 46.3%
+   (casuali).
+2. **Non riducono le perdite, mai.** La media dei perdenti è **−0.5000% in tutte e quattro
+   le varianti**, perché i due blocchi spostano lo SL solo verso l'alto: un trade che non
+   raggiunge +0.15% netto perde esattamente lo SL iniziale. **Il lato perdenti è
+   strutturalmente congelato.**
+3. **Quello che riducono è la vincita media**: +0.80% → +0.20%, e il TP centrato crolla
+   dal 21.1% al 2.2%.
+4. **Lo scambio è favorevole**: +0.0385%/trade rispetto a "nessuno" (braccio casuale
+   n=7498, CI95 [+0.0240, +0.0540], p<0.001). Vanno tenuti.
+5. **Il lock di break-even aggiunge zero**: solo trailing − full = +0.0001%, p=0.996.
+   Il trailing da solo fa tutto il lavoro.
+
+**Conseguenze operative:**
+- Il vero collo di bottiglia è il **TP a +0.80% netto centrato il 2–3% delle volte** e il
+  **lato perdenti fermo allo SL iniziale**. L'unica leva reale sulle perdite è avvicinare
+  lo SL iniziale.
+- L'override per-strategia lo fa (SL netto 0.50 → 0.30, perdita per perdente −0.40%), ma
+  ha un **effetto collaterale**: per armare il break-even servono +0.35% lordo, quindi con
+  SL a −0.30% quasi tutta la protezione non si attiva più. Le varianti si appiattiscono
+  (scarto 0.007% contro 0.039% col bracket globale).
+- Nei 13 trade reali post-override: **10 su 13 sono `stop_loss` puro**, P&L −0.1769%
+  per trade (meglio del −0.2333% precedente, ma n troppo piccolo per concludere).
 
 **Criteri di accettazione:**
-- [x] Simulatore validato contro i trade reali prima del confronto
-- [x] Stesse regole di uscita della produzione, riusate e non riscritte
-- [x] Confronto ripetuto sui due bracket
-- [x] Limiti dichiarati (12 trade esclusi, long-only, 1m, nessun time-stop)
+- [x] Controfattuali 2×2 su break-even e trailing
+- [x] Solo sull'era a bracket fisso, confrontabile
+- [x] Simulatore validato prima del confronto
+- [x] Confronto appaiato per la significatività
+- [x] Config attuale (post-override) simulata a parte
 
 **File coinvolti:**
 - `scripts/random_entry_test.py`

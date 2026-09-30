@@ -162,7 +162,7 @@ async def fetch_candles(base_url: str, inst: str, start: datetime, end: datetime
 
 
 def simulate(entry: float, i0: int, bars: Sequence[dict], br: Bracket,
-             max_bars: int) -> dict | None:
+             max_bars: int, use_be: bool = True, use_trail: bool = True) -> dict | None:
     """Esegue il bracket su una long fino a chiusura. None = censurato.
 
     Ordine per candela, come in produzione:
@@ -172,10 +172,15 @@ def simulate(entry: float, i0: int, bars: Sequence[dict], br: Bracket,
          per la candela successiva.
     Se TP e SL cadono nella stessa candela si assume lo SL (caso peggiore):
     su 1m con SL a ~219 EUR il caso e' raro ma va gesto senza ottimismo.
+
+    use_be / use_trail allowscono di misurare il contributo dei due blocchi di
+    sicurezza. In produzione il trailing e' subordinato al break-even (Guard 1 di
+    _check_and_apply_trailing: senza break_even_triggered non fa nulla), quindi
+    "solo trailing" e' un controfattuale che allunga quella guardia.
     """
     sl = br.sl_price(entry)
     tp = br.tp_price(entry)
-    levels = br.trail_levels()
+    levels = br.trail_levels() if use_trail else []
     li = 0
     be_done = False
 
@@ -192,7 +197,7 @@ def simulate(entry: float, i0: int, bars: Sequence[dict], br: Bracket,
         net = _expected_net_pct_at_exit(entry, close, "BUY", EF, XF)
         # _check_and_apply_break_even: non si allenta mai lo stop, e non si mette
         # uno stop sopra il prezzo corrente
-        if not be_done and net >= BE_TRIGGER_NET:
+        if use_be and not be_done and net >= BE_TRIGGER_NET:
             cand = entry * _exit_price_ratio(BE_LOCK_NET, EF, XF)
             if cand > sl and cand < close:
                 sl, be_done = cand, True
@@ -221,6 +226,23 @@ def net_pct(entry: float, exit_price: float) -> float:
 
 
 REASONS = ("take_profit", "stop_loss_trailing", "stop_loss_breakeven", "stop_loss")
+
+# Controfattuali sui due blocchi di sicurezza. In produzione entrambi sono attivi
+# e il trailing e' subordinato al break-even; "solo trailing" allunga quella guardia
+# solo per misurare il contributo del trailing in isolation.
+VARIANTS = {
+    "full (produzione)": (True, True),
+    "solo break-even": (True, False),
+    "solo trailing": (False, True),
+    "nessuno": (False, False),
+}
+
+# L'override SL/TP per-strategia e' online dal 2026-09-25 15:16 UTC (commit 87a8f03,
+# TASK-1256). Prima di allora il bracket era fisso e uguale per tutti, quindi e'
+# l'unica era in cui ha senso confrontare trade reali e simulazione sulla stessa
+# coppia SL/TP. Dopo, il TP e' +0.751% e il campione non e' confrontabile.
+OVERRIDE_ONLINE = datetime(2026, 9, 25, 15, 16, tzinfo=timezone.utc)
+TP_GROSS_GLOBAL = 1.0019
 
 
 def mean(v: Sequence[float]) -> float:
@@ -259,18 +281,27 @@ def describe(name: str, v: Sequence[float], censored: int) -> str:
 # =============================================================================
 
 
-def real_entries() -> list[dict]:
+def real_entries(fixed_era_only: bool = True) -> list[dict]:
     from supabase import create_client
     u = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_ANON_KEY"])
     rows = u.table("scalping_trades").select(
-        "entry_time,entry_price,exit_time,exit_price,pnl_pct,signal_reason,strategy_type"
+        "entry_time,entry_price,exit_time,exit_price,pnl_pct,signal_reason,strategy_type,sl_price,tp_price"
     ).eq("status", "closed").execute().data
     out = []
     for r in rows:
         if not (r.get("entry_time") and r.get("exit_time")):
             continue
+        t = datetime.fromisoformat(r["entry_time"])
+        if fixed_era_only:
+            # solo l'era a bracket fisso, e solo i trade il cui TP e' quello globale
+            # (esclude 3 outlier con un'altra coppia SL/TP)
+            if t >= OVERRIDE_ONLINE:
+                continue
+            e, tp = float(r["entry_price"]), r.get("tp_price")
+            if not e or not tp or abs((float(tp) - e) / e * 100 - TP_GROSS_GLOBAL) > 0.01:
+                continue
         out.append({
-            "entry_time": datetime.fromisoformat(r["entry_time"]),
+            "entry_time": t,
             "fill": float(r["entry_price"]),
             "exit_price": float(r["exit_price"] or 0),
             "real_net": float(r["pnl_pct"]) if r.get("pnl_pct") is not None else None,
@@ -285,6 +316,8 @@ async def amain() -> None:
     ap.add_argument("--max-hours", type=float, default=24.0)
     ap.add_argument("--seed", type=int, default=1234)
     ap.add_argument("--cache", default="")
+    ap.add_argument("--all-eras", action="store_true",
+                    help="includi anche i trade successivi all'override per-strategia")
     args = ap.parse_args()
 
     from app.config import settings
@@ -293,7 +326,7 @@ async def amain() -> None:
     rng = random.Random(args.seed)
     max_bars = int(args.max_hours * 60)
 
-    trades = real_entries()
+    trades = real_entries(fixed_era_only=not args.all_eras)
     lo = min(t["entry_time"] for t in trades) - timedelta(hours=2)
     hi = max(t["entry_time"] for t in trades) + timedelta(hours=2)
     cache = Path(args.cache or f"/tmp/candles_1m_{inst}.json")
@@ -310,7 +343,7 @@ async def amain() -> None:
     real_idx = [(t, i) for t, i in real_idx if i is not None and 0 <= i < limit]
     print(f"  trade reali con 1m agganciabile e orizzonte pieno: {len(real_idx)}/{len(trades)}")
 
-    for br in BRACKETS.values():
+    for br in [BRACKETS["globale"]]:
         print(f"\n=== 2. VALIDAZIONE — bracket {br.name} "
               f"(SL net {br.sl_net} / TP net {br.tp_net}) ===")
         sim_v, real_v, cens = [], [], 0
@@ -335,42 +368,67 @@ async def amain() -> None:
             print(f"  motivo d'uscita concordante: {agree}/{len(sim_v)} "
                   f"({agree/len(sim_v)*100:.0f}%)")
 
-    print(f"\n=== 3. CONFRONTO — entry reali vs entry casuali (n={args.sample}) ===")
-    for br in BRACKETS.values():
+    print(f"\n=== 4. CONTROFATTUALI SU BREAK-EVEN E TRAILING ===")
+    print("  (era a bracket fisso, bracket globale — unica era confrontabile)")
+    br = BRACKETS["globale"]
+    rnd_idx = rng.sample(range(0, limit), min(args.sample, limit))
+    rows_out = []
+    for vname, (use_be, use_trail) in VARIANTS.items():
         a, ca, mix_a = [], 0, {}
         for t, i in real_idx:
             entry = bars[i]["c"]
-            r = simulate(entry, i, bars, br, max_bars)
+            r = simulate(entry, i, bars, br, max_bars, use_be, use_trail)
             if r is None:
                 ca += 1
             else:
                 a.append(net_pct(entry, r["exit"]))
                 mix_a[r["reason"]] = mix_a.get(r["reason"], 0) + 1
         b, cb, mix_b = [], 0, {}
-        for i in rng.sample(range(0, limit), min(args.sample, limit)):
+        for i in rnd_idx:
             entry = bars[i]["c"]
-            r = simulate(entry, i, bars, br, max_bars)
+            r = simulate(entry, i, bars, br, max_bars, use_be, use_trail)
             if r is None:
                 cb += 1
             else:
                 b.append(net_pct(entry, r["exit"]))
                 mix_b[r["reason"]] = mix_b.get(r["reason"], 0) + 1
-        print(f"\n  --- bracket {br.name} ---")
-        print(describe("entry del bot", a, ca))
-        print(describe("entry casuali", b, cb))
-        print(f"  {'motivo d\'uscita':<24}{'bot':>18}{'casuali':>18}")
-        for reason in REASONS:
-            na, nb = mix_a.get(reason, 0), mix_b.get(reason, 0)
-            if not na and not nb:
-                continue
-            print(f"  {reason:<24}{na:>8} ({na/max(1,len(a))*100:4.1f}%)"
-                  f"{nb:>10} ({nb/max(1,len(b))*100:4.1f}%)")
+        rows_out.append((vname, a, ca, mix_a, b, cb, mix_b))
+
+    def split(v: Sequence[float]) -> tuple[float, float]:
+        w = [x for x in v if x > 0]
+        l = [x for x in v if x <= 0]
+        return (mean(w) if w else float("nan")), (mean(l) if l else float("nan"))
+
+    hdr = (f"  {'variante':<18}{'braccio':<9}{'n':>6}{'media':>10}{'win%':>8}"
+           f"{'media +':>10}{'media -':>10}{'tot EUR':>10}")
+    print("\n  -- entry del bot --")
+    print(hdr)
+    for vname, a, ca, _, _, _, _ in rows_out:
+        mw, ml = split(a)
+        print(f"  {vname:<18}{'bot':<9}{len(a):>6}{mean(a):>+9.4f}%{sum(1 for x in a if x>0)/max(1,len(a))*100:>7.1f}%"
+              f"{mw:>+9.4f}%{ml:>+9.4f}%{sum(a)/100*20:>+10.2f}")
+    print("\n  -- entry casuali --")
+    print(hdr)
+    for vname, _, _, _, b, cb, _ in rows_out:
+        mw, ml = split(b)
+        print(f"  {vname:<18}{'casuali':<9}{len(b):>6}{mean(b):>+9.4f}%{sum(1 for x in b if x>0)/max(1,len(b))*100:>7.1f}%"
+              f"{mw:>+9.4f}%{ml:>+9.4f}%{sum(b)/100*20:>+10.2f}")
+
+    print("\n  -- bot - casuali, per variante --")
+    for vname, a, _, _, b, _, _ in rows_out:
         if a and b:
             obs, l, h, p = bootstrap_diff(a, b)
-            verdict = ("il segnale batte il caso" if l > 0 else
-                       "NON batte il caso" if h < 0 else "indistinguibile")
-            print(f"  differenza = {obs:+.4f}% per trade  CI95 [{l:+.4f}%, {h:+.4f}%]  p={p:.3f}")
-            print(f"  -> {verdict}")
+            verdict = ("batte il caso" if l > 0 else "NON batte" if h < 0 else "indistinguibile")
+            print(f"  {vname:<18}{obs:>+9.4f}%  CI95 [{l:+.4f}%, {h:+.4f}%]  p={p:.3f}  {verdict}")
+
+    print("\n  -- mix motivi d'uscita, braccio bot --")
+    print(f"  {'variante':<18}{'TP':>8}{'trail':>8}{'BE':>8}{'SL':>8}")
+    for vname, _, _, mix_a, _, _, _ in rows_out:
+        n = max(1, sum(mix_a.values()))
+        print(f"  {vname:<18}{mix_a.get('take_profit',0)/n*100:>7.1f}%"
+              f"{mix_a.get('stop_loss_trailing',0)/n*100:>7.1f}%"
+              f"{mix_a.get('stop_loss_breakeven',0)/n*100:>7.1f}%"
+              f"{mix_a.get('stop_loss',0)/n*100:>7.1f}%")
     print()
 
 

@@ -205,6 +205,83 @@ Il sintomo è un `ERROR` nei log con il testo `no verified OCO fill ... WILL blo
 
 ---
 
+### TASK-1272 — Falso pausa di sessione: saldo basso per capitale impegnato ✅
+
+**Stato:** ✅ **COMPLETATA e deployata** (commit `13ab09f`).
+
+**Causa:** `spot_reconciliation_job()` in `app/scheduler/scalping_jobs.py` confrontava
+`session["live_balance"]` con `trade_value` senza considerare la posizione aperta.
+`live_balance` è `cashBal` di OKX (available + frozen), quindi **include il capitale
+impegnato nella posizione**: con 21.9 EUR e trade da 20 EUR, ogni posizione aperta
+riportava il saldo a 1.87 EUR e la sessione veniva pausa. Tre errori in uno:
+confronto sbagliato, `pause_reason=SPOT_BALANCE_ZERO` falso, e messaggio all'utente
+"i tuoi fondi sono in Simple Earn" quando quei fondi erano nella nostra posizione.
+
+**Fix:**
+- saldo basso **con posizione aperta** → log INFO con il notional impegnato, stato invariato
+- saldo basso **senza posizione** → pausa legittima con `SPOT_BALANCE_INSUFFICIENT` e
+  messaggio che dice esplicitamente che non c'è posizione aperta
+- ripresa automatica invariata quando il saldo torna sufficiente
+
+**Test:** 5 regressioni in `TestSpotReconciliation`. Verificato che catturino il bug:
+**3 falliscono col codice precedente** e passano col fix. Suite `814 passed, 1 failed`
+(`test_task_908` preesistente).
+
+**Nota:** questo bug era l'unico motivo per cui il bot non stava bleeding. Corretto
+il check, la sessione è ripartita e ha ripreso a operare. La pausa **non** è un
+meccanismo di sicurezza utilizzabile per fermare il bleeding.
+
+---
+
+### TASK-1273 — Random-entry test: gli entry valgono più di un orario casuale? ✅
+
+**Stato:** ✅ **COMPLETATA — esito negativo.** Report: `docs/RANDOM_ENTRY_TEST.md`.
+Script: `scripts/random_entry_test.py`.
+
+**Domanda:** il 90% degli trade entra con override mean-reversion e nessuno ha score
+`>+6`. L'entry logic aggiunge qualcosa, o è rumore?
+
+**Metodo:** simulatore che riusa le funzioni di pricing e la ladder break-even/trailing
+di produzione (niente logica riscritta), validato contro i trade realmente realizzati
+prima di confrontarli con gli entry casuali. Test eseguito due volte, una per bracket,
+perché la scelta del bracket non possa influenzare la conclusione.
+
+**Validazione:** simulato −0.2140% vs realizzato −0.2353%, p=0.595, 80% dei motivi
+d'uscita concordanti. Il simulatore riproduce la realtà.
+
+**Esito (8000 entry casuali, bracket globale usato dall'84% dei trade reali):**
+
+| | media/trade | win rate |
+|---|---|---|
+| entry del bot | −0.2140% | 40.9% |
+| entry casuali | −0.1729% | 46.3% |
+
+**Differenza −0.0410% per trade · CI95 [−0.0944%, +0.0148%] · p=0.130 → indistinguibile,
+con stima puntuale negativa.** Stesso esito sul bracket override (−0.0185%, p=0.242).
+
+**Dati collaterali:**
+- il TP viene centrato **3% delle volte** qualunque sia l'entry (bot 2.2%, casuali 3.0%);
+  la ladder break-even/trailing intercetta quasi tutto prima
+- i trade del bot vanno più spesso a stop pieno (59.1% vs 53.7%)
+- win rate del bot **inferiore** al caso
+
+**Conseguenza:** l'override SL/TP per-strategia (TASK-1256/1257) non è applicato
+nell'84% dei trade — SL e TP ricadono sui valori globali insieme o nessuno dei due
+(verificato: nessun trade con SL a -0.30% e TP a +0.75% nello stesso bracket).
+Dacorre a parte, e ha un impatto diretto su TASK-1257.
+
+**Criteri di accettazione:**
+- [x] Simulatore validato contro i trade reali prima del confronto
+- [x] Stesse regole di uscita della produzione, riusate e non riscritte
+- [x] Confronto ripetuto sui due bracket
+- [x] Limiti dichiarati (12 trade esclusi, long-only, 1m, nessun time-stop)
+
+**File coinvolti:**
+- `scripts/random_entry_test.py`
+- `docs/RANDOM_ENTRY_TEST.md`
+
+---
+
 ### TASK-1252 — Ricalibrare Peso Signal Score nella Decisione ✅ (Fase 1 completata)
 
 **Stato:** 🔶 Fase 1 completata il 2026-09-02. **Fase 2 (ricalibrazione soglia score) ora prioritaria e sbloccata dall'evidenza di TASK-1262:** su 68 snapshot reali il bias dei collector è stato corretto (score medio −3.741 → −1.891) ma **nessuno dei 68 snapshot ha superato la soglia +6.0**: il segnale bullish resta a 0.0%. Il constraint non è più il bias dei collector ma l'ampiezza del segnale e la soglia che lo filtra. Prima di ricalibrare va però chiarito *cosa* misurare, dato che la correlazione score→PnL misurata è ≈ 0.004.

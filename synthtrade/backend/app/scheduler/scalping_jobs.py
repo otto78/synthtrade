@@ -303,8 +303,16 @@ async def spot_reconciliation_job() -> None:
     """Job: verifica periodica del saldo Spot (ogni 2 ore).
 
     Solo in live mode: chiama _refresh_session_balance() per aggiornare
-    il balance Spot reale da Binance. Se lo Spot è vuoto (fondi finiti
-    in Simple Earn durante l'inattività), mette la sessione in pausa.
+    il balance Spot reale. Mette la sessione in pausa SOLO se non c'e' una
+    posizione aperta e il saldo non copre un trade.
+
+    TASK-1272: `live_balance` e' `cashBal` di OKX (available + frozen), quindi
+    include il capitale impegnato nella posizione aperta. Confrontarlo con
+    `trade_value` senza considerare la posizione produceva un falso positivo:
+    con capitale 21.9 EUR e trade da 20 EUR, ogni posizione aperta riportava
+    il saldo a 1.87 EUR e la sessione veniva messa in pausa con
+    `pause_reason=SPOT_BALANCE_ZERO` e il messaggio "fondi in Simple Earn" —
+    entrambi falsi, perche' quei fondi erano nella nostra posizione.
     """
     if not settings.scalping.SCALPING_SCHEDULER_HEALTH_ENABLED:
         return
@@ -323,18 +331,43 @@ async def spot_reconciliation_job() -> None:
 
         bal = session.get("live_balance", 0)
         trade_val = float(session.get("trade_value", 10.0))
-        if bal is None or bal <= 0 or bal < trade_val:
+
+        # Il capitale impegnato nella nostra posizione non e' fondi mancanti:
+        # e' normale operativita'. Sospendere per quello blocca l'apertura di un
+        # secondo trade (corretto) ma congela la sessione per un motivo falso.
+        position_manager = _execution_state.get("position_manager")
+        has_open = bool(position_manager and position_manager.has_open())
+
+        if (bal is None or bal <= 0 or bal < trade_val) and has_open:
+            open_pos = position_manager.get_open()
+            notional = 0.0
+            if open_pos is not None:
+                try:
+                    notional = float(getattr(open_pos, "quantity", 0) or 0) * float(getattr(open_pos, "entry_price", 0) or 0)
+                except (TypeError, ValueError):
+                    notional = 0.0
+            logger.info(
+                "🔄 PERIODIC CHECK: spot balance=%.2f < trade_value=%.2f, ma c'e' una posizione "
+                "aperta (notional %.2f): capitale impegnato nella posizione, NON fondi mancanti. "
+                "Sessione invariata.",
+                bal, trade_val, notional,
+            )
+        elif bal is None or bal <= 0 or bal < trade_val:
             logger.warning(
-                f"\033[91m⚠️ PERIODIC CHECK: Spot balance={bal} < trade_value={trade_val}. "
-                f"All funds may be in Earn. Pausing session.\033[0m"
+                f"\033[91m⚠️ PERIODIC CHECK: Spot balance={bal} < trade_value={trade_val} e nessuna "
+                f"posizione aperta. I fondi non sono disponibili su Spot (possibilmente in Earn). "
+                f"Pausing session.\033[0m"
             )
             if session.get("status") != "paused":
                 session["status"] = "paused"
                 await broadcast_scalping_event("session_restored", {
                     **session.copy(),
                     "status": "paused",
-                    "pause_reason": "SPOT_BALANCE_ZERO",
-                    "pause_message": "I tuoi fondi sono in Simple Earn. Spostali su Spot e fai Resume.",
+                    "pause_reason": "SPOT_BALANCE_INSUFFICIENT",
+                    "pause_message": (
+                        f"Saldo Spot {bal:.2f} EUR insufficiente per un trade da {trade_val:.2f} EUR "
+                        "e nessuna posizione aperta. Verifica che i fondi non siano in Simple Earn."
+                    ),
                 })
         else:
             logger.info(f"🔄 PERIODIC SPOT RECONCILIATION: Spot balance OK: {bal}")

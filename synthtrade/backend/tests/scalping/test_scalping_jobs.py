@@ -278,3 +278,82 @@ class TestScalpingJobsRegistration:
 
         job_ids = [job.id for job in result.get_jobs()]
         assert not [job_id for job_id in job_ids if job_id.startswith("scalping_")]
+
+
+# ── TASK-1272: spot_reconciliation non deve pausare per capitale in posizione ──
+
+class TestSpotReconciliation:
+    """La pausa SPOT_BALANCEZero era un falso positivo.
+
+    `live_balance` e' `cashBal` di OKX (available + frozen), che include il
+    capitale impegnato nella posizione aperta. Con capitale 21.9 EUR e trade da
+    20 EUR, ogni posizione aperta portava il saldo a 1.87 EUR e la sessione
+    veniva pausata con `pause_reason=SPOT_BALANCE_ZERO` e il messaggio "fondi in
+    Simple Earn": entrambi falsi, perche' quei fondi erano nella nostra posizione.
+    """
+
+    @staticmethod
+    def _state(balance, trade_value=20.0, status="running", has_open=False, notional=0.0):
+        session = {"status": status, "mode": "live", "live_balance": balance,
+                   "trade_value": trade_value}
+        pm = MagicMock()
+        pm.has_open.return_value = has_open
+        pos = MagicMock()
+        pos.quantity = notional / 73132.8 if notional else 0
+        pos.entry_price = 73132.8
+        pm.get_open.return_value = pos if has_open else None
+        return {"session": session, "position_manager": pm}, session
+
+    async def _run(self, state):
+        from app.scheduler.scalping_jobs import spot_reconciliation_job
+        broadcast = AsyncMock()
+        with patch("app.scheduler.scalping_jobs.settings") as ms, \
+             patch("app.scalping.router._execution_state", state), \
+             patch("app.scalping.router._refresh_session_balance", AsyncMock()), \
+             patch("app.scalping.router.broadcast_scalping_event", broadcast):
+            ms.scalping.SCALPING_SCHEDULER_HEALTH_ENABLED = True
+            await spot_reconciliation_job()
+        return state["session"], broadcast
+
+    @pytest.mark.asyncio
+    async def test_does_not_pause_when_funds_are_in_open_position(self):
+        """Saldo basso MA posizione aperta = capitale impegnato, NON una pausa."""
+        state, session = self._state(1.87, has_open=True, notional=20.0)
+        session, broadcast = await self._run(state)
+        assert session["status"] == "running", "non deve pausare con posizione aperta"
+        assert broadcast.await_count == 0, "non deve broadcastare nulla"
+
+    @pytest.mark.asyncio
+    async def test_pauses_when_no_position_and_balance_insufficient(self):
+        """Saldo basso e NESSUNA posizione = fondi non disponibili = pausa legittima."""
+        state, session = self._state(1.87, has_open=False)
+        session, broadcast = await self._run(state)
+        assert session["status"] == "paused"
+        payload = broadcast.await_args_list[0].args[1]
+        assert payload["pause_reason"] == "SPOT_BALANCE_INSUFFICIENT"
+        assert "Simple Earn" in payload["pause_message"], "deve ancora suggerire di verificare Earn"
+        assert "posizione aperta" in payload["pause_message"], "deve dire che non c'e' una posizione"
+
+    @pytest.mark.asyncio
+    async def test_reason_is_not_the_false_zero(self):
+        """'SPOT_BALANCE_ZERO' era un bug: il saldo non e' zero, e' impegnato."""
+        state, session = self._state(0.5, has_open=False)
+        session, broadcast = await self._run(state)
+        payload = broadcast.await_args_list[0].args[1]
+        assert payload["pause_reason"] != "SPOT_BALANCE_ZERO"
+
+    @pytest.mark.asyncio
+    async def test_resumes_when_balance_sufficient(self):
+        """Con saldo sufficiente e sessione in pausa, deve riprendere."""
+        state, session = self._state(21.9, status="paused", has_open=False)
+        session, broadcast = await self._run(state)
+        assert session["status"] == "running"
+        assert broadcast.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_position_open_with_ample_balance_stays_running(self):
+        """Caso normale: saldo abbondante e posizione aperta, resta running."""
+        state, session = self._state(21.9, has_open=True, notional=20.0)
+        session, broadcast = await self._run(state)
+        assert session["status"] == "running"
+        assert broadcast.await_count == 0

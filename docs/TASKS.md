@@ -1,8 +1,8 @@
 # TASKS.md — SynthTrade Task Tracking
 
-> **Aggiornato:** 2026-09-29 ~14:30 UTC. Task completati in `docs/ARCHIVE_TASKS.md`.
-> **Stato suite:** 790 passed / 0 failed, lanciata **da `synthtrade/backend/`** (non dalla root).
-> **In produzione:** TASK-1256 deployato 2026-09-25; TASK-1261 deployato 2026-09-29 ~14:00.
+> **Aggiornato:** 2026-09-30 ~07:30 UTC. Task completati in `docs/ARCHIVE_TASKS.md`.
+> **Stato suite:** 809 passed / 1 failed, lanciata **da `synthtrade/backend/`** (non dalla root). L'unico fallimento è `tests/unit/test_task_908.py::test_guard_does_not_affect_other_actions`, preesistente e non correlato.
+> **In produzione:** TASK-1256 deployato 2026-09-25; TASK-1261 deployato 2026-09-29 ~14:00; TASK-1262 deployato 2026-09-29 15:44; TASK-1270 deployato 2026-09-30 ~07:25.
 > **Handoff completo:** `docs/HANDOFF.md` — leggere prima di qualsiasi intervento.
 
 ---
@@ -80,7 +80,7 @@ Distribuzione reale (68 snapshot, soglia |score| ≥ 6.0): **bullish 0 (0.0%)**,
 - **Perché:** Baseline hardcoded `Decimal("1000")` in due punti del codice. BTC-EUR su OKX spot ha volumi da 0.05–0.2 BTC per candela → CVD << 1000 → score sempre ~0–2%. Il 15.8% del peso non contribuisce mai.
 - **Implementazione:** `CVDCalculator` espone `get_dynamic_baseline()` che restituisce la media del CVD assoluto massimale visto nelle ultime `M` finestre di reset. `signal_score_engine.py` chiama questo metodo invece di usare `Decimal("1000")`.
 - **⚠️ Deviazione deliberata dal lower bound di 5.0 BTC specificato inizialmente.** Con un floor di 5.0 la baseline dinamica sarebbe stata comunque `max(5.0, ~0.2) = 5.0` su BTC-EUR, cioè 25× la scala reale: il rapporto CVD/baseline restava sotto 0.2 e il fix era **privo di effetto proprio nel caso che doveva risolvere**. Il lower bound è stato ridotto a `BASELINE_FLOOR = Decimal("0.01")`, un puro epsilon anti divisione-per-zero. Verificato da `test_dynamic_baseline_floor_does_not_dominate_real_scale`.
-- **🐛 Bugfound in LIVE e corretto lo stesso giorno (commit `3c1a7f2`).** Il floor epsilon da solo **non bastava**: `window_size` è 1000 trade ma la grace period ne richiede solo 100, quindi fra trade 100 e 1000 il CVD veniva valutato con una baseline inesistente, restituita come epsilon. `cvd_to_score` saturava a ±100 e il CVD contribute **un +15,0 costante** (peso 0.15 × 100) — il bias strutturale che il task voleva eliminare, invertito di segno. Confermato in LIVE: `cvd=OK(w=0.15,s=100.0)`.
+- **🐛 Bugfound in LIVE e corretto lo stesso giorno (commit `80f8862`).** Il floor epsilon da solo **non bastava**: `window_size` è 1000 trade ma la grace period ne richiede solo 100, quindi fra trade 100 e 1000 il CVD veniva valutato con una baseline inesistente, restituita come epsilon. `cvd_to_score` saturava a ±100 e il CVD contribute **un +15,0 costante** (peso 0.15 × 100) — il bias strutturale che il task voleva eliminare, invertito di segno. Confermato in LIVE: `cvd=OK(w=0.15,s=100.0)`.
   Correzione: `get_dynamic_baseline()` ritorna `None` finché nessuna finestra è chiusa, e l'engine esclude il CVD da score e normalizzazione in quel caso — stesso pattern già usato per l'LSR. Il log diagnostico dichiara ora `cvd=WARMUP` invece di un `s=0.0` fuorviante. Regressione coperta da `test_cvd_excluded_without_baseline`.
 - **Interazione da conoscere:** la grace period usa `_trades_since_reset`, che si azzera a ogni finestra. Quindi il CVD è escluso per i primi 100 trade **di ogni** finestra da 1000, cioè ~10% del tempo. Voluto: un CVD parziale confrontato con la media delle finestre chiuse è rumore.
 - **Nota:** il default `cvd_to_score(..., baseline=Decimal("1000"))` è mantenuto solo per compatibilità con i chiamanti esistenti; l'engine passa sempre la baseline dinamica.
@@ -127,6 +127,81 @@ Fix 1 e Fix 3 non sono ricostruibili dallo storico (servono le letture LSR e le 
 `w=0.03` (era 0.10) e `total=0.88` (era 0.95) verificano il Fix 2 attivo. `long_short_ratio=OK(w=0.10,s=0.0)` con score a zero è il comportamento atteso durante il warmup: senza baseline il collector è escluso dal punteggio e contribuisce 0. Dopo ~12 letture distinte (≈60 min, dato `period=5m` dell'endpoint) inizierà a produrre delta reali.
 
 > **Nota su HANDOFF §3:** la sezione riporta l'LSR a 63% con contributo −2.2 pt e un totale di −5.0. Entrambi i valori sono contraddetti dai log reali (49% e +0.208, totale −3.741). Se HANDOFF viene usato come riferimento, leggerlo con questa correzione.
+
+---
+
+### TASK-1270 — Fill OCO non riconosciuto in tempo reale: posizione bloccata fino al riavvio ✅
+
+**Stato:** ✅ **COMPLETATO, COMMITTATO E IN LIVE** — commit `5a30950` (push 2026-09-30 ~07:25). Deploy e restart container verificati. **Fix in attesa di conferma LIVE** (vedi "Verifica su campo" sotto).
+
+**Priorità:** 🔴 Alta — durante l'incidente la posizione è rimasta aperta ~14h bloccando ogni nuovo ingresso.
+
+**Problema (incidente LIVE 2026-09-29):**
+Un BUY BTC-EUR aperto alle 16:48 (`73350.3`, qty `0.00027266`, OCO `3966069478195580928`) è stato chiuso dallo stop loss su OKX alle **16:53:57** a `73268.1`. La posizione però è rimasta **aperta su app e DB** per ~14 ore, con l'OKX completamente flat (nessun ordine, nessun algo order). Risolto solo al riavvio del container del 2026-09-30 06:47 (`Recovered verified OCO fill`, `reason=stop_loss`, `pnl=-0.06`).
+
+**Root cause — non era un listener caduto.** L'UDS era connesso e l'evento era arrivato regolarmente. La catena:
+
+1. `trade_executor.py` riceve l'evento OCO ~1s dopo l'esecuzione, ma **senza prezzo**. Il codice lo documenta già: `orders-algo-history` può riportare l'OCO `effective` prima che il prezzo del fill figlio sia esposto.
+2. Il delegate delega quindi a `_reconcile_position_with_exchange`, che leggeva correttamente `balance=0` (posizione chiusa) ma interrogava `orders-algo-history` **una sola volta**.
+3. La history di OKX è *eventually consistent*: la lookup emessa subito dopo il trigger non trovava ancora il leg con `state="effective"`.
+4. La funzione loggava `retaining local trade for retry` e restituiva `None` — ma **quel retry non esisteva mai**. L'unico retry era in `_on_uds_reconnect_sync()`, mai scattato perché l'UDS non si era disconnesso.
+
+Risultato: la posizione restava aperta e bloccava l'apertura di nuovi trade finché un riavvio non riconciliava.
+
+**Fix implementato** (`reconciliation.py`):
+- Estratto `_await_verified_bracket_fill()`: esegue il **polling** con la stessa tolleranza già misurata in TASK-1175 (OKX propaga in 1-5s), applicata ora anche al path normale "balance dice chiusa" e non solo al ramo di errore del balance check.
+- Il ramo di errore del balance check è stato riallineato allo stesso helper, eliminando il codice duplicato.
+- Se il fill non diventa visibile dopo il polling, il log passa da `WARNING` a `ERROR` con messaggio esplicito: la posizione **bloccherà nuovi ingressi** fino a un riavvio. Visibile all'operatore invece che silenziosamente trattenuto.
+- Costanti di modulo `FILL_VISIBILITY_ATTEMPTS` / `FILL_VISIBILITY_DELAY` risolte a call time (non come default di parametro), così restano l'unica fonte di verità ed overridabili nei test.
+
+> **Nessuna periodicità aggiunta.** Il retry è **event-driven**: scatta solo quando un fill è già avvenuto. Non è un reconcile periodico, che resta un fallback non implementato (vedi TASK-1271).
+
+**Test aggiunti** (`tests/unit/test_reconcile_position.py`):
+- `test_scenario_F_retries_until_algo_fill_propagates` — riproduce l'incidente LIVE: le prime 2 lookup non trovano il fill, la 3ª lo recupera (`73268.1`, `reason=stop_loss`).
+- `test_scenario_G_never_closes_on_unverified_fill` — la sicurezza di TASK-1184 resta prioritaria: se il fill non è mai verificato, il trade **non** viene chiuso con un prezzo sintetico, nemmeno dopo i retry.
+
+**Criteri di accettazione:**
+- [x] Root cause identificata con evidenza da log/DB/OKX reali, non da assunzioni
+- [x] Retry sul path normale "balance chiusa + fill non ancora visibile"
+- [x] Nessuna chiusura sintetica su fill non verificato (TASK-1184 preservata)
+- [x] Codice duplicato unificato in un solo helper
+- [x] Suite: **809 passed, 1 failed** — l'unico fallimento è `tests/unit/test_task_908.py::test_guard_does_not_affect_other_actions`, **preesistente e non correlato**
+- [x] Commit `5a30950` pushato e deployato; reconcile mostra le 3 query a ~0.66s di distanza nei log
+- [ ] **Verifica su campo:** nessuno stop/take-profit è scattato dopo il deploy. La conferma LIVE arriverà alla prossima chiusura del trade `e90d8f77` (entry `73111.5`). Finché non succede, il fix è "corretto e testato", non ancora "verificato in LIVE".
+
+**File coinvolti:**
+- `synthtrade/backend/app/scalping/reconciliation.py` — helper di polling, costanti, log `ERROR`, deduplicazione
+- `synthtrade/backend/tests/unit/test_reconcile_position.py` — scenari F e G
+
+---
+
+### TASK-1271 — Fallback: reconcile periodico delle posizioni aperte ⏸️
+
+**Stato:** ⏸️ **SOSPESA — in attesa di dati.** Non implementata. **Non è un bug noto**, è una rete di sicurezza opzionale per un caso non ancora osservato.
+
+**Priorità:** 🟡 Bassa — aprire **solo se** il problema si ripresenta.
+
+**Perché è sospesa e non fatta subito:** TASK-1270 ha risolto la causa (lookup singola su history eventually consistent) con un polling event-driven. Il residuo è un caso che **non è mai stato osservato**: se il fill di un OCO non diventa visibile nemmeno dopo il polling di ~3s, la posizione resta aperta e blocca gli ingressi. Finché quel caso non si verifica, un reconcile periodico aggiungerebbe un job ricorrente che gira per sempre per una teoria — e l'utente ha indicato esplicitamente che il sistema deve funzionare **sempre** in tempo reale, non essere salvato da polling di fondo.
+
+**Cosa fare se il problema si ripresenta:**
+Il sintomo è un `ERROR` nei log con il testo `no verified OCO fill ... WILL block new entries`, oppure una posizione aperta su DB mentre il balance su OKX è a zero. Il percorso di recupero immediato resta il riavvio del container, che riconcilia dallo startup.
+
+**Implementazione proposta (solo se necessaria):**
+1. Job in `app/scheduler/` che chiama `_reconcile_position_with_exchange` per le posizioni `open` su DB ogni N minuti.
+2. Il job deve essere **solo reattivo**: nessuna azione se il balance dice ancora posizione aperta (nessun costo, nessun rischio).
+3. Idempotente: se non c'è fill verificato, non fare nulla e non chiudere mai sinteticamente.
+4. Attenzione a non duplicare il percorso di startup: `main.py` e `pipeline.py` (sotto `if restore_mode:`) già riconciliano all'avvio. Il job periodico è un caso diverso — trade che invecchiano *a runtime*.
+
+**Criteri di accettazione (se attivata):**
+- [ ] Trigger: almeno 1 occorrenza reale del caso "fill non visibile dopo polling"
+- [ ] Il job non chiude mai un trade senza fill verificato
+- [ ] Il job non produce scritture su DB quando non serve
+- [ ] Frequenza scelta in base a un tasso di fill anomali misurato, non arbitrario
+- [ ] Il boot loop di `synthtrade` non ne risente
+
+**File coinvolti (se attivata):**
+- `synthtrade/backend/app/scheduler/` — nuovo job
+- `synthtrade/backend/app/main.py` — registrazione scheduler
 
 ---
 
